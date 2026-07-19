@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { generatePredictionForFixture } from "@/lib/ai/gemini";
 import { getTeamContext, getStandings, getHeadToHead, searchTeam, resolveSeason } from "@/lib/football/api-football";
 import { setPredictionCategories } from "@/lib/predictions";
+import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 
 // getTeamContext still returns a (truthy) object even when every field inside
 // it failed/came back empty, so a plain null-check on the object isn't enough.
@@ -85,6 +86,24 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
 
   const created = await Promise.all(
     output.predictions.map(async (p) => {
+      // Defensive: even with a schema in the prompt, the model can still emit
+      // a malformed marketType/selection. Fall back to OTHER (manual-only)
+      // rather than persist a settlement field that doesn't match its shape.
+      const validStructured = isValidSelection(p.marketType, p.selection);
+      const marketType: MarketType = validStructured ? p.marketType : "OTHER";
+      const selection: Selection = validStructured ? p.selection : null;
+      // Fallback only matters if Gemini emits something malformed despite the
+      // schema — there's no usable free-text market/pick to recover in that
+      // case, so this becomes a clearly-incomplete row for the admin to fix.
+      const { market, pick } = deriveMarketAndPick(marketType, selection, input.home, input.away, {
+        market: "Other",
+        pick: "",
+      });
+
+      const validOU = typeof p.overUnderLine === "number" && (p.overUnderDirection === "OVER" || p.overUnderDirection === "UNDER");
+      const ouLine = validOU ? p.overUnderLine : null;
+      const ouDirection = validOU ? p.overUnderDirection : null;
+
       const pred = await prisma.prediction.create({
         data: {
           fixtureId: input.fixtureId,
@@ -95,9 +114,14 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
           awayTeam: input.away,
           kickoff: isNaN(kickoffDate.getTime()) ? undefined : kickoffDate,
           status: "PENDING_REVIEW",
-          market: p.market,
-          pick: p.pick,
-          overUnder: p.overUnder,
+          marketType,
+          selection: selection ?? undefined,
+          manualSettlementOnly: marketType === "OTHER",
+          market,
+          pick,
+          ouLine,
+          ouDirection,
+          overUnder: deriveOverUnderText(ouLine, ouDirection),
           odds: output.suggestedOdds,
           confidence: Math.min(90, Math.max(0, Math.round(p.confidence))),
           reasoning: p.reasoning,

@@ -128,9 +128,18 @@ model Prediction {
   awayTeam     String?
   kickoff      DateTime?
   status       String    @default("DRAFT")
+  // market/pick/overUnder below are DISPLAY strings — for every marketType
+  // except OTHER they're derived from the structured fields, never typed
+  // directly, so auto-settlement (src/lib/markets.ts) has a fixed vocabulary
+  // to work from instead of unparseable free text.
+  marketType   String    @default("OTHER") // MATCH_WINNER | DOUBLE_CHANCE | OVER_UNDER | BTTS | CORRECT_SCORE | OTHER
+  selection    Json? // shape depends on marketType — see src/lib/markets.ts; null for OTHER
+  manualSettlementOnly Boolean @default(true) // true for OTHER (and any row predating this field) — never auto-resolved
   market       String
   pick         String
-  overUnder    String? // e.g. "Over 2.5 Goals" — a distinct field on every prediction, alongside the main market/pick
+  ouLine       Float? // secondary over/under pick — present on every new prediction regardless of marketType
+  ouDirection  String? // OVER | UNDER
+  overUnder    String? // display string derived from ouLine/ouDirection, e.g. "Over 2.5 Goals"
   odds         Float?
   confidence   Int
   reasoning    String

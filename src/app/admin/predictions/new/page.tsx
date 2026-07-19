@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { MarketSelectionFields, emptyMarketFormState } from "@/components/MarketSelectionFields";
+import { isValidSelection } from "@/lib/markets";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -20,15 +22,13 @@ export default function NewPrediction() {
     kickoff: "",
     leagueApiId: undefined as number | undefined,
     leagueName: "",
-    market: "",
-    pick: "",
-    overUnder: "",
     odds: "",
     confidence: 70,
     reasoning: "",
     matchPreview: "",
     categories: [] as string[],
   });
+  const [market, setMarket] = useState(emptyMarketFormState());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,10 +41,15 @@ export default function NewPrediction() {
 
   const create = async () => {
     if (form.categories.length === 0) { setError("Select at least one category."); return; }
-    if (!form.market || !form.pick || !form.overUnder || !form.reasoning) {
-      setError("Market, pick, over/under, and reasoning are required.");
+    if (!form.reasoning) { setError("Reasoning is required."); return; }
+    if (market.marketType === "OTHER") {
+      if (!market.otherMarket || !market.otherPick) { setError("Market and pick are required."); return; }
+    } else if (!isValidSelection(market.marketType, market.selection)) {
+      setError("Finish the selection for the chosen market type.");
       return;
     }
+    if (!market.ouLine) { setError("Over/Under line is required."); return; }
+
     setBusy(true);
     setError(null);
     try {
@@ -57,9 +62,12 @@ export default function NewPrediction() {
           kickoff: form.kickoff ? new Date(form.kickoff).toISOString() : undefined,
           leagueApiId: form.leagueApiId,
           leagueName: form.leagueName || undefined,
-          market: form.market,
-          pick: form.pick,
-          overUnder: form.overUnder,
+          marketType: market.marketType,
+          selection: market.marketType === "OTHER" ? undefined : market.selection,
+          otherMarket: market.marketType === "OTHER" ? market.otherMarket : undefined,
+          otherPick: market.marketType === "OTHER" ? market.otherPick : undefined,
+          ouLine: Number(market.ouLine),
+          ouDirection: market.ouDirection,
           odds: form.odds ? Number(form.odds) : undefined,
           confidence: form.confidence,
           reasoning: form.reasoning,
@@ -117,21 +125,9 @@ export default function NewPrediction() {
           <input type="datetime-local" value={form.kickoff} onChange={(e) => setForm({ ...form, kickoff: e.target.value })}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
         </label>
-        <label className="text-sm">Market
-          <input value={form.market} onChange={(e) => setForm({ ...form, market: e.target.value })}
-            placeholder="e.g. Match Result"
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-        </label>
-        <label className="text-sm">Pick
-          <input value={form.pick} onChange={(e) => setForm({ ...form, pick: e.target.value })}
-            placeholder="e.g. Arsenal to win"
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-        </label>
-        <label className="text-sm">Over/Under
-          <input value={form.overUnder} onChange={(e) => setForm({ ...form, overUnder: e.target.value })}
-            placeholder="e.g. Over 2.5 Goals"
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-        </label>
+
+        <MarketSelectionFields value={market} onChange={setMarket} homeTeam={form.homeTeam} awayTeam={form.awayTeam} />
+
         <label className="text-sm">Odds
           <input type="number" step="0.01" value={form.odds} onChange={(e) => setForm({ ...form, odds: e.target.value })}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />

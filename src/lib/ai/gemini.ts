@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
@@ -6,9 +7,10 @@ const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 export type AIPredictionOutput = {
   matchPreview: string; // markdown
   predictions: Array<{
-    market: string;
-    pick: string;
-    overUnder: string; // e.g. "Over 2.5 Goals" — always included, separate from the main market/pick
+    marketType: MarketType;
+    selection: Selection;
+    overUnderLine: number;
+    overUnderDirection: "OVER" | "UNDER";
     confidence: number; // 0-100
     reasoning: string; // markdown
   }>;
@@ -25,14 +27,32 @@ Rules:
 2. Return CONFIDENCE as a probability estimate (0-100). Be conservative — do not exceed 90
    unless the data is overwhelming.
 3. Never claim a prediction is guaranteed. Frame outputs as probabilities.
-4. Every prediction MUST include its own separate total-goals over/under call (e.g. "Over 2.5 Goals",
-   "Under 1.5 Goals") in "overUnder", independent of whatever the main "market"/"pick" is about.
-5. Output STRICT JSON matching this TypeScript type — no markdown fences, no commentary:
+4. Every prediction has a primary pick, expressed as "marketType" + "selection", using ONLY
+   one of these five marketType values and the EXACT matching selection shape:
+
+   - "MATCH_WINNER"   -> selection: { "value": "HOME" | "DRAW" | "AWAY" }
+   - "DOUBLE_CHANCE"  -> selection: { "value": "HOME_OR_DRAW" | "AWAY_OR_DRAW" | "HOME_OR_AWAY" }
+   - "OVER_UNDER"     -> selection: { "line": number, "direction": "OVER" | "UNDER" }   // e.g. line 2.5
+   - "BTTS"           -> selection: { "value": "YES" | "NO" }
+   - "CORRECT_SCORE"  -> selection: { "home": integer >= 0, "away": integer >= 0 }
+
+   Do not invent other marketType values and do not deviate from these selection shapes.
+5. Every prediction ALSO has a separate, always-present total-goals over/under call —
+   "overUnderLine" (a number, e.g. 2.5) and "overUnderDirection" ("OVER" | "UNDER") —
+   independent of whatever the primary marketType/selection is about.
+6. Output STRICT JSON matching this TypeScript type — no markdown fences, no commentary:
 
 {
   "matchPreview": string,          // 2-4 short paragraphs in markdown
   "predictions": [
-    { "market": string, "pick": string, "overUnder": string, "confidence": number, "reasoning": string }
+    {
+      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE",
+      "selection": { ... shape per marketType, see rule 4 ... },
+      "overUnderLine": number,
+      "overUnderDirection": "OVER" | "UNDER",
+      "confidence": number,
+      "reasoning": string
+    }
   ],
   "keyFactors": string[],          // 3-6 bullet points
   "suggestedOdds": number | null   // decimal odds for the top pick
@@ -71,7 +91,7 @@ ${JSON.stringify(input.h2h ?? {}, null, 2)}
 League standings:
 ${JSON.stringify(input.standings ?? {}, null, 2)}
 
-Return JSON only.`;
+Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const res = await client.models.generateContent({
     model: MODEL,
