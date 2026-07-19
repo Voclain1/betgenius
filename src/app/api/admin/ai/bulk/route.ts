@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     .slice(0, limit);
 
   // Generate sequentially — avoids hammering the AI/football APIs with a burst of parallel calls.
-  const results: Array<{ home: string; away: string; ok: boolean; predictionIds?: string[]; error?: string }> = [];
+  const results: Array<{ home: string; away: string; ok: boolean; predictionIds?: string[]; contextComplete?: boolean; error?: string }> = [];
   for (const f of upcoming) {
     try {
       const { predictions } = await generateAndPersistPrediction({
@@ -53,7 +53,13 @@ export async function POST(req: Request) {
         categories: [...categories],
         authorId: session!.user.id,
       });
-      results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: true, predictionIds: predictions.map((p) => p.id) });
+      results.push({
+        home: f.teams.home.name,
+        away: f.teams.away.name,
+        ok: true,
+        predictionIds: predictions.map((p) => p.id),
+        contextComplete: predictions[0]?.contextComplete,
+      });
     } catch (err: any) {
       results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: false, error: err?.message ?? String(err) });
     }

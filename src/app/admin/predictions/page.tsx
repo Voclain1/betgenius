@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 
 type Row = {
@@ -18,6 +19,7 @@ type Row = {
   leagueName: string | null;
   homeTeam: string | null;
   awayTeam: string | null;
+  contextComplete: boolean;
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string } };
 };
 
@@ -77,13 +79,18 @@ export default function AdminPredictions() {
           </thead>
           <tbody className="divide-y divide-brand-border">
             {shown.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={!r.contextComplete ? "bg-amber-500/5" : undefined}>
                 <td className="px-3 py-2">
-                  {r.homeTeam
-                    ? `${r.homeTeam} vs ${r.awayTeam}`
-                    : r.fixture?.homeTeam?.name
-                      ? `${r.fixture.homeTeam.name} vs ${r.fixture.awayTeam?.name}`
-                      : "—"}
+                  <span className="flex items-center gap-1.5">
+                    {!r.contextComplete && (
+                      <AlertTriangle size={14} className="shrink-0 text-amber-400" aria-label="Generated with no live data — verify manually" />
+                    )}
+                    {r.homeTeam
+                      ? `${r.homeTeam} vs ${r.awayTeam}`
+                      : r.fixture?.homeTeam?.name
+                        ? `${r.fixture.homeTeam.name} vs ${r.fixture.awayTeam?.name}`
+                        : "—"}
+                  </span>
                 </td>
                 <td className="px-3 py-2">
                   <LeagueBadge leagueApiId={r.leagueApiId} leagueName={r.leagueName} />

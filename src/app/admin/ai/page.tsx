@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { LeagueBadge } from "@/components/LeagueBadge";
 
@@ -169,6 +170,12 @@ export default function AIPanel() {
                   <span className="chip bg-brand/20 text-brand">{p.category}</span>
                   <span className="chip bg-brand-border">{p.status}</span>
                 </div>
+                {!p.contextComplete && (
+                  <div className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    Generated with no live data — every football-data lookup came back empty. Verify before approving.
+                  </div>
+                )}
                 <LeagueBadge leagueApiId={p.leagueApiId} leagueName={p.leagueName} />
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div><div className="text-xs text-gray-400">Market</div><div className="font-semibold">{p.market}</div></div>
@@ -263,7 +270,12 @@ export default function AIPanel() {
             <ul className="divide-y divide-brand-border">
               {bulkResult.results.map((r: any, i: number) => (
                 <li key={i} className="flex items-center justify-between py-2 text-sm">
-                  <span>{r.home} vs {r.away}</span>
+                  <span className="flex items-center gap-1.5">
+                    {r.ok && r.contextComplete === false && (
+                      <AlertTriangle size={13} className="shrink-0 text-amber-400" aria-label="Generated with no live data" />
+                    )}
+                    {r.home} vs {r.away}
+                  </span>
                   {r.ok ? (
                     <span className="flex gap-2">
                       {r.predictionIds.map((id: string) => (

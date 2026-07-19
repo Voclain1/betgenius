@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
@@ -27,6 +28,7 @@ type Prediction = {
   homeTeam: string | null;
   awayTeam: string | null;
   kickoff: string | null;
+  contextComplete: boolean;
   categories: { category: string }[];
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string }; league?: { name: string }; kickoff?: string } | null;
 };
@@ -139,6 +141,18 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         </div>
         <span className="chip bg-brand-border">{p.status}</span>
       </div>
+
+      {!p.contextComplete && (
+        <div className="card flex items-start gap-3 border-amber-500/40 bg-amber-500/10">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
+          <div className="text-sm text-amber-200">
+            <b>Generated with no live data.</b> Every football-data lookup (team form, injuries, standings, head-to-head)
+            came back empty for this fixture — the AI reasoned from team names alone. Double-check the pick and reasoning
+            before approving, and consider verifying the football-data API is actually returning data (plan/season coverage,
+            rate limit) before generating more like it.
+          </div>
+        </div>
+      )}
 
       <div className="card grid gap-3 md:grid-cols-2">
         <label className="text-sm">Home team

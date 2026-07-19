@@ -3,6 +3,16 @@ import { generatePredictionForFixture } from "@/lib/ai/gemini";
 import { getTeamContext, getStandings, getHeadToHead, searchTeam, resolveSeason } from "@/lib/football/api-football";
 import { setPredictionCategories } from "@/lib/predictions";
 
+// getTeamContext still returns a (truthy) object even when every field inside
+// it failed/came back empty, so a plain null-check on the object isn't enough.
+function isTeamContextEmpty(ctx: Awaited<ReturnType<typeof getTeamContext>> | null): boolean {
+  if (!ctx) return true;
+  const noStats = !ctx.statistics;
+  const noInjuries = !ctx.injuries || (Array.isArray(ctx.injuries) && ctx.injuries.length === 0);
+  const noFixtures = !ctx.lastFixtures || ctx.lastFixtures.length === 0;
+  return noStats && noInjuries && noFixtures;
+}
+
 export type GenerateFixtureInput = {
   fixtureId?: string;
   home: string;
@@ -54,6 +64,14 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
     h2h,
   });
 
+  // A league was specified (live context was expected) but every source —
+  // team form/injuries/stats for both sides, standings, and h2h — came back
+  // empty. Usually means the football API failed silently (bad key, plan
+  // restriction, rate limit) rather than the fixture genuinely having no data.
+  const contextComplete = !input.leagueApiId
+    ? true
+    : !(isTeamContextEmpty(homeContext) && isTeamContextEmpty(awayContext) && !standings && (!h2h || h2h.length === 0));
+
   const job = await prisma.aIJob.create({
     data: {
       userId: input.authorId,
@@ -61,6 +79,7 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
       model: process.env.GEMINI_MODEL || "gemini-flash-latest",
       rawOutput: JSON.stringify(output),
       status: "COMPLETED",
+      contextComplete,
     },
   });
 
@@ -83,6 +102,7 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
           confidence: Math.min(90, Math.max(0, Math.round(p.confidence))),
           reasoning: p.reasoning,
           matchPreview: output.matchPreview,
+          contextComplete,
           authorId: input.authorId,
           aiJobId: job.id,
         },

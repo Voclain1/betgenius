@@ -135,6 +135,7 @@ model Prediction {
   confidence   Int
   reasoning    String
   matchPreview String?
+  contextComplete Boolean @default(true) // false = AI-generated with zero live data (all football-API context calls came back empty/failed)
   outcome      String    @default("PENDING")
   authorId     String
   author       User      @relation("PredictionAuthor", fields: [authorId], references: [id])
@@ -171,6 +172,7 @@ model AIJob {
   model       String
   rawOutput   String
   status      String       @default("COMPLETED")
+  contextComplete Boolean  @default(true) // false = every football-API context call (team search, form, standings, h2h) came back empty/failed
   createdAt   DateTime     @default(now())
   predictions Prediction[]
 }
