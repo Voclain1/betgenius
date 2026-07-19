@@ -41,10 +41,7 @@ export async function generateAndPersistPrediction(input: GenerateFixtureInput) 
   // Best-effort: resolve team ids from names so we can pull live context.
   // Falls back to null context (model reasons from names alone) if lookup fails.
   const [homeApiId, awayApiId] = input.leagueApiId
-    ? await Promise.all([
-        searchTeam(input.home, input.leagueApiId, season),
-        searchTeam(input.away, input.leagueApiId, season),
-      ])
+    ? await Promise.all([searchTeam(input.home), searchTeam(input.away)])
     : [null, null];
 
   const [homeContext, awayContext, standings, h2h] = await Promise.all([

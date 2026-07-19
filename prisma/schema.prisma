@@ -146,6 +146,13 @@ model Prediction {
   matchPreview String?
   contextComplete Boolean @default(true) // false = AI-generated with zero live data (all football-API context calls came back empty/failed)
   outcome      String    @default("PENDING")
+  // A1 settlement: no Fixture-ingestion pipeline exists in this app (Livescores/
+  // Fixtures/Standings all hit API-Football live per-request, nothing is written
+  // to the Fixture table), so the finished score is looked up per-prediction and
+  // stored here directly — consistent with homeTeam/awayTeam already being free
+  // text rather than a Fixture relation. See src/app/api/admin/settle/route.ts.
+  finalHomeScore Int?
+  finalAwayScore Int?
   authorId     String
   author       User      @relation("PredictionAuthor", fields: [authorId], references: [id])
   approvedById String?

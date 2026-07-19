@@ -132,13 +132,31 @@ export async function getStandings(leagueId: number, season: number) {
   return raw[0].league.standings[0];
 }
 
-/** Resolve a team's API-Football id from its name, optionally scoped to a league. */
-export async function searchTeam(name: string, leagueId?: number, season?: number) {
-  const params: Record<string, string | number> = { search: name };
-  if (leagueId) params.league = leagueId;
-  if (season) params.season = season;
-  const raw = await apiFetch<Array<{ team: { id: number; name: string } }>>("/teams", params);
-  return raw?.[0]?.team.id ?? null;
+/**
+ * Resolve a team's API-Football id from its name. The /teams search endpoint
+ * rejects `search` combined with `league`/`season` ("cannot be used with the
+ * Search field"), so there's nothing to scope it by — results are disambiguated
+ * by name-closeness instead, deprioritizing youth/reserve/women's sides that
+ * often share a substring with the senior team's name (e.g. "Luton" also
+ * matching "Luton Town U21").
+ */
+export async function searchTeam(name: string) {
+  const raw = await apiFetch<Array<{ team: { id: number; name: string } }>>("/teams", { search: name });
+  if (!raw?.length) return null;
+  if (raw.length === 1) return raw[0].team.id;
+
+  const junkPattern = /\b(u1\d|u2[0-3]|w|women|reserves?|ii)\b/i;
+  const normalized = name.trim().toLowerCase();
+  const scored = raw.map((r) => {
+    const rn = r.team.name.trim().toLowerCase();
+    let score = 0;
+    if (rn === normalized) score += 100;
+    else if (rn.startsWith(normalized) || normalized.startsWith(rn)) score += 50;
+    if (junkPattern.test(r.team.name)) score -= 200;
+    return { id: r.team.id, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.id ?? raw[0].team.id;
 }
 
 /** Team & fixture "form" input for the AI prompt. */
@@ -155,3 +173,4 @@ export async function getTeamContext(teamId: number, leagueId: number, season: n
 export function getHeadToHead(homeTeamId: number, awayTeamId: number, last = 10) {
   return apiFetch<FixtureRow[]>("/fixtures/headtohead", { h2h: `${homeTeamId}-${awayTeamId}`, last });
 }
+
