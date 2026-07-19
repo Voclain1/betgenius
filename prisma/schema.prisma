@@ -32,6 +32,7 @@ model User {
   subscription   Subscription?
   predictions    Prediction[]  @relation("PredictionAuthor")
   approvals      Prediction[]  @relation("PredictionApprover")
+  settlements    Prediction[]  @relation("PredictionSettler")
   assignedTasks  AdminTask[]   @relation("AssignedTo")
   createdTasks   AdminTask[]   @relation("CreatedBy")
   betSlips       BetSlip[]
@@ -153,6 +154,13 @@ model Prediction {
   // text rather than a Fixture relation. See src/app/api/admin/settle/route.ts.
   finalHomeScore Int?
   finalAwayScore Int?
+  // settledById null + settledAt set  = auto-settled (src/app/api/admin/settle)
+  // settledById set                   = manual admin override (A2)
+  // settlementNote: why a PENDING row hasn't auto-settled — cleared once outcome is set
+  settledById  String?
+  settledBy    User?     @relation("PredictionSettler", fields: [settledById], references: [id])
+  settledAt    DateTime?
+  settlementNote String?
   authorId     String
   author       User      @relation("PredictionAuthor", fields: [authorId], references: [id])
   approvedById String?

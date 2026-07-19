@@ -20,7 +20,16 @@ type Row = {
   homeTeam: string | null;
   awayTeam: string | null;
   contextComplete: boolean;
+  manualSettlementOnly: boolean;
+  outcome: string;
+  settlementNote: string | null;
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string } };
+};
+
+const OUTCOME_STYLES: Record<string, string> = {
+  WON: "bg-emerald-500/20 text-emerald-300",
+  LOST: "bg-red-500/20 text-red-300",
+  VOID: "bg-gray-500/20 text-gray-300",
 };
 
 export default function AdminPredictions() {
@@ -45,6 +54,15 @@ export default function AdminPredictions() {
   const remove = async (id: string) => {
     if (!confirm("Delete this prediction? This cannot be undone.")) return;
     await fetch(`/api/admin/predictions/${id}`, { method: "DELETE" });
+    load();
+  };
+
+  const settle = async (id: string, outcome: "WON" | "LOST" | "VOID") => {
+    await fetch(`/api/admin/predictions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "SETTLE", patch: { outcome } }),
+    });
     load();
   };
 
@@ -74,6 +92,7 @@ export default function AdminPredictions() {
               <th className="px-3 py-2">Over/Under</th>
               <th className="px-3 py-2">Conf.</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Outcome</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -107,6 +126,26 @@ export default function AdminPredictions() {
                 <td className="px-3 py-2 text-gray-400">{r.overUnder ?? "—"}</td>
                 <td className="px-3 py-2">{r.confidence}%</td>
                 <td className="px-3 py-2"><span className="chip bg-brand-border">{r.status}</span></td>
+                <td className="px-3 py-2">
+                  {r.outcome !== "PENDING" ? (
+                    <span className={`chip ${OUTCOME_STYLES[r.outcome] ?? "bg-brand-border"}`}>{r.outcome}</span>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      {(r.manualSettlementOnly || r.settlementNote) && (
+                        <AlertTriangle
+                          size={13}
+                          className={`shrink-0 ${r.manualSettlementOnly ? "text-purple-400" : "text-amber-400"}`}
+                          aria-label={r.manualSettlementOnly ? "Manual settlement required (Other market)" : (r.settlementNote ?? undefined)}
+                        />
+                      )}
+                      <div className="flex gap-1">
+                        <button className="chip bg-emerald-500/10 text-[10px] text-emerald-300 hover:bg-emerald-500/20" onClick={() => settle(r.id, "WON")}>Won</button>
+                        <button className="chip bg-red-500/10 text-[10px] text-red-300 hover:bg-red-500/20" onClick={() => settle(r.id, "LOST")}>Lost</button>
+                        <button className="chip bg-gray-500/10 text-[10px] text-gray-300 hover:bg-gray-500/20" onClick={() => settle(r.id, "VOID")}>Void</button>
+                      </div>
+                    </div>
+                  )}
+                </td>
                 <td className="px-3 py-2 space-x-2 text-right whitespace-nowrap">
                   <Link href={`/admin/predictions/${r.id}`} className="text-xs text-gray-300 hover:underline">Edit</Link>
                   <button className="text-xs text-blue-400 hover:underline" onClick={() => act(r.id, "APPROVE")}>Approve</button>
@@ -117,7 +156,7 @@ export default function AdminPredictions() {
               </tr>
             ))}
             {shown.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400">No predictions</td></tr>
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-gray-400">No predictions</td></tr>
             )}
           </tbody>
         </table>

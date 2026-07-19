@@ -17,6 +17,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       categories: true,
       fixture: { include: { homeTeam: true, awayTeam: true, league: true } },
       author: { select: { name: true, email: true } },
+      settledBy: { select: { name: true, email: true } },
     },
   });
   if (!prediction) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -24,9 +25,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 }
 
 const Patch = z.object({
-  action: z.enum(["APPROVE", "PUBLISH", "ARCHIVE", "EDIT"]),
+  action: z.enum(["APPROVE", "PUBLISH", "ARCHIVE", "EDIT", "SETTLE"]),
   patch: z
     .object({
+      outcome: z.enum(["PENDING", "WON", "LOST", "VOID"]).optional(),
+      finalHomeScore: z.number().int().min(0).nullable().optional(),
+      finalAwayScore: z.number().int().min(0).nullable().optional(),
       odds: z.number().optional(),
       confidence: z.number().min(0).max(100).optional(),
       reasoning: z.string().optional(),
@@ -54,7 +58,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { action, patch } = parsed.data;
 
-  const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, ...rest } = patch ?? {};
+  const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
+    patch ?? {};
   const data: any = { ...rest };
 
   if (marketType) {
@@ -98,6 +103,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   } else if (action === "ARCHIVE") {
     data.status = "ARCHIVED";
+  } else if (action === "SETTLE") {
+    if (!outcome) return NextResponse.json({ error: "outcome is required to settle a prediction" }, { status: 400 });
+    data.outcome = outcome;
+    data.settledById = session!.user.id;
+    data.settledAt = new Date();
+    data.settlementNote = null;
+    if (finalHomeScore !== undefined) data.finalHomeScore = finalHomeScore;
+    if (finalAwayScore !== undefined) data.finalAwayScore = finalAwayScore;
   }
 
   if (categories) await setPredictionCategories(params.id, categories);

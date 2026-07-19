@@ -55,25 +55,49 @@ export async function GET(req: Request) {
       });
 
       if (lookup.status === "not_finished") {
+        await prisma.prediction.update({
+          where: { id: p.id },
+          data: { settlementNote: "Not yet confirmed finished — will retry automatically." },
+        });
         results.push({ id: p.id, match, result: "not_finished" });
         continue;
       }
       if (lookup.status === "not_found") {
+        await prisma.prediction.update({
+          where: { id: p.id },
+          data: { settlementNote: `Auto-settlement failed — ${lookup.reason}` },
+        });
         results.push({ id: p.id, match, result: "not_found", detail: lookup.reason });
         continue;
       }
 
-      const outcome =
-        resolveMarket(p.marketType as MarketType, p.selection as Selection, lookup.homeScore, lookup.awayScore) ?? "PENDING";
+      const outcome = resolveMarket(p.marketType as MarketType, p.selection as Selection, lookup.homeScore, lookup.awayScore);
+
+      if (!outcome) {
+        // Score found, but the market couldn't be resolved from it (shouldn't
+        // happen for a valid marketType/selection — flag for manual review).
+        await prisma.prediction.update({
+          where: { id: p.id },
+          data: {
+            finalHomeScore: lookup.homeScore,
+            finalAwayScore: lookup.awayScore,
+            settlementNote: "Auto-settlement failed — score found but the market selection couldn't be resolved from it.",
+          },
+        });
+        results.push({ id: p.id, match, result: "unresolvable", detail: `${lookup.homeScore}-${lookup.awayScore}` });
+        continue;
+      }
 
       await prisma.prediction.update({
         where: { id: p.id },
-        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome },
+        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt: new Date(), settlementNote: null },
       });
 
       results.push({ id: p.id, match, result: outcome, detail: `${lookup.homeScore}-${lookup.awayScore}` });
     } catch (err: any) {
-      results.push({ id: p.id, match, result: "error", detail: err?.message ?? String(err) });
+      const message = err?.message ?? String(err);
+      await prisma.prediction.update({ where: { id: p.id }, data: { settlementNote: `Auto-settlement error — ${message}` } }).catch(() => {});
+      results.push({ id: p.id, match, result: "error", detail: message });
     }
   }
 

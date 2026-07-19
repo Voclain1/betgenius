@@ -35,8 +35,22 @@ type Prediction = {
   awayTeam: string | null;
   kickoff: string | null;
   contextComplete: boolean;
+  manualSettlementOnly: boolean;
+  outcome: string;
+  finalHomeScore: number | null;
+  finalAwayScore: number | null;
+  settledAt: string | null;
+  settledBy: { name: string | null; email: string } | null;
+  settlementNote: string | null;
   categories: { category: string }[];
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string }; league?: { name: string }; kickoff?: string } | null;
+};
+
+const OUTCOME_STYLES: Record<string, string> = {
+  PENDING: "bg-brand-border text-gray-300",
+  WON: "bg-emerald-500/20 text-emerald-300",
+  LOST: "bg-red-500/20 text-red-300",
+  VOID: "bg-gray-500/20 text-gray-300",
 };
 
 export default function EditPrediction({ params }: { params: { id: string } }) {
@@ -50,6 +64,9 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   const [market, setMarket] = useState<MarketFormState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settleForm, setSettleForm] = useState({ outcome: "PENDING", homeScore: "", awayScore: "" });
+  const [settleBusy, setSettleBusy] = useState(false);
+  const [settleError, setSettleError] = useState<string | null>(null);
 
   const load = async () => {
     const j = await fetch(`/api/admin/predictions/${params.id}`).then((r) => r.json());
@@ -75,6 +92,11 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       otherPick: pred.marketType === "OTHER" ? pred.pick : "",
       ouLine: pred.ouLine?.toString() ?? "",
       ouDirection: (pred.ouDirection as "OVER" | "UNDER") ?? "OVER",
+    });
+    setSettleForm({
+      outcome: pred.outcome ?? "PENDING",
+      homeScore: pred.finalHomeScore?.toString() ?? "",
+      awayScore: pred.finalAwayScore?.toString() ?? "",
     });
   };
   useEffect(() => { load(); }, [params.id]);
@@ -132,6 +154,32 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       setError(e.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const settle = async () => {
+    setSettleBusy(true);
+    setSettleError(null);
+    try {
+      const res = await fetch(`/api/admin/predictions/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SETTLE",
+          patch: {
+            outcome: settleForm.outcome,
+            finalHomeScore: settleForm.homeScore !== "" ? Number(settleForm.homeScore) : null,
+            finalAwayScore: settleForm.awayScore !== "" ? Number(settleForm.awayScore) : null,
+          },
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error?.message || j.error || "Failed to set outcome");
+      await load();
+    } catch (e: any) {
+      setSettleError(e.message);
+    } finally {
+      setSettleBusy(false);
     }
   };
 
@@ -253,6 +301,57 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             {busy ? "Saving…" : "Save changes"}
           </button>
         </div>
+      </div>
+
+      <div className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm uppercase text-gray-400">Result</h3>
+          <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? OUTCOME_STYLES.PENDING}`}>{p.outcome}</span>
+        </div>
+
+        {p.outcome === "PENDING" && (
+          <div className="flex items-start gap-3 rounded-md border border-brand-border bg-brand-bg p-3 text-sm text-gray-300">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-gray-400" />
+            <span>
+              {p.manualSettlementOnly
+                ? 'Manual settlement required — "Other" market tips are never auto-resolved.'
+                : p.settlementNote
+                  ? p.settlementNote
+                  : "Awaiting auto-settlement — checked daily once kickoff is a few hours past."}
+            </span>
+          </div>
+        )}
+
+        {p.settledAt && (
+          <p className="text-xs text-gray-500">
+            Settled {new Date(p.settledAt).toLocaleString()} — {p.settledBy ? `manually by ${p.settledBy.name ?? p.settledBy.email}` : "auto"}
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <label className="text-sm">Outcome
+            <select value={settleForm.outcome} onChange={(e) => setSettleForm({ ...settleForm, outcome: e.target.value })}
+              className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">
+              {["PENDING", "WON", "LOST", "VOID"].map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </label>
+          <label className="text-sm">{p.homeTeam ?? "Home"} score
+            <input type="number" min={0} step={1} value={settleForm.homeScore}
+              onChange={(e) => setSettleForm({ ...settleForm, homeScore: e.target.value })}
+              className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
+          </label>
+          <label className="text-sm">{p.awayTeam ?? "Away"} score
+            <input type="number" min={0} step={1} value={settleForm.awayScore}
+              onChange={(e) => setSettleForm({ ...settleForm, awayScore: e.target.value })}
+              className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
+          </label>
+          <div className="flex items-end">
+            <button disabled={settleBusy} onClick={settle} className="btn btn-primary w-full disabled:opacity-50">
+              {settleBusy ? "Saving…" : "Save outcome"}
+            </button>
+          </div>
+        </div>
+        {settleError && <div className="text-sm text-red-400">{settleError}</div>}
       </div>
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
