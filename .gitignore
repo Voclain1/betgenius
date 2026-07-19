@@ -9,3 +9,6 @@ dev.db-journal
 .vercel
 tsconfig.tsbuildinfo
 *.tmp*
+
+.vercel
+.env*

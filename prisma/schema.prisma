@@ -1,15 +1,14 @@
 // Betgenius — data model
-// SQLite for local dev. SQLite doesn't support enums, so all "enum-like"
-// fields are plain strings; matching TypeScript union types live in
-// src/lib/enums.ts. Swap datasource to postgresql for prod if you want
-// real enums.
+// Postgres (Neon). "Enum-like" fields are kept as plain strings rather than
+// real Prisma enums; matching TypeScript union types live in src/lib/enums.ts.
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // Role: "USER" | "ADMIN_PENDING" | "ADMIN" | "SUPER_ADMIN"
