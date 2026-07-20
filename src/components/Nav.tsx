@@ -9,6 +9,7 @@ const links = [
   { href: "/predictions/banker", label: "Banker" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
+  { href: "/track-record", label: "Track Record" },
   { href: "/livescores", label: "Livescores" },
   { href: "/fixtures", label: "Fixtures" },
   { href: "/standings", label: "Standings" },
