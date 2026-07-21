@@ -1,11 +1,14 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { PredictionsTable } from "@/components/PredictionsTable";
+import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
 
 const SLUGS: Record<string, PredictionCategory> = {
@@ -26,6 +29,49 @@ const NAMES: Record<PredictionCategory, string> = {
   PREMIUM: "Premium tips",
 };
 
+// Shared between generateMetadata and the page body so the category's
+// predictions are only fetched once per request (React's cache() memoizes
+// by arguments within a single render pass).
+const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
+  return prisma.prediction.findMany({
+    where: { status: "PUBLISHED", categories: { some: { category: cat } } },
+    orderBy: { publishedAt: "desc" },
+    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
+    take: 60,
+  });
+});
+
+export async function generateMetadata({ params }: { params: { category: string } }): Promise<Metadata> {
+  const cat = SLUGS[params.category];
+  if (!cat) return {};
+  const name = NAMES[cat];
+  const rows = await getCategoryPredictions(cat);
+
+  // Thin/empty content shouldn't claim a rich, specific title as if it had
+  // real picks to show — and search engines shouldn't index a page with
+  // nothing on it yet.
+  if (rows.length === 0) {
+    return {
+      title: name,
+      description: `No ${name.toLowerCase()} published yet — check back soon for AI-powered football predictions.`,
+      robots: { index: false, follow: true },
+      alternates: { canonical: `/predictions/${params.category}` },
+    };
+  }
+
+  const sample = rows
+    .slice(0, 3)
+    .map((r) => (r.homeTeam ? `${r.homeTeam} vs ${r.awayTeam}` : r.fixture ? `${r.fixture.homeTeam?.name} vs ${r.fixture.awayTeam?.name}` : null))
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    title: name,
+    description: `${rows.length} live ${name.toLowerCase()}${sample ? ` — including ${sample}` : ""}. AI-powered football predictions updated daily.`,
+    alternates: { canonical: `/predictions/${params.category}` },
+  };
+}
+
 export default async function CategoryPage({ params }: { params: { category: string } }) {
   const cat = SLUGS[params.category];
   if (!cat) return notFound();
@@ -33,12 +79,7 @@ export default async function CategoryPage({ params }: { params: { category: str
   const session = await getServerSession(authOptions);
   const canView = canViewCategory(cat, session?.user.tier, session?.user.subStatus, session?.user.role);
 
-  const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", categories: { some: { category: cat } } },
-    orderBy: { publishedAt: "desc" },
-    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
-    take: 60,
-  });
+  const rows = await getCategoryPredictions(cat);
 
   const needsRegistration = !canView && cat === "BANKER" && !session?.user;
   const lockReason = needsRegistration
@@ -62,8 +103,28 @@ export default async function CategoryPage({ params }: { params: { category: str
         },
   );
 
+  const slug = params.category;
+  const events = rows
+    .map((r) => {
+      const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
+      const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
+      if (!home || !away) return null;
+      return sportsEventJsonLd({ homeTeam: home, awayTeam: away, kickoff: r.kickoff ?? r.fixture?.kickoff ?? null, league: r.leagueName ?? r.fixture?.league?.name });
+    })
+    .filter((e): e is NonNullable<typeof e> => e !== null);
+
   return (
     <div className="space-y-6">
+      <JsonLd
+        data={[
+          breadcrumbJsonLd([
+            { name: "Home", path: "/" },
+            { name: "Predictions", path: "/predictions" },
+            { name: NAMES[cat], path: `/predictions/${slug}` },
+          ]),
+          ...events,
+        ]}
+      />
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold">{NAMES[cat]}</h1>

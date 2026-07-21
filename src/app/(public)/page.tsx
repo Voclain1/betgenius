@@ -1,8 +1,15 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { PredictionsTable } from "@/components/PredictionsTable";
+import { SITE_NAME } from "@/lib/seo";
 
 export const revalidate = 60;
+
+export const metadata: Metadata = {
+  title: { absolute: `${SITE_NAME} — Football tips, predictions, livescores` },
+  description: "AI-powered football predictions across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
+};
 
 async function fetchFeatured() {
   return prisma.prediction.findMany({

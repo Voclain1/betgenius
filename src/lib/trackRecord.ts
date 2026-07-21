@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { MARKET_TYPES, type MarketType } from "@/lib/markets";
 
@@ -61,7 +62,7 @@ export type TrackRecordData = {
  * settledById: null (auto) and settledById: set (manual) identically; nothing
  * in this module distinguishes settlement method in the numbers themselves.
  */
-export async function getTrackRecordData(): Promise<TrackRecordData> {
+export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
   const totalSettledAllTime = await prisma.prediction.count({
     where: { status: "PUBLISHED", outcome: { not: "PENDING" } },
   });
@@ -112,4 +113,4 @@ export async function getTrackRecordData(): Promise<TrackRecordData> {
   }));
 
   return { totalSettledAllTime, windows, recentTips };
-}
+});

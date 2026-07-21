@@ -1,4 +1,11 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+
+export const metadata: Metadata = {
+  title: "Football Predictions & Betting Tips",
+  description: "Browse AI-powered football predictions by category — Featured, Genius, Today's picks, Banker, VIP and Premium tips.",
+};
 
 const cats = [
   { slug: "featured", name: "Featured tips", desc: "Editor-picked, highest-conviction plays." },
@@ -12,6 +19,7 @@ const cats = [
 export default function PredictionsIndex() {
   return (
     <div className="space-y-6">
+      <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Predictions", path: "/predictions" }])} />
       <h1 className="text-2xl font-bold">Predictions</h1>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {cats.map((c) => (
