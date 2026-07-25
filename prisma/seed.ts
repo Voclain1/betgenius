@@ -30,6 +30,23 @@ async function main() {
   });
 
   console.log("Seeded super admin:", email);
+
+  // Placeholders only — inactive until real affiliate URLs replace these,
+  // so the admin UI and /bet-builder's bookmaker picker have something to
+  // manage/test against before any affiliate program signup is done.
+  const placeholders = [
+    { name: "Bet9ja", affiliateUrl: "https://example.com/affiliate/bet9ja" },
+    { name: "SportyBet", affiliateUrl: "https://example.com/affiliate/sportybet" },
+    { name: "1xBet", affiliateUrl: "https://example.com/affiliate/1xbet" },
+  ];
+  for (const p of placeholders) {
+    await prisma.bookmaker.upsert({
+      where: { name: p.name },
+      update: {},
+      create: { ...p, active: false },
+    });
+  }
+  console.log("Seeded placeholder bookmakers:", placeholders.map((p) => p.name).join(", "));
 }
 
 main().finally(() => prisma.$disconnect());

@@ -14,6 +14,7 @@ const items = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/ai", label: "AI panel" },
   { href: "/admin/predictions", label: "Predictions" },
+  { href: "/admin/bookmakers", label: "Bookmakers" },
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/admins", label: "Admins" },
   { href: "/admin/tasks", label: "Tasks" },
