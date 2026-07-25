@@ -1,45 +1,12 @@
-import { cache } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
-import { PredictionCard } from "@/components/PredictionCard";
-import { PredictionsTable } from "@/components/PredictionsTable";
+import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { CATEGORY_SLUGS as SLUGS, CATEGORY_NAMES as NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
-import type { PredictionCategory } from "@/lib/enums";
-
-const SLUGS: Record<string, PredictionCategory> = {
-  featured: "FEATURED",
-  genius: "GENIUS",
-  today: "TODAY",
-  banker: "BANKER",
-  vip: "VIP",
-  premium: "PREMIUM",
-};
-
-const NAMES: Record<PredictionCategory, string> = {
-  FEATURED: "Featured tips",
-  GENIUS: "Genius tips",
-  TODAY: "Today's predictions",
-  BANKER: "Banker",
-  VIP: "VIP tips",
-  PREMIUM: "Premium tips",
-};
-
-// Shared between generateMetadata and the page body so the category's
-// predictions are only fetched once per request (React's cache() memoizes
-// by arguments within a single render pass).
-const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
-  return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", categories: { some: { category: cat } } },
-    orderBy: { publishedAt: "desc" },
-    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
-    take: 60,
-  });
-});
 
 export async function generateMetadata({ params }: { params: { category: string } }): Promise<Metadata> {
   const cat = SLUGS[params.category];
@@ -138,17 +105,7 @@ export default async function CategoryPage({ params }: { params: { category: str
         )}
       </div>
 
-      {shaped.length === 0 ? (
-        <div className="card text-gray-400">No published tips in this category yet.</div>
-      ) : cat === "TODAY" ? (
-        <PredictionsTable rows={shaped as any} />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {shaped.map((p) => (
-            <PredictionCard key={p.id} p={p as any} />
-          ))}
-        </div>
-      )}
+      <CategoryPredictionsList category={cat} rows={shaped as any} />
     </div>
   );
 }
