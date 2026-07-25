@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { leagueSlug, teamSlug } from "@/lib/slug";
 
 export type PredictionTableRow = {
   id: string;
@@ -44,9 +46,25 @@ export function PredictionsTable({ rows }: { rows: PredictionTableRow[] }) {
             return (
               <tr key={p.id} className="hover:bg-brand-card/50">
                 <td className="px-3 py-2">
-                  <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                  {leagueName ? (
+                    <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
+                      <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                    </Link>
+                  ) : (
+                    <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                  )}
                 </td>
-                <td className="px-3 py-2">{home ? `${home} vs ${away}` : "—"}</td>
+                <td className="px-3 py-2">
+                  {home ? (
+                    <>
+                      <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
+                      vs{" "}
+                      {away ? <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link> : away}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="px-3 py-2 font-semibold text-brand">{p.locked ? "LOCKED" : p.pick}</td>
                 <td className="hidden px-3 py-2 sm:table-cell">{p.overUnder ?? "—"}</td>
                 <td className="px-3 py-2 text-right">{p.odds ?? "—"}</td>

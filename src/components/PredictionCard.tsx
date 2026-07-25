@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { leagueSlug, teamSlug } from "@/lib/slug";
 
 export type PredictionRow = {
   id: string;
@@ -51,10 +53,17 @@ export function PredictionCard({ p }: { p: PredictionRow }) {
       </div>
       {(home || leagueName) && (
         <div>
-          <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />
+          {leagueName && (
+            <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`} className="hover:underline">
+              <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />
+            </Link>
+          )}
+          {!leagueName && <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />}
           {home && (
             <div className="text-lg font-semibold">
-              {home} <span className="text-gray-500">vs</span> {away}
+              <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
+              <span className="text-gray-500">vs</span>{" "}
+              {away ? <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link> : away}
             </div>
           )}
         </div>

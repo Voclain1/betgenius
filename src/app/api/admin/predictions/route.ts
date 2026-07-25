@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { setPredictionCategories } from "@/lib/predictions";
 import { MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
+import { normalizeName } from "@/lib/slug";
 import { z } from "zod";
 
 export async function GET() {
@@ -59,6 +60,12 @@ export async function POST(req: Request) {
   const p = await prisma.prediction.create({
     data: {
       ...rest,
+      // Trim/collapse whitespace so a stray double-space or trailing space
+      // can't produce a second league/team slug for what's really the same
+      // one (src/lib/slug.ts computes slugs from these fields at read time).
+      leagueName: rest.leagueName != null ? normalizeName(rest.leagueName) : rest.leagueName,
+      homeTeam: rest.homeTeam != null ? normalizeName(rest.homeTeam) : rest.homeTeam,
+      awayTeam: rest.awayTeam != null ? normalizeName(rest.awayTeam) : rest.awayTeam,
       category: categories[0],
       marketType,
       selection: marketType === "OTHER" ? undefined : selection,

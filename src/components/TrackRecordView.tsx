@@ -9,6 +9,7 @@ import {
   type WindowDays,
   type WinRateStat,
 } from "@/lib/trackRecord";
+import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 
 const CATEGORY_LABELS: Record<string, string> = {
   FEATURED: "Featured",
@@ -27,13 +28,9 @@ const MARKET_LABELS: Record<string, string> = {
   CORRECT_SCORE: "Correct Score",
 };
 
-const OUTCOME_STYLES: Record<string, string> = {
-  WON: "bg-emerald-500/20 text-emerald-300",
-  LOST: "bg-red-500/20 text-red-300",
-  VOID: "bg-gray-500/20 text-gray-300",
-};
 
-function RateCard({ stat, label, big }: { stat: WinRateStat; label: string; big?: boolean }) {
+/** Exported for reuse by the league/team scoped pages, which show the same win-rate-card shape for a single scoped stat. */
+export function RateCard({ stat, label, big }: { stat: WinRateStat; label: string; big?: boolean }) {
   const enough = stat.decided >= MIN_SETTLED_SAMPLE_SIZE;
   return (
     <div className="card">

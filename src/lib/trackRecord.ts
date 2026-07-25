@@ -24,7 +24,8 @@ export type WinRateStat = {
   rate: number | null; // 0-1, null when decided === 0
 };
 
-function computeStat(outcomes: string[]): WinRateStat {
+/** Exported for reuse by the league/team scoped pages (src/lib/predictionScope.ts) — same math, different row set. */
+export function computeStat(outcomes: string[]): WinRateStat {
   const won = outcomes.filter((o) => o === "WON").length;
   const lost = outcomes.filter((o) => o === "LOST").length;
   const voided = outcomes.filter((o) => o === "VOID").length;
