@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Lock } from "lucide-react";
+import { ArrowRight, Lock } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
@@ -9,9 +9,11 @@ import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { DashboardShell, type DashboardNavItem } from "@/components/DashboardShell";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { SubscriptionBanner } from "@/components/SubscriptionBanner";
+import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
-import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
+import { PREDICTION_CATEGORIES, type PredictionCategory, type SubscriptionStatus, type SubscriptionTier } from "@/lib/enums";
 
 export const metadata: Metadata = {
   title: "My Account",
@@ -22,33 +24,38 @@ function categoryKey(cat: PredictionCategory) {
   return cat.toLowerCase();
 }
 
+// Short form for the compact tile chips specifically — CATEGORY_NAMES's full
+// names ("Today's predictions") wrap inside a two-column mobile tile. Same
+// shorthand the main Nav already uses for its links.
+const TILE_LABELS: Record<PredictionCategory, string> = {
+  FEATURED: "Featured",
+  GENIUS: "Genius",
+  TODAY: "Today",
+  BANKER: "Banker",
+  VIP: "VIP",
+  PREMIUM: "Premium",
+};
+
 function AccountSection({
   email,
-  sub,
+  tier,
+  status,
+  currentPeriodEnd,
 }: {
   email: string;
-  sub: { tier: string; status: string; currentPeriodEnd: Date | null } | null;
+  tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  currentPeriodEnd: Date | null;
 }) {
   return (
     <div className="max-w-xl space-y-6">
       <h1 className="text-2xl font-bold">My account</h1>
+      <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
       <div className="card space-y-1">
         <div className="text-sm text-gray-400">Email</div>
         <div>{email}</div>
       </div>
-      <div className="card space-y-2">
-        <div className="text-sm text-gray-400">Subscription</div>
-        <div className="text-lg font-semibold">
-          {sub?.tier ?? "FREE"} · {sub?.status ?? "ACTIVE"}
-        </div>
-        {sub?.currentPeriodEnd && (
-          <div className="text-sm text-gray-400">Renews {new Date(sub.currentPeriodEnd).toLocaleDateString()}</div>
-        )}
-        <div className="flex gap-2 pt-2">
-          <Link href="/pricing" className="btn btn-primary">Upgrade</Link>
-          <Link href="/" className="btn btn-ghost">Back to site</Link>
-        </div>
-      </div>
+      <Link href="/" className="btn btn-ghost inline-flex">Back to site</Link>
     </div>
   );
 }
@@ -106,6 +113,76 @@ async function TrackRecordSection() {
   );
 }
 
+// Default landing view: the subscription banner (the one signature moment),
+// quick-access tiles to whatever's unlocked, and a compact recent-picks
+// preview — something actionable, not a settings form.
+async function OverviewSection({
+  tier,
+  status,
+  currentPeriodEnd,
+  unlockedCategories,
+}: {
+  tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  currentPeriodEnd: Date | null;
+  unlockedCategories: PredictionCategory[];
+}) {
+  const categoryRows = Object.fromEntries(
+    await Promise.all(
+      unlockedCategories.map(async (cat) => [cat, await getCategoryPredictions(cat)] as const),
+    ),
+  ) as Record<PredictionCategory, Awaited<ReturnType<typeof getCategoryPredictions>>>;
+
+  const previewCategory =
+    unlockedCategories.find((c) => c === "TODAY" && categoryRows[c].length > 0) ??
+    unlockedCategories.find((c) => categoryRows[c].length > 0) ??
+    unlockedCategories[0];
+
+  const previewRows = previewCategory
+    ? categoryRows[previewCategory].slice(0, 3).map((r) => ({ ...r, category: previewCategory }))
+    : [];
+
+  return (
+    <div className="space-y-8">
+      <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Your categories</h2>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+          {unlockedCategories.map((cat) => (
+            <Link
+              key={cat}
+              href={`/dashboard?section=${categoryKey(cat)}`}
+              className="group flex flex-col gap-3 rounded-2xl border border-brand-border bg-brand-card p-4 transition hover:border-brand/50 hover:bg-brand-bg/60 sm:p-5"
+            >
+              <div className="flex items-center justify-between">
+                <span className={`chip whitespace-nowrap ${catStyles[cat] ?? "bg-gray-500/20"}`}>{TILE_LABELS[cat]}</span>
+                <ArrowRight size={16} className="shrink-0 text-gray-500 transition group-hover:translate-x-0.5 group-hover:text-brand" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{categoryRows[cat].length}</div>
+                <div className="text-xs text-gray-400">live picks</div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {previewCategory && previewRows.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Recent picks</h2>
+            <Link href={`/dashboard?section=${categoryKey(previewCategory)}`} className="text-sm text-gray-400 hover:text-brand">
+              View all →
+            </Link>
+          </div>
+          <CategoryPredictionsList category={previewCategory} rows={previewRows as any} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default async function AccountDashboard({
   searchParams,
 }: {
@@ -126,8 +203,10 @@ export default async function AccountDashboard({
       canViewCategory(cat, session.user.tier, session.user.subStatus, session.user.role),
     ]),
   ) as Record<PredictionCategory, boolean>;
+  const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
 
   const navItems: DashboardNavItem[] = [
+    { key: "overview", href: "/dashboard?section=overview", label: "Overview" },
     ...PREDICTION_CATEGORIES.map((cat) => ({
       key: categoryKey(cat),
       href: `/dashboard?section=${categoryKey(cat)}`,
@@ -140,12 +219,24 @@ export default async function AccountDashboard({
 
   const validKeys = new Set(navItems.map((i) => i.key));
   const requested = searchParams.section?.toLowerCase();
-  const activeKey = requested && validKeys.has(requested) ? requested : "account";
+  const activeKey = requested && validKeys.has(requested) ? requested : "overview";
 
   let content: ReactNode;
+  let title: string;
   const activeCategory = PREDICTION_CATEGORIES.find((cat) => categoryKey(cat) === activeKey);
 
-  if (activeCategory) {
+  if (activeKey === "overview") {
+    title = "Overview";
+    content = (
+      <OverviewSection
+        tier={session.user.tier}
+        status={session.user.subStatus}
+        currentPeriodEnd={sub?.currentPeriodEnd ?? null}
+        unlockedCategories={unlockedCategories}
+      />
+    );
+  } else if (activeCategory) {
+    title = CATEGORY_NAMES[activeCategory];
     const canView = canViewMap[activeCategory];
     if (!canView) {
       content = <LockedCategorySection category={activeCategory} />;
@@ -168,13 +259,22 @@ export default async function AccountDashboard({
       );
     }
   } else if (activeKey === "track-record") {
+    title = "Track Record";
     content = <TrackRecordSection />;
   } else {
-    content = <AccountSection email={session.user.email} sub={sub} />;
+    title = "Account";
+    content = (
+      <AccountSection
+        email={session.user.email}
+        tier={session.user.tier}
+        status={session.user.subStatus}
+        currentPeriodEnd={sub?.currentPeriodEnd ?? null}
+      />
+    );
   }
 
   return (
-    <DashboardShell items={navItems} activeKey={activeKey} userEmail={session.user.email}>
+    <DashboardShell items={navItems} activeKey={activeKey} title={title} userEmail={session.user.email}>
       {content}
     </DashboardShell>
   );

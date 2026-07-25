@@ -26,7 +26,7 @@ export type PredictionRow = {
   } | null;
 };
 
-const catStyles: Record<string, string> = {
+export const catStyles: Record<string, string> = {
   FEATURED: "bg-brand/20 text-brand",
   GENIUS: "bg-blue-500/20 text-blue-300",
   TODAY: "bg-emerald-500/20 text-emerald-300",

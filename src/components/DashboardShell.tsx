@@ -23,11 +23,13 @@ function isMobileViewport() {
 export function DashboardShell({
   items,
   activeKey,
+  title,
   userEmail,
   children,
 }: {
   items: DashboardNavItem[];
   activeKey: string;
+  title: string;
   userEmail: string;
   children: ReactNode;
 }) {
@@ -121,18 +123,19 @@ export function DashboardShell({
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <div className="flex items-center gap-3 border-b border-brand-border p-4">
+        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-brand-border bg-black/40 px-4 py-3 backdrop-blur">
           <button
             type="button"
             aria-label="Toggle sidebar"
+            aria-expanded={mobileOpen}
             onClick={toggleSidebar}
             className="btn btn-ghost p-2"
           >
             <Menu size={18} />
           </button>
-          <span className="font-semibold">My account</span>
+          <span className="font-semibold">{title}</span>
         </div>
-        <main className="flex-1 space-y-6 p-6">{children}</main>
+        <main className="flex-1 space-y-6 p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );
