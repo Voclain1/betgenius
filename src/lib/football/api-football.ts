@@ -58,7 +58,7 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
 }
 
 export type FixtureRow = {
-  fixture: { id: number; date: string; status: { short: string }; venue?: { name?: string } };
+  fixture: { id: number; date: string; status: { short: string; elapsed?: number | null }; venue?: { name?: string } };
   league: { id: number; name: string; country: string; logo?: string; season: number };
   teams: {
     home: { id: number; name: string; logo?: string };
@@ -140,10 +140,19 @@ export async function getStandings(leagueId: number, season: number) {
  * often share a substring with the senior team's name (e.g. "Luton" also
  * matching "Luton Town U21").
  */
-export async function searchTeam(name: string) {
+export type TeamSearchResult = { id: number; name: string; confident: boolean };
+
+/**
+ * `confident` is true when the match is unambiguous enough to trust the
+ * API's own spelling of the name for display (single result, or an
+ * exact/prefix name match among several) — see generateAndPersistPrediction,
+ * which only overwrites the typed/AI-generated homeTeam/awayTeam with this
+ * name when confident, falling back to the original text otherwise.
+ */
+export async function searchTeam(name: string): Promise<TeamSearchResult | null> {
   const raw = await apiFetch<Array<{ team: { id: number; name: string } }>>("/teams", { search: name });
   if (!raw?.length) return null;
-  if (raw.length === 1) return raw[0].team.id;
+  if (raw.length === 1) return { id: raw[0].team.id, name: raw[0].team.name, confident: true };
 
   const junkPattern = /\b(u1\d|u2[0-3]|w|women|reserves?|ii)\b/i;
   const normalized = name.trim().toLowerCase();
@@ -153,10 +162,11 @@ export async function searchTeam(name: string) {
     if (rn === normalized) score += 100;
     else if (rn.startsWith(normalized) || normalized.startsWith(rn)) score += 50;
     if (junkPattern.test(r.team.name)) score -= 200;
-    return { id: r.team.id, score };
+    return { id: r.team.id, name: r.team.name, score };
   });
   scored.sort((a, b) => b.score - a.score);
-  return scored[0]?.id ?? raw[0].team.id;
+  const best = scored[0] ?? { id: raw[0].team.id, name: raw[0].team.name, score: 0 };
+  return { id: best.id, name: best.name, confident: best.score >= 50 };
 }
 
 /** Team & fixture "form" input for the AI prompt. */
