@@ -22,6 +22,7 @@ datasource db {
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
+  emailVerified  DateTime? // Required by PrismaAdapter's AdapterUser shape — every OAuth createUser() call includes it (null for a fresh sign-up), even though nothing here reads it back. Missing this column is what throws Prisma's "Unknown argument `emailVerified`" and surfaces as NextAuth's generic OAuthCreateAccount error.
   passwordHash   String?
   name           String?
   image          String?
