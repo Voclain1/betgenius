@@ -1,8 +1,16 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Lock } from "lucide-react";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { canViewCategory } from "@/lib/access";
 import { PredictionsTable } from "@/components/PredictionsTable";
+import { LeagueBadge } from "@/components/LeagueBadge";
+import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
+import { leagueSlug, teamSlug } from "@/lib/slug";
+import type { PredictionCategory } from "@/lib/enums";
 
 export const revalidate = 60;
 
@@ -20,8 +28,35 @@ async function fetchFeatured() {
   });
 }
 
+// Same shape as fetchFeatured — just GENIUS, capped at 3 for the homepage excerpt.
+async function fetchGeniusPreview() {
+  return prisma.prediction.findMany({
+    where: { status: "PUBLISHED", categories: { some: { category: "GENIUS" } } },
+    orderBy: { publishedAt: "desc" },
+    take: 3,
+    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
+  });
+}
+
+const CATEGORY_LINKS: { label: string; slug: string }[] = [
+  { label: "Banker", slug: "banker" },
+  { label: "Today", slug: "today" },
+  { label: "Premium", slug: "premium" },
+  { label: "VIP", slug: "vip" },
+];
+
 export default async function HomePage() {
-  const featured = await fetchFeatured();
+  const [featured, geniusPreview, session] = await Promise.all([fetchFeatured(), fetchGeniusPreview(), getServerSession(authOptions)]);
+
+  // A row can be cross-posted from a paywalled category into GENIUS — gate
+  // per row on its own primary category (same as B1's league/team pages),
+  // not on GENIUS itself (which is always publicly viewable), so a locked
+  // VIP/PREMIUM pick never leaks through this homepage teaser.
+  const genius = geniusPreview.map((r) => {
+    const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
+    return canView ? { ...r, locked: false } : { ...r, pick: "LOCKED", confidence: null, locked: true };
+  });
+
   return (
     <div className="space-y-10">
       <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-8 md:p-12">
@@ -34,6 +69,90 @@ export default async function HomePage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/predictions/today" className="btn btn-primary">Today's tips</Link>
           <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        {genius.length > 0 && (
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Genius tips</h2>
+            </div>
+            <div className="overflow-x-auto rounded-xl border border-brand-border">
+              <table className="w-full text-sm">
+                <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
+                  <tr>
+                    <th className="px-3 py-2">Match</th>
+                    <th className="px-3 py-2">League</th>
+                    <th className="px-3 py-2">Market / Pick</th>
+                    <th className="px-3 py-2 text-right">Confidence</th>
+                    <th className="px-3 py-2 text-right">Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-border">
+                  {genius.map((p) => {
+                    const home = p.homeTeam ?? p.fixture?.homeTeam.name;
+                    const away = p.awayTeam ?? p.fixture?.awayTeam.name;
+                    const leagueName = p.leagueName ?? p.fixture?.league.name;
+                    const kickoff = p.kickoff ?? p.fixture?.kickoff;
+                    return (
+                      <tr key={p.id} className="hover:bg-brand-card/50">
+                        <td className="px-3 py-2">
+                          {home && away ? (
+                            <>
+                              <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
+                              <span className="text-gray-500">vs</span>{" "}
+                              <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {leagueName ? (
+                            <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
+                              <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                            </Link>
+                          ) : (
+                            <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-brand flex items-center gap-1">
+                            {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
+                          </div>
+                          <div className="text-xs text-gray-400">{p.market}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                        <td className="px-3 py-2 text-right">
+                          {p.outcome !== "PENDING" ? (
+                            <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? "bg-brand-border"}`}>{p.outcome}</span>
+                          ) : kickoff ? (
+                            <span className="text-xs text-gray-400">
+                              {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4">
+              <Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3">
+          {CATEGORY_LINKS.map((c) => (
+            <Link key={c.slug} href={`/predictions/${c.slug}`} className="btn btn-ghost">
+              {c.label}
+            </Link>
+          ))}
         </div>
       </section>
 
