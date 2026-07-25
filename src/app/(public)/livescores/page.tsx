@@ -1,56 +1,97 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { StatusTabs, LeagueGroup, groupByLeague, EmptyState } from "@/components/MatchList";
+import { classifyStatus, type MatchStatusGroup } from "@/lib/matchStatus";
+import type { FixtureRow } from "@/lib/football/api-football";
 
-type Fx = {
-  fixture: { id: number; status: { short: string } };
-  league: { name: string; country: string };
-  teams: { home: { name: string }; away: { name: string } };
-  goals: { home: number | null; away: number | null };
-};
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function LivescoresPage() {
-  const [rows, setRows] = useState<Fx[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dateRows, setDateRows] = useState<FixtureRow[]>([]);
+  const [liveRows, setLiveRows] = useState<FixtureRow[]>([]);
+  // Tracked as two independent flags rather than one shared `loading` flag
+  // set by whichever fetch happens to finish first — in dev, React Strict
+  // Mode double-invokes this effect, so the two calls can settle in either
+  // order; gating on "both have completed at least once" is the only
+  // ordering-independent way to know the initial data is trustworthy.
+  const [dateLoaded, setDateLoaded] = useState(false);
+  const [liveLoaded, setLiveLoaded] = useState(false);
+  const loading = !dateLoaded || !liveLoaded;
+  const [tab, setTab] = useState<MatchStatusGroup>("live");
 
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    const loadDate = async () => {
+      const res = await fetch(`/api/fixtures?date=${todayIso()}`);
+      const j = await res.json();
+      if (alive) {
+        setDateRows(j.fixtures || []);
+        setDateLoaded(true);
+      }
+    };
+    const loadLive = async () => {
       const res = await fetch("/api/livescores");
       const j = await res.json();
       if (alive) {
-        setRows(j.live || []);
-        setLoading(false);
+        setLiveRows(j.live || []);
+        setLiveLoaded(true);
       }
     };
-    load();
-    const t = setInterval(load, 20_000);
+    loadDate();
+    loadLive();
+    const liveTimer = setInterval(loadLive, 20_000);
+    const dateTimer = setInterval(loadDate, 60_000);
     return () => {
       alive = false;
-      clearInterval(t);
+      clearInterval(liveTimer);
+      clearInterval(dateTimer);
     };
   }, []);
 
+  // Today's full slate (/api/fixtures?date=today) is the base — it's what
+  // makes Upcoming/Finished tabs possible at all, since /api/livescores only
+  // ever returns matches currently in play. The dedicated live feed is
+  // overlaid on top for fresher scores/minutes between the slower date-poll,
+  // and to catch a live match that started today but has crossed into a new
+  // calendar date by kickoff-timezone (date-query would miss it otherwise).
+  const merged = useMemo(() => {
+    const byId = new Map<number, FixtureRow>();
+    for (const r of dateRows) byId.set(r.fixture.id, r);
+    for (const r of liveRows) byId.set(r.fixture.id, r);
+    return Array.from(byId.values());
+  }, [dateRows, liveRows]);
+
+  const counts = useMemo(() => {
+    const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
+    for (const r of merged) c[classifyStatus(r.fixture.status.short)]++;
+    return c;
+  }, [merged]);
+
+  const filtered = useMemo(() => merged.filter((r) => classifyStatus(r.fixture.status.short) === tab), [merged, tab]);
+  const groups = useMemo(() => groupByLeague(filtered), [filtered]);
+
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Livescores</h1>
-      {loading && <div className="card text-gray-400">Loading live fixtures…</div>}
-      {!loading && rows.length === 0 && (
-        <div className="card text-gray-400">
-          No live matches right now (or API-Football key not configured).
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold">Livescores</h1>
+        <StatusTabs active={tab} onChange={setTab} counts={counts} />
+      </div>
+
+      {loading && <EmptyState>Loading fixtures…</EmptyState>}
+      {!loading && groups.length === 0 && (
+        <EmptyState>
+          {tab === "live"
+            ? "No live matches right now (or API-Football key not configured)."
+            : tab === "upcoming"
+              ? "No upcoming matches scheduled for today."
+              : "No finished matches yet today."}
+        </EmptyState>
       )}
-      <div className="grid gap-3 md:grid-cols-2">
-        {rows.map((r) => (
-          <div key={r.fixture.id} className="card flex items-center justify-between">
-            <div>
-              <div className="text-xs text-gray-400">{r.league.country} · {r.league.name}</div>
-              <div className="font-medium">{r.teams.home.name} vs {r.teams.away.name}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold">{r.goals.home ?? 0} – {r.goals.away ?? 0}</div>
-              <div className="text-xs text-brand">{r.fixture.status.short}</div>
-            </div>
-          </div>
+      <div className="space-y-4">
+        {groups.map((g) => (
+          <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} />
         ))}
       </div>
     </div>

@@ -62,6 +62,12 @@ export const LEAGUE_TIER_LABELS: Record<string, string> = {
 
 export type LeagueVisual = { src: string; alt: string; name: string; country: string };
 
+/** True if `leagueApiId` is in the curated MAJOR_LEAGUES list — used to default the Fixtures/Livescores pages to a manageable set rather than every league API-Football returns. */
+export function isMajorLeague(leagueApiId?: number | null): boolean {
+  if (leagueApiId == null) return false;
+  return MAJOR_LEAGUES.some((l) => l.id === leagueApiId);
+}
+
 /** Competition crest — used for cup/international entries, and as a fallback. */
 export function leagueLogoUrl(id: number): string {
   return `https://media.api-sports.io/football/leagues/${id}.png`;
