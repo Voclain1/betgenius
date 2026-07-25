@@ -214,6 +214,11 @@ export default async function AccountDashboard({
       locked: !canViewMap[cat],
     })),
     { key: "track-record", href: "/dashboard?section=track-record", label: "Track Record" },
+    // Links out to the existing standalone page rather than duplicating it as
+    // a ?section= — Bet Builder's client-side state (legs, stake, source
+    // tabs) doesn't fit the server-rendered section model the other items
+    // use, and there's no reason to maintain two copies of the same page.
+    { key: "bet-builder", href: "/bet-builder", label: "Bet Builder" },
     { key: "account", href: "/dashboard?section=account", label: "Account" },
   ];
 

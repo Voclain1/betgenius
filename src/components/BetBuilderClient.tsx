@@ -58,7 +58,7 @@ export function BetBuilderClient({
   };
 
   return (
-    <div className="grid gap-6 md:grid-cols-3">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
       <div className="space-y-4 md:col-span-2">
         <h1 className="text-2xl font-bold">Bet builder</h1>
 
@@ -83,7 +83,7 @@ export function BetBuilderClient({
 
           {source === "manual" ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="text-sm">Match
                   <input value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value, id: crypto.randomUUID() })}
                     placeholder="Arsenal vs Chelsea"
@@ -178,12 +178,12 @@ export function BetBuilderClient({
           ) : (
             <ul className="divide-y divide-brand-border">
               {legs.map((l) => (
-                <li key={l.id} className="flex items-center justify-between py-2 text-sm">
-                  <div>
-                    <div className="font-medium">{l.label}</div>
-                    <div className="text-gray-400">{l.market} — {l.pick}</div>
+                <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{l.label}</div>
+                    <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     <span className="text-brand">{l.odds.toFixed(2)}</span>
                     <button onClick={() => setLegs(legs.filter((x) => x.id !== l.id))}
                       className="text-xs text-gray-400 hover:text-red-400">Remove</button>
