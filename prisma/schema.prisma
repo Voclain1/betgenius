@@ -37,6 +37,32 @@ model User {
   createdTasks   AdminTask[]   @relation("CreatedBy")
   betSlips       BetSlip[]
   aiJobs         AIJob[]
+  accounts       Account[]
+}
+
+// OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
+// any non-Credentials provider; the Credentials provider never touches this
+// table since it authenticates via passwordHash, not adapter account-linking.
+// No Session model: session strategy is "jwt" (src/lib/auth.ts), so NextAuth
+// never persists DB-backed sessions and the adapter's session methods are
+// never called.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
 }
 
 model Subscription {
