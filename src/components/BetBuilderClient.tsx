@@ -1,13 +1,12 @@
 "use client";
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { Lock } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { TipsPicker, type TipCategory, type TipOption } from "@/components/TipsPicker";
+import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
+
+export type { TipCategory, TipOption, BookmakerOption };
 
 type Leg = { id: string; label: string; market: string; pick: string; odds: number };
-
-export type TipOption = { id: string; label: string; market: string; pick: string; odds: number };
-export type TipCategory = { key: string; label: string; locked: boolean; options: TipOption[] };
-export type BookmakerOption = { id: string; name: string; affiliateUrl: string; logoUrl: string | null };
 
 function formatSummary(legs: Leg[]) {
   if (legs.length === 0) return "No legs added yet.";
@@ -23,28 +22,75 @@ export function BetBuilderClient({
   categories: TipCategory[];
   bookmakers: BookmakerOption[];
 }) {
+  const searchParams = useSearchParams();
   const [legs, setLegs] = useState<Leg[]>([]);
   const [stake, setStake] = useState(10);
   const [source, setSource] = useState<"manual" | "tips">("manual");
   const [draft, setDraft] = useState<Leg>({ id: "", label: "", market: "1X2", pick: "Home", odds: 1.9 });
-  const [activeCategory, setActiveCategory] = useState(
-    () => categories.find((c) => !c.locked)?.key ?? categories[0]?.key,
-  );
   const [bookmakerId, setBookmakerId] = useState(bookmakers[0]?.id ?? "");
   const [copied, setCopied] = useState(false);
 
   const total = useMemo(() => legs.reduce((a, l) => a * l.odds, 1), [legs]);
   const potential = total * stake;
   const legIds = useMemo(() => new Set(legs.map((l) => l.id)), [legs]);
-  const category = categories.find((c) => c.key === activeCategory);
   const selectedBookmaker = bookmakers.find((b) => b.id === bookmakerId);
   const summaryText = formatSummary(legs);
   const canContinue = legs.length > 0 && !!selectedBookmaker;
 
   const addTip = (opt: TipOption) => {
     if (legIds.has(opt.id)) return;
-    setLegs([...legs, { id: opt.id, label: opt.label, market: opt.market, pick: opt.pick, odds: opt.odds }]);
+    // Functional update so rapid successive adds can't read the same stale
+    // `legs` and have the second silently overwrite the first.
+    setLegs((prev) => [...prev, { id: opt.id, label: opt.label, market: opt.market, pick: opt.pick, odds: opt.odds }]);
   };
+
+  // Kept in sync so the combo-loading effect below can read the current
+  // slip without depending on `legs` (which would re-run it on every add/remove).
+  const legsRef = useRef(legs);
+  useEffect(() => {
+    legsRef.current = legs;
+  }, [legs]);
+
+  // /combos "Add to slip" navigates here with ?combo=<id> — load its legs
+  // into the slip on arrival. If the visitor already has legs in progress,
+  // confirm before replacing rather than silently discarding their work.
+  useEffect(() => {
+    const comboId = searchParams.get("combo");
+    if (!comboId) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch(`/api/combos/${comboId}`);
+      if (!res.ok || cancelled) return;
+      const { combo } = await res.json();
+      const current = legsRef.current;
+      if (
+        current.length > 0 &&
+        !window.confirm(`Replace your current ${current.length} leg(s) with "${combo.title}"?`)
+      ) {
+        window.history.replaceState(null, "", "/bet-builder");
+        return;
+      }
+      const newLegs: Leg[] = combo.legs.map((l: any) => ({
+        id: l.id,
+        label: l.matchLabel,
+        market: l.market,
+        pick: l.pick,
+        odds: l.odds,
+      }));
+      setLegs(newLegs);
+      setSource("manual");
+      // Plain history API, not next/navigation's router — router.replace()
+      // triggers an RSC round-trip that remounts this component and wipes
+      // the legs we just set before they ever paint. This only needs to
+      // clean the URL bar, not re-render anything server-side.
+      window.history.replaceState(null, "", "/bet-builder");
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only ever act on the URL's initial ?combo= value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const copySummary = async () => {
     try {
@@ -108,66 +154,12 @@ export function BetBuilderClient({
               <button className="btn btn-primary"
                 onClick={() => {
                   if (!draft.label) return;
-                  setLegs([...legs, { ...draft, id: crypto.randomUUID() }]);
+                  setLegs((prev) => [...prev, { ...draft, id: crypto.randomUUID() }]);
                   setDraft({ ...draft, label: "", pick: "Home" });
                 }}>Add leg</button>
             </>
           ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {categories.map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    onClick={() => setActiveCategory(c.key)}
-                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                      activeCategory === c.key
-                        ? "bg-brand text-black"
-                        : c.locked
-                          ? "bg-brand-bg text-gray-500 hover:bg-brand-border"
-                          : "bg-brand-bg text-gray-300 hover:bg-brand-border"
-                    }`}
-                  >
-                    {c.label}
-                    {c.locked && <Lock size={11} className="shrink-0" />}
-                  </button>
-                ))}
-              </div>
-
-              {category?.locked ? (
-                <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-border bg-brand-bg py-8 text-center">
-                  <Lock size={22} className="text-gray-500" />
-                  <p className="text-sm text-gray-400">Subscribe to unlock {category.label}.</p>
-                  <Link href="/pricing" className="btn btn-primary text-sm">Upgrade</Link>
-                </div>
-              ) : category && category.options.length === 0 ? (
-                <p className="py-4 text-sm text-gray-400">No published tips in this category yet.</p>
-              ) : (
-                <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-lg border border-brand-border">
-                  {category?.options.map((opt) => {
-                    const added = legIds.has(opt.id);
-                    return (
-                      <li key={opt.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                        <div className="min-w-0">
-                          <div className="truncate font-medium">{opt.label}</div>
-                          <div className="truncate text-gray-400">{opt.market} — {opt.pick}</div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-brand">{opt.odds.toFixed(2)}</span>
-                          <button
-                            onClick={() => addTip(opt)}
-                            disabled={added}
-                            className={`text-xs ${added ? "text-gray-500" : "text-brand hover:underline"}`}
-                          >
-                            {added ? "Added" : "Add"}
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
+            <TipsPicker categories={categories} addedIds={legIds} onAdd={addTip} />
           )}
         </div>
 
@@ -185,7 +177,7 @@ export function BetBuilderClient({
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <span className="text-brand">{l.odds.toFixed(2)}</span>
-                    <button onClick={() => setLegs(legs.filter((x) => x.id !== l.id))}
+                    <button onClick={() => setLegs((prev) => prev.filter((x) => x.id !== l.id))}
                       className="text-xs text-gray-400 hover:text-red-400">Remove</button>
                   </div>
                 </li>
@@ -218,16 +210,12 @@ export function BetBuilderClient({
                   {bookmakers.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </label>
-              <a
-                href={canContinue ? selectedBookmaker!.affiliateUrl : undefined}
-                target="_blank"
-                rel="noopener noreferrer sponsored"
-                aria-disabled={!canContinue}
-                onClick={(e) => { if (!canContinue) e.preventDefault(); }}
-                className={`btn btn-primary w-full justify-center ${canContinue ? "" : "pointer-events-none opacity-50"}`}
-              >
-                Continue to {selectedBookmaker?.name ?? "bookmaker"}
-              </a>
+              <BookmakerJoinButton
+                bookmaker={selectedBookmaker ?? bookmakers[0]}
+                disabled={!canContinue}
+                label={`Continue to ${selectedBookmaker?.name ?? "bookmaker"}`}
+                className="w-full"
+              />
             </>
           )}
 

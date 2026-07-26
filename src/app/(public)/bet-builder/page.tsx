@@ -1,10 +1,12 @@
+import { Suspense } from "react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { CATEGORY_NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
-import { BetBuilderClient, type TipCategory, type TipOption } from "@/components/BetBuilderClient";
+import { BetBuilderClient } from "@/components/BetBuilderClient";
+import type { TipCategory, TipOption } from "@/components/TipsPicker";
 
 export default async function BetBuilderPage() {
   const session = await getServerSession(authOptions);
@@ -57,5 +59,9 @@ export default async function BetBuilderPage() {
     select: { id: true, name: true, affiliateUrl: true, logoUrl: true },
   });
 
-  return <BetBuilderClient categories={categories} bookmakers={bookmakers} />;
+  return (
+    <Suspense fallback={null}>
+      <BetBuilderClient categories={categories} bookmakers={bookmakers} />
+    </Suspense>
+  );
 }

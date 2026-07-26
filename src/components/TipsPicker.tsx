@@ -1,0 +1,83 @@
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { Lock } from "lucide-react";
+
+export type TipOption = { id: string; label: string; market: string; pick: string; odds: number };
+export type TipCategory = { key: string; label: string; locked: boolean; options: TipOption[] };
+
+// The "pick from our tips" UI — shared between Bet Builder's manual slip
+// builder and the admin Combo editor's leg picker so both stay pixel-for-
+// pixel identical instead of drifting into two versions of the same list.
+export function TipsPicker({
+  categories,
+  addedIds,
+  onAdd,
+}: {
+  categories: TipCategory[];
+  addedIds: Set<string>;
+  onAdd: (opt: TipOption) => void;
+}) {
+  const [activeCategory, setActiveCategory] = useState(
+    () => categories.find((c) => !c.locked)?.key ?? categories[0]?.key,
+  );
+  const category = categories.find((c) => c.key === activeCategory);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {categories.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => setActiveCategory(c.key)}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+              activeCategory === c.key
+                ? "bg-brand text-black"
+                : c.locked
+                  ? "bg-brand-bg text-gray-500 hover:bg-brand-border"
+                  : "bg-brand-bg text-gray-300 hover:bg-brand-border"
+            }`}
+          >
+            {c.label}
+            {c.locked && <Lock size={11} className="shrink-0" />}
+          </button>
+        ))}
+      </div>
+
+      {category?.locked ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-border bg-brand-bg py-8 text-center">
+          <Lock size={22} className="text-gray-500" />
+          <p className="text-sm text-gray-400">Subscribe to unlock {category.label}.</p>
+          <Link href="/pricing" className="btn btn-primary text-sm">Upgrade</Link>
+        </div>
+      ) : category && category.options.length === 0 ? (
+        <p className="py-4 text-sm text-gray-400">No published tips in this category yet.</p>
+      ) : (
+        <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-lg border border-brand-border">
+          {category?.options.map((opt) => {
+            const added = addedIds.has(opt.id);
+            return (
+              <li key={opt.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{opt.label}</div>
+                  <div className="truncate text-gray-400">{opt.market} — {opt.pick}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="text-brand">{opt.odds.toFixed(2)}</span>
+                  <button
+                    onClick={() => onAdd(opt)}
+                    disabled={added}
+                    className={`text-xs ${added ? "text-gray-500" : "text-brand hover:underline"}`}
+                  >
+                    {added ? "Added" : "Add"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

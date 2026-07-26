@@ -17,6 +17,7 @@ const links = [
   { href: "/fixtures", label: "Fixtures" },
   { href: "/standings", label: "Standings" },
   { href: "/bet-builder", label: "Bet Builder" },
+  { href: "/combos", label: "Combos" },
   { href: "/statspad", label: "StatsPad" },
 ];
 

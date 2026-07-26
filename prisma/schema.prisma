@@ -278,3 +278,37 @@ model Bookmaker {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+// Editorially curated accumulator (like WinDrawWin's daily combos) — gated as
+// a whole by `category` (reuses PredictionCategory), not per leg. Feeds into
+// Bet Builder's existing slip state via /bet-builder?combo=<id>.
+model Combo {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  category    String // PredictionCategory — gates the whole combo
+  published   Boolean    @default(false)
+  legs        ComboLeg[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([category, published])
+}
+
+// Legs are snapshotted (matchLabel/market/pick/odds) at creation time rather
+// than a live relation — a combo shouldn't silently change if the source
+// Prediction is later edited or re-settled. `predictionId` is kept only for
+// admin traceability, not a FK, so it survives the source row being deleted.
+model ComboLeg {
+  id           String  @id @default(cuid())
+  comboId      String
+  combo        Combo   @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  matchLabel   String
+  market       String
+  pick         String
+  odds         Float
+  predictionId String?
+  order        Int     @default(0)
+
+  @@index([comboId])
+}
