@@ -111,18 +111,19 @@ export async function resolveSeason(leagueId: number, date: Date): Promise<numbe
   return date.getUTCMonth() >= 6 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
 }
 
+/** One team's row within a league's standings table. */
+export type StandingsEntry = {
+  rank: number;
+  team: { id: number; name: string; logo?: string };
+  points: number;
+  goalsDiff: number;
+  form?: string;
+  all: { played: number; win: number; draw: number; lose: number; goals: { for: number; against: number } };
+};
+
 export type StandingRow = {
   league: {
-    standings: Array<
-      Array<{
-        rank: number;
-        team: { id: number; name: string; logo?: string };
-        points: number;
-        goalsDiff: number;
-        form?: string;
-        all: { played: number; win: number; draw: number; lose: number; goals: { for: number; against: number } };
-      }>
-    >;
+    standings: StandingsEntry[][];
   };
 };
 
@@ -167,6 +168,17 @@ export async function searchTeam(name: string): Promise<TeamSearchResult | null>
   scored.sort((a, b) => b.score - a.score);
   const best = scored[0] ?? { id: raw[0].team.id, name: raw[0].team.name, score: 0 };
   return { id: best.id, name: best.name, confident: best.score >= 50 };
+}
+
+/**
+ * Crest lookup by id. searchTeam() (name-based, used at generation time) never
+ * captures a logo; this id-based lookup backs the enrichment cache refresh
+ * (src/lib/enrichment.ts), which always has an already-resolved team id.
+ */
+export async function getTeamById(teamId: number): Promise<{ id: number; name: string; logo: string | null } | null> {
+  const raw = await apiFetch<Array<{ team: { id: number; name: string; logo?: string } }>>("/teams", { id: teamId });
+  if (!raw?.[0]) return null;
+  return { id: raw[0].team.id, name: raw[0].team.name, logo: raw[0].team.logo ?? null };
 }
 
 /** Team & fixture "form" input for the AI prompt. */

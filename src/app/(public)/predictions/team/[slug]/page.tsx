@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
+import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
 import { getPublishedByTeamSlug } from "@/lib/predictionScope";
 import { teamSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
@@ -16,6 +17,15 @@ function resolveTeamName(rows: { homeTeam: string | null; awayTeam: string | nul
     if (r.awayTeam && teamSlug(r.awayTeam) === slug) return r.awayTeam;
   }
   return slug;
+}
+
+/** Same matching as resolveTeamName, but for the API id feeding TeamEnrichmentPanel — most recent row wins if spellings/ids ever disagree. */
+function resolveTeamApiId(rows: { homeTeam: string | null; awayTeam: string | null; homeTeamApiId: number | null; awayTeamApiId: number | null }[], slug: string): number | null {
+  for (const r of rows) {
+    if (r.homeTeam && teamSlug(r.homeTeam) === slug && r.homeTeamApiId != null) return r.homeTeamApiId;
+    if (r.awayTeam && teamSlug(r.awayTeam) === slug && r.awayTeamApiId != null) return r.awayTeamApiId;
+  }
+  return null;
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -57,6 +67,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
   }
 
   const name = resolveTeamName(rows, params.slug);
+  const teamApiId = resolveTeamApiId(rows, params.slug);
 
   const session = await getServerSession(authOptions);
   const shaped = rows.map((r) => {
@@ -86,6 +97,8 @@ export default async function TeamPage({ params }: { params: { slug: string } })
         <h1 className="text-2xl font-bold">{name}</h1>
         <p className="text-sm text-gray-400">{rows.length} published picks</p>
       </div>
+
+      <TeamEnrichmentPanel teamApiId={teamApiId} />
 
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time for ${name}`} big />

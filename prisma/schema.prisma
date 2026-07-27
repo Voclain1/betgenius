@@ -144,6 +144,51 @@ model Standing {
   @@unique([leagueId, teamId])
 }
 
+// Team/league enrichment (crest, form, stats, standings) for the public
+// team/league pages — independent of the dormant Team/League/Standing models
+// above (which nothing writes to). Keyed by API-Football id, refreshed on a
+// cron (src/app/api/admin/refresh-enrichment/route.ts), read-only from pages
+// (src/lib/predictionScope.ts) — pages never call the football API live.
+//
+// `fetchedAt` is set ONLY on a successful refresh and is the sole signal a
+// page checks to decide whether to render: null = no real data yet (hide the
+// section), non-null = render + show "Updated {fetchedAt}". A failed refresh
+// (including today's expected "Free plans do not have access..." case) only
+// ever updates `lastAttemptAt`/`lastError` — it never touches `fetchedAt` or
+// the data columns, so a later transient failure can't blank out
+// previously-good cached data.
+model TeamEnrichmentCache {
+  id            String    @id @default(cuid())
+  teamApiId     Int       @unique
+  teamName      String? // last-known display name — debug/admin only, never used to key lookups
+  leagueApiId   Int? // representative league used to fetch season-scoped stats
+  season        Int?
+  crestUrl      String?
+  form          String? // e.g. "WWDLW", from /teams/statistics
+  statsJson     Json?
+  lastFixtures  Json?
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lastAttemptAt])
+}
+
+model LeagueEnrichmentCache {
+  id            String    @id @default(cuid())
+  leagueApiId   Int       @unique
+  season        Int?
+  standingsJson Json?
+  upcomingJson  Json?
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lastAttemptAt])
+}
+
 model Prediction {
   id           String    @id @default(cuid())
   fixtureId    String?
@@ -154,6 +199,8 @@ model Prediction {
   leagueName   String?
   homeTeam     String? // free-text match info — not tied to the Fixture ingestion table
   awayTeam     String?
+  homeTeamApiId Int? // API-Football team id, resolved via searchTeam() in generate.ts — persisted so the enrichment refresh job (src/lib/enrichment.ts) never needs to re-guess a name→id match
+  awayTeamApiId Int?
   kickoff      DateTime?
   status       String    @default("DRAFT")
   // market/pick/overUnder below are DISPLAY strings — for every marketType

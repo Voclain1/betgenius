@@ -1,0 +1,80 @@
+import { getTeamEnrichment } from "@/lib/predictionScope";
+import { formatRelativeTime } from "@/lib/time";
+import type { TeamStatsSummary, TeamFixtureSummary } from "@/lib/enrichment";
+
+const resultStyles: Record<string, string> = {
+  W: "bg-emerald-500/20 text-emerald-300",
+  D: "bg-gray-500/20 text-gray-300",
+  L: "bg-red-500/20 text-red-300",
+  "?": "bg-gray-500/10 text-gray-500",
+};
+
+/**
+ * Crest/form/stats for a team page. Renders nothing at all (not an empty
+ * card) when no successful cache refresh has landed yet — see
+ * getTeamEnrichment in predictionScope.ts for what "no successful refresh"
+ * covers (never attempted, or attempted and failed, e.g. today's free-plan
+ * rejection — both look the same to this component).
+ */
+export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | null }) {
+  const row = await getTeamEnrichment(teamApiId);
+  if (!row) return null;
+
+  const stats = (row.statsJson as unknown as TeamStatsSummary | null) ?? null;
+  const fixtures = (row.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null;
+  const hasStatTiles = stats && (stats.played != null || stats.goalsFor != null);
+
+  if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length) return null;
+
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {row.crestUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={row.crestUrl}
+              alt=""
+              width={28}
+              height={28}
+              className="shrink-0 rounded-sm object-contain"
+            />
+          )}
+          <span className="text-sm font-medium text-gray-300">Team form</span>
+        </div>
+        {row.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(row.fetchedAt)}</span>}
+      </div>
+
+      {fixtures && fixtures.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          {fixtures.map((f, i) => (
+            <span
+              key={i}
+              title={`vs ${f.opponent} (${f.venue}) — ${f.result}`}
+              className={`flex h-6 w-6 items-center justify-center rounded text-[11px] font-semibold ${resultStyles[f.result] ?? resultStyles["?"]}`}
+            >
+              {f.result}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {hasStatTiles && (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-md bg-brand-bg p-2">
+            <div className="text-[10px] uppercase text-gray-500">Played</div>
+            <div className="text-sm font-medium">{stats!.played ?? "—"}</div>
+          </div>
+          <div className="rounded-md bg-brand-bg p-2">
+            <div className="text-[10px] uppercase text-gray-500">W-D-L</div>
+            <div className="text-sm font-medium">{stats!.win ?? "—"}-{stats!.draw ?? "—"}-{stats!.loss ?? "—"}</div>
+          </div>
+          <div className="rounded-md bg-brand-bg p-2">
+            <div className="text-[10px] uppercase text-gray-500">Goals</div>
+            <div className="text-sm font-medium">{stats!.goalsFor ?? "—"}:{stats!.goalsAgainst ?? "—"}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -19,6 +19,8 @@ const SCOPED_SELECT = {
   leagueName: true,
   homeTeam: true,
   awayTeam: true,
+  homeTeamApiId: true,
+  awayTeamApiId: true,
   kickoff: true,
   market: true,
   pick: true,
@@ -39,6 +41,8 @@ export type ScopedResult = {
     leagueName: string | null;
     homeTeam: string | null;
     awayTeam: string | null;
+    homeTeamApiId: number | null;
+    awayTeamApiId: number | null;
     kickoff: Date | null;
     market: string;
     pick: string;
@@ -82,3 +86,23 @@ export function leagueDisplayName(name: string, leagueApiId: number | null): str
   const visual = getLeagueVisual(leagueApiId);
   return visual ? `${name} (${visual.country})` : name;
 }
+
+// Enrichment cache reads for the team/league pages (src/lib/enrichment.ts is
+// the only writer, via the cron at src/app/api/admin/refresh-enrichment).
+// `fetchedAt` is the sole freshness signal: null means either "never
+// attempted" or "attempted and failed" (e.g. today's free-plan rejection) —
+// pages don't distinguish those two, they just hide the section for both.
+
+/** Cached crest/form/stats for a team, or null if no successful refresh has landed yet. */
+export const getTeamEnrichment = cache(async (teamApiId: number | null) => {
+  if (teamApiId == null) return null;
+  const row = await prisma.teamEnrichmentCache.findUnique({ where: { teamApiId } });
+  return row?.fetchedAt ? row : null;
+});
+
+/** Cached standings/upcoming fixtures for a league, or null if no successful refresh has landed yet. */
+export const getLeagueEnrichment = cache(async (leagueApiId: number | null) => {
+  if (leagueApiId == null) return null;
+  const row = await prisma.leagueEnrichmentCache.findUnique({ where: { leagueApiId } });
+  return row?.fetchedAt ? row : null;
+});

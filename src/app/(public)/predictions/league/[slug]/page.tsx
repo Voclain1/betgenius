@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
+import { LeagueEnrichmentPanel } from "@/components/LeagueEnrichmentPanel";
 import { getPublishedByLeagueSlug, leagueDisplayName } from "@/lib/predictionScope";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
@@ -76,6 +77,8 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <h1 className="text-2xl font-bold">{name}</h1>
         <p className="text-sm text-gray-400">{rows.length} published picks</p>
       </div>
+
+      <LeagueEnrichmentPanel leagueApiId={rows[0].leagueApiId} />
 
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time in ${name}`} big />

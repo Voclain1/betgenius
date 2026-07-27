@@ -129,6 +129,8 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           leagueName: input.league,
           homeTeam: homeTeamName,
           awayTeam: awayTeamName,
+          homeTeamApiId: homeApiId,
+          awayTeamApiId: awayApiId,
           kickoff: isNaN(kickoffDate.getTime()) ? undefined : kickoffDate,
           status: "PENDING_REVIEW",
           marketType,
