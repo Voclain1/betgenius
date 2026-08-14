@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { MAJOR_LEAGUES } from "@/lib/leagues";
+import { getUsageSnapshot } from "@/lib/football/usage";
 import { z } from "zod";
 
 // Bulk generation is scoped to free-tier categories only — VIP/PREMIUM tips
@@ -35,10 +36,27 @@ export async function POST(req: Request) {
     const season = await resolveSeason(id, dateObj);
     fixturesByLeague.push(await getFixturesByLeague(id, season, date, date));
   }
-  const upcoming = fixturesByLeague
+  // Each generateAndPersistPrediction costs roughly 11 api-football calls
+  // (2x searchTeam, 2x getTeamContext at 3 apiece, standings, h2h, and a
+  // possible resolveSeason miss). Trim the batch to what today's remaining
+  // quota can actually cover rather than starting a run that dies partway
+  // through — a half-finished bulk generate leaves fixtures with empty context
+  // (contextComplete: false) that an admin then has to find and redo.
+  const CALLS_PER_FIXTURE = 11;
+  const { remaining } = await getUsageSnapshot();
+  const affordable = Math.floor(remaining / CALLS_PER_FIXTURE);
+
+  const candidates = fixturesByLeague
     .flat()
-    .filter((f): f is FixtureRow => !!f && f.fixture.status.short === "NS")
-    .slice(0, limit);
+    .filter((f): f is FixtureRow => !!f && f.fixture.status.short === "NS");
+  const upcoming = candidates.slice(0, Math.min(limit, affordable));
+
+  if (candidates.length > 0 && upcoming.length === 0) {
+    return NextResponse.json(
+      { error: "api-football daily quota exhausted — no budget left to generate today.", found: candidates.length, quotaRemaining: remaining },
+      { status: 429 },
+    );
+  }
 
   // Generate sequentially — avoids hammering the AI/football APIs with a burst of parallel calls.
   const results: Array<{ home: string; away: string; ok: boolean; predictionIds?: string[]; contextComplete?: boolean; error?: string }> = [];
@@ -65,5 +83,12 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ found: upcoming.length, results });
+  return NextResponse.json({
+    found: upcoming.length,
+    // Surfaced so a truncated batch is visible to the admin rather than looking
+    // like the league simply had fewer fixtures than expected.
+    skippedForQuota: Math.max(0, Math.min(limit, candidates.length) - upcoming.length),
+    quotaRemaining: (await getUsageSnapshot()).remaining,
+    results,
+  });
 }
