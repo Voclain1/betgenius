@@ -189,6 +189,27 @@ model LeagueEnrichmentCache {
   @@index([lastAttemptAt])
 }
 
+// One row per (UTC day, api-football endpoint path), atomically incremented on
+// every dispatched request — see src/lib/football/usage.ts. The Pro plan's
+// 7,500/day ceiling is enforced against the SUM of these rows rather than an
+// in-process counter: Vercel runs many short-lived instances, so a module-level
+// number would under-count badly (the same reason the MIN_GAP_MS throttle in
+// api-football.ts only paces one instance, not the account).
+//
+// `day` is a "YYYY-MM-DD" UTC string because api-football's own quota resets at
+// UTC midnight — deriving it from a DateTime risks drifting into server-local
+// time and resetting the budget on the wrong boundary.
+model ApiUsage {
+  id        String   @id @default(cuid())
+  day       String // "YYYY-MM-DD", UTC
+  path      String // e.g. "/fixtures", "/teams/statistics"
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([day, path])
+  @@index([day])
+}
+
 model Prediction {
   id           String    @id @default(cuid())
   fixtureId    String?

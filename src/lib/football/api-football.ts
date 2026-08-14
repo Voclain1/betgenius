@@ -6,19 +6,21 @@
  * Falls back to empty arrays if not configured (so dev mode still renders).
  */
 
+import { hasBudget, recordCall, DAILY_LIMIT, RESERVE } from "@/lib/football/usage";
+
 const HOST = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
 const KEY = process.env.API_FOOTBALL_KEY || "";
 const BASE = `https://${HOST}`;
 
 export { MAJOR_LEAGUES } from "@/lib/leagues";
 
-// The API-Football plan in use here is capped at 10 requests/minute. A single
-// prediction generation can fire ~10 calls (team search, stats, injuries, form,
-// standings, h2h), so without throttling, bulk-generating more than one fixture
-// blows through the cap and calls silently fail closed (apiFetch -> null),
-// which looks like "no fixtures found" / "bulk generate isn't working".
-// Serializing every call here with a safe gap keeps the whole app under the cap.
-const MIN_GAP_MS = 6500; // ~9.2 req/min, safely under the 10/min cap
+// The API-Football Pro plan is capped at 300 requests/minute (and 7,500/day).
+// A single prediction generation can fire ~10 calls (team search, stats,
+// injuries, form, standings, h2h), so bulk-generating still needs pacing:
+// exceeding the cap makes calls fail closed (apiFetch -> null), which surfaces
+// as "no fixtures found" / "bulk generate isn't working" rather than an error.
+// Serializing every call here with a small gap keeps the whole app under the cap.
+const MIN_GAP_MS = 250; // 240 req/min, safely under the 300/min cap
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestAt = 0;
 
@@ -37,9 +39,24 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
     console.warn("[api-football] Missing API_FOOTBALL_KEY — returning null");
     return null;
   }
+  // Daily budget gate. Deliberately checked before the throttle: once the day's
+  // quota is gone there's nothing to pace, and callers shouldn't sit through a
+  // queue wait only to be refused. Returns null like every other failure path,
+  // so existing callers degrade the same way they already do for a rate limit —
+  // but the log line names the cause, since "no fixtures found" is otherwise
+  // indistinguishable from a quota wall (see MIN_GAP_MS's comment above).
+  if (!(await hasBudget())) {
+    console.error(`[api-football] Daily quota exhausted (limit ${DAILY_LIMIT}, reserve ${RESERVE}) — refusing ${path}`);
+    return null;
+  }
   await throttle();
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+
+  // Recorded before awaiting the response: the account is charged the moment
+  // the request is dispatched, so counting on success only would under-count
+  // exactly the timeouts and 429s that matter most for staying under the cap.
+  await recordCall(path);
 
   const res = await fetch(url.toString(), {
     headers: { "x-apisports-key": KEY },
@@ -55,6 +72,42 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
     return null;
   }
   return json.response as T;
+}
+
+export type AccountStatus = {
+  account: { firstname?: string; lastname?: string; email?: string };
+  subscription: { plan: string; end: string; active: boolean };
+  requests: { current: number; limit_day: number };
+};
+
+/**
+ * Account/plan/quota probe. Deliberately bypasses apiFetch: /status is the one
+ * endpoint that must stay reachable *after* the daily budget is spent, since
+ * it's what tells us how much was really spent. It's also excluded from
+ * recordCall — api-football does not bill /status against the daily quota, and
+ * counting it would make the tracker drift up against its own reconciliation.
+ *
+ * Still passes through throttle() — the per-minute rate limit does apply here.
+ */
+export async function getAccountStatus(): Promise<AccountStatus | null> {
+  if (!KEY) return null;
+  await throttle();
+  const res = await fetch(`${BASE}/status`, {
+    headers: { "x-apisports-key": KEY },
+    cache: "no-store", // a cached quota reading is worse than none
+  });
+  if (!res.ok) {
+    console.error("[api-football] /status", res.status, await res.text());
+    return null;
+  }
+  const json = await res.json();
+  // Suspended/invalid keys return errors as an object here (an empty array when
+  // healthy), with `response` empty — see the suspended-account case.
+  if (json.errors && !Array.isArray(json.errors) && Object.keys(json.errors).length > 0) {
+    console.error("[api-football] /status error:", JSON.stringify(json.errors));
+    return null;
+  }
+  return (json.response as AccountStatus) ?? null;
 }
 
 export type FixtureRow = {
