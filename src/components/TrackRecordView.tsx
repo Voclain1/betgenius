@@ -10,6 +10,7 @@ import {
   type WinRateStat,
 } from "@/lib/trackRecord";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
+import { MatchLink } from "@/components/MatchLink";
 
 const CATEGORY_LABELS: Record<string, string> = {
   FEATURED: "Featured",
@@ -121,7 +122,9 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
             <tbody className="divide-y divide-brand-border">
               {data.recentTips.map((t) => (
                 <tr key={t.id}>
-                  <td className="px-3 py-2">{t.homeTeam ? `${t.homeTeam} vs ${t.awayTeam}` : "—"}</td>
+                  <td className="px-3 py-2">
+                    <MatchLink homeTeam={t.homeTeam} awayTeam={t.awayTeam} kickoff={t.kickoff} />
+                  </td>
                   <td className="px-3 py-2 text-gray-400">{CATEGORY_LABELS[t.category] ?? t.category}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{t.pick}</div>

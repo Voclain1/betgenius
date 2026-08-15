@@ -1,5 +1,22 @@
+import Link from "next/link";
 import type { FixtureRow } from "@/lib/football/api-football";
 import { classifyStatus, isIrregular, statusLabel, type MatchStatusGroup } from "@/lib/matchStatus";
+import { matchKey } from "@/lib/slug";
+
+/**
+ * matchKey → match-page slug for fixtures that have published predictions, as
+ * built by getPublishedMatchIndex(). Rows in it link to their match page; rows
+ * absent from it stay plain text, since most of any day's slate has no
+ * prediction and a link to an empty page is worse than no link.
+ */
+export type MatchLinkIndex = Record<string, string>;
+
+function matchHref(fx: FixtureRow, index?: MatchLinkIndex): string | null {
+  if (!index) return null;
+  const key = matchKey({ homeTeamApiId: fx.teams.home.id, awayTeamApiId: fx.teams.away.id, kickoff: fx.fixture.date });
+  const slug = key ? index[key] : null;
+  return slug ? `/predictions/match/${slug}` : null;
+}
 
 /** The one deliberate "signature" moment — a two-layer pulse (ring + solid dot), not just text saying "LIVE". */
 function LiveDot() {
@@ -60,17 +77,28 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
   );
 }
 
-export function MatchRow({ fx }: { fx: FixtureRow }) {
+export function MatchRow({ fx, linkIndex }: { fx: FixtureRow; linkIndex?: MatchLinkIndex }) {
   const group = classifyStatus(fx.fixture.status.short);
   const showScore = group !== "upcoming";
   const scoreTone = group === "live" ? "text-white" : "text-gray-200";
+  const href = matchHref(fx, linkIndex);
+
+  const teams = (
+    <div className="min-w-0 space-y-1.5">
+      <TeamLine name={fx.teams.home.name} logo={fx.teams.home.logo} />
+      <TeamLine name={fx.teams.away.name} logo={fx.teams.away.logo} />
+    </div>
+  );
 
   return (
     <div className="grid grid-cols-[1fr,auto,4.5rem] items-center gap-2 px-3 py-2.5 sm:gap-3">
-      <div className="min-w-0 space-y-1.5">
-        <TeamLine name={fx.teams.home.name} logo={fx.teams.home.logo} />
-        <TeamLine name={fx.teams.away.name} logo={fx.teams.away.logo} />
-      </div>
+      {href ? (
+        <Link href={href} className="min-w-0 rounded hover:opacity-80">
+          {teams}
+        </Link>
+      ) : (
+        teams
+      )}
       <div className="space-y-1.5 text-right tabular-nums">
         <div className={`text-base font-bold ${scoreTone}`}>{showScore ? fx.goals.home ?? "-" : " "}</div>
         <div className={`text-base font-bold ${scoreTone}`}>{showScore ? fx.goals.away ?? "-" : " "}</div>
@@ -82,7 +110,15 @@ export function MatchRow({ fx }: { fx: FixtureRow }) {
   );
 }
 
-export function LeagueGroup({ league, rows }: { league: { name: string; country: string; logo?: string }; rows: FixtureRow[] }) {
+export function LeagueGroup({
+  league,
+  rows,
+  linkIndex,
+}: {
+  league: { name: string; country: string; logo?: string };
+  rows: FixtureRow[];
+  linkIndex?: MatchLinkIndex;
+}) {
   return (
     <section>
       <div className="sticky top-16 z-10 flex items-center gap-2 rounded-t-xl border border-b-0 border-brand-border bg-brand-card px-3 py-2">
@@ -106,7 +142,7 @@ export function LeagueGroup({ league, rows }: { league: { name: string; country:
       </div>
       <div className="divide-y divide-brand-border rounded-b-xl border border-brand-border bg-brand-bg/60">
         {rows.map((fx) => (
-          <MatchRow key={fx.fixture.id} fx={fx} />
+          <MatchRow key={fx.fixture.id} fx={fx} linkIndex={linkIndex} />
         ))}
       </div>
     </section>
@@ -199,18 +235,20 @@ export function GroupedMatches({
   visibleCount,
   onShowMore,
   pageSize = 10,
+  linkIndex,
 }: {
   groups: { league: FixtureRow["league"]; rows: FixtureRow[] }[];
   visibleCount: number;
   onShowMore: () => void;
   pageSize?: number;
+  linkIndex?: MatchLinkIndex;
 }) {
   const visible = groups.slice(0, visibleCount);
   const remaining = groups.length - visible.length;
   return (
     <div className="space-y-4">
       {visible.map((g) => (
-        <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} />
+        <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
       ))}
       {remaining > 0 && (
         <button type="button" onClick={onShowMore} className="btn btn-ghost w-full justify-center text-sm">

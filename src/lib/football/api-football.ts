@@ -111,8 +111,17 @@ export async function getAccountStatus(): Promise<AccountStatus | null> {
 }
 
 export type FixtureRow = {
-  fixture: { id: number; date: string; status: { short: string; elapsed?: number | null }; venue?: { name?: string } };
-  league: { id: number; name: string; country: string; logo?: string; season: number };
+  // `referee` and `venue.city` are returned by /fixtures on every plan and are
+  // what FixtureDetailCache stores — they aren't on Prediction and have no
+  // other source in the app.
+  fixture: {
+    id: number;
+    date: string;
+    status: { short: string; elapsed?: number | null };
+    venue?: { id?: number | null; name?: string | null; city?: string | null };
+    referee?: string | null;
+  };
+  league: { id: number; name: string; country: string; logo?: string; season: number; round?: string | null };
   teams: {
     home: { id: number; name: string; logo?: string };
     away: { id: number; name: string; logo?: string };

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { GroupedMatches, groupByLeague, EmptyState } from "@/components/MatchList";
+import { GroupedMatches, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
 import { classifyStatus, isIrregular } from "@/lib/matchStatus";
 import { isMajorLeague } from "@/lib/leagues";
 import type { FixtureRow } from "@/lib/football/api-football";
@@ -24,8 +24,11 @@ function isoDaysAgo(days: number) {
  * yesterday's slates fetched and then trimmed by kickoff time — 36h rather
  * than 24h so a late kickoff from the previous evening is still shown the
  * following morning.
+ *
+ * `linkIndex` (from getPublishedMatchIndex) makes the rows we have published
+ * predictions for link through to their match page; the rest stay plain text.
  */
-export function RecentResults() {
+export function RecentResults({ linkIndex }: { linkIndex?: MatchLinkIndex }) {
   const [rows, setRows] = useState<FixtureRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -99,6 +102,7 @@ export function RecentResults() {
         visibleCount={visibleGroupCount}
         onShowMore={() => setVisibleGroupCount((c) => c + GROUP_PAGE_SIZE)}
         pageSize={GROUP_PAGE_SIZE}
+        linkIndex={linkIndex}
       />
     </div>
   );

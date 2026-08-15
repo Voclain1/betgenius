@@ -8,10 +8,12 @@
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
 import { prisma } from "@/lib/prisma";
-import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, resolveSeason, type FixtureRow, type StandingsEntry } from "@/lib/football/api-football";
+import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, resolveSeason, type FixtureRow, type StandingsEntry } from "@/lib/football/api-football";
+import { matchKey, kickoffDay } from "@/lib/slug";
 
 export type TeamTarget = { teamApiId: number; teamName: string | null; leagueApiId: number | null; kickoff: Date | null };
 export type LeagueTarget = { leagueApiId: number; kickoff: Date | null };
+export type FixtureTarget = { matchKey: string; homeTeamApiId: number; awayTeamApiId: number; kickoffDay: string };
 
 // Shapes stored in TeamEnrichmentCache/LeagueEnrichmentCache's Json columns —
 // shared with the read side (TeamEnrichmentPanel/LeagueEnrichmentPanel) so
@@ -20,6 +22,13 @@ export type TeamStatsSummary = { played: number | null; win: number | null; draw
 export type TeamFixtureSummary = { opponent: string; result: string; date: string; venue: "home" | "away" };
 export type LeagueStandingRow = { rank: number; teamId: number; teamName: string; teamLogo: string | null; points: number; played: number; win: number; draw: number; loss: number; goalsFor: number; goalsAgainst: number; form: string | null };
 export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
+/**
+ * Shape stored in FixtureDetailCache.detailJson — only fields that exist
+ * nowhere else in the app. Team names come from Prediction and crests from
+ * TeamEnrichmentCache, so neither is duplicated here; nor is score/status,
+ * which is read live (see the model comment in schema.prisma).
+ */
+export type FixtureDetail = { venue: string | null; city: string | null; referee: string | null; round: string | null };
 
 /** Distinct team ids referenced by PUBLISHED predictions, each paired with the most recent row's league/kickoff (for season resolution). */
 export async function getScopedTeamTargets(): Promise<TeamTarget[]> {
@@ -52,6 +61,91 @@ export async function getScopedLeagueTargets(): Promise<LeagueTarget[]> {
     if (!byId.has(r.leagueApiId!)) byId.set(r.leagueApiId!, { leagueApiId: r.leagueApiId!, kickoff: r.kickoff });
   }
   return [...byId.values()];
+}
+
+/**
+ * Distinct fixtures referenced by PUBLISHED predictions, keyed by matchKey —
+ * the same identity /predictions/match/[slug] resolves against, so everything
+ * this returns backs a page a reader can actually reach. Rows missing a team
+ * id or kickoff have no matchKey and are skipped (see matchKey's comment).
+ */
+export async function getScopedFixtureTargets(): Promise<FixtureTarget[]> {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeamApiId: { not: null }, awayTeamApiId: { not: null }, kickoff: { not: null } },
+    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+    orderBy: { publishedAt: "desc" },
+  });
+  const byKey = new Map<string, FixtureTarget>();
+  for (const r of rows) {
+    const key = matchKey(r);
+    if (!key || byKey.has(key)) continue;
+    byKey.set(key, {
+      matchKey: key,
+      homeTeamApiId: r.homeTeamApiId!,
+      awayTeamApiId: r.awayTeamApiId!,
+      kickoffDay: kickoffDay(r.kickoff!),
+    });
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Refresh every target falling on one UTC day with a SINGLE api-football call.
+ *
+ * /fixtures?date= returns that day's whole slate, so one call covers all of
+ * that day's targets no matter how many there are — the reason this refresh is
+ * batched by date rather than run per fixture like the team/league ones. A
+ * per-fixture lookup would cost one call each and there's no endpoint that
+ * takes our identity (two team ids + a day) directly anyway.
+ *
+ * Same write invariants as refreshTeamCache: fetchedAt and detailJson are only
+ * touched on a real hit. A target the slate doesn't contain (wrong day, or a
+ * team id that no longer resolves) records lastError and keeps whatever was
+ * cached before.
+ */
+export async function refreshFixtureDetailsForDay(
+  day: string,
+  targets: FixtureTarget[],
+): Promise<{ matchKey: string; result: "ok" | "failed" | "error"; detail?: string }[]> {
+  const now = new Date();
+  const results: { matchKey: string; result: "ok" | "failed" | "error"; detail?: string }[] = [];
+
+  let slate: FixtureRow[] | null = null;
+  let fetchError: string | null = null;
+  try {
+    slate = await getFixturesByDate(day);
+  } catch (err: any) {
+    fetchError = err?.message ?? String(err);
+  }
+
+  for (const t of targets) {
+    const base = { matchKey: t.matchKey, homeTeamApiId: t.homeTeamApiId, awayTeamApiId: t.awayTeamApiId, kickoffDay: t.kickoffDay };
+    const found = slate?.find((f) => f.teams.home.id === t.homeTeamApiId && f.teams.away.id === t.awayTeamApiId) ?? null;
+
+    if (!found) {
+      const lastError = fetchError ?? (slate ? "Fixture not present in that day's api-football slate" : "No slate returned — see server logs for the underlying api-football error");
+      await prisma.fixtureDetailCache
+        .upsert({ where: { matchKey: t.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
+        .catch(() => {});
+      results.push({ matchKey: t.matchKey, result: fetchError ? "error" : "failed", detail: fetchError ?? undefined });
+      continue;
+    }
+
+    const detail: FixtureDetail = {
+      venue: found.fixture.venue?.name ?? null,
+      city: found.fixture.venue?.city ?? null,
+      referee: found.fixture.referee ?? null,
+      round: found.league.round ?? null,
+    };
+    await prisma.fixtureDetailCache.upsert({
+      where: { matchKey: t.matchKey },
+      create: { ...base, fixtureApiId: found.fixture.id, detailJson: detail, fetchedAt: now, lastAttemptAt: now, lastError: null },
+      update: { fixtureApiId: found.fixture.id, detailJson: detail, fetchedAt: now, lastAttemptAt: now, lastError: null },
+    });
+    results.push({ matchKey: t.matchKey, result: "ok" });
+  }
+
+  return results;
 }
 
 function trimStatistics(statistics: any): TeamStatsSummary | null {
@@ -221,6 +315,36 @@ export async function orderTeamsByStaleness(targets: TeamTarget[]): Promise<Team
   });
   const attemptMap = new Map(existing.map((r) => [r.teamApiId, r.lastAttemptAt?.getTime() ?? -Infinity]));
   return [...targets].sort((a, b) => (attemptMap.get(a.teamApiId) ?? -Infinity) - (attemptMap.get(b.teamApiId) ?? -Infinity));
+}
+
+/**
+ * Groups fixture targets into per-day batches (the unit one api-football call
+ * covers) and orders the batches never-attempted first, then stalest — same
+ * round-robin intent as the team/league orderings, but the cost being spread
+ * is one call per DAY rather than per item, so a day's batch is never split.
+ * A day's staleness is that of its stalest member.
+ */
+export async function orderFixtureDaysByStaleness(targets: FixtureTarget[]): Promise<{ day: string; targets: FixtureTarget[] }[]> {
+  const existing = await prisma.fixtureDetailCache.findMany({
+    where: { matchKey: { in: targets.map((t) => t.matchKey) } },
+    select: { matchKey: true, lastAttemptAt: true },
+  });
+  const attemptMap = new Map(existing.map((r) => [r.matchKey, r.lastAttemptAt?.getTime() ?? -Infinity]));
+
+  const byDay = new Map<string, FixtureTarget[]>();
+  for (const t of targets) {
+    if (!byDay.has(t.kickoffDay)) byDay.set(t.kickoffDay, []);
+    byDay.get(t.kickoffDay)!.push(t);
+  }
+
+  return [...byDay.entries()]
+    .map(([day, dayTargets]) => ({
+      day,
+      targets: dayTargets,
+      staleness: Math.min(...dayTargets.map((t) => attemptMap.get(t.matchKey) ?? -Infinity)),
+    }))
+    .sort((a, b) => a.staleness - b.staleness)
+    .map(({ day, targets: dayTargets }) => ({ day, targets: dayTargets }));
 }
 
 export async function orderLeaguesByStaleness(targets: LeagueTarget[]): Promise<LeagueTarget[]> {

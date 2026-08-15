@@ -6,7 +6,7 @@ import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
 import { getPublishedByTeamSlug } from "@/lib/predictionScope";
-import { teamSlug } from "@/lib/slug";
+import { teamSlug, matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
 
@@ -79,7 +79,17 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
   const events = rows
     .filter((r) => r.homeTeam && r.awayTeam)
-    .map((r) => sportsEventJsonLd({ homeTeam: r.homeTeam!, awayTeam: r.awayTeam!, kickoff: r.kickoff, league: r.leagueName }));
+    .map((r) => {
+      // url points at the match page — see the same note on the category page.
+      const slug = matchSlug(r);
+      return sportsEventJsonLd({
+        homeTeam: r.homeTeam!,
+        awayTeam: r.awayTeam!,
+        kickoff: r.kickoff,
+        league: r.leagueName,
+        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
+      });
+    });
 
   return (
     <div className="space-y-6">

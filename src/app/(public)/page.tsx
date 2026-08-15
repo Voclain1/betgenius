@@ -9,10 +9,11 @@ import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
-import { getLeaguesWithPublishedPredictions, popularLeagues } from "@/lib/predictionScope";
+import { MatchLink } from "@/components/MatchLink";
+import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { leagueSlug } from "@/lib/slug";
 import type { PredictionCategory } from "@/lib/enums";
 
 export const revalidate = 60;
@@ -49,11 +50,12 @@ const CATEGORY_LINKS: { label: string; slug: string }[] = [
 ];
 
 export default async function HomePage() {
-  const [featured, geniusPreview, session, leagues] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex] = await Promise.all([
     fetchFeatured(),
     fetchGeniusPreview(),
     getServerSession(authOptions),
     getLeaguesWithPublishedPredictions(),
+    getPublishedMatchIndex(),
   ]);
   const popular = popularLeagues(leagues);
 
@@ -98,7 +100,7 @@ export default async function HomePage() {
           <h2 className="text-xl font-semibold">Recent results</h2>
           <Link href="/livescores" className="text-sm text-brand hover:underline">Livescores →</Link>
         </div>
-        <RecentResults />
+        <RecentResults linkIndex={matchIndex} />
       </section>
 
       <section className="space-y-6">
@@ -127,15 +129,7 @@ export default async function HomePage() {
                     return (
                       <tr key={p.id} className="hover:bg-brand-card/50">
                         <td className="px-3 py-2">
-                          {home && away ? (
-                            <>
-                              <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
-                              <span className="text-gray-500">vs</span>{" "}
-                              <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link>
-                            </>
-                          ) : (
-                            "—"
-                          )}
+                          <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
                         </td>
                         <td className="px-3 py-2">
                           {leagueName ? (

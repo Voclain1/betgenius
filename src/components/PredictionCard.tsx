@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { MatchLink } from "@/components/MatchLink";
+import { leagueSlug } from "@/lib/slug";
 
 export type PredictionRow = {
   id: string;
@@ -35,7 +36,12 @@ export const catStyles: Record<string, string> = {
   PREMIUM: "bg-purple-500/20 text-purple-300",
 };
 
-export function PredictionCard({ p }: { p: PredictionRow }) {
+/**
+ * `hideMatchHeader` drops the league + "Home vs Away" block for callers where
+ * every card on the page is the same fixture and the header would repeat —
+ * the match page. Everywhere else it stays on.
+ */
+export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRow; hideMatchHeader?: boolean }) {
   const home = p.homeTeam ?? p.fixture?.homeTeam.name;
   const away = p.awayTeam ?? p.fixture?.awayTeam.name;
   const kickoff = p.kickoff ?? p.fixture?.kickoff;
@@ -45,13 +51,13 @@ export function PredictionCard({ p }: { p: PredictionRow }) {
     <article className="card flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{p.category}</span>
-        {kickoff && (
+        {kickoff && !hideMatchHeader && (
           <span className="text-xs text-gray-400">
             {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>
-      {(home || leagueName) && (
+      {!hideMatchHeader && (home || leagueName) && (
         <div>
           {leagueName && (
             <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`} className="hover:underline">
@@ -61,9 +67,7 @@ export function PredictionCard({ p }: { p: PredictionRow }) {
           {!leagueName && <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />}
           {home && (
             <div className="text-lg font-semibold">
-              <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
-              <span className="text-gray-500">vs</span>{" "}
-              {away ? <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link> : away}
+              <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
             </div>
           )}
         </div>
@@ -98,6 +102,11 @@ export function PredictionCard({ p }: { p: PredictionRow }) {
       <p className="text-sm text-gray-300 whitespace-pre-wrap">
         {p.reasoning}
       </p>
+      {p.locked && (
+        <Link href="/pricing" className="btn btn-primary justify-center text-sm">
+          Upgrade to unlock
+        </Link>
+      )}
     </article>
   );
 }

@@ -2,7 +2,17 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
-import { getScopedTeamTargets, getScopedLeagueTargets, orderTeamsByStaleness, orderLeaguesByStaleness, refreshTeamCache, refreshLeagueCache } from "@/lib/enrichment";
+import {
+  getScopedTeamTargets,
+  getScopedLeagueTargets,
+  getScopedFixtureTargets,
+  orderTeamsByStaleness,
+  orderLeaguesByStaleness,
+  orderFixtureDaysByStaleness,
+  refreshTeamCache,
+  refreshLeagueCache,
+  refreshFixtureDetailsForDay,
+} from "@/lib/enrichment";
 
 // Same shape as /api/admin/settle: runs sequentially through the throttled
 // api-football queue, bound generously since Vercel Cron invokes via a single
@@ -27,12 +37,25 @@ export async function GET(req: Request) {
   // this route's per-item call cost is higher).
   const limit = Math.min(8, Math.max(1, Number(url.searchParams.get("limit")) || 6));
 
-  const [teamTargets, leagueTargets] = await Promise.all([getScopedTeamTargets(), getScopedLeagueTargets()]);
-  const [orderedTeams, orderedLeagues] = await Promise.all([orderTeamsByStaleness(teamTargets), orderLeaguesByStaleness(leagueTargets)]);
+  // Fixture detail is batched one call per kickoff DAY (see
+  // refreshFixtureDetailsForDay), so its slice is counted in days, not
+  // fixtures — `limit` days adds at most `limit` calls (~6s at MIN_GAP_MS),
+  // which the existing team+league budget above leaves ample room for.
+  const [teamTargets, leagueTargets, fixtureTargets] = await Promise.all([
+    getScopedTeamTargets(),
+    getScopedLeagueTargets(),
+    getScopedFixtureTargets(),
+  ]);
+  const [orderedTeams, orderedLeagues, orderedFixtureDays] = await Promise.all([
+    orderTeamsByStaleness(teamTargets),
+    orderLeaguesByStaleness(leagueTargets),
+    orderFixtureDaysByStaleness(fixtureTargets),
+  ]);
   const teamSlice = orderedTeams.slice(0, limit);
   const leagueSlice = orderedLeagues.slice(0, limit);
+  const fixtureDaySlice = orderedFixtureDays.slice(0, limit);
 
-  const results: Array<{ kind: "team" | "league"; id: number; result: string; detail?: string }> = [];
+  const results: Array<{ kind: "team" | "league" | "fixture"; id: number | string; result: string; detail?: string }> = [];
 
   for (const t of teamSlice) {
     const r = await refreshTeamCache(t);
@@ -42,12 +65,21 @@ export async function GET(req: Request) {
     const r = await refreshLeagueCache(l);
     results.push({ kind: "league", id: l.leagueApiId, result: r.result, detail: r.detail });
   }
+  for (const d of fixtureDaySlice) {
+    for (const r of await refreshFixtureDetailsForDay(d.day, d.targets)) {
+      results.push({ kind: "fixture", id: r.matchKey, result: r.result, detail: r.detail });
+    }
+  }
 
   return NextResponse.json({
     scopedTeams: teamTargets.length,
     scopedLeagues: leagueTargets.length,
+    scopedFixtures: fixtureTargets.length,
+    scopedFixtureDays: orderedFixtureDays.length,
     processedTeams: teamSlice.length,
     processedLeagues: leagueSlice.length,
+    processedFixtureDays: fixtureDaySlice.length,
+    processedFixtures: fixtureDaySlice.reduce((n, d) => n + d.targets.length, 0),
     okCount: results.filter((r) => r.result === "ok").length,
     failedCount: results.filter((r) => r.result !== "ok").length,
     results,

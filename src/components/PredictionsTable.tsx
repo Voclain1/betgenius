@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { MatchLink } from "@/components/MatchLink";
+import { leagueSlug } from "@/lib/slug";
 
 export type PredictionTableRow = {
   id: string;
@@ -55,15 +56,7 @@ export function PredictionsTable({ rows }: { rows: PredictionTableRow[] }) {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {home ? (
-                    <>
-                      <Link href={`/predictions/team/${teamSlug(home)}`} className="hover:underline">{home}</Link>{" "}
-                      vs{" "}
-                      {away ? <Link href={`/predictions/team/${teamSlug(away)}`} className="hover:underline">{away}</Link> : away}
-                    </>
-                  ) : (
-                    "—"
-                  )}
+                  <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
                 </td>
                 <td className="px-3 py-2 font-semibold text-brand">{p.locked ? "LOCKED" : p.pick}</td>
                 <td className="hidden px-3 py-2 sm:table-cell">{p.overUnder ?? "—"}</td>

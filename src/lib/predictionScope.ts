@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { computeStat, type WinRateStat } from "@/lib/trackRecord";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { leagueSlug, teamSlug, matchSlug, matchKey } from "@/lib/slug";
 import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/lib/leagues";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
@@ -79,6 +79,98 @@ export const getPublishedByTeamSlug = cache(async (slug: string): Promise<Scoped
     (r) => (r.homeTeam && teamSlug(r.homeTeam) === slug) || (r.awayTeam && teamSlug(r.awayTeam) === slug),
   );
   return { rows, stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)) };
+});
+
+export type MatchScopedResult = ScopedResult & {
+  /** Fixture identity shared by every row, resolved from the first row that carries it. Null only when the slug matched nothing. */
+  match: {
+    homeTeam: string;
+    awayTeam: string;
+    homeTeamApiId: number | null;
+    awayTeamApiId: number | null;
+    kickoff: Date;
+    leagueName: string | null;
+    leagueApiId: number | null;
+    matchKey: string | null;
+  } | null;
+};
+
+/**
+ * Every PUBLISHED prediction for one fixture, across all markets — the data
+ * behind /predictions/match/[slug].
+ *
+ * Aggregation is by matchKey (both team ids + the kickoff's UTC day, see
+ * src/lib/slug.ts); the slug is its readable projection and is what the route
+ * carries. Rows are matched on the slug the same way the league/team scopes
+ * match theirs — computed per row, never parsed — then ordered by confidence
+ * so the strongest pick for the match leads.
+ *
+ * `kickoff` on the returned match is the EARLIEST across the rows. Rows for
+ * one fixture can disagree on the exact timestamp while agreeing on the day
+ * (which is why matchKey is day-grained); picking the earliest makes the
+ * header deterministic regardless of row order rather than letting whichever
+ * row sorted first decide.
+ */
+export const getPublishedByMatchSlug = cache(async (slug: string): Promise<MatchScopedResult> => {
+  const candidates = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+    orderBy: { publishedAt: "desc" },
+    select: SCOPED_SELECT,
+  });
+  const rows = candidates
+    .filter((r) => matchSlug(r) === slug)
+    .sort((a, b) => b.confidence - a.confidence);
+
+  if (rows.length === 0) return { rows, stat: computeStat([]), match: null };
+
+  const withIds = rows.find((r) => r.homeTeamApiId != null && r.awayTeamApiId != null) ?? rows[0];
+  const kickoff = rows.reduce((earliest, r) => (r.kickoff! < earliest ? r.kickoff! : earliest), rows[0].kickoff!);
+
+  return {
+    rows,
+    stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)),
+    match: {
+      homeTeam: rows[0].homeTeam!,
+      awayTeam: rows[0].awayTeam!,
+      homeTeamApiId: withIds.homeTeamApiId,
+      awayTeamApiId: withIds.awayTeamApiId,
+      kickoff,
+      leagueName: rows.find((r) => r.leagueName)?.leagueName ?? null,
+      leagueApiId: rows.find((r) => r.leagueApiId != null)?.leagueApiId ?? null,
+      matchKey: matchKey({ ...withIds, kickoff }),
+    },
+  };
+});
+
+/**
+ * Every fixture that has at least one PUBLISHED prediction, as a
+ * matchKey → slug lookup. Callers rendering fixtures from the football API
+ * (Recent results, Livescores, Fixtures) use it to link only the matches that
+ * actually have a page, leaving the rest as plain text — a link to an empty
+ * match page is worse than no link.
+ *
+ * A plain object rather than a Map because it's handed from server components
+ * to the client ones that render those feeds.
+ */
+export const getPublishedMatchIndex = cache(async (): Promise<Record<string, string>> => {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+    select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+  });
+  const index: Record<string, string> = {};
+  for (const r of rows) {
+    const key = matchKey(r);
+    const slug = matchSlug(r);
+    if (key && slug) index[key] = slug;
+  }
+  return index;
+});
+
+/** Cached venue/referee/round for a fixture, or null if no successful refresh has landed yet — same fetchedAt contract as the team/league reads below. */
+export const getFixtureDetail = cache(async (key: string | null) => {
+  if (!key) return null;
+  const row = await prisma.fixtureDetailCache.findUnique({ where: { matchKey: key } });
+  return row?.fetchedAt ? row : null;
 });
 
 export type LeagueNavItem = {

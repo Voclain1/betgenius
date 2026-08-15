@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { CATEGORY_SLUGS as SLUGS, CATEGORY_NAMES as NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
+import { matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 
 export async function generateMetadata({ params }: { params: { category: string } }): Promise<Metadata> {
@@ -76,7 +77,17 @@ export default async function CategoryPage({ params }: { params: { category: str
       const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
       const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
       if (!home || !away) return null;
-      return sportsEventJsonLd({ homeTeam: home, awayTeam: away, kickoff: r.kickoff ?? r.fixture?.kickoff ?? null, league: r.leagueName ?? r.fixture?.league?.name });
+      const kickoff = r.kickoff ?? r.fixture?.kickoff ?? null;
+      // url points at the match page, so the SportsEvent resolves to the one
+      // page that collects every market for the fixture rather than to a feed.
+      const slug = matchSlug({ homeTeam: home, awayTeam: away, kickoff });
+      return sportsEventJsonLd({
+        homeTeam: home,
+        awayTeam: away,
+        kickoff,
+        league: r.leagueName ?? r.fixture?.league?.name,
+        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
+      });
     })
     .filter((e): e is NonNullable<typeof e> => e !== null);
 

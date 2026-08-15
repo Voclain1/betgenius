@@ -190,6 +190,36 @@ model LeagueEnrichmentCache {
   @@index([lastAttemptAt])
 }
 
+// Per-fixture detail (venue, city, referee, round) for the match pages at
+// /predictions/match/[slug]. Same contract as the two caches above — cron is
+// the only writer (src/lib/enrichment.ts), pages read it, and `fetchedAt` is
+// set ONLY on a successful fetch so a later failure can't blank good data.
+//
+// Keyed by matchKey (src/lib/slug.ts: "{homeTeamApiId}-{awayTeamApiId}-{UTC
+// day}") rather than by api-football's fixture id, because Prediction has no
+// fixture id to key on — the id is what this cache goes and *finds*, then
+// stores in `fixtureApiId`. Scope is only fixtures carrying real PUBLISHED
+// predictions, same narrow posture as the team/league targets.
+//
+// Nothing about live state is stored here: score and status come from the
+// livescores/fixtures feed at request time (src/components/MatchLiveStatus),
+// since a cached score is a wrong score.
+model FixtureDetailCache {
+  id            String    @id @default(cuid())
+  matchKey      String    @unique
+  homeTeamApiId Int
+  awayTeamApiId Int
+  kickoffDay    String // "YYYY-MM-DD", UTC — the day the refresh queries api-football for
+  fixtureApiId  Int? // resolved from the day's slate by matching both team ids
+  detailJson    Json? // FixtureDetail in src/lib/enrichment.ts
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lastAttemptAt])
+}
+
 // One row per (UTC day, api-football endpoint path), atomically incremented on
 // every dispatched request — see src/lib/football/usage.ts. The Pro plan's
 // 7,500/day ceiling is enforced against the SUM of these rows rather than an

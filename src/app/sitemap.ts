@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/seo";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { leagueSlug, teamSlug, matchSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 
@@ -37,6 +37,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       leagueName: true,
       homeTeam: true,
       awayTeam: true,
+      kickoff: true,
       publishedAt: true,
       settledAt: true,
       outcome: true,
@@ -95,6 +96,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   for (const [slug, lastModified] of teamGroups) {
     entries.push({ url: absoluteUrl(`/predictions/team/${slug}`), lastModified: lastModified ?? undefined, changeFrequency: "weekly", priority: 0.6 });
+  }
+
+  // Matches — one entry per fixture, grouped by the same matchSlug the route
+  // resolves against (rows with no kickoff produce no slug and no entry, the
+  // same exclusion the match page itself applies). Priority above league/team
+  // because this is the page a "<team> vs <team> prediction" search wants.
+  const matchGroups = new Map<string, Date | null>();
+  for (const r of rows) {
+    const slug = matchSlug(r);
+    if (!slug) continue;
+    const prev = matchGroups.get(slug);
+    matchGroups.set(slug, maxDate([prev ?? null, r.publishedAt]) ?? null);
+  }
+  for (const [slug, lastModified] of matchGroups) {
+    entries.push({ url: absoluteUrl(`/predictions/match/${slug}`), lastModified: lastModified ?? undefined, changeFrequency: "weekly", priority: 0.7 });
   }
 
   return entries;
