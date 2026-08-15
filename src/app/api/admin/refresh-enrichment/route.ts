@@ -9,9 +9,12 @@ import {
   orderTeamsByStaleness,
   orderLeaguesByStaleness,
   orderFixtureDaysByStaleness,
+  getScopedH2HTargets,
+  selectStaleH2HTargets,
   refreshTeamCache,
   refreshLeagueCache,
   refreshFixtureDetailsForDay,
+  refreshH2HCache,
 } from "@/lib/enrichment";
 
 // Same shape as /api/admin/settle: runs sequentially through the throttled
@@ -41,21 +44,27 @@ export async function GET(req: Request) {
   // refreshFixtureDetailsForDay), so its slice is counted in days, not
   // fixtures — `limit` days adds at most `limit` calls (~6s at MIN_GAP_MS),
   // which the existing team+league budget above leaves ample room for.
-  const [teamTargets, leagueTargets, fixtureTargets] = await Promise.all([
+  const [teamTargets, leagueTargets, fixtureTargets, h2hTargets] = await Promise.all([
     getScopedTeamTargets(),
     getScopedLeagueTargets(),
     getScopedFixtureTargets(),
+    getScopedH2HTargets(),
   ]);
-  const [orderedTeams, orderedLeagues, orderedFixtureDays] = await Promise.all([
+  const [orderedTeams, orderedLeagues, orderedFixtureDays, staleH2H] = await Promise.all([
     orderTeamsByStaleness(teamTargets),
     orderLeaguesByStaleness(leagueTargets),
     orderFixtureDaysByStaleness(fixtureTargets),
+    selectStaleH2HTargets(h2hTargets),
   ]);
   const teamSlice = orderedTeams.slice(0, limit);
   const leagueSlice = orderedLeagues.slice(0, limit);
   const fixtureDaySlice = orderedFixtureDays.slice(0, limit);
+  // One call per pair, and the stale filter usually leaves this list empty
+  // once a cycle has caught up — a head-to-head only changes when the two
+  // teams meet again.
+  const h2hSlice = staleH2H.slice(0, limit);
 
-  const results: Array<{ kind: "team" | "league" | "fixture"; id: number | string; result: string; detail?: string }> = [];
+  const results: Array<{ kind: "team" | "league" | "fixture" | "h2h"; id: number | string; result: string; detail?: string }> = [];
 
   for (const t of teamSlice) {
     const r = await refreshTeamCache(t);
@@ -71,10 +80,18 @@ export async function GET(req: Request) {
     }
   }
 
+  for (const t of h2hSlice) {
+    const r = await refreshH2HCache(t);
+    results.push({ kind: "h2h", id: t.pairKey, result: r.result, detail: r.detail ?? (r.meetings != null ? `${r.meetings} meetings` : undefined) });
+  }
+
   return NextResponse.json({
     scopedTeams: teamTargets.length,
     scopedLeagues: leagueTargets.length,
     scopedFixtures: fixtureTargets.length,
+    scopedH2HPairs: h2hTargets.length,
+    staleH2HPairs: staleH2H.length,
+    processedH2HPairs: h2hSlice.length,
     scopedFixtureDays: orderedFixtureDays.length,
     processedTeams: teamSlice.length,
     processedLeagues: leagueSlice.length,

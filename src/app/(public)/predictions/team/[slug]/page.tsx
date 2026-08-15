@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -5,7 +6,7 @@ import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
-import { getPublishedByTeamSlug } from "@/lib/predictionScope";
+import { getPublishedByTeamSlug, getOpponentsForTeamSlug } from "@/lib/predictionScope";
 import { teamSlug, matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
@@ -68,6 +69,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
   const name = resolveTeamName(rows, params.slug);
   const teamApiId = resolveTeamApiId(rows, params.slug);
+  const opponents = await getOpponentsForTeamSlug(params.slug);
 
   const session = await getServerSession(authOptions);
   const shaped = rows.map((r) => {
@@ -113,6 +115,27 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time for ${name}`} big />
       </div>
+
+      {/* Opponents this team has published picks against — each one is a
+          pairing with a head-to-head record worth reading. Rendered only when
+          there's at least one, rather than as an empty shell. */}
+      {opponents.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-xl font-semibold">Head-to-head records</h2>
+          <div className="flex flex-wrap gap-2">
+            {opponents.map((o) => (
+              <Link
+                key={o.h2hSlug}
+                href={`/predictions/h2h/${o.h2hSlug}`}
+                className="chip flex items-center gap-1.5 border border-brand-border bg-brand-card hover:border-brand"
+              >
+                <span>vs {o.name}</span>
+                <span className="text-xs text-gray-500">{o.count}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {shaped.map((p) => (

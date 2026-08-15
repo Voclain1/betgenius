@@ -8,12 +8,17 @@
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
 import { prisma } from "@/lib/prisma";
-import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, resolveSeason, type FixtureRow, type StandingsEntry } from "@/lib/football/api-football";
-import { matchKey, kickoffDay } from "@/lib/slug";
+import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, getHeadToHead, resolveSeason, type FixtureRow, type StandingsEntry } from "@/lib/football/api-football";
+import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
+import { trimH2H } from "@/lib/h2h";
 
 export type TeamTarget = { teamApiId: number; teamName: string | null; leagueApiId: number | null; kickoff: Date | null };
 export type LeagueTarget = { leagueApiId: number; kickoff: Date | null };
 export type FixtureTarget = { matchKey: string; homeTeamApiId: number; awayTeamApiId: number; kickoffDay: string };
+export type H2HTarget = { pairKey: string; teamAApiId: number; teamBApiId: number; latestKickoff: Date | null };
+
+/** Meetings requested per pair. 10 covers both the "last 5" and "last 10" views the H2H page shows, in one call. */
+export const H2H_FETCH_LAST = 10;
 
 // Shapes stored in TeamEnrichmentCache/LeagueEnrichmentCache's Json columns —
 // shared with the read side (TeamEnrichmentPanel/LeagueEnrichmentPanel) so
@@ -146,6 +151,102 @@ export async function refreshFixtureDetailsForDay(
   }
 
   return results;
+}
+
+/**
+ * Distinct team PAIRS referenced by PUBLISHED predictions, keyed by
+ * h2hPairKey. `latestKickoff` is the most recent kickoff we hold for the pair
+ * — what makes staleness decidable without spending a call (see
+ * selectStaleH2HTargets).
+ */
+export async function getScopedH2HTargets(): Promise<H2HTarget[]> {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeamApiId: { not: null }, awayTeamApiId: { not: null } },
+    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+  });
+  const byPair = new Map<string, H2HTarget>();
+  for (const r of rows) {
+    const pairKey = h2hPairKey(r.homeTeamApiId, r.awayTeamApiId);
+    if (!pairKey) continue;
+    const [lo, hi] = pairKey.split("-").map(Number);
+    const existing = byPair.get(pairKey);
+    if (!existing) {
+      byPair.set(pairKey, { pairKey, teamAApiId: lo, teamBApiId: hi, latestKickoff: r.kickoff });
+    } else if (r.kickoff && (!existing.latestKickoff || r.kickoff > existing.latestKickoff)) {
+      existing.latestKickoff = r.kickoff;
+    }
+  }
+  return [...byPair.values()];
+}
+
+/**
+ * The targets actually worth spending a call on, newest-need first.
+ *
+ * A head-to-head record only changes when the two teams play each other again,
+ * so a pair whose cache was fetched AFTER the latest kickoff we hold for it is
+ * already current and is skipped entirely — this is what keeps the H2H pass
+ * from re-fetching the same unchanged records every cycle. Never-fetched pairs
+ * come first, then those whose latest meeting post-dates their cache.
+ */
+export async function selectStaleH2HTargets(targets: H2HTarget[]): Promise<H2HTarget[]> {
+  const existing = await prisma.h2HCache.findMany({
+    where: { pairKey: { in: targets.map((t) => t.pairKey) } },
+    select: { pairKey: true, fetchedAt: true, lastAttemptAt: true },
+  });
+  const byKey = new Map(existing.map((r) => [r.pairKey, r]));
+
+  return targets
+    .filter((t) => {
+      const row = byKey.get(t.pairKey);
+      if (!row?.fetchedAt) return true; // never successfully fetched
+      return t.latestKickoff != null && t.latestKickoff > row.fetchedAt;
+    })
+    .sort((a, b) => {
+      const aAt = byKey.get(a.pairKey)?.lastAttemptAt?.getTime() ?? -Infinity;
+      const bAt = byKey.get(b.pairKey)?.lastAttemptAt?.getTime() ?? -Infinity;
+      return aAt - bAt;
+    });
+}
+
+/**
+ * Refresh one pair's head-to-head. Costs a single api-football call.
+ *
+ * Same write invariants as the other refreshes, with one difference worth
+ * naming: an EMPTY meeting list is a success, not a failure. "These two have
+ * never met" is a real answer the page needs to distinguish from "not fetched
+ * yet", so it sets fetchedAt with an empty array. Only a null response — the
+ * call itself failing — is treated as a failure that leaves prior data alone.
+ */
+export async function refreshH2HCache(target: H2HTarget): Promise<{ pairKey: string; result: "ok" | "failed" | "error"; meetings?: number; detail?: string }> {
+  const now = new Date();
+  const base = { pairKey: target.pairKey, teamAApiId: target.teamAApiId, teamBApiId: target.teamBApiId };
+  try {
+    const raw = await getHeadToHead(target.teamAApiId, target.teamBApiId, H2H_FETCH_LAST);
+
+    if (raw == null) {
+      const lastError = "No response — see server logs for the underlying api-football error";
+      await prisma.h2HCache.upsert({
+        where: { pairKey: target.pairKey },
+        create: { ...base, lastAttemptAt: now, lastError },
+        update: { lastAttemptAt: now, lastError },
+      });
+      return { pairKey: target.pairKey, result: "failed" };
+    }
+
+    const meetings = trimH2H(raw);
+    await prisma.h2HCache.upsert({
+      where: { pairKey: target.pairKey },
+      create: { ...base, meetingsJson: meetings, fetchedAt: now, lastAttemptAt: now, lastError: null },
+      update: { meetingsJson: meetings, fetchedAt: now, lastAttemptAt: now, lastError: null },
+    });
+    return { pairKey: target.pairKey, result: "ok", meetings: meetings.length };
+  } catch (err: any) {
+    const message = err?.message ?? String(err);
+    await prisma.h2HCache
+      .upsert({ where: { pairKey: target.pairKey }, create: { ...base, lastAttemptAt: now, lastError: message }, update: { lastAttemptAt: now, lastError: message } })
+      .catch(() => {});
+    return { pairKey: target.pairKey, result: "error", detail: message };
+  }
 }
 
 function trimStatistics(statistics: any): TeamStatsSummary | null {

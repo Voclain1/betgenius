@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/seo";
-import { leagueSlug, teamSlug, matchSlug } from "@/lib/slug";
+import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 
@@ -111,6 +111,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   for (const [slug, lastModified] of matchGroups) {
     entries.push({ url: absoluteUrl(`/predictions/match/${slug}`), lastModified: lastModified ?? undefined, changeFrequency: "weekly", priority: 0.7 });
+  }
+
+  // Head-to-head pairings — one entry per team pair with published picks,
+  // keyed by the same h2hSlug the route resolves against. Fewer than the match
+  // entries, since repeated fixtures between the same two teams collapse into
+  // a single pairing.
+  const h2hGroups = new Map<string, Date | null>();
+  for (const r of rows) {
+    const slug = h2hSlug(r.homeTeam, r.awayTeam);
+    if (!slug) continue;
+    const prev = h2hGroups.get(slug);
+    h2hGroups.set(slug, maxDate([prev ?? null, r.publishedAt]) ?? null);
+  }
+  for (const [slug, lastModified] of h2hGroups) {
+    entries.push({ url: absoluteUrl(`/predictions/h2h/${slug}`), lastModified: lastModified ?? undefined, changeFrequency: "weekly", priority: 0.6 });
   }
 
   return entries;

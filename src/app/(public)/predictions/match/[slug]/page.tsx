@@ -7,7 +7,7 @@ import { PredictionCard } from "@/components/PredictionCard";
 import { MatchInfoPanel } from "@/components/MatchInfoPanel";
 import { MatchLiveStatus } from "@/components/MatchLiveStatus";
 import { getPublishedByMatchSlug } from "@/lib/predictionScope";
-import { teamSlug } from "@/lib/slug";
+import { teamSlug, h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
 
@@ -66,6 +66,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // reader can actually read (rows are already confidence-ordered).
   const preview = shaped.find((r) => !("locked" in r && r.locked) && r.matchPreview)?.matchPreview ?? null;
   const lockedCount = shaped.filter((r) => "locked" in r && r.locked).length;
+  const h2hPair = h2hSlug(match.homeTeam, match.awayTeam);
+  const h2hLink = h2hPair ? `/predictions/h2h/${h2hPair}` : null;
 
   return (
     <div className="space-y-6">
@@ -111,6 +113,12 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       />
 
       {preview && <p className="text-sm text-gray-300 whitespace-pre-wrap">{preview}</p>}
+
+      {h2hLink && (
+        <Link href={h2hLink} className="btn btn-ghost w-full justify-center text-sm sm:w-auto">
+          View full head-to-head →
+        </Link>
+      )}
 
       <div>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">

@@ -45,6 +45,39 @@ export function teamSlug(name: string): string {
   return slugify(name);
 }
 
+/**
+ * Identity of a TEAM PAIR, independent of which side is at home and of any
+ * particular fixture — the head-to-head equivalent of matchKey.
+ *
+ * Both orderings of a pair are the same head-to-head record, so the two ids
+ * are sorted numerically: the pair is stored and looked up once, not twice.
+ * Returns null if either id is missing, same contract as matchKey.
+ */
+export function h2hPairKey(teamAApiId?: number | null, teamBApiId?: number | null): string | null {
+  if (teamAApiId == null || teamBApiId == null || teamAApiId === teamBApiId) return null;
+  const [lo, hi] = teamAApiId < teamBApiId ? [teamAApiId, teamBApiId] : [teamBApiId, teamAApiId];
+  return `${lo}-${hi}`;
+}
+
+/**
+ * Readable URL projection of h2hPairKey — "arsenal-vs-chelsea" — for
+ * /predictions/h2h/[slug]. Same construction as matchSlug (teamSlug on each
+ * side, joined by "-vs-") minus the date component, since a head-to-head
+ * record spans every meeting rather than one fixture.
+ *
+ * Sorted alphabetically by slug rather than by the order the caller passed, so
+ * a link built from either team's page lands on the same canonical URL. That
+ * ordering is presentational only — which team hosted which is read from the
+ * meetings themselves, never from the slug.
+ */
+export function h2hSlug(teamA?: string | null, teamB?: string | null): string | null {
+  if (!teamA || !teamB) return null;
+  const a = teamSlug(teamA);
+  const b = teamSlug(teamB);
+  if (!a || !b || a === b) return null;
+  return a < b ? `${a}-vs-${b}` : `${b}-vs-${a}`;
+}
+
 /** UTC calendar day of a kickoff, "YYYY-MM-DD" — the date component of both matchKey and matchSlug. */
 export function kickoffDay(kickoff: Date | string): string {
   return new Date(kickoff).toISOString().slice(0, 10);

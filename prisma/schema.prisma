@@ -220,6 +220,37 @@ model FixtureDetailCache {
   @@index([lastAttemptAt])
 }
 
+// Head-to-head meetings between a team pair, for /predictions/h2h/[slug].
+// Same contract as the caches above — cron-only writer, pages read it,
+// fetchedAt set only on a successful fetch.
+//
+// Cached rather than fetched live for two reasons: pages in this app never
+// call the football API per-request (see the TeamEnrichmentCache note), and a
+// head-to-head record is the most cacheable data here — it changes only when
+// the two teams actually play each other again, which the refresh detects by
+// comparing fetchedAt against the kickoffs of the pair's own predictions.
+//
+// Keyed by h2hPairKey ("{lowerTeamApiId}-{higherTeamApiId}", src/lib/slug.ts):
+// both orderings of a pair share one record, so it's stored once. Scope is
+// only pairs that have a real PUBLISHED prediction between them.
+//
+// An empty meetingsJson is a SUCCESSFUL answer meaning "these two have never
+// met", not a failure — it sets fetchedAt like any other result, so the page
+// can tell "never met" apart from "not fetched yet".
+model H2HCache {
+  id            String    @id @default(cuid())
+  pairKey       String    @unique
+  teamAApiId    Int // the lower of the two ids
+  teamBApiId    Int // the higher of the two ids
+  meetingsJson  Json? // H2HMeeting[] in src/lib/h2h.ts, most recent first
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+
+  @@index([lastAttemptAt])
+}
+
 // One row per (UTC day, api-football endpoint path), atomically incremented on
 // every dispatched request — see src/lib/football/usage.ts. The Pro plan's
 // 7,500/day ceiling is enforced against the SUM of these rows rather than an

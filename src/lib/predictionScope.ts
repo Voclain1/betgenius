@@ -1,7 +1,8 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { computeStat, type WinRateStat } from "@/lib/trackRecord";
-import { leagueSlug, teamSlug, matchSlug, matchKey } from "@/lib/slug";
+import { leagueSlug, teamSlug, matchSlug, matchKey, h2hSlug, h2hPairKey } from "@/lib/slug";
+import { computeH2HStats, type H2HMeeting, type H2HStats } from "@/lib/h2h";
 import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/lib/leagues";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
@@ -164,6 +165,86 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
     if (key && slug) index[key] = slug;
   }
   return index;
+});
+
+export type H2HPageData = {
+  /** Null when no published prediction pairs these two teams — the route has nothing to show. */
+  pair: {
+    teamAName: string;
+    teamBName: string;
+    teamAApiId: number;
+    teamBApiId: number;
+    pairKey: string;
+  } | null;
+  /** Cached meetings, most recent first. Empty when the pair has never met OR the cache hasn't been filled yet — `fetchedAt` is what separates those. */
+  meetings: H2HMeeting[];
+  stats: H2HStats | null;
+  fetchedAt: Date | null;
+  /** Published predictions between these two, newest first — the fixtures this record is context for. */
+  rows: ScopedResult["rows"];
+};
+
+/**
+ * Everything /predictions/h2h/[slug] renders.
+ *
+ * The pair is resolved from published predictions rather than from the slug's
+ * two halves: the slug is name-derived (and alphabetically ordered), while
+ * every figure on the page keys off API team ids, so the ids have to come from
+ * a row that actually names both teams. Any published prediction between the
+ * two carries both ids — that's the same resolution the match page does, just
+ * without the date.
+ *
+ * `teamA` is the alphabetically-first side, matching the slug's own ordering,
+ * so the page's split columns line up with its URL and title.
+ */
+export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => {
+  const candidates = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
+    orderBy: { kickoff: "desc" },
+    select: SCOPED_SELECT,
+  });
+  const rows = candidates.filter((r) => h2hSlug(r.homeTeam, r.awayTeam) === slug);
+  const withIds = rows.find((r) => r.homeTeamApiId != null && r.awayTeamApiId != null);
+
+  if (rows.length === 0 || !withIds) return { pair: null, meetings: [], stats: null, fetchedAt: null, rows };
+
+  // Orient A/B alphabetically, the same way h2hSlug orders the URL.
+  const home = { name: withIds.homeTeam!, id: withIds.homeTeamApiId! };
+  const away = { name: withIds.awayTeam!, id: withIds.awayTeamApiId! };
+  const [teamA, teamB] = teamSlug(home.name) < teamSlug(away.name) ? [home, away] : [away, home];
+  const pairKey = h2hPairKey(teamA.id, teamB.id)!;
+
+  const cached = await prisma.h2HCache.findUnique({ where: { pairKey } });
+  const meetings = cached?.fetchedAt ? ((cached.meetingsJson as unknown as H2HMeeting[] | null) ?? []) : [];
+
+  return {
+    pair: { teamAName: teamA.name, teamBName: teamB.name, teamAApiId: teamA.id, teamBApiId: teamB.id, pairKey },
+    meetings,
+    stats: cached?.fetchedAt ? computeH2HStats(meetings, teamA.id, teamB.id) : null,
+    fetchedAt: cached?.fetchedAt ?? null,
+    rows,
+  };
+});
+
+/**
+ * Distinct opponents a team has published predictions against, each with the
+ * h2h slug for that pairing — backs the "Head-to-head records" list on a team
+ * page. Ordered by how many published picks the pairing has, then by name.
+ */
+export const getOpponentsForTeamSlug = cache(async (slug: string): Promise<{ name: string; h2hSlug: string; count: number }[]> => {
+  const { rows } = await getPublishedByTeamSlug(slug);
+  const byOpponent = new Map<string, { name: string; h2hSlug: string; count: number }>();
+  for (const r of rows) {
+    if (!r.homeTeam || !r.awayTeam) continue;
+    const isHome = teamSlug(r.homeTeam) === slug;
+    const opponent = isHome ? r.awayTeam : r.homeTeam;
+    const pairSlug = h2hSlug(r.homeTeam, r.awayTeam);
+    if (!pairSlug || teamSlug(opponent) === slug) continue;
+    const existing = byOpponent.get(pairSlug);
+    if (existing) existing.count++;
+    else byOpponent.set(pairSlug, { name: opponent, h2hSlug: pairSlug, count: 1 });
+  }
+  return [...byOpponent.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 });
 
 /** Cached venue/referee/round for a fixture, or null if no successful refresh has landed yet — same fetchedAt contract as the team/league reads below. */
