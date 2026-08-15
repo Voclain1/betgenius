@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { RewriteRequest } from "@/components/RewriteRequest";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 const FREE_CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;
@@ -88,6 +89,16 @@ export default function AIPanel() {
     } finally {
       setBulkBusy(false);
     }
+  };
+
+  // A rewrite replaces the draft in place, so refresh the card from the
+  // endpoint's response rather than re-running the (expensive) generation.
+  const applyRewrite = (id: string, next: any) => {
+    setResult((r: any) => ({
+      ...r,
+      preview: next.matchPreview ?? r.preview,
+      predictions: r.predictions.map((p: any) => (p.id === id ? { ...p, ...next } : p)),
+    }));
   };
 
   const act = async (id: string, action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
@@ -183,10 +194,13 @@ export default function AIPanel() {
                   <div><div className="text-xs text-gray-400">Confidence</div><div className="font-semibold">{p.confidence}%</div></div>
                 </div>
                 <p className="text-sm text-gray-300 whitespace-pre-wrap">{p.reasoning}</p>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button className="btn btn-ghost text-sm" onClick={() => act(p.id, "APPROVE")}>Approve</button>
                   <button className="btn btn-primary text-sm" onClick={() => act(p.id, "PUBLISH")}>Publish</button>
                   <button className="btn btn-ghost text-sm" onClick={() => act(p.id, "ARCHIVE")}>Archive</button>
+                  {p.status === "PENDING_REVIEW" && (
+                    <RewriteRequest predictionId={p.id} rewriteCount={p.rewriteCount ?? 0} compact onDone={(np) => applyRewrite(p.id, np)} />
+                  )}
                 </div>
               </div>
             ))}
@@ -206,7 +220,7 @@ export default function AIPanel() {
           VIP and Premium tips stay manual, one at a time, above. Everything lands as Pending review — nothing publishes automatically.
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          The football data API is capped at 10 requests/minute, so each fixture takes roughly a minute to fully research and generate — a run of 5 fixtures takes several minutes. Leagues on their off-season (no scheduled matches on the chosen date) will just come back with 0 found.
+          Each fixture costs roughly 11 football-data requests to research, against a daily budget of 7,500 — a run is trimmed automatically if the day's quota can't cover it. Leagues on their off-season (no scheduled matches on the chosen date) will just come back with 0 found.
         </p>
       </div>
 

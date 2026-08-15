@@ -58,6 +58,9 @@ Rules:
   "suggestedOdds": number | null   // decimal odds for the top pick
 }`;
 
+/** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
+export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
+
 export async function generatePredictionForFixture(input: {
   home: string;
   away: string;
@@ -67,10 +70,51 @@ export async function generatePredictionForFixture(input: {
   awayContext?: unknown;
   h2h?: unknown;
   standings?: unknown;
+  /** Free-text admin direction for a rewrite, e.g. "the confidence feels too high given the h2h". */
+  reviewerNote?: string | null;
+  /** Present only on a rewrite — triggers the revision framing and higher sampling temperature. */
+  previousDraft?: PreviousDraft | null;
 }): Promise<AIPredictionOutput> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not set");
   }
+
+  const isRewrite = !!input.previousDraft;
+
+  // A rewrite without direction must still produce a genuinely new analysis,
+  // not a paraphrase. Two things force that: the previous draft is shown with
+  // an explicit instruction not to restate it, and temperature is raised below.
+  // Showing the old draft matters more than temperature — at default sampling
+  // the same prompt over the same context reliably returns near-identical text.
+  const revisionBlock = isRewrite
+    ? `
+This is a REVISION of an earlier draft for the same fixture, using the same
+underlying data. The previous draft was:
+
+Pick: ${input.previousDraft?.pick ?? "(none)"} at ${input.previousDraft?.confidence ?? "?"}% confidence
+Preview: ${input.previousDraft?.matchPreview ?? "(none)"}
+Reasoning: ${input.previousDraft?.reasoning ?? "(none)"}
+
+Produce a genuinely different analysis: re-examine the evidence, take a
+different angle, and do not restate the sentences above. You may keep the same
+pick if the data still supports it, but the preview and reasoning must be newly
+written, and reconsider whether the confidence level is right.
+`
+    : "";
+
+  const directionBlock = input.reviewerNote?.trim()
+    ? `
+REVIEWER DIRECTION — this is an explicit instruction from a human editor and
+takes priority over your own stylistic preferences. Address it directly and
+visibly in the new draft:
+
+"${input.reviewerNote.trim()}"
+
+Still obey every formatting and data-grounding rule above; the direction changes
+emphasis, tone and judgement, never the output schema or the ban on inventing
+facts not present in the data.
+`
+    : "";
 
   const userPrompt = `Analyse this fixture and return JSON only.
 
@@ -90,7 +134,7 @@ ${JSON.stringify(input.h2h ?? {}, null, 2)}
 
 League standings:
 ${JSON.stringify(input.standings ?? {}, null, 2)}
-
+${revisionBlock}${directionBlock}
 Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const res = await client.models.generateContent({
@@ -99,6 +143,10 @@ Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
     config: {
       systemInstruction: SYSTEM_PROMPT,
       responseMimeType: "application/json",
+      // Raised only for rewrites. First-pass generation stays on the model
+      // default, where consistency is what's wanted; a rewrite is explicitly a
+      // request for a different take, so the extra variance is the point.
+      ...(isRewrite ? { temperature: 1.0 } : {}),
     },
   });
 

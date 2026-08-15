@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { generatePredictionForFixture } from "@/lib/ai/gemini";
+import { buildStoredContext } from "@/lib/ai/context";
 import { getTeamContext, getStandings, getHeadToHead, searchTeam, resolveSeason } from "@/lib/football/api-football";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
@@ -104,6 +106,24 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       rawOutput: JSON.stringify(output),
       status: "COMPLETED",
       contextComplete,
+      // Everything the Gemini call was given, stored verbatim so a rewrite can
+      // reproduce the exact same evidence without re-hitting API-Football. The
+      // fixture identifiers ride along because the prompt is built from them
+      // too — storing only the football payload would leave a rewrite unable to
+      // reconstruct the question, just the answer.
+      // Cast: the context fields are `unknown` (raw api-football shapes this
+      // app doesn't model), which Prisma's InputJsonValue won't accept even
+      // though the values are plain JSON-serialisable objects.
+      context: buildStoredContext({
+        home: input.home,
+        away: input.away,
+        league: input.league,
+        kickoff: input.kickoff,
+        homeContext,
+        awayContext,
+        standings,
+        h2h,
+      }) as unknown as Prisma.InputJsonValue,
     },
   });
 
