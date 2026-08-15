@@ -196,20 +196,28 @@ export async function getStandings(leagueId: number, season: number) {
  */
 export type TeamSearchResult = { id: number; name: string; confident: boolean };
 
-/**
- * `confident` is true when the match is unambiguous enough to trust the
- * API's own spelling of the name for display (single result, or an
- * exact/prefix name match among several) — see generateAndPersistPrediction,
- * which only overwrites the typed/AI-generated homeTeam/awayTeam with this
- * name when confident, falling back to the original text otherwise.
- */
-export async function searchTeam(name: string): Promise<TeamSearchResult | null> {
-  const raw = await apiFetch<Array<{ team: { id: number; name: string } }>>("/teams", { search: name });
-  if (!raw?.length) return null;
-  if (raw.length === 1) return { id: raw[0].team.id, name: raw[0].team.name, confident: true };
+const junkPattern = /\b(u1\d|u2[0-3]|w|women|reserves?|ii)\b/i;
 
-  const junkPattern = /\b(u1\d|u2[0-3]|w|women|reserves?|ii)\b/i;
-  const normalized = name.trim().toLowerCase();
+/**
+ * Rank one result set against the originally-typed name. Scoring always
+ * measures against what the caller actually typed, even when the query that
+ * produced these results was a shortened variant — the confidence bar belongs
+ * to the caller's input, not to whatever query happened to find a hit.
+ */
+function pickBest(raw: Array<{ team: { id: number; name: string } }>, typedName: string): TeamSearchResult | null {
+  if (!raw.length) return null;
+  const normalized = typedName.trim().toLowerCase();
+
+  // A lone result used to be trusted unconditionally, which is exactly how
+  // "Tottenham Hotspur" became the women's side: the senior team is listed as
+  // "Tottenham", so searching the full name returned only junk, and a single
+  // junk result was taken as confident. Junk never earns confidence now,
+  // however few alternatives came back.
+  if (raw.length === 1) {
+    const only = raw[0].team;
+    return { id: only.id, name: only.name, confident: !junkPattern.test(only.name) };
+  }
+
   const scored = raw.map((r) => {
     const rn = r.team.name.trim().toLowerCase();
     let score = 0;
@@ -219,8 +227,77 @@ export async function searchTeam(name: string): Promise<TeamSearchResult | null>
     return { id: r.team.id, name: r.team.name, score };
   });
   scored.sort((a, b) => b.score - a.score);
-  const best = scored[0] ?? { id: raw[0].team.id, name: raw[0].team.name, score: 0 };
+  const best = scored[0];
   return { id: best.id, name: best.name, confident: best.score >= 50 };
+}
+
+/**
+ * Typed name -> the name api-football actually stores, for teams where the two
+ * share no common prefix and so can't be bridged by the queryVariants retry.
+ * "Athletic Bilbao" is the motivating case: the API lists it as "Athletic
+ * Club", which scores 0 against the typed name and is correctly rejected as
+ * low-confidence — a safe failure, but one that never self-corrects.
+ *
+ * Keys are lowercased/trimmed for lookup. Add entries as similar cases surface;
+ * this is deliberately a plain map rather than anything cleverer, since the
+ * long tail here is small and each entry is a human judgement call.
+ */
+const TEAM_NAME_ALIASES: Record<string, string> = {
+  "athletic bilbao": "Athletic Club",
+};
+
+/**
+ * Queries to try, in order. api-football's `search` matches substrings of the
+ * stored name, so a longer typed name than the API's own can never match:
+ * "Tottenham Hotspur" cannot find "Tottenham", and "Inter Milan" cannot find
+ * "Inter". Dropping the trailing word covers that whole class — the common
+ * pattern is a suffix the API omits (Hotspur, Milan, United).
+ *
+ * Bounded at one retry on purpose: each variant costs an API call against the
+ * daily quota, and progressively truncating to a single word mostly produces
+ * broad, low-quality result sets that the confidence bar rejects anyway.
+ */
+function queryVariants(name: string): string[] {
+  const trimmed = name.trim();
+  const words = trimmed.split(/\s+/);
+  if (words.length < 2) return [trimmed];
+  return [trimmed, words.slice(0, -1).join(" ")];
+}
+
+/**
+ * Resolve a team's API-Football id from its name. The /teams search endpoint
+ * rejects `search` combined with `league`/`season` ("cannot be used with the
+ * Search field"), so there's nothing to scope it by — results are disambiguated
+ * by name-closeness instead, deprioritizing youth/reserve/women's sides that
+ * often share a substring with the senior team's name (e.g. "Luton" also
+ * matching "Luton Town U21").
+ *
+ * `confident` is true when the match is unambiguous enough to act on — see
+ * generateAndPersistPrediction, which writes BOTH the resolved team id and the
+ * API's spelling of the name only when confident. An unconfident result is
+ * returned for logging/debugging but must not be persisted: a wrong-but-
+ * plausible id silently attaches another team's stats, form and fixtures to a
+ * prediction, which is worse than having no id at all.
+ */
+export async function searchTeam(name: string): Promise<TeamSearchResult | null> {
+  // An alias replaces the typed name as the scoring baseline too, not just as
+  // the query — scoring an aliased search against the original text would
+  // reject the very match the alias exists to find ("Athletic Club" scores 0
+  // against "Athletic Bilbao").
+  const target = TEAM_NAME_ALIASES[name.trim().toLowerCase()] ?? name;
+  let firstAttempt: TeamSearchResult | null = null;
+
+  for (const query of queryVariants(target)) {
+    const raw = await apiFetch<Array<{ team: { id: number; name: string } }>>("/teams", { search: query });
+    const best = pickBest(raw ?? [], target);
+    if (best?.confident) return best;
+    firstAttempt ??= best;
+  }
+
+  // Nothing confident anywhere. Returning the unconfident best (rather than
+  // null) keeps it visible to callers that log resolution attempts; callers
+  // are responsible for not persisting it.
+  return firstAttempt;
 }
 
 /**

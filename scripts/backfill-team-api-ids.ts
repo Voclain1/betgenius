@@ -37,15 +37,24 @@ async function main() {
 
   console.log(`${rows.length} predictions missing a team id, ${names.size} distinct team names to resolve.`);
 
+  // Only confident matches are persisted, mirroring generate.ts: an unconfident
+  // result means the id stays null and the typed name is kept, rather than
+  // attaching a wrong-but-plausible team. Unconfident hits are still logged
+  // (with what they would have been) so a bad name is easy to spot and correct.
   const resolved = new Map<string, number | null>();
   let ok = 0;
   let miss = 0;
   for (const name of names) {
     const match = await searchTeam(name);
-    resolved.set(name, match?.id ?? null);
-    if (match) ok++;
-    else miss++;
-    console.log(`${match ? "OK  " : "MISS"} ${name}${match ? ` -> ${match.id} (${match.name})` : ""}`);
+    const confident = !!match?.confident;
+    resolved.set(name, confident ? match!.id : null);
+    if (confident) {
+      ok++;
+      console.log(`OK   ${name} -> ${match!.id} (${match!.name})`);
+    } else {
+      miss++;
+      console.log(`MISS ${name}${match ? ` (rejected low-confidence ${match.id} "${match.name}")` : ""}`);
+    }
   }
 
   let updated = 0;
