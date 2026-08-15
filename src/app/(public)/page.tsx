@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { LeagueNav } from "@/components/LeagueNav";
+import { RecentResults } from "@/components/RecentResults";
+import { getLeaguesWithPublishedPredictions, popularLeagues } from "@/lib/predictionScope";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug, teamSlug } from "@/lib/slug";
@@ -46,7 +49,13 @@ const CATEGORY_LINKS: { label: string; slug: string }[] = [
 ];
 
 export default async function HomePage() {
-  const [featured, geniusPreview, session] = await Promise.all([fetchFeatured(), fetchGeniusPreview(), getServerSession(authOptions)]);
+  const [featured, geniusPreview, session, leagues] = await Promise.all([
+    fetchFeatured(),
+    fetchGeniusPreview(),
+    getServerSession(authOptions),
+    getLeaguesWithPublishedPredictions(),
+  ]);
+  const popular = popularLeagues(leagues);
 
   // A row can be cross-posted from a paywalled category into GENIUS — gate
   // per row on its own primary category (same as B1's league/team pages),
@@ -70,6 +79,26 @@ export default async function HomePage() {
           <Link href="/predictions/today" className="btn btn-primary">Today's tips</Link>
           <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-4 text-xl font-semibold">Popular leagues</h2>
+        <LeagueNav
+          leagues={popular}
+          empty={
+            leagues.length > 0
+              ? "No major-league predictions published yet — browse every league we cover further down this page."
+              : "No leagues yet. Once tips are published, the leagues they cover appear here."
+          }
+        />
+      </section>
+
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Recent results</h2>
+          <Link href="/livescores" className="text-sm text-brand hover:underline">Livescores →</Link>
+        </div>
+        <RecentResults />
       </section>
 
       <section className="space-y-6">
@@ -169,6 +198,14 @@ export default async function HomePage() {
         ) : (
           <PredictionsTable rows={featured} />
         )}
+      </section>
+
+      <section>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Browse by league</h2>
+          {leagues.length > 0 && <span className="text-sm text-gray-500">{leagues.length} leagues</span>}
+        </div>
+        <LeagueNav leagues={leagues} empty="No leagues yet. Once tips are published, the leagues they cover appear here." />
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
