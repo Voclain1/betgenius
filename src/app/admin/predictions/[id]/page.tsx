@@ -6,8 +6,19 @@ import { AlertTriangle } from "lucide-react";
 import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { MarketSelectionFields, emptyMarketFormState, type MarketFormState } from "@/components/MarketSelectionFields";
 import { isValidSelection, type MarketType } from "@/lib/markets";
+import { RewriteRequest } from "@/components/RewriteRequest";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
+
+type ArchivedDraft = {
+  matchPreview: string | null;
+  reasoning: string;
+  market: string;
+  pick: string;
+  confidence: number;
+  replacedAt: string;
+  reviewerNote: string | null;
+};
 
 const LEAGUE_TIERS = Array.from(new Set(MAJOR_LEAGUES.map((l) => l.tier))).map((tier) => ({
   tier,
@@ -42,6 +53,10 @@ type Prediction = {
   settledAt: string | null;
   settledBy: { name: string | null; email: string } | null;
   settlementNote: string | null;
+  rewriteCount: number;
+  rewriteRequestedAt: string | null;
+  rewriteRequestedBy: { name: string | null; email: string } | null;
+  previousDrafts: ArchivedDraft[] | null;
   categories: { category: string }[];
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string }; league?: { name: string }; kickoff?: string } | null;
 };
@@ -354,14 +369,57 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         {settleError && <div className="text-sm text-red-400">{settleError}</div>}
       </div>
 
+      {(p.previousDrafts?.length ?? 0) > 0 && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm uppercase text-gray-400">Draft history</h3>
+            <span className="chip bg-brand-border">{p.rewriteCount} rewrite{p.rewriteCount === 1 ? "" : "s"}</span>
+          </div>
+          {p.rewriteRequestedAt && (
+            <p className="text-xs text-gray-500">
+              Last rewrite {new Date(p.rewriteRequestedAt).toLocaleString()}
+              {p.rewriteRequestedBy ? ` — requested by ${p.rewriteRequestedBy.name ?? p.rewriteRequestedBy.email}` : ""}
+            </p>
+          )}
+          <p className="text-xs text-gray-500">Superseded drafts, oldest first. The version above is the current one.</p>
+          <ol className="space-y-3">
+            {p.previousDrafts!.map((d, i) => (
+              <li key={i} className="rounded-md border border-brand-border bg-brand-bg p-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                  <span className="chip bg-brand-border">v{i + 1}</span>
+                  <span>{new Date(d.replacedAt).toLocaleString()}</span>
+                  <span className="text-gray-500">·</span>
+                  <span>{d.market}: <b className="text-gray-300">{d.pick}</b> @ {d.confidence}%</span>
+                </div>
+                {d.reviewerNote ? (
+                  <p className="mt-2 border-l-2 border-brand pl-2 text-xs italic text-gray-300">
+                    Direction given: “{d.reviewerNote}”
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs italic text-gray-500">Plain regenerate — no direction given.</p>
+                )}
+                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-400">{d.reasoning}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       <div className="card flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button className="btn btn-ghost text-sm" onClick={() => act("APPROVE")}>Approve</button>
           <button className="btn btn-primary text-sm" onClick={() => act("PUBLISH")}>Publish</button>
           <button className="btn btn-ghost text-sm" onClick={() => act("ARCHIVE")}>Archive</button>
         </div>
         <button className="text-sm text-red-400 hover:underline" onClick={remove}>Delete prediction</button>
       </div>
+
+      {p.status === "PENDING_REVIEW" && (
+        <div className="card space-y-2">
+          <h3 className="text-sm uppercase text-gray-400">Not happy with this draft?</h3>
+          <RewriteRequest predictionId={p.id} rewriteCount={p.rewriteCount} onDone={() => load()} />
+        </div>
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       fixture: { include: { homeTeam: true, awayTeam: true, league: true } },
       author: { select: { name: true, email: true } },
       settledBy: { select: { name: true, email: true } },
+      rewriteRequestedBy: { select: { name: true, email: true } },
     },
   });
   if (!prediction) return NextResponse.json({ error: "Not found" }, { status: 404 });
