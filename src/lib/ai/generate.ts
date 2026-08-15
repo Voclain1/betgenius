@@ -55,8 +55,14 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   const [homeMatch, awayMatch] = input.leagueApiId
     ? await Promise.all([searchTeam(input.home), searchTeam(input.away)])
     : [null, null];
-  const homeApiId = homeMatch?.id ?? null;
-  const awayApiId = awayMatch?.id ?? null;
+  // One policy for one confidence signal: an unconfident match yields neither
+  // an id nor a name. Writing the id anyway (as this did originally) attaches
+  // another team's stats, form, injuries and h2h to the prediction and seeds
+  // the enrichment cache with them — a wrong-but-plausible id is strictly worse
+  // than a null one, because nothing downstream can tell it was a bad guess.
+  // Same fail-closed posture as the marketType/selection OTHER fallback below.
+  const homeApiId = homeMatch?.confident ? homeMatch.id : null;
+  const awayApiId = awayMatch?.confident ? awayMatch.id : null;
 
   // Prefer the API's own spelling over what was typed/AI-generated, but only
   // when the lookup was unambiguous — an unconfident match is more likely to
