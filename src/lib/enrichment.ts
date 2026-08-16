@@ -7,6 +7,7 @@
 // PUBLISHED predictions, not the whole football universe — mirrors the
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   getTeamById,
@@ -18,11 +19,14 @@ import {
   getTopScorers,
   getTopAssists,
   getTopYellowCards,
+  getSquad,
+  getCoaches,
   resolveSeason,
   type FixtureRow,
   type StandingsEntry,
   type StandingsSplit,
   type PlayerStatEntry,
+  type CoachEntry,
 } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { trimH2H } from "@/lib/h2h";
@@ -92,6 +96,148 @@ export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string
  * which is read live (see the model comment in schema.prisma).
  */
 export type FixtureDetail = { venue: string | null; city: string | null; referee: string | null; round: string | null };
+
+/** A squad member. Deliberately no stats — listing a squad is the scope, player profiles are not. */
+export type SquadPlayer = { id: number; name: string; age: number | null; number: number | null; position: string | null; photo: string | null };
+
+/** `since` is null when the record exists but its start date isn't trustworthy enough to assert — see resolveCurrentCoach. */
+export type TeamCoach = { name: string; nationality: string | null; since: string | null };
+
+/**
+ * Squads and coaches change on a transfer-window timescale, so they get a
+ * 7-day TTL and their own squadFetchedAt rather than riding the 3-hourly
+ * team refresh. Two calls per team, and the cost scales with TEAM count, not
+ * league count.
+ */
+const SQUAD_TTL_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * A tenure this old is treated as an unclosed record rather than a real spell.
+ * Set deliberately high: Simeone has been open at Atlético since 2011 (a
+ * genuine 15-year tenure), so any threshold tight enough to catch a decade-old
+ * stale record would suppress real ones. Length alone is a weak signal —
+ * `contradicted` below does most of the work.
+ */
+const IMPLAUSIBLE_TENURE_MS = 20 * 365 * 24 * 60 * 60_000;
+
+/**
+ * Picks the current coach out of everything /coachs returns for a team.
+ *
+ * Two rules, both learned from the live data rather than assumed:
+ *
+ * 1. Take the open spell (`end: null`) at THIS team with the LATEST start.
+ *    Never index [0] — that returns Ljungberg for Arsenal, Xavi for Barcelona
+ *    and Mihajlović for Bologna. Ordering by start date is what fixes those.
+ *
+ * 2. Suppress the start date when the records contradict themselves. Ordabasy
+ *    has THREE simultaneously-open spells (2016, 2024, 2025) and Kairat four —
+ *    api-football simply never closed the old ones. The latest is very likely
+ *    the incumbent, but its date can't be asserted alongside two others that
+ *    claim to be equally current, so the name is shown without a "since".
+ *
+ * Returns null when nothing has an open spell here (Bologna, Cagliari), which
+ * the page renders as "no current coach on record" rather than guessing.
+ */
+export function resolveCurrentCoach(list: CoachEntry[] | null, teamApiId: number): TeamCoach | null {
+  if (!list?.length) return null;
+
+  const open = list
+    .map((c) => {
+      const spell = (c.career ?? [])
+        .filter((k) => k.team?.id === teamApiId && !k.end && k.start)
+        .sort((a, b) => (a.start! < b.start! ? 1 : -1))[0];
+      return spell ? { coach: c, start: spell.start! } : null;
+    })
+    .filter((x): x is { coach: CoachEntry; start: string } => x !== null)
+    .sort((a, b) => (a.start < b.start ? 1 : -1));
+
+  if (open.length === 0) return null;
+
+  const best = open[0];
+  const contradicted = open.length > 1;
+  const tooOld = Date.now() - new Date(best.start).getTime() > IMPLAUSIBLE_TENURE_MS;
+
+  return {
+    name: best.coach.name,
+    nationality: best.coach.nationality ?? null,
+    since: contradicted || tooOld ? null : best.start,
+  };
+}
+
+/** Squad rows, trimmed to the listing fields and ordered by shirt number (unnumbered last). */
+export function trimSquad(rows: Array<{ players: SquadEntryLike[] }> | null): SquadPlayer[] {
+  const players = rows?.[0]?.players ?? [];
+  return players
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      age: p.age ?? null,
+      number: p.number ?? null,
+      position: p.position ?? null,
+      photo: p.photo ?? null,
+    }))
+    .sort((a, b) => (a.number ?? 999) - (b.number ?? 999));
+}
+type SquadEntryLike = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };
+
+/** Teams whose squad/coach cache is older than the 7-day TTL, stalest first. */
+export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<TeamTarget[]> {
+  const existing = await prisma.teamEnrichmentCache.findMany({
+    where: { teamApiId: { in: targets.map((t) => t.teamApiId) } },
+    select: { teamApiId: true, squadFetchedAt: true },
+  });
+  const byId = new Map(existing.map((r) => [r.teamApiId, r.squadFetchedAt]));
+  const cutoff = Date.now() - SQUAD_TTL_MS;
+  return targets
+    .filter((t) => {
+      const at = byId.get(t.teamApiId);
+      return !at || at.getTime() < cutoff;
+    })
+    .sort((a, b) => (byId.get(a.teamApiId)?.getTime() ?? -Infinity) - (byId.get(b.teamApiId)?.getTime() ?? -Infinity));
+}
+
+/**
+ * Refresh one team's squad and coach — two calls, both through the same
+ * apiFetch that enforces the daily quota gate and the request throttle, so
+ * this pass is budgeted exactly like every other enrichment call.
+ *
+ * squadFetchedAt is set whenever the calls succeed, including when the coach
+ * doesn't resolve: "no current coach on record" is a real answer, the same
+ * rule H2H needed for "never met". Only an outright failure of both calls
+ * leaves prior data untouched.
+ */
+export async function refreshTeamSquad(target: TeamTarget): Promise<{ teamApiId: number; result: "ok" | "failed" | "error"; detail?: string }> {
+  const now = new Date();
+  try {
+    const [squadRaw, coachRaw] = await Promise.all([getSquad(target.teamApiId), getCoaches(target.teamApiId)]);
+
+    if (squadRaw == null && coachRaw == null) {
+      const lastError = "No response from /players/squads or /coachs — see server logs";
+      await prisma.teamEnrichmentCache.upsert({
+        where: { teamApiId: target.teamApiId },
+        create: { teamApiId: target.teamApiId, teamName: target.teamName, lastAttemptAt: now, lastError },
+        update: { lastAttemptAt: now, lastError },
+      });
+      return { teamApiId: target.teamApiId, result: "failed" };
+    }
+
+    const squad = trimSquad(squadRaw);
+    const coach = resolveCurrentCoach(coachRaw, target.teamApiId);
+
+    await prisma.teamEnrichmentCache.upsert({
+      where: { teamApiId: target.teamApiId },
+      create: { teamApiId: target.teamApiId, teamName: target.teamName, squadJson: squad, coachJson: coach ?? undefined, squadFetchedAt: now, lastAttemptAt: now },
+      update: { squadJson: squad, coachJson: coach ?? Prisma.DbNull, squadFetchedAt: now, lastAttemptAt: now },
+    });
+    return { teamApiId: target.teamApiId, result: "ok", detail: `${squad.length} players, coach ${coach ? coach.name : "unresolved"}` };
+  } catch (err: any) {
+    const message = err?.message ?? String(err);
+    await prisma.teamEnrichmentCache
+      .upsert({ where: { teamApiId: target.teamApiId }, create: { teamApiId: target.teamApiId, teamName: target.teamName, lastAttemptAt: now, lastError: message }, update: { lastAttemptAt: now, lastError: message } })
+      .catch(() => {});
+    return { teamApiId: target.teamApiId, result: "error", detail: message };
+  }
+}
 
 /** Distinct team ids referenced by PUBLISHED predictions, each paired with the most recent row's league/kickoff (for season resolution). */
 export async function getScopedTeamTargets(): Promise<TeamTarget[]> {

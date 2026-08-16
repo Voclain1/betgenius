@@ -2,7 +2,7 @@ import { getTeamEnrichment } from "@/lib/predictionScope";
 import { formatRelativeTime } from "@/lib/time";
 import { computeFormRating, MIN_FORM_SAMPLE } from "@/lib/form";
 import { FormRatingBadge } from "@/components/FormRatingBadge";
-import type { TeamStatsSummary, TeamFixtureSummary } from "@/lib/enrichment";
+import type { TeamStatsSummary, TeamFixtureSummary, TeamCoach } from "@/lib/enrichment";
 
 const resultStyles: Record<string, string> = {
   W: "bg-emerald-500/20 text-emerald-300",
@@ -25,9 +25,10 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
   const stats = (row.statsJson as unknown as TeamStatsSummary | null) ?? null;
   const fixtures = (row.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null;
   const rating = computeFormRating(fixtures);
+  const coach = (row.coachJson as unknown as TeamCoach | null) ?? null;
   const hasStatTiles = stats && (stats.played != null || stats.goalsFor != null);
 
-  if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length && !row.venueName) return null;
+  if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length && !row.venueName && !row.squadFetchedAt) return null;
 
   return (
     <div className="card space-y-3">
@@ -58,6 +59,32 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
           {row.venueCity && <span className="text-gray-500"> · {row.venueCity}</span>}
           {row.venueCapacity != null && (
             <span className="text-gray-500"> · {row.venueCapacity.toLocaleString("en-GB")} capacity</span>
+          )}
+        </div>
+      )}
+
+      {/* Coach sits with the venue as club facts rather than form. Shown only
+          once a squad refresh has run: before that we have no basis to say
+          anything, whereas after it a null coach genuinely means the records
+          carry no current one (Bologna, Cagliari). The tenure date is omitted
+          when resolveCurrentCoach judged it unassertable. */}
+      {row.squadFetchedAt && (
+        <div className="text-sm">
+          {coach ? (
+            <>
+              <span className="text-gray-500">Coach: </span>
+              <span className="font-medium text-gray-300">{coach.name}</span>
+              {coach.nationality && <span className="text-gray-500"> · {coach.nationality}</span>}
+              {coach.since && (
+                <span className="text-gray-500">
+                  {" "}
+                  · since{" "}
+                  {new Date(coach.since).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-gray-500">No current coach on record</span>
           )}
         </div>
       )}

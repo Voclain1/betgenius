@@ -175,6 +175,14 @@ model TeamEnrichmentCache {
   form          String? // e.g. "WWDLW", from /teams/statistics
   statsJson     Json?
   lastFixtures  Json?
+  // Squad and coach move on a transfer-window timescale, so they carry their
+  // own squadFetchedAt on a 7-day TTL. Sharing `fetchedAt` — which the 3-hourly
+  // form refresh owns — would force a squad re-fetch every cycle, and make
+  // "squad not fetched yet" indistinguishable from "form refresh failed".
+  // Same reasoning as playersFetchedAt on LeagueEnrichmentCache.
+  squadJson      Json? // SquadPlayer[] in src/lib/enrichment.ts
+  coachJson      Json? // TeamCoach, or null when no current coach resolves
+  squadFetchedAt DateTime?
   fetchedAt     DateTime?
   lastAttemptAt DateTime?
   lastError     String?

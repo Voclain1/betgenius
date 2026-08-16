@@ -6,7 +6,9 @@ import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
-import { getPublishedByTeamSlug, getOpponentsForTeamSlug } from "@/lib/predictionScope";
+import { TeamSquad } from "@/components/TeamSquad";
+import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment } from "@/lib/predictionScope";
+import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug, matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
@@ -70,6 +72,8 @@ export default async function TeamPage({ params }: { params: { slug: string } })
   const name = resolveTeamName(rows, params.slug);
   const teamApiId = resolveTeamApiId(rows, params.slug);
   const opponents = await getOpponentsForTeamSlug(params.slug);
+  const enrichment = await getTeamEnrichment(teamApiId);
+  const squad = (enrichment?.squadJson as unknown as SquadPlayer[] | null) ?? [];
 
   const session = await getServerSession(authOptions);
   const shaped = rows.map((r) => {
@@ -115,6 +119,15 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time for ${name}`} big />
       </div>
+
+      {squad.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-xl font-semibold">
+            Squad <span className="text-sm font-normal text-gray-500">({squad.length})</span>
+          </h2>
+          <TeamSquad squad={squad} />
+        </div>
+      )}
 
       {/* Opponents this team has published picks against — each one is a
           pairing with a head-to-head record worth reading. Rendered only when

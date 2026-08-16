@@ -17,6 +17,8 @@ import {
   refreshH2HCache,
   selectStalePlayerStatLeagues,
   refreshLeaguePlayerStats,
+  selectStaleSquadTargets,
+  refreshTeamSquad,
 } from "@/lib/enrichment";
 
 // Same shape as /api/admin/settle: runs sequentially through the throttled
@@ -61,6 +63,10 @@ export async function GET(req: Request) {
   // Three calls per league, but gated on a 12h TTL rather than the 3-hourly
   // cadence — leaderboards only move when matches are played.
   const stalePlayerLeagues = (await selectStalePlayerStatLeagues(leagueTargets)).slice(0, limit);
+  // Two calls per team on a 7-day TTL. Cost scales with TEAM count rather than
+  // league count, so this slice is the main guard against a large scoped set
+  // turning one run into hundreds of calls.
+  const staleSquadTeams = (await selectStaleSquadTargets(teamTargets)).slice(0, limit);
   const teamSlice = orderedTeams.slice(0, limit);
   const leagueSlice = orderedLeagues.slice(0, limit);
   const fixtureDaySlice = orderedFixtureDays.slice(0, limit);
@@ -69,7 +75,7 @@ export async function GET(req: Request) {
   // teams meet again.
   const h2hSlice = staleH2H.slice(0, limit);
 
-  const results: Array<{ kind: "team" | "league" | "fixture" | "h2h" | "players"; id: number | string; result: string; detail?: string }> = [];
+  const results: Array<{ kind: "team" | "league" | "fixture" | "h2h" | "players" | "squad"; id: number | string; result: string; detail?: string }> = [];
 
   for (const t of teamSlice) {
     const r = await refreshTeamCache(t);
@@ -95,6 +101,11 @@ export async function GET(req: Request) {
     results.push({ kind: "players", id: l.leagueApiId, result: r.result, detail: r.detail ?? r.counts });
   }
 
+  for (const t of staleSquadTeams) {
+    const r = await refreshTeamSquad(t);
+    results.push({ kind: "squad", id: t.teamApiId, result: r.result, detail: r.detail });
+  }
+
   return NextResponse.json({
     scopedTeams: teamTargets.length,
     scopedLeagues: leagueTargets.length,
@@ -103,6 +114,7 @@ export async function GET(req: Request) {
     staleH2HPairs: staleH2H.length,
     processedH2HPairs: h2hSlice.length,
     processedPlayerStatLeagues: stalePlayerLeagues.length,
+    processedSquadTeams: staleSquadTeams.length,
     scopedFixtureDays: orderedFixtureDays.length,
     processedTeams: teamSlice.length,
     processedLeagues: leagueSlice.length,

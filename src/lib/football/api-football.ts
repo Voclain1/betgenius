@@ -396,6 +396,30 @@ export function getTopYellowCards(leagueId: number, season: number) {
   return apiFetch<PlayerStatEntry[]>("/players/topyellowcards", { league: leagueId, season });
 }
 
+export type SquadEntry = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };
+
+/** /players/squads returns one wrapper per team, with the squad under `players`. */
+export function getSquad(teamId: number) {
+  return apiFetch<Array<{ team: { id: number; name: string }; players: SquadEntry[] }>>("/players/squads", { team: teamId });
+}
+
+/**
+ * /coachs?team= returns EVERY coach associated with the team, historic ones
+ * included — not just the incumbent. Callers must resolve the current one from
+ * the career spells (see resolveCurrentCoach in src/lib/enrichment.ts);
+ * indexing [0] returns e.g. Ljungberg for Arsenal and Xavi for Barcelona.
+ */
+export type CoachEntry = {
+  id: number;
+  name: string;
+  nationality?: string | null;
+  career?: Array<{ team?: { id?: number | null; name?: string | null } | null; start?: string | null; end?: string | null }> | null;
+};
+
+export function getCoaches(teamId: number) {
+  return apiFetch<CoachEntry[]>("/coachs", { team: teamId });
+}
+
 /** Last meetings between two teams, for head-to-head context in the AI prompt. */
 export function getHeadToHead(homeTeamId: number, awayTeamId: number, last = 10) {
   return apiFetch<FixtureRow[]>("/fixtures/headtohead", { h2h: `${homeTeamId}-${awayTeamId}`, last });
