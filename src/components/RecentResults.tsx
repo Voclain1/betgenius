@@ -11,6 +11,8 @@ const WINDOW_HOURS = 36;
 // above the Genius/Featured tables, so it shouldn't push them off-screen on
 // mobile before the reader has scrolled.
 const GROUP_PAGE_SIZE = 3;
+/** At most this many league groups — supporting content, not a feed. */
+const MAX_GROUPS = 2;
 
 function isoDaysAgo(days: number) {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -72,12 +74,13 @@ export function RecentResults({ linkIndex }: { linkIndex?: MatchLinkIndex }) {
       .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime());
   }, [rows]);
 
-  // Major leagues first, same curated default as Fixtures/Livescores. In a
-  // quiet window where nothing major has finished, fall back to the full set
-  // rather than showing an empty section next to results that do exist.
+  // Major leagues ONLY — no fallback to the full set. This block sits on the
+  // homepage of a tips site covering major leagues; standing in Lithuanian or
+  // Croatian results because nothing major has finished reads as a different
+  // product entirely. An empty state is the honest answer in a quiet window.
   const major = useMemo(() => finished.filter((r) => isMajorLeague(r.league.id)), [finished]);
-  const shown = major.length > 0 ? major : finished;
-  const groups = useMemo(() => groupByLeague(shown), [shown]);
+  // Capped: this is supporting content beneath the tips, not a scores feed.
+  const groups = useMemo(() => groupByLeague(major).slice(0, MAX_GROUPS), [major]);
 
   if (loading) return <EmptyState>Loading recent results…</EmptyState>;
 
@@ -86,7 +89,7 @@ export function RecentResults({ linkIndex }: { linkIndex?: MatchLinkIndex }) {
       <EmptyState>
         {failed
           ? "Results are unavailable right now — try again shortly."
-          : `No matches have finished in the last ${WINDOW_HOURS} hours.`}{" "}
+          : `No major-league matches have finished in the last ${WINDOW_HOURS} hours.`}{" "}
         <Link href="/livescores" className="text-brand hover:underline">
           See livescores →
         </Link>
@@ -96,7 +99,6 @@ export function RecentResults({ linkIndex }: { linkIndex?: MatchLinkIndex }) {
 
   return (
     <div className="space-y-3">
-      {major.length === 0 && <p className="text-xs text-gray-500">No major-league matches finished recently — showing all leagues.</p>}
       <GroupedMatches
         groups={groups}
         visibleCount={visibleGroupCount}

@@ -382,7 +382,10 @@ export const getLeaguesWithPublishedPredictions = cache(async (): Promise<League
     const visual = getLeagueVisual(r.leagueApiId);
     bySlug.set(slug, {
       slug,
-      name: r.leagueName!,
+      // leagueDisplayName appends the country when the id resolves, which is
+      // what keeps England's and Kazakhstan's "Premier League" from rendering
+      // as two identical adjacent pills on the homepage.
+      name: leagueDisplayName(r.leagueName!, r.leagueApiId),
       country: visual?.country ?? null,
       leagueApiId: r.leagueApiId,
       count: 1,
