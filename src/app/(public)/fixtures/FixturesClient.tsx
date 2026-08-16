@@ -14,7 +14,7 @@ import {
   type MatchLinkIndex,
 } from "@/components/MatchList";
 import { classifyStatus, type MatchStatusGroup } from "@/lib/matchStatus";
-import { isMajorLeague } from "@/lib/leagues";
+import { isMajorLeague, isKnownLeague } from "@/lib/leagues";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 const GROUP_PAGE_SIZE = 10;
@@ -100,28 +100,36 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
   // set, status narrows it again, and the range decides which days were
   // fetched at all.
   const majorRows = useMemo(() => rows.filter((r) => isMajorLeague(r.league.id)), [rows]);
+  const knownRows = useMemo(() => rows.filter((r) => isKnownLeague(r.league.id)), [rows]);
 
   /**
-   * Major Leagues falls back to All Leagues when the CURRENT filter — range and
-   * status tab together — has no major matches but the full slate does.
+   * Major Leagues widens in TIERS when the current filter — range and status
+   * tab together — has no major matches: first to the leagues we recognise
+   * (LEAGUE_CATALOGUE), and only then to everything api-football returns.
    *
-   * Evaluated per tab rather than per scope on purpose: the case this exists
-   * for is today's default, where the major set holds two finished matches and
-   * zero upcoming ones, so a scope-level test would decide there was major
-   * content and still land the visitor on an empty Upcoming tab.
+   * The middle tier is the point. Falling straight from seven competitions to
+   * "all" put Slovak 3. Liga, Canadian and Polish women's football on the
+   * default view of a football tips site — the same off-brand substitution
+   * that got this fallback removed from the homepage's Recent results.
+   * Recognised leagues fill the page without that.
    *
-   * Deliberately the opposite choice to the homepage's Recent results, which
-   * had this exact fallback REMOVED. There, minor-league results stood in for
-   * headline ones on a brand surface where the substitution was misleading.
-   * Here the page's whole job is browsing what's on, the toggle is right there
-   * showing what happened, and an empty default helps nobody.
+   * Evaluated per tab rather than per scope: today's major set holds finished
+   * matches and no upcoming ones, so a scope-level test would decide there was
+   * major content and still land the visitor on an empty Upcoming tab.
+   *
+   * An explicit All Leagues choice never widens — it's already the widest set,
+   * and the toggle means what it says.
    */
   const tabOf = (set: FixtureRow[]) => set.filter((r) => classifyStatus(r.fixture.status.short) === tab);
-  const scopeFellBack = useMemo(
-    () => leagueScope === "major" && tabOf(majorRows).length === 0 && tabOf(rows).length > 0,
-    [leagueScope, majorRows, rows, tab],
-  );
-  const scopedRows = leagueScope === "major" && !scopeFellBack ? majorRows : rows;
+  const fallbackTier = useMemo<null | "known" | "all">(() => {
+    if (leagueScope !== "major" || tabOf(majorRows).length > 0) return null;
+    if (tabOf(knownRows).length > 0) return "known";
+    if (tabOf(rows).length > 0) return "all";
+    return null; // nothing anywhere — leave the honest empty state alone
+  }, [leagueScope, majorRows, knownRows, rows, tab]);
+
+  const scopedRows =
+    leagueScope !== "major" ? rows : fallbackTier === "known" ? knownRows : fallbackTier === "all" ? rows : majorRows;
 
   const counts = useMemo(() => {
     const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
@@ -159,7 +167,7 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
       {!loading && rows.length > 0 && (
         <p className="text-xs text-gray-500">
           Showing {filtered.length} of {rows.length} matches
-          {leagueScope === "major" && !scopeFellBack ? " — Major Leagues only" : ""}
+          {leagueScope === "major" && !fallbackTier ? " — Major Leagues only" : ""}
           {multiDay ? ` across ${dates.length} days` : ""}.
         </p>
       )}
@@ -167,9 +175,10 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
       {/* The toggle still reads "Major Leagues" because that IS the active
           choice; this says what was actually rendered instead, so the two
           never silently disagree. */}
-      {!loading && scopeFellBack && (
+      {!loading && fallbackTier && (
         <p className="rounded-lg border border-brand-border bg-brand-card px-3 py-2 text-xs text-gray-400">
-          No {tab} matches in the major leagues for this range — showing all leagues instead.
+          No {tab} matches in the major leagues for this range — showing{" "}
+          {fallbackTier === "known" ? "other leagues we cover" : "all leagues"} instead.
         </p>
       )}
 

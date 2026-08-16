@@ -101,6 +101,20 @@ export function isMajorLeague(leagueApiId?: number | null): boolean {
   return (MAJOR_LEAGUE_IDS as readonly number[]).includes(leagueApiId);
 }
 
+/**
+ * True if we recognise the league at all — i.e. it's in LEAGUE_CATALOGUE and
+ * therefore has a flag, a name and a country we can render.
+ *
+ * The middle tier of the Fixtures scope fallback: broad enough to fill a page
+ * when the seven headline competitions are idle, narrow enough to exclude the
+ * third divisions, reserve sides and women's leagues that "literally every
+ * league api-football returns" drags in.
+ */
+export function isKnownLeague(leagueApiId?: number | null): boolean {
+  if (leagueApiId == null) return false;
+  return LEAGUE_CATALOGUE.some((l) => l.id === leagueApiId);
+}
+
 /** Competition crest — used for cup/international entries, and as a fallback. */
 export function leagueLogoUrl(id: number): string {
   return `https://media.api-sports.io/football/leagues/${id}.png`;
