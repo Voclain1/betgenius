@@ -99,10 +99,29 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
   // Filters combine rather than replace each other: league scope narrows the
   // set, status narrows it again, and the range decides which days were
   // fetched at all.
-  const scopedRows = useMemo(
-    () => (leagueScope === "major" ? rows.filter((r) => isMajorLeague(r.league.id)) : rows),
-    [rows, leagueScope],
+  const majorRows = useMemo(() => rows.filter((r) => isMajorLeague(r.league.id)), [rows]);
+
+  /**
+   * Major Leagues falls back to All Leagues when the CURRENT filter — range and
+   * status tab together — has no major matches but the full slate does.
+   *
+   * Evaluated per tab rather than per scope on purpose: the case this exists
+   * for is today's default, where the major set holds two finished matches and
+   * zero upcoming ones, so a scope-level test would decide there was major
+   * content and still land the visitor on an empty Upcoming tab.
+   *
+   * Deliberately the opposite choice to the homepage's Recent results, which
+   * had this exact fallback REMOVED. There, minor-league results stood in for
+   * headline ones on a brand surface where the substitution was misleading.
+   * Here the page's whole job is browsing what's on, the toggle is right there
+   * showing what happened, and an empty default helps nobody.
+   */
+  const tabOf = (set: FixtureRow[]) => set.filter((r) => classifyStatus(r.fixture.status.short) === tab);
+  const scopeFellBack = useMemo(
+    () => leagueScope === "major" && tabOf(majorRows).length === 0 && tabOf(rows).length > 0,
+    [leagueScope, majorRows, rows, tab],
   );
+  const scopedRows = leagueScope === "major" && !scopeFellBack ? majorRows : rows;
 
   const counts = useMemo(() => {
     const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
@@ -140,8 +159,17 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
       {!loading && rows.length > 0 && (
         <p className="text-xs text-gray-500">
           Showing {filtered.length} of {rows.length} matches
-          {leagueScope === "major" ? " — Major Leagues only" : ""}
+          {leagueScope === "major" && !scopeFellBack ? " — Major Leagues only" : ""}
           {multiDay ? ` across ${dates.length} days` : ""}.
+        </p>
+      )}
+
+      {/* The toggle still reads "Major Leagues" because that IS the active
+          choice; this says what was actually rendered instead, so the two
+          never silently disagree. */}
+      {!loading && scopeFellBack && (
+        <p className="rounded-lg border border-brand-border bg-brand-card px-3 py-2 text-xs text-gray-400">
+          No {tab} matches in the major leagues for this range — showing all leagues instead.
         </p>
       )}
 
@@ -151,8 +179,8 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
         <EmptyState>
           {rows.length === 0
             ? "No fixtures returned for this range (check your API-Football key or plan limits)."
-            : scopedRows.length === 0
-              ? "No major-league matches in this range — try All Leagues."
+            : leagueScope === "major" && majorRows.length === 0
+              ? "No major-league matches in this range, and none in any other league either."
               : `No ${tab} matches in this range.`}
         </EmptyState>
       )}
