@@ -8,7 +8,22 @@
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
 import { prisma } from "@/lib/prisma";
-import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, getHeadToHead, resolveSeason, type FixtureRow, type StandingsEntry, type StandingsSplit } from "@/lib/football/api-football";
+import {
+  getTeamById,
+  getTeamContext,
+  getStandings,
+  getFixturesByLeague,
+  getFixturesByDate,
+  getHeadToHead,
+  getTopScorers,
+  getTopAssists,
+  getTopYellowCards,
+  resolveSeason,
+  type FixtureRow,
+  type StandingsEntry,
+  type StandingsSplit,
+  type PlayerStatEntry,
+} from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { trimH2H } from "@/lib/h2h";
 
@@ -377,6 +392,140 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
       })
       .catch(() => {});
     return { teamApiId: target.teamApiId, result: "error", detail: message };
+  }
+}
+
+/** One row of a league leaderboard, trimmed from the very large raw player payload to what a table shows. */
+export type LeaguePlayerStat = {
+  playerId: number;
+  name: string;
+  photo: string | null;
+  teamId: number;
+  teamName: string;
+  teamLogo: string | null;
+  /** The metric this leaderboard ranks by — goals, assists or yellow cards depending on the column it's stored in. */
+  value: number;
+  /** Carried on the cards board only, from the same payload — a second call for red-card leaders would buy nothing new. */
+  redCards?: number;
+  appearances: number | null;
+  minutes: number | null;
+};
+
+/** How many rows of each leaderboard are kept. Beyond this is a full stats page, not a league-page section. */
+const PLAYER_STAT_ROWS = 10;
+
+/**
+ * Trims a /players/top* response, dropping every entry whose metric is zero.
+ *
+ * That filter is doing real work, not tidying. Two observed cases produce
+ * zero-valued rows that would otherwise render as a leaderboard:
+ *   - Smaller leagues can return a degenerate current-season response — the
+ *     Kazakh Premier League returns the same three players with goals=0 and
+ *     yellow=0 for BOTH boards, despite its standings correctly showing 22
+ *     matches played.
+ *   - Early in a season the API pads the list; La Liga after one matchday
+ *     returns twenty "top scorers" who are all on a single goal.
+ * A leaderboard entry with none of the thing it ranks by is noise, so the
+ * honest rendering of that response is an empty board, which the page reports
+ * as "not available yet" rather than as data.
+ */
+export function trimPlayerStats(rows: PlayerStatEntry[] | null, metric: "goals" | "assists" | "yellow"): LeaguePlayerStat[] {
+  if (!rows?.length) return [];
+  return rows
+    .map((r) => {
+      const s = r.statistics?.[0];
+      if (!s) return null;
+      const value = metric === "goals" ? s.goals?.total : metric === "assists" ? s.goals?.assists : s.cards?.yellow;
+      return {
+        playerId: r.player.id,
+        name: r.player.name,
+        photo: r.player.photo ?? null,
+        teamId: s.team.id,
+        teamName: s.team.name,
+        teamLogo: s.team.logo ?? null,
+        value: value ?? 0,
+        ...(metric === "yellow" ? { redCards: s.cards?.red ?? 0 } : {}),
+        appearances: s.games?.appearences ?? null,
+        minutes: s.games?.minutes ?? null,
+      };
+    })
+    .filter((r): r is LeaguePlayerStat => r !== null && r.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, PLAYER_STAT_ROWS);
+}
+
+/**
+ * Player stats are refreshed at most this often, against the 3-hourly cadence
+ * the rest of the enrichment runs at. They only change when matches are
+ * played, so re-fetching three leaderboards per league every cycle would spend
+ * ~128 calls a day to mostly rewrite identical rows.
+ */
+const PLAYER_STATS_TTL_MS = 12 * 60 * 60_000;
+
+/** Leagues whose player leaderboards are stale enough to be worth three calls, stalest first. */
+export async function selectStalePlayerStatLeagues(targets: LeagueTarget[]): Promise<LeagueTarget[]> {
+  const existing = await prisma.leagueEnrichmentCache.findMany({
+    where: { leagueApiId: { in: targets.map((t) => t.leagueApiId) } },
+    select: { leagueApiId: true, playersFetchedAt: true },
+  });
+  const byId = new Map(existing.map((r) => [r.leagueApiId, r.playersFetchedAt]));
+  const cutoff = Date.now() - PLAYER_STATS_TTL_MS;
+  return targets
+    .filter((t) => {
+      const at = byId.get(t.leagueApiId);
+      return !at || at.getTime() < cutoff;
+    })
+    .sort((a, b) => (byId.get(a.leagueApiId)?.getTime() ?? -Infinity) - (byId.get(b.leagueApiId)?.getTime() ?? -Infinity));
+}
+
+/**
+ * Refresh one league's leaderboards — three calls (scorers, assists, yellow
+ * cards; see getTopYellowCards on why red is not a fourth).
+ *
+ * `playersFetchedAt` is set whenever the calls SUCCEED, including when every
+ * board trims to empty: "this season has no player stats yet" is a real
+ * answer the page needs to distinguish from "never fetched", the same rule
+ * H2H needed for "these two have never met". Only an outright API failure
+ * (all three null) leaves it untouched so prior boards survive.
+ */
+export async function refreshLeaguePlayerStats(
+  target: LeagueTarget,
+): Promise<{ leagueApiId: number; result: "ok" | "failed" | "error"; counts?: string; detail?: string }> {
+  const now = new Date();
+  try {
+    const season = await resolveSeason(target.leagueApiId, target.kickoff ?? new Date());
+    const [scorersRaw, assistsRaw, cardsRaw] = await Promise.all([
+      getTopScorers(target.leagueApiId, season),
+      getTopAssists(target.leagueApiId, season),
+      getTopYellowCards(target.leagueApiId, season),
+    ]);
+
+    if (scorersRaw == null && assistsRaw == null && cardsRaw == null) {
+      const lastError = "No response from any /players/top* endpoint — see server logs";
+      await prisma.leagueEnrichmentCache.upsert({
+        where: { leagueApiId: target.leagueApiId },
+        create: { leagueApiId: target.leagueApiId, season, lastAttemptAt: now, lastError },
+        update: { lastAttemptAt: now, lastError },
+      });
+      return { leagueApiId: target.leagueApiId, result: "failed" };
+    }
+
+    const scorers = trimPlayerStats(scorersRaw, "goals");
+    const assists = trimPlayerStats(assistsRaw, "assists");
+    const cards = trimPlayerStats(cardsRaw, "yellow");
+
+    await prisma.leagueEnrichmentCache.upsert({
+      where: { leagueApiId: target.leagueApiId },
+      create: { leagueApiId: target.leagueApiId, season, topScorersJson: scorers, topAssistsJson: assists, topCardsJson: cards, playersFetchedAt: now, lastAttemptAt: now },
+      update: { season, topScorersJson: scorers, topAssistsJson: assists, topCardsJson: cards, playersFetchedAt: now, lastAttemptAt: now },
+    });
+    return { leagueApiId: target.leagueApiId, result: "ok", counts: `${scorers.length}s/${assists.length}a/${cards.length}c` };
+  } catch (err: any) {
+    const message = err?.message ?? String(err);
+    await prisma.leagueEnrichmentCache
+      .upsert({ where: { leagueApiId: target.leagueApiId }, create: { leagueApiId: target.leagueApiId, lastAttemptAt: now, lastError: message }, update: { lastAttemptAt: now, lastError: message } })
+      .catch(() => {});
+    return { leagueApiId: target.leagueApiId, result: "error", detail: message };
   }
 }
 

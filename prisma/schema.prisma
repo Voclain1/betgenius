@@ -176,16 +176,26 @@ model TeamEnrichmentCache {
   @@index([lastAttemptAt])
 }
 
+// `playersFetchedAt` is deliberately SEPARATE from `fetchedAt` rather than
+// sharing it. `fetchedAt` means "standings/upcoming are good"; player stats
+// populate on their own timeline — La Liga today has a full standings table
+// and full top-scorer list but no card data at all, because cards lag goals
+// early in a season. Under one flag, "cards haven't populated yet" would be
+// indistinguishable from "the refresh failed". See src/lib/enrichment.ts.
 model LeagueEnrichmentCache {
-  id            String    @id @default(cuid())
-  leagueApiId   Int       @unique
-  season        Int?
-  standingsJson Json?
-  upcomingJson  Json?
-  fetchedAt     DateTime?
-  lastAttemptAt DateTime?
-  lastError     String?
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  leagueApiId      Int       @unique
+  season           Int?
+  standingsJson    Json?
+  upcomingJson     Json?
+  topScorersJson   Json? // LeaguePlayerStat[] in src/lib/enrichment.ts
+  topAssistsJson   Json?
+  topCardsJson     Json?
+  fetchedAt        DateTime?
+  playersFetchedAt DateTime?
+  lastAttemptAt    DateTime?
+  lastError        String?
+  updatedAt        DateTime  @updatedAt
 
   @@index([lastAttemptAt])
 }

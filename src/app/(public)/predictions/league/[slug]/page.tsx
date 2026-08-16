@@ -8,6 +8,7 @@ import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { LeagueFixtures } from "@/components/LeagueFixtures";
 import { LeagueResults } from "@/components/LeagueResults";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
+import { LeaguePlayerStats } from "@/components/LeaguePlayerStats";
 import { formatRelativeTime } from "@/lib/time";
 import {
   getPublishedByLeagueSlug,
@@ -16,7 +17,7 @@ import {
   getLeagueClubs,
   getPublishedMatchIndex,
 } from "@/lib/predictionScope";
-import type { LeagueStandingRow, LeagueUpcomingFixture } from "@/lib/enrichment";
+import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
@@ -70,6 +71,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
   const upcoming = (enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null;
   const clubs = standings?.length ? await getLeagueClubs(standings) : [];
+  const scorers = (enrichment?.topScorersJson as unknown as LeaguePlayerStat[] | null) ?? [];
+  const assists = (enrichment?.topAssistsJson as unknown as LeaguePlayerStat[] | null) ?? [];
+  const cards = (enrichment?.topCardsJson as unknown as LeaguePlayerStat[] | null) ?? [];
   // The upcoming list has no team ids, so its preview links match on the
   // name-derived slug — the values of the id-keyed index are those same slugs.
   const publishedSlugs = Object.values(matchIndex);
@@ -138,6 +142,16 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <h2 className="mb-3 text-xl font-semibold">Recent results</h2>
         <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
       </div>
+
+      {/* Rendered once player stats have been fetched at all. Individual
+          boards can still be empty (season not started, cards lagging) and say
+          so themselves; before the first fetch there is nothing to caveat. */}
+      {enrichment?.playersFetchedAt && (
+        <div>
+          <h2 className="mb-3 text-xl font-semibold">Player leaderboards</h2>
+          <LeaguePlayerStats scorers={scorers} assists={assists} cards={cards} />
+        </div>
+      )}
 
       {clubs.length > 0 && (
         <div>

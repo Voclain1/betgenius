@@ -341,6 +341,44 @@ export async function getTeamContext(teamId: number, leagueId: number, season: n
   return { statistics, injuries, lastFixtures };
 }
 
+/**
+ * One entry from the /players/top* family. All of them share this shape — the
+ * endpoint only decides the ordering, so each response carries the player's
+ * full stat line regardless of which leaderboard was asked for.
+ *
+ * That's why there's no getTopRedCards below: the yellow-card response already
+ * carries each player's red count, so a separate call would buy only a
+ * differently-ordered version of data we already hold.
+ */
+export type PlayerStatEntry = {
+  player: { id: number; name: string; photo?: string | null };
+  statistics: Array<{
+    team: { id: number; name: string; logo?: string | null };
+    games: { appearences: number | null; minutes: number | null; position?: string | null };
+    goals: { total: number | null; assists: number | null };
+    cards: { yellow: number | null; yellowred: number | null; red: number | null };
+  }>;
+};
+
+/**
+ * League leaderboards. Verified against the live API on this plan for every
+ * league we track: HTTP 200 with no errors, and full 20-row payloads for a
+ * completed season. Current-season responses can be empty (season not started,
+ * or cards not yet populated) or degenerate for smaller leagues — see
+ * trimPlayerStats in src/lib/enrichment.ts for how those are handled.
+ */
+export function getTopScorers(leagueId: number, season: number) {
+  return apiFetch<PlayerStatEntry[]>("/players/topscorers", { league: leagueId, season });
+}
+
+export function getTopAssists(leagueId: number, season: number) {
+  return apiFetch<PlayerStatEntry[]>("/players/topassists", { league: leagueId, season });
+}
+
+export function getTopYellowCards(leagueId: number, season: number) {
+  return apiFetch<PlayerStatEntry[]>("/players/topyellowcards", { league: leagueId, season });
+}
+
 /** Last meetings between two teams, for head-to-head context in the AI prompt. */
 export function getHeadToHead(homeTeamId: number, awayTeamId: number, last = 10) {
   return apiFetch<FixtureRow[]>("/fixtures/headtohead", { h2h: `${homeTeamId}-${awayTeamId}`, last });
