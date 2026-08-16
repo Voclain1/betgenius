@@ -49,7 +49,13 @@ function MatchStatusCell({ fixture }: { fixture: FixtureRow }) {
     return <span className="chip whitespace-nowrap bg-gray-500/20 text-[10px] text-gray-400">{statusLabel(code)}</span>;
   }
   return (
-    <span className="text-xs text-gray-400">
+    // suppressHydrationWarning: the time is formatted in the VIEWER's locale,
+    // which the server can't know, so server and client legitimately render
+    // different strings. Harmless where this list is client-fetched (Fixtures,
+    // Livescores), but the league page server-renders it from cache, and
+    // without this React treats the difference as a failed hydration and
+    // replaces the whole document.
+    <span className="text-xs text-gray-400" suppressHydrationWarning>
       {new Date(fixture.fixture.date).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
     </span>
   );
@@ -162,6 +168,75 @@ export function groupByLeague(rows: FixtureRow[]): { league: FixtureRow["league"
     byId.get(id)!.rows.push(r);
   }
   return order.map((id) => byId.get(id)!);
+}
+
+/**
+ * Groups fixtures by kickoff DAY (local), newest-first order preserved from
+ * the caller. The league page separates fixtures by date where the Fixtures
+ * page separates them by league — same MatchRow underneath, different axis.
+ */
+export function groupByDate(rows: FixtureRow[]): { date: string; label: string; rows: FixtureRow[] }[] {
+  const order: string[] = [];
+  const byDate = new Map<string, FixtureRow[]>();
+  for (const r of rows) {
+    const d = new Date(r.fixture.date);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (!byDate.has(key)) {
+      byDate.set(key, []);
+      order.push(key);
+    }
+    byDate.get(key)!.push(r);
+  }
+  return order.map((key) => ({
+    date: key,
+    label: new Date(byDate.get(key)![0].fixture.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
+    rows: byDate.get(key)!,
+  }));
+}
+
+/** Date-headed groups of MatchRows — the date-axis counterpart to LeagueGroup. */
+export function DateGroupedMatches({ groups, linkIndex }: { groups: { date: string; label: string; rows: FixtureRow[] }[]; linkIndex?: MatchLinkIndex }) {
+  return (
+    <div className="space-y-4">
+      {groups.map((g) => (
+        <section key={g.date}>
+          <div className="flex items-center gap-2 rounded-t-xl border border-b-0 border-brand-border bg-brand-card px-3 py-2">
+            <span className="truncate text-xs font-semibold uppercase tracking-wide text-gray-300" suppressHydrationWarning>
+              {g.label}
+            </span>
+          </div>
+          <div className="divide-y divide-brand-border rounded-b-xl border border-brand-border bg-brand-bg/60">
+            {g.rows.map((fx) => (
+              <MatchRow key={fx.fixture.id} fx={fx} linkIndex={linkIndex} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Generic pill toggle, same visual language as StatusTabs/LeagueScopeToggle
+ * below. Those two keep their own markup because each carries something extra
+ * (per-tab counts, a fixed two-option axis); this is the plain version for new
+ * callers like the standings Overall/Home/Away switch.
+ */
+export function PillTabs<T extends string>({ options, active, onChange }: { options: { key: T; label: string }[]; active: T; onChange: (key: T) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${active === o.key ? "bg-brand text-black" : "text-gray-400 hover:text-white"}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const TAB_ORDER: { key: MatchStatusGroup; label: string }[] = [

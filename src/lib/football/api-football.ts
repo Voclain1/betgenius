@@ -173,14 +173,25 @@ export async function resolveSeason(leagueId: number, date: Date): Promise<numbe
   return date.getUTCMonth() >= 6 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
 }
 
-/** One team's row within a league's standings table. */
+/** Played/won/drawn/lost + goals, as /standings reports it for each of the all/home/away splits. */
+export type StandingsSplit = { played: number; win: number; draw: number; lose: number; goals: { for: number; against: number } };
+
+/**
+ * One team's row within a league's standings table.
+ *
+ * `home`/`away` are returned by /standings on every plan alongside `all` — the
+ * Home/Away views on the league page are a re-read of the same response, not a
+ * second request.
+ */
 export type StandingsEntry = {
   rank: number;
   team: { id: number; name: string; logo?: string };
   points: number;
   goalsDiff: number;
   form?: string;
-  all: { played: number; win: number; draw: number; lose: number; goals: { for: number; against: number } };
+  all: StandingsSplit;
+  home?: StandingsSplit;
+  away?: StandingsSplit;
 };
 
 export type StandingRow = {

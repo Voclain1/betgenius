@@ -167,6 +167,36 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
   return index;
 });
 
+export type LeagueClub = { teamId: number; teamName: string; crest: string | null };
+
+/**
+ * The clubs in a league, with a crest each where one can be resolved — backs
+ * the club grid on the league page.
+ *
+ * Same two-tier, degrade-to-null chain the homepage league nav uses, one tier
+ * down the object graph: the standings row's own logo first, then
+ * TeamEnrichmentCache's cached crest for that team id, then null (the grid
+ * renders initials). The cache is read once for the whole grid rather than per
+ * club.
+ */
+export const getLeagueClubs = cache(async (standings: { teamId: number; teamName: string; teamLogo: string | null }[]): Promise<LeagueClub[]> => {
+  const needsCrest = standings.filter((s) => !s.teamLogo).map((s) => s.teamId);
+  const cached =
+    needsCrest.length > 0
+      ? await prisma.teamEnrichmentCache.findMany({
+          where: { teamApiId: { in: needsCrest }, fetchedAt: { not: null }, crestUrl: { not: null } },
+          select: { teamApiId: true, crestUrl: true },
+        })
+      : [];
+  const crestById = new Map(cached.map((c) => [c.teamApiId, c.crestUrl!]));
+
+  return standings.map((s) => ({
+    teamId: s.teamId,
+    teamName: s.teamName,
+    crest: s.teamLogo ?? crestById.get(s.teamId) ?? null,
+  }));
+});
+
 export type H2HPageData = {
   /** Null when no published prediction pairs these two teams — the route has nothing to show. */
   pair: {

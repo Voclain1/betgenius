@@ -4,8 +4,19 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
-import { LeagueEnrichmentPanel } from "@/components/LeagueEnrichmentPanel";
-import { getPublishedByLeagueSlug, leagueDisplayName } from "@/lib/predictionScope";
+import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
+import { LeagueFixtures } from "@/components/LeagueFixtures";
+import { LeagueResults } from "@/components/LeagueResults";
+import { LeagueClubGrid } from "@/components/LeagueClubGrid";
+import { formatRelativeTime } from "@/lib/time";
+import {
+  getPublishedByLeagueSlug,
+  leagueDisplayName,
+  getLeagueEnrichment,
+  getLeagueClubs,
+  getPublishedMatchIndex,
+} from "@/lib/predictionScope";
+import type { LeagueStandingRow, LeagueUpcomingFixture } from "@/lib/enrichment";
 import { matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
@@ -49,8 +60,19 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   }
 
   const name = leagueDisplayName(rows[0].leagueName!, rows[0].leagueApiId);
+  const leagueApiId = rows[0].leagueApiId;
 
-  const session = await getServerSession(authOptions);
+  const [enrichment, matchIndex, session] = await Promise.all([
+    getLeagueEnrichment(leagueApiId),
+    getPublishedMatchIndex(),
+    getServerSession(authOptions),
+  ]);
+  const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
+  const upcoming = (enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null;
+  const clubs = standings?.length ? await getLeagueClubs(standings) : [];
+  // The upcoming list has no team ids, so its preview links match on the
+  // name-derived slug — the values of the id-keyed index are those same slugs.
+  const publishedSlugs = Object.values(matchIndex);
   const shaped = rows.map((r) => {
     const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
     return canView
@@ -89,16 +111,54 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <p className="text-sm text-gray-400">{rows.length} published picks</p>
       </div>
 
-      <LeagueEnrichmentPanel leagueApiId={rows[0].leagueApiId} />
-
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time in ${name}`} big />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {shaped.map((p) => (
-          <PredictionCard key={p.id} p={p as any} />
-        ))}
+      {standings && standings.length > 0 && (
+        <div className="card space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Standings</h2>
+            {enrichment?.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(enrichment.fetchedAt)}</span>}
+          </div>
+          <LeagueStandingsTable rows={standings} />
+        </div>
+      )}
+
+      <div>
+        <h2 className="mb-3 text-xl font-semibold">Upcoming fixtures</h2>
+        <LeagueFixtures
+          upcoming={upcoming}
+          league={{ id: leagueApiId ?? -1, name: rows[0].leagueName!, country: "" }}
+          publishedSlugs={publishedSlugs}
+        />
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-xl font-semibold">Recent results</h2>
+        <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
+      </div>
+
+      {clubs.length > 0 && (
+        <div>
+          <h2 className="mb-3 text-xl font-semibold">Clubs in this league</h2>
+          <LeagueClubGrid clubs={clubs} />
+        </div>
+      )}
+
+      {/* Picks last because this list is unbounded — a league with 45 published
+          predictions would otherwise push standings, fixtures and results so
+          far down that the page's depth is unreachable. Everything above is
+          fixed-height or collapsed. */}
+      <div>
+        <h2 className="mb-3 text-xl font-semibold">
+          {rows.length} published {rows.length === 1 ? "pick" : "picks"}
+        </h2>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {shaped.map((p) => (
+            <PredictionCard key={p.id} p={p as any} />
+          ))}
+        </div>
       </div>
     </div>
   );

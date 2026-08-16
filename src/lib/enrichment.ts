@@ -8,7 +8,7 @@
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
 import { prisma } from "@/lib/prisma";
-import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, getHeadToHead, resolveSeason, type FixtureRow, type StandingsEntry } from "@/lib/football/api-football";
+import { getTeamById, getTeamContext, getStandings, getFixturesByLeague, getFixturesByDate, getHeadToHead, resolveSeason, type FixtureRow, type StandingsEntry, type StandingsSplit } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { trimH2H } from "@/lib/h2h";
 
@@ -39,7 +39,36 @@ export type TeamFixtureSummary = {
   goalsFor?: number | null;
   goalsAgainst?: number | null;
 };
-export type LeagueStandingRow = { rank: number; teamId: number; teamName: string; teamLogo: string | null; points: number; played: number; win: number; draw: number; loss: number; goalsFor: number; goalsAgainst: number; form: string | null };
+/** Played/won/drawn/lost + goals for one split of a standings row. */
+export type LeagueStandingSplit = { played: number; win: number; draw: number; loss: number; goalsFor: number; goalsAgainst: number };
+
+/**
+ * A standings row. The top-level played/win/... fields are the OVERALL split,
+ * kept flat for backward compatibility with rows cached before the splits
+ * existed; `home`/`away` are the same numbers restricted to matches played at
+ * each venue.
+ *
+ * api-football returns all three in a single /standings response — the Home
+ * and Away views cost no extra call. They're optional only because rows cached
+ * before this field was added don't carry them, in which case the league page
+ * offers Overall alone rather than empty tables.
+ */
+export type LeagueStandingRow = {
+  rank: number;
+  teamId: number;
+  teamName: string;
+  teamLogo: string | null;
+  points: number;
+  played: number;
+  win: number;
+  draw: number;
+  loss: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  form: string | null;
+  home?: LeagueStandingSplit | null;
+  away?: LeagueStandingSplit | null;
+};
 export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
 /**
  * Shape stored in FixtureDetailCache.detailJson — only fields that exist
@@ -351,6 +380,18 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
   }
 }
 
+function splitOf(split: StandingsSplit | undefined): LeagueStandingSplit | null {
+  if (!split) return null;
+  return {
+    played: split.played,
+    win: split.win,
+    draw: split.draw,
+    loss: split.lose,
+    goalsFor: split.goals.for,
+    goalsAgainst: split.goals.against,
+  };
+}
+
 function trimStandings(standings: StandingsEntry[] | null): LeagueStandingRow[] | null {
   if (!standings?.length) return null;
   return standings.map((s) => ({
@@ -366,6 +407,8 @@ function trimStandings(standings: StandingsEntry[] | null): LeagueStandingRow[] 
     goalsFor: s.all.goals.for,
     goalsAgainst: s.all.goals.against,
     form: s.form ?? null,
+    home: splitOf(s.home),
+    away: splitOf(s.away),
   }));
 }
 
