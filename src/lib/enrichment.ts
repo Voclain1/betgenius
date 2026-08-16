@@ -24,7 +24,21 @@ export const H2H_FETCH_LAST = 10;
 // shared with the read side (TeamEnrichmentPanel/LeagueEnrichmentPanel) so
 // both sides agree on what's actually in the cache without re-deriving it.
 export type TeamStatsSummary = { played: number | null; win: number | null; draw: number | null; loss: number | null; goalsFor: number | null; goalsAgainst: number | null };
-export type TeamFixtureSummary = { opponent: string; result: string; date: string; venue: "home" | "away" };
+/**
+ * `goalsFor`/`goalsAgainst` are the team's own goals in that fixture, and feed
+ * the goal-difference half of the form rating (src/lib/form.ts). They're
+ * optional because rows cached before this field existed don't carry them —
+ * the rating degrades to results-only for those until the next refresh rather
+ * than treating a missing score as 0-0.
+ */
+export type TeamFixtureSummary = {
+  opponent: string;
+  result: string;
+  date: string;
+  venue: "home" | "away";
+  goalsFor?: number | null;
+  goalsAgainst?: number | null;
+};
 export type LeagueStandingRow = { rank: number; teamId: number; teamName: string; teamLogo: string | null; points: number; played: number; win: number; draw: number; loss: number; goalsFor: number; goalsAgainst: number; form: string | null };
 export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
 /**
@@ -268,7 +282,14 @@ function trimLastFixtures(teamApiId: number, fixtures: FixtureRow[] | null): Tea
     const own = isHome ? f.goals.home : f.goals.away;
     const opp = isHome ? f.goals.away : f.goals.home;
     const result = own == null || opp == null ? "?" : own > opp ? "W" : own < opp ? "L" : "D";
-    return { opponent: isHome ? f.teams.away.name : f.teams.home.name, result, date: f.fixture.date, venue: isHome ? "home" : "away" };
+    return {
+      opponent: isHome ? f.teams.away.name : f.teams.home.name,
+      result,
+      date: f.fixture.date,
+      venue: isHome ? "home" : "away",
+      goalsFor: own ?? null,
+      goalsAgainst: opp ?? null,
+    };
   });
 }
 

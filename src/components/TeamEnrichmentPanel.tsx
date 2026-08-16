@@ -1,5 +1,7 @@
 import { getTeamEnrichment } from "@/lib/predictionScope";
 import { formatRelativeTime } from "@/lib/time";
+import { computeFormRating, MIN_FORM_SAMPLE } from "@/lib/form";
+import { FormRatingBadge } from "@/components/FormRatingBadge";
 import type { TeamStatsSummary, TeamFixtureSummary } from "@/lib/enrichment";
 
 const resultStyles: Record<string, string> = {
@@ -22,6 +24,7 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
 
   const stats = (row.statsJson as unknown as TeamStatsSummary | null) ?? null;
   const fixtures = (row.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null;
+  const rating = computeFormRating(fixtures);
   const hasStatTiles = stats && (stats.played != null || stats.goalsFor != null);
 
   if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length) return null;
@@ -44,6 +47,20 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
         </div>
         {row.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(row.fetchedAt)}</span>}
       </div>
+
+      {/* Rating sits above the W/D/L run it's computed from, so the reader
+          sees the number and its evidence together. Withheld below
+          MIN_FORM_SAMPLE rather than shown with a hedge — see form.ts. */}
+      {rating ? (
+        <FormRatingBadge rating={rating} label="Form rating" />
+      ) : (
+        fixtures &&
+        fixtures.length > 0 && (
+          <p className="text-xs text-gray-500">
+            Not enough recent matches to rate form yet — {MIN_FORM_SAMPLE} needed.
+          </p>
+        )
+      )}
 
       {fixtures && fixtures.length > 0 && (
         <div className="flex items-center gap-1.5">

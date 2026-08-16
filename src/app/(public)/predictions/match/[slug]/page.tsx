@@ -6,6 +6,7 @@ import { canViewCategory } from "@/lib/access";
 import { PredictionCard } from "@/components/PredictionCard";
 import { MatchInfoPanel } from "@/components/MatchInfoPanel";
 import { MatchLiveStatus } from "@/components/MatchLiveStatus";
+import { MatchFormComparison } from "@/components/MatchFormComparison";
 import { getPublishedByMatchSlug } from "@/lib/predictionScope";
 import { teamSlug, h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
@@ -110,6 +111,13 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         kickoff={match.kickoff}
         leagueName={match.leagueName}
         leagueApiId={match.leagueApiId}
+      />
+
+      <MatchFormComparison
+        homeTeamApiId={match.homeTeamApiId}
+        awayTeamApiId={match.awayTeamApiId}
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
       />
 
       {preview && <p className="text-sm text-gray-300 whitespace-pre-wrap">{preview}</p>}
