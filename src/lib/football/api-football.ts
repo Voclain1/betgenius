@@ -325,10 +325,27 @@ export async function searchTeam(name: string): Promise<TeamSearchResult | null>
  * captures a logo; this id-based lookup backs the enrichment cache refresh
  * (src/lib/enrichment.ts), which always has an already-resolved team id.
  */
-export async function getTeamById(teamId: number): Promise<{ id: number; name: string; logo: string | null } | null> {
-  const raw = await apiFetch<Array<{ team: { id: number; name: string; logo?: string } }>>("/teams", { id: teamId });
+export type TeamVenue = { name: string | null; city: string | null; address: string | null; capacity: number | null };
+
+export async function getTeamById(
+  teamId: number,
+): Promise<{ id: number; name: string; logo: string | null; venue: TeamVenue | null } | null> {
+  const raw = await apiFetch<
+    Array<{
+      team: { id: number; name: string; logo?: string };
+      venue?: { name?: string | null; city?: string | null; address?: string | null; capacity?: number | null };
+    }>
+  >("/teams", { id: teamId });
   if (!raw?.[0]) return null;
-  return { id: raw[0].team.id, name: raw[0].team.name, logo: raw[0].team.logo ?? null };
+  const v = raw[0].venue;
+  return {
+    id: raw[0].team.id,
+    name: raw[0].team.name,
+    logo: raw[0].team.logo ?? null,
+    // The venue object is returned alongside `team` on this same response —
+    // verified against the live endpoint — so storing it costs nothing extra.
+    venue: v ? { name: v.name ?? null, city: v.city ?? null, address: v.address ?? null, capacity: v.capacity ?? null } : null,
+  };
 }
 
 /** Team & fixture "form" input for the AI prompt. */

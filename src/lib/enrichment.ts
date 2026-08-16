@@ -357,6 +357,15 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
     const form = typeof context?.statistics === "object" && context.statistics ? ((context.statistics as any).form ?? null) : null;
     const statsJson = trimStatistics(context?.statistics);
     const lastFixtures = trimLastFixtures(target.teamApiId, context?.lastFixtures ?? null);
+    // Venue rides along on the /teams response that already produced the crest.
+    // Written as explicit nulls when absent so a club that loses its venue
+    // upstream doesn't keep showing a stale stadium.
+    const venueFields = {
+      venueName: teamInfo?.venue?.name ?? null,
+      venueCity: teamInfo?.venue?.city ?? null,
+      venueAddress: teamInfo?.venue?.address ?? null,
+      venueCapacity: teamInfo?.venue?.capacity ?? null,
+    };
     const succeeded = !!teamInfo || !!statsJson || !!lastFixtures || !!form;
 
     if (!succeeded) {
@@ -372,12 +381,12 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
       where: { teamApiId: target.teamApiId },
       create: {
         teamApiId: target.teamApiId, teamName: target.teamName, leagueApiId: target.leagueApiId, season,
-        crestUrl: teamInfo?.logo ?? null, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
+        crestUrl: teamInfo?.logo ?? null, ...venueFields, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
         fetchedAt: now, lastAttemptAt: now, lastError: null,
       },
       update: {
         teamName: target.teamName, leagueApiId: target.leagueApiId, season,
-        crestUrl: teamInfo?.logo ?? null, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
+        crestUrl: teamInfo?.logo ?? null, ...venueFields, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
         fetchedAt: now, lastAttemptAt: now, lastError: null,
       },
     });

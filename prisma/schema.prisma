@@ -165,6 +165,13 @@ model TeamEnrichmentCache {
   leagueApiId   Int? // representative league used to fetch season-scoped stats
   season        Int?
   crestUrl      String?
+  // Venue comes back inline on the same /teams lookup that yields the crest —
+  // no extra call. Nullable throughout: api-football omits venue for some
+  // clubs, and the team page renders nothing rather than a placeholder.
+  venueName     String?
+  venueCity     String?
+  venueAddress  String?
+  venueCapacity Int?
   form          String? // e.g. "WWDLW", from /teams/statistics
   statsJson     Json?
   lastFixtures  Json?

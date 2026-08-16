@@ -27,7 +27,7 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
   const rating = computeFormRating(fixtures);
   const hasStatTiles = stats && (stats.played != null || stats.goalsFor != null);
 
-  if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length) return null;
+  if (!row.crestUrl && !row.form && !hasStatTiles && !fixtures?.length && !row.venueName) return null;
 
   return (
     <div className="card space-y-3">
@@ -47,6 +47,20 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
         </div>
         {row.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(row.fetchedAt)}</span>}
       </div>
+
+      {/* Venue: nothing at all when the cache has no stadium for this club,
+          rather than a placeholder row. Capacity and city each degrade
+          independently, so a club with a named ground but no capacity still
+          shows the ground. */}
+      {row.venueName && (
+        <div className="text-sm text-gray-300">
+          <span className="font-medium">{row.venueName}</span>
+          {row.venueCity && <span className="text-gray-500"> · {row.venueCity}</span>}
+          {row.venueCapacity != null && (
+            <span className="text-gray-500"> · {row.venueCapacity.toLocaleString("en-GB")} capacity</span>
+          )}
+        </div>
+      )}
 
       {/* Rating sits above the W/D/L run it's computed from, so the reader
           sees the number and its evidence together. Withheld below
