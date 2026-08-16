@@ -2,25 +2,25 @@
 import { useState } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
-import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { RewriteRequest } from "@/components/RewriteRequest";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 const FREE_CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;
 
-const LEAGUE_TIERS = Array.from(new Set(MAJOR_LEAGUES.map((l) => l.tier))).map((tier) => ({
+const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
   tier,
   label: LEAGUE_TIER_LABELS[tier] ?? tier,
-  leagues: MAJOR_LEAGUES.filter((l) => l.tier === tier),
+  leagues: LEAGUE_CATALOGUE.filter((l) => l.tier === tier),
 }));
 
 export default function AIPanel() {
   const [form, setForm] = useState({
     home: "",
     away: "",
-    league: MAJOR_LEAGUES[0].name as string,
-    leagueApiId: MAJOR_LEAGUES[0].id as number | undefined,
+    league: LEAGUE_CATALOGUE[0].name as string,
+    leagueApiId: LEAGUE_CATALOGUE[0].id as number | undefined,
     kickoff: new Date().toISOString().slice(0, 16),
     category: "TODAY" as (typeof CATS)[number],
   });
@@ -50,7 +50,7 @@ export default function AIPanel() {
 
   const [bulkForm, setBulkForm] = useState({
     date: new Date().toISOString().slice(0, 10),
-    leagueApiIds: [MAJOR_LEAGUES[0].id] as number[],
+    leagueApiIds: [LEAGUE_CATALOGUE[0].id] as number[],
     categories: ["TODAY"] as string[],
     limit: 5,
   });
@@ -135,7 +135,7 @@ export default function AIPanel() {
           <select value={form.leagueApiId ?? "Other"}
             onChange={(e) => {
               if (e.target.value === "Other") { setForm({ ...form, league: "Other", leagueApiId: undefined }); return; }
-              const found = MAJOR_LEAGUES.find((l) => l.id === Number(e.target.value));
+              const found = LEAGUE_CATALOGUE.find((l) => l.id === Number(e.target.value));
               setForm({ ...form, league: found?.name ?? "Other", leagueApiId: found?.id });
             }}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">

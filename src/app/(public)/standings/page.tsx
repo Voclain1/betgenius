@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 
-const LEAGUE_TIERS = Array.from(new Set(MAJOR_LEAGUES.map((l) => l.tier))).map((tier) => ({
+const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
   tier,
   label: LEAGUE_TIER_LABELS[tier] ?? tier,
-  leagues: MAJOR_LEAGUES.filter((l) => l.tier === tier),
+  leagues: LEAGUE_CATALOGUE.filter((l) => l.tier === tier),
 }));
 
 type Row = {

@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
-import { MAJOR_LEAGUES } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { z } from "zod";
 
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { date, leagueApiIds, categories, limit } = parsed.data;
   const dateObj = new Date(date);
-  const leagueNameById = new Map<number, string>(MAJOR_LEAGUES.map((l) => [l.id, l.name]));
+  const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
 
   // Season boundaries differ per league (winter-spanning vs. calendar-year),
   // so each league's season must be resolved individually for this date.

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
-import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { MarketSelectionFields, emptyMarketFormState, type MarketFormState } from "@/components/MarketSelectionFields";
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { RewriteRequest } from "@/components/RewriteRequest";
@@ -20,10 +20,10 @@ type ArchivedDraft = {
   reviewerNote: string | null;
 };
 
-const LEAGUE_TIERS = Array.from(new Set(MAJOR_LEAGUES.map((l) => l.tier))).map((tier) => ({
+const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
   tier,
   label: LEAGUE_TIER_LABELS[tier] ?? tier,
-  leagues: MAJOR_LEAGUES.filter((l) => l.tier === tier),
+  leagues: LEAGUE_CATALOGUE.filter((l) => l.tier === tier),
 }));
 
 type Prediction = {
@@ -279,7 +279,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           <select value={form.leagueApiId ?? "Other"}
             onChange={(e) => {
               if (e.target.value === "Other") { setForm({ ...form, leagueApiId: undefined, leagueName: "" }); return; }
-              const found = MAJOR_LEAGUES.find((l) => l.id === Number(e.target.value));
+              const found = LEAGUE_CATALOGUE.find((l) => l.id === Number(e.target.value));
               setForm({ ...form, leagueApiId: found?.id, leagueName: found?.name ?? "" });
             }}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">

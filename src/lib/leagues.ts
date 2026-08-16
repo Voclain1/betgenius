@@ -5,7 +5,7 @@
 // `kind: "cup"` = international competition with no single home country —
 // displayed with the competition's own logo. `kind: "league"` = domestic
 // league — displayed with its country's flag.
-export const MAJOR_LEAGUES = [
+export const LEAGUE_CATALOGUE = [
   // Top 5
   { id: 39, name: "Premier League", country: "England", tier: "top", kind: "league", flagCode: "gb-eng" },
   { id: 140, name: "La Liga", country: "Spain", tier: "top", kind: "league", flagCode: "es" },
@@ -50,7 +50,40 @@ export const MAJOR_LEAGUES = [
 
   // Major non-European leagues
   { id: 71, name: "Serie A", country: "Brazil", tier: "world", kind: "league", flagCode: "br" },
+  { id: 399, name: "NPFL", country: "Nigeria", tier: "world", kind: "league", flagCode: "ng" },
 ] as const;
+
+/**
+ * The leagues the PUBLIC surfaces treat as headline competitions: the
+ * major-league default on /fixtures, the homepage's Recent results block, and
+ * the Popular leagues ranking (which also takes its order from this array).
+ *
+ * Deliberately much smaller than LEAGUE_CATALOGUE above, and deliberately a
+ * separate list rather than a filter over it. The catalogue answers "do we
+ * know how to display this league, and may an admin generate for it" — it
+ * must stay broad, since a quarter of today's published picks are Kazakh and
+ * the admin pickers, standings and StatsPad all read it. This answers the
+ * narrower question "is this league worth featuring to a visitor", and
+ * shrinking it must not strip flags, names or admin options from everything
+ * else.
+ *
+ * NPFL is included on coverage grounds: api-football returns 380 fixtures a
+ * season for it with real scorelines. Its 2027 season opens 2026-08-28, so it
+ * contributes nothing to the current window — expected, not a fault.
+ */
+const MAJOR_LEAGUE_IDS = [
+  39, // Premier League (England)
+  140, // La Liga
+  135, // Serie A (Italy)
+  78, // Bundesliga
+  61, // Ligue 1
+  2, // UEFA Champions League
+  399, // NPFL (Nigeria)
+] as const;
+
+export const MAJOR_LEAGUES = MAJOR_LEAGUE_IDS.map(
+  (id) => LEAGUE_CATALOGUE.find((l) => l.id === id)!,
+);
 
 export const LEAGUE_TIER_LABELS: Record<string, string> = {
   top: "Top 5",
@@ -62,10 +95,10 @@ export const LEAGUE_TIER_LABELS: Record<string, string> = {
 
 export type LeagueVisual = { src: string; alt: string; name: string; country: string };
 
-/** True if `leagueApiId` is in the curated MAJOR_LEAGUES list — used to default the Fixtures/Livescores pages to a manageable set rather than every league API-Football returns. */
+/** True if `leagueApiId` is one of the headline competitions — backs the major-league default on /fixtures and the homepage's Recent results filter. NOT a test of whether we can display the league; that's getLeagueVisual. */
 export function isMajorLeague(leagueApiId?: number | null): boolean {
   if (leagueApiId == null) return false;
-  return MAJOR_LEAGUES.some((l) => l.id === leagueApiId);
+  return (MAJOR_LEAGUE_IDS as readonly number[]).includes(leagueApiId);
 }
 
 /** Competition crest — used for cup/international entries, and as a fallback. */
@@ -78,10 +111,14 @@ export function leagueLogoUrl(id: number): string {
  * leagues, or the competition's own crest for cups/internationals (World
  * Cup, Champions League, etc). Returns null if the league id isn't in our
  * known list (e.g. legacy predictions with no leagueApiId).
+ *
+ * Resolves against the full LEAGUE_CATALOGUE, not MAJOR_LEAGUES: a league
+ * being outside the headline set is no reason to lose its flag or its
+ * country-disambiguated name.
  */
 export function getLeagueVisual(leagueApiId?: number | null): LeagueVisual | null {
   if (leagueApiId == null) return null;
-  const league = MAJOR_LEAGUES.find((l) => l.id === leagueApiId);
+  const league = LEAGUE_CATALOGUE.find((l) => l.id === leagueApiId);
   if (!league) return null;
   const src = league.kind === "cup" ? leagueLogoUrl(league.id) : `https://media.api-sports.io/flags/${league.flagCode}.svg`;
   return { src, alt: league.name, name: league.name, country: league.country };

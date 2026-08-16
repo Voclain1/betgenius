@@ -2,16 +2,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { MAJOR_LEAGUES, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { MarketSelectionFields, emptyMarketFormState } from "@/components/MarketSelectionFields";
 import { isValidSelection } from "@/lib/markets";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
-const LEAGUE_TIERS = Array.from(new Set(MAJOR_LEAGUES.map((l) => l.tier))).map((tier) => ({
+const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
   tier,
   label: LEAGUE_TIER_LABELS[tier] ?? tier,
-  leagues: MAJOR_LEAGUES.filter((l) => l.tier === tier),
+  leagues: LEAGUE_CATALOGUE.filter((l) => l.tier === tier),
 }));
 
 export default function NewPrediction() {
@@ -109,7 +109,7 @@ export default function NewPrediction() {
           <select value={form.leagueApiId ?? "Other"}
             onChange={(e) => {
               if (e.target.value === "Other") { setForm({ ...form, leagueApiId: undefined, leagueName: "" }); return; }
-              const found = MAJOR_LEAGUES.find((l) => l.id === Number(e.target.value));
+              const found = LEAGUE_CATALOGUE.find((l) => l.id === Number(e.target.value));
               setForm({ ...form, leagueApiId: found?.id, leagueName: found?.name ?? "" });
             }}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">
