@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { Menu, X } from "lucide-react";
+import { SearchBox } from "@/components/SearchBox";
 
 const links = [
   { href: "/predictions/featured", label: "Featured" },
@@ -105,6 +106,14 @@ export function Nav() {
               were overflowing the viewport with no hamburger to fall back on
               (the bug this component fixes), so below md they move into the
               drawer instead, alongside the nav links. */}
+          {/* Desktop search sits between the links and the auth actions. The
+              link row already scrolls horizontally (overflow-x-auto), so the
+              search box is given a fixed basis instead of flexing, keeping the
+              bar from growing past the viewport. */}
+          <div className="hidden md:block">
+            <SearchBox />
+          </div>
+
           <AuthActions isAdmin={isAdmin} user={user} className="hidden items-center gap-2 md:flex" />
 
           <button
@@ -137,6 +146,10 @@ export function Nav() {
                 <X size={20} />
               </button>
             </div>
+            <div className="mb-3">
+              <SearchBox onNavigate={() => setOpen(false)} />
+            </div>
+
             <nav className="flex flex-col gap-1">
               {links.map((l) => (
                 <Link

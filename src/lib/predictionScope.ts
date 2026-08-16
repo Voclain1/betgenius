@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { computeStat, type WinRateStat } from "@/lib/trackRecord";
-import { leagueSlug, teamSlug, matchSlug, matchKey, h2hSlug, h2hPairKey } from "@/lib/slug";
+import { leagueSlug, teamSlug, matchSlug, matchKey, h2hSlug, h2hPairKey, kickoffDay } from "@/lib/slug";
 import { computeH2HStats, type H2HMeeting, type H2HStats } from "@/lib/h2h";
 import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/lib/leagues";
 
@@ -165,6 +165,60 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
     if (key && slug) index[key] = slug;
   }
   return index;
+});
+
+export type SearchIndex = {
+  teams: { name: string; slug: string }[];
+  leagues: { name: string; slug: string; country: string | null }[];
+  matches: { label: string; slug: string; date: string }[];
+};
+
+/**
+ * Everything the nav search can match against, built from the SAME published
+ * data the pages themselves resolve against — no separate search index, no
+ * search service. A team/league/match appears here only if its page would
+ * actually render rows.
+ *
+ * Shipped whole to the client on first use rather than queried per keystroke
+ * (see /api/search): at today's volume it's ~200 entries, and one fetch that
+ * makes subsequent typing instant beats a request per keystroke. If the
+ * published corpus grows past a few thousand entries this should flip to a
+ * server-side query — the shape of the endpoint stays the same either way.
+ */
+export const getSearchIndex = cache(async (): Promise<SearchIndex> => {
+  const [rows, leagues] = await Promise.all([
+    prisma.prediction.findMany({
+      where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
+      select: { homeTeam: true, awayTeam: true, kickoff: true },
+      orderBy: { kickoff: "desc" },
+    }),
+    getLeaguesWithPublishedPredictions(),
+  ]);
+
+  const teams = new Map<string, { name: string; slug: string }>();
+  const matches = new Map<string, { label: string; slug: string; date: string }>();
+
+  for (const r of rows) {
+    for (const name of [r.homeTeam, r.awayTeam]) {
+      if (!name) continue;
+      const slug = teamSlug(name);
+      if (slug && !teams.has(slug)) teams.set(slug, { name, slug });
+    }
+    const slug = matchSlug(r);
+    if (slug && !matches.has(slug)) {
+      matches.set(slug, {
+        label: `${r.homeTeam} vs ${r.awayTeam}`,
+        slug,
+        date: r.kickoff ? kickoffDay(r.kickoff) : "",
+      });
+    }
+  }
+
+  return {
+    teams: [...teams.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    leagues: leagues.map((l) => ({ name: l.name, slug: l.slug, country: l.country })),
+    matches: [...matches.values()],
+  };
 });
 
 export type LeagueClub = { teamId: number; teamName: string; crest: string | null };
