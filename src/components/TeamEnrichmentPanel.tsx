@@ -1,5 +1,4 @@
 import { getTeamEnrichment } from "@/lib/predictionScope";
-import { formatRelativeTime } from "@/lib/time";
 import { computeFormRating, MIN_FORM_SAMPLE } from "@/lib/form";
 import { FormRatingBadge } from "@/components/FormRatingBadge";
 import type { TeamStatsSummary, TeamFixtureSummary, TeamCoach } from "@/lib/enrichment";
@@ -46,7 +45,6 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
           )}
           <span className="text-sm font-medium text-gray-300">Team form</span>
         </div>
-        {row.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(row.fetchedAt)}</span>}
       </div>
 
       {/* Venue: nothing at all when the cache has no stadium for this club,

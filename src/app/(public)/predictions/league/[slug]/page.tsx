@@ -9,7 +9,6 @@ import { LeagueFixtures } from "@/components/LeagueFixtures";
 import { LeagueResults } from "@/components/LeagueResults";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
 import { LeaguePlayerStats } from "@/components/LeaguePlayerStats";
-import { formatRelativeTime } from "@/lib/time";
 import {
   getPublishedByLeagueSlug,
   leagueDisplayName,
@@ -121,10 +120,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
 
       {standings && standings.length > 0 && (
         <div className="card space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Standings</h2>
-            {enrichment?.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(enrichment.fetchedAt)}</span>}
-          </div>
+          <h2 className="text-xl font-semibold">Standings</h2>
           <LeagueStandingsTable rows={standings} />
         </div>
       )}

@@ -5,7 +5,6 @@ import { MatchLink } from "@/components/MatchLink";
 import { getH2HBySlug } from "@/lib/predictionScope";
 import { h2hTrendLine, type H2HMeeting, type H2HRecord } from "@/lib/h2h";
 import { teamSlug } from "@/lib/slug";
-import { formatRelativeTime } from "@/lib/time";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
 const RECENT_WINDOW = 5;
@@ -125,9 +124,7 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
             {pair.teamBName}
           </Link>
         </h1>
-        <p className="text-sm text-gray-400">
-          Head-to-head record{fetchedAt ? ` · updated ${formatRelativeTime(fetchedAt)}` : ""}
-        </p>
+        <p className="text-sm text-gray-400">Head-to-head record</p>
       </div>
 
       {/* Three states, deliberately distinct: not fetched yet, fetched and

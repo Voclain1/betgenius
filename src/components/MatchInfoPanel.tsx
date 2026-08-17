@@ -2,7 +2,6 @@ import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { getFixtureDetail } from "@/lib/predictionScope";
 import { leagueSlug } from "@/lib/slug";
-import { formatRelativeTime } from "@/lib/time";
 import type { FixtureDetail } from "@/lib/enrichment";
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
@@ -50,7 +49,6 @@ export async function MatchInfoPanel({
         ) : (
           <LeagueBadge leagueApiId={leagueApiId} leagueName={leagueName} />
         )}
-        {row?.fetchedAt && <span className="text-xs text-gray-500">Updated {formatRelativeTime(row.fetchedAt)}</span>}
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
