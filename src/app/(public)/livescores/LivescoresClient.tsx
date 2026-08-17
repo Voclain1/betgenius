@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { StatusTabs, LeagueGroup, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
-import { classifyStatus, type MatchStatusGroup } from "@/lib/matchStatus";
+import { tabOfStatus, type MatchStatusGroup } from "@/lib/matchStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 function todayIso() {
@@ -65,11 +65,17 @@ export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIn
 
   const counts = useMemo(() => {
     const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
-    for (const r of merged) c[classifyStatus(r.fixture.status.short)]++;
+    // Postponed/cancelled/abandoned belong to no tab and so are counted in
+    // none — the number beside "Finished" has to match the list under it.
+    // Same rule as Fixtures, RecentResults and LeagueResults.
+    for (const r of merged) {
+      const g = tabOfStatus(r.fixture.status.short);
+      if (g) c[g]++;
+    }
     return c;
   }, [merged]);
 
-  const filtered = useMemo(() => merged.filter((r) => classifyStatus(r.fixture.status.short) === tab), [merged, tab]);
+  const filtered = useMemo(() => merged.filter((r) => tabOfStatus(r.fixture.status.short) === tab), [merged, tab]);
   const groups = useMemo(() => groupByLeague(filtered), [filtered]);
 
   return (
