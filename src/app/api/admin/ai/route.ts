@@ -6,6 +6,11 @@ import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { z } from "zod";
 
+// One fixture: ~11 throttled api-football calls plus a Gemini call that can
+// now spend up to ~17s retrying a 503. The 15s default left no room for either.
+// 60 matches the rewrite route, which does the same work minus the context fetch.
+export const maxDuration = 60;
+
 const Body = z.object({
   fixtureId: z.string().optional(),
   home: z.string().min(1),

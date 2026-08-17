@@ -8,6 +8,13 @@ import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { z } from "zod";
 
+// A bulk run is sequential and already slow: ~11 throttled api-football calls
+// plus a Gemini call per fixture, up to 20 fixtures. Gemini's 503 retries can
+// now add up to ~17s per fixture on top. Without this the route would inherit
+// the 15s default and die mid-batch, which is the exact half-finished state the
+// quota trim below exists to prevent. Matches settle/refresh-enrichment.
+export const maxDuration = 300;
+
 // Bulk generation is scoped to free-tier categories only — VIP/PREMIUM tips
 // stay a deliberate, manual, one-at-a-time admin action.
 const FREE_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;

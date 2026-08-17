@@ -1,8 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
+import { withUnavailableRetry } from "@/lib/ai/retry";
 
 const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+
+// Retry policy lives in ./retry so it can be tested with injected failures.
+// It must wrap ONLY the model request below — see that module's note on why.
 
 export type AIPredictionOutput = {
   matchPreview: string; // markdown
@@ -137,18 +141,22 @@ ${JSON.stringify(input.standings ?? {}, null, 2)}
 ${revisionBlock}${directionBlock}
 Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
-  const res = await client.models.generateContent({
-    model: MODEL,
-    contents: userPrompt,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      // Raised only for rewrites. First-pass generation stays on the model
-      // default, where consistency is what's wanted; a rewrite is explicitly a
-      // request for a different take, so the extra variance is the point.
-      ...(isRewrite ? { temperature: 1.0 } : {}),
-    },
-  });
+  const res = await withUnavailableRetry(
+    () =>
+      client.models.generateContent({
+        model: MODEL,
+        contents: userPrompt,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          // Raised only for rewrites. First-pass generation stays on the model
+          // default, where consistency is what's wanted; a rewrite is explicitly a
+          // request for a different take, so the extra variance is the point.
+          ...(isRewrite ? { temperature: 1.0 } : {}),
+        },
+      }),
+    `${input.home} vs ${input.away}`,
+  );
 
   const text = (res.text ?? "").trim();
 
