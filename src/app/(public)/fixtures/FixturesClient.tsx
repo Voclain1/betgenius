@@ -103,15 +103,17 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
   const knownRows = useMemo(() => rows.filter((r) => isKnownLeague(r.league.id)), [rows]);
 
   /**
-   * Major Leagues widens in TIERS when the current filter — range and status
-   * tab together — has no major matches: first to the leagues we recognise
-   * (LEAGUE_CATALOGUE), and only then to everything api-football returns.
+   * Major Leagues widens exactly ONE step when the current filter — range and
+   * status tab together — has no major matches: to the leagues we recognise
+   * (LEAGUE_CATALOGUE). It never widens beyond that.
    *
-   * The middle tier is the point. Falling straight from seven competitions to
-   * "all" put Slovak 3. Liga, Canadian and Polish women's football on the
-   * default view of a football tips site — the same off-brand substitution
-   * that got this fallback removed from the homepage's Recent results.
-   * Recognised leagues fill the page without that.
+   * There used to be a third step to everything api-football returns, and it
+   * is deliberately gone. On a quiet day that step put Slovak 3. Liga,
+   * Canadian and Polish women's football on the default view of a football
+   * tips site — the same off-brand substitution that got the fallback removed
+   * from the homepage's Recent results. When neither tier has matches, saying
+   * so is the honest answer; All Leagues is one click away for anyone who
+   * actually wants the whole world's slate.
    *
    * Evaluated per tab rather than per scope: today's major set holds finished
    * matches and no upcoming ones, so a scope-level test would decide there was
@@ -121,15 +123,12 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
    * and the toggle means what it says.
    */
   const tabOf = (set: FixtureRow[]) => set.filter((r) => classifyStatus(r.fixture.status.short) === tab);
-  const fallbackTier = useMemo<null | "known" | "all">(() => {
-    if (leagueScope !== "major" || tabOf(majorRows).length > 0) return null;
-    if (tabOf(knownRows).length > 0) return "known";
-    if (tabOf(rows).length > 0) return "all";
-    return null; // nothing anywhere — leave the honest empty state alone
-  }, [leagueScope, majorRows, knownRows, rows, tab]);
+  const widenedToKnown = useMemo(() => {
+    if (leagueScope !== "major" || tabOf(majorRows).length > 0) return false;
+    return tabOf(knownRows).length > 0;
+  }, [leagueScope, majorRows, knownRows, tab]);
 
-  const scopedRows =
-    leagueScope !== "major" ? rows : fallbackTier === "known" ? knownRows : fallbackTier === "all" ? rows : majorRows;
+  const scopedRows = leagueScope !== "major" ? rows : widenedToKnown ? knownRows : majorRows;
 
   const counts = useMemo(() => {
     const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
@@ -167,7 +166,7 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
       {!loading && rows.length > 0 && (
         <p className="text-xs text-gray-500">
           Showing {filtered.length} of {rows.length} matches
-          {leagueScope === "major" && !fallbackTier ? " — Major Leagues only" : ""}
+          {leagueScope === "major" && !widenedToKnown ? " — Major Leagues only" : ""}
           {multiDay ? ` across ${dates.length} days` : ""}.
         </p>
       )}
@@ -175,10 +174,9 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
       {/* The toggle still reads "Major Leagues" because that IS the active
           choice; this says what was actually rendered instead, so the two
           never silently disagree. */}
-      {!loading && fallbackTier && (
+      {!loading && widenedToKnown && (
         <p className="rounded-lg border border-brand-border bg-brand-card px-3 py-2 text-xs text-gray-400">
-          No {tab} matches in the major leagues for this range — showing{" "}
-          {fallbackTier === "known" ? "other leagues we cover" : "all leagues"} instead.
+          No {tab} matches in the major leagues for this range — showing other leagues we cover instead.
         </p>
       )}
 
@@ -188,8 +186,12 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
         <EmptyState>
           {rows.length === 0
             ? "No fixtures returned for this range (check your API-Football key or plan limits)."
-            : leagueScope === "major" && majorRows.length === 0
-              ? "No major-league matches in this range, and none in any other league either."
+            : leagueScope === "major"
+              ? // Both tiers are empty for this tab. Naming the scope matters:
+                // without it this reads as "there is no football today", when
+                // what's true is "none in the leagues we cover" — and All
+                // Leagues, one click away, may well have plenty.
+                `No ${tab} matches in the leagues we cover for this range.`
               : `No ${tab} matches in this range.`}
         </EmptyState>
       )}
