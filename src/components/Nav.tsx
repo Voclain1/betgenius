@@ -1,24 +1,43 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Menu, X } from "lucide-react";
+import { ChevronDown, Menu, X } from "lucide-react";
 import { SearchBox } from "@/components/SearchBox";
 
-const links = [
-  { href: "/predictions/featured", label: "Featured" },
-  { href: "/predictions/genius", label: "Genius Tips" },
+type NavLink = { href: string; label: string; pill?: string };
+
+/**
+ * Three groups, in priority order, replacing what was a flat row of 13 links.
+ *
+ * TIPS is the product — six categories that were competing for space with
+ * utility pages, now behind one trigger that names what the site is for.
+ * PRIMARY is what stays visible beside it. SECONDARY is real but supporting:
+ * scores and tables are reference material, not the reason to visit.
+ *
+ * /combos is deliberately absent: the page has no content yet, and a nav slot
+ * is too expensive to spend on an empty destination. The route still exists
+ * and still resolves — this only stops advertising it.
+ */
+const TIP_LINKS: NavLink[] = [
   { href: "/predictions/today", label: "Today" },
+  { href: "/predictions/genius", label: "Genius" },
+  { href: "/predictions/featured", label: "Featured" },
   { href: "/predictions/banker", label: "Banker" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
+];
+
+const PRIMARY_LINKS: NavLink[] = [
+  { href: "/bet-builder", label: "Bet Builder" },
   { href: "/track-record", label: "Track Record" },
+];
+
+const SECONDARY_LINKS: NavLink[] = [
   { href: "/livescores", label: "Livescores" },
   { href: "/fixtures", label: "Fixtures" },
   { href: "/standings", label: "Standings" },
-  { href: "/bet-builder", label: "Bet Builder" },
-  { href: "/combos", label: "Combos" },
   { href: "/statspad", label: "StatsPad" },
 ];
 
@@ -26,6 +45,61 @@ function NavPill({ pill }: { pill?: string }) {
   if (pill === "vip") return <span className="ml-1 text-vip">★</span>;
   if (pill === "premium") return <span className="ml-1 text-premium">◆</span>;
   return null;
+}
+
+/**
+ * Desktop dropdown. Click to open rather than hover: hover menus have no
+ * touch equivalent, and this same bar is what a tablet at md gets.
+ */
+function NavDropdown({ label, items }: { label: string; items: NavLink[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card"
+      >
+        {label}
+        <ChevronDown size={14} className={`transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-brand-border bg-brand-bg p-1 shadow-xl">
+          {items.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              onClick={() => setOpen(false)}
+              className="flex items-center rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+            >
+              {l.label}
+              <NavPill pill={l.pill} />
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Shared between the desktop top-bar and the mobile drawer so the two never
@@ -93,13 +167,16 @@ export function Nav() {
           <Link href="/" className="text-xl font-bold tracking-tight">
             <span className="text-brand">Bet</span>Genius
           </Link>
-          <nav className="hidden gap-1 md:flex overflow-x-auto">
-            {links.map((l) => (
-              <Link key={l.href} href={l.href} className="rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
+          {/* No overflow-x-auto any more: four items fit, and a scroll
+              container would clip the absolutely-positioned dropdowns. */}
+          <nav className="hidden items-center gap-1 md:flex">
+            <NavDropdown label="Tips" items={TIP_LINKS} />
+            {PRIMARY_LINKS.map((l) => (
+              <Link key={l.href} href={l.href} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
                 {l.label}
-                <NavPill pill={l.pill} />
               </Link>
             ))}
+            <NavDropdown label="More" items={SECONDARY_LINKS} />
           </nav>
 
           {/* Auth actions live in the top bar on desktop only — on mobile they
@@ -150,16 +227,54 @@ export function Nav() {
               <SearchBox onNavigate={() => setOpen(false)} />
             </div>
 
+            {/* Same three groups as the desktop bar. Tips uses <details>,
+                the disclosure pattern already in the app (admin combo
+                builder), which brings keyboard and screen-reader behaviour
+                with it rather than reimplementing them here. Open by default:
+                it's the primary group, and a drawer that opens onto a single
+                collapsed row would hide the whole product. */}
             <nav className="flex flex-col gap-1">
-              {links.map((l) => (
+              <details open className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-gray-200 hover:bg-brand-card [&::-webkit-details-marker]:hidden">
+                  Tips
+                  <ChevronDown size={16} className="transition group-open:rotate-180" />
+                </summary>
+                <div className="mt-1 flex flex-col gap-1 border-l border-brand-border pl-3">
+                  {TIP_LINKS.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      onClick={() => setOpen(false)}
+                      className="rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+                    >
+                      {l.label}
+                      <NavPill pill={l.pill} />
+                    </Link>
+                  ))}
+                </div>
+              </details>
+
+              {PRIMARY_LINKS.map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+                  className="rounded-md px-3 py-2 text-sm font-medium text-gray-200 hover:bg-brand-card"
                 >
                   {l.label}
-                  <NavPill pill={l.pill} />
+                </Link>
+              ))}
+
+              <div className="my-2 border-t border-brand-border" />
+
+              {SECONDARY_LINKS.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setOpen(false)}
+                  className="rounded-md px-3 py-2 text-sm text-gray-400 hover:bg-brand-card"
+                >
+                  {l.label}
                 </Link>
               ))}
             </nav>
