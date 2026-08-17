@@ -13,7 +13,7 @@ import {
   type LeagueScope,
   type MatchLinkIndex,
 } from "@/components/MatchList";
-import { classifyStatus, type MatchStatusGroup } from "@/lib/matchStatus";
+import { tabOfStatus, type MatchStatusGroup } from "@/lib/matchStatus";
 import { isMajorLeague, isKnownLeague } from "@/lib/leagues";
 import type { FixtureRow } from "@/lib/football/api-football";
 
@@ -122,7 +122,7 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
    * An explicit All Leagues choice never widens — it's already the widest set,
    * and the toggle means what it says.
    */
-  const tabOf = (set: FixtureRow[]) => set.filter((r) => classifyStatus(r.fixture.status.short) === tab);
+  const tabOf = (set: FixtureRow[]) => set.filter((r) => tabOfStatus(r.fixture.status.short) === tab);
   const widenedToKnown = useMemo(() => {
     if (leagueScope !== "major" || tabOf(majorRows).length > 0) return false;
     return tabOf(knownRows).length > 0;
@@ -132,14 +132,19 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
 
   const counts = useMemo(() => {
     const c: Record<MatchStatusGroup, number> = { live: 0, upcoming: 0, finished: 0 };
-    for (const r of scopedRows) c[classifyStatus(r.fixture.status.short)]++;
+    // Irregular fixtures belong to no tab, so they're counted in none — the
+    // number beside "Finished" has to match the list under it.
+    for (const r of scopedRows) {
+      const g = tabOfStatus(r.fixture.status.short);
+      if (g) c[g]++;
+    }
     return c;
   }, [scopedRows]);
 
   const filtered = useMemo(
     () =>
       scopedRows
-        .filter((r) => classifyStatus(r.fixture.status.short) === tab)
+        .filter((r) => tabOfStatus(r.fixture.status.short) === tab)
         .sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime()),
     [scopedRows, tab],
   );

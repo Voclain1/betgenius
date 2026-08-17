@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { GroupedMatches, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
-import { classifyStatus, isIrregular } from "@/lib/matchStatus";
+import { tabOfStatus } from "@/lib/matchStatus";
 import { isMajorLeague } from "@/lib/leagues";
 import type { FixtureRow } from "@/lib/football/api-football";
 
@@ -60,15 +60,14 @@ export function RecentResults({ linkIndex }: { linkIndex?: MatchLinkIndex }) {
     };
   }, []);
 
-  // Irregular codes (postponed/cancelled/abandoned) classify as "finished" for
-  // tab-filtering purposes but aren't results, so they're excluded here.
+  // tabOfStatus already excludes postponed/cancelled/abandoned from
+  // "finished" — they aren't results. Same rule as the Fixtures page.
   const finished = useMemo(() => {
     const cutoff = Date.now() - WINDOW_HOURS * 3_600_000;
     return rows
       .filter(
         (r) =>
-          classifyStatus(r.fixture.status.short) === "finished" &&
-          !isIrregular(r.fixture.status.short) &&
+          tabOfStatus(r.fixture.status.short) === "finished" &&
           new Date(r.fixture.date).getTime() >= cutoff,
       )
       .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime());

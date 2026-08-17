@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { DateGroupedMatches, groupByDate, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
-import { classifyStatus, isIrregular } from "@/lib/matchStatus";
+import { tabOfStatus } from "@/lib/matchStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 const WINDOW_HOURS = 36;
@@ -58,8 +58,7 @@ export function LeagueResults({ leagueApiId, linkIndex }: { leagueApiId: number 
       .filter(
         (r) =>
           r.league.id === leagueApiId &&
-          classifyStatus(r.fixture.status.short) === "finished" &&
-          !isIrregular(r.fixture.status.short) &&
+          tabOfStatus(r.fixture.status.short) === "finished" &&
           new Date(r.fixture.date).getTime() >= cutoff,
       )
       .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime());

@@ -19,6 +19,24 @@ export function isIrregular(short: string): boolean {
   return IRREGULAR_CODES.has(short);
 }
 
+/**
+ * Which tab a fixture belongs in, or `null` for none.
+ *
+ * classifyStatus answers "is a score still coming?", which is the right
+ * question for rendering a row but the wrong one for a Finished tab: a
+ * cancelled or postponed match has no score coming and never will, so it
+ * classifies as finished while plainly not being a result. Listing it under
+ * Finished tells a reader a match was played that wasn't.
+ *
+ * So irregular codes belong to no tab. They still render their own label
+ * (see MatchRow) wherever something else puts them on screen — this only
+ * governs tab membership and the counts beside the tab names.
+ */
+export function tabOfStatus(short: string): MatchStatusGroup | null {
+  const group = classifyStatus(short);
+  return group === "finished" && isIrregular(short) ? null : group;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   PST: "Postponed",
   CANC: "Cancelled",
