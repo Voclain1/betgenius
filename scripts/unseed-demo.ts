@@ -4,7 +4,8 @@
 // aiJobId === DEMO_AIJOB_ID. Delete those, then the AIJob row itself —
 // PredictionCategoryLink rows cascade automatically (see schema.prisma).
 import { PrismaClient } from "@prisma/client";
-import { DEMO_AIJOB_ID } from "./seed-demo";
+// Deliberately NOT from ./seed-demo — that module runs its seeder on import.
+import { DEMO_AIJOB_ID } from "./demo-seed-id";
 
 const prisma = new PrismaClient();
 

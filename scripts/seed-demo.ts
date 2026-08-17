@@ -5,6 +5,7 @@
 // DEMO_AIJOB_ID) via aiJobId — that single foreign key is the entire
 // removal marker. See scripts/unseed-demo.ts to remove everything again.
 import { PrismaClient } from "@prisma/client";
+import { DEMO_AIJOB_ID } from "./demo-seed-id";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "../src/lib/enums";
 import {
   MARKET_TYPES,
@@ -27,7 +28,7 @@ import {
 
 const prisma = new PrismaClient();
 
-export const DEMO_AIJOB_ID = "demo-seed-job";
+export { DEMO_AIJOB_ID };
 
 // --- deterministic-ish randomness helpers -----------------------------
 function randInt(min: number, max: number): number {
