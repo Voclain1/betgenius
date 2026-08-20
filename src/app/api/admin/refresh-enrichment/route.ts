@@ -6,7 +6,7 @@ import {
   getScopedTeamTargets,
   getScopedLeagueTargets,
   getScopedFixtureTargets,
-  orderTeamsByStaleness,
+  orderTeamsByPriority,
   orderLeaguesByStaleness,
   orderFixtureDaysByStaleness,
   getScopedH2HTargets,
@@ -38,11 +38,18 @@ export async function GET(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
-  // A team refresh costs ~4 throttled calls (~26s at MIN_GAP_MS=6500), a
-  // league ~2 (~13s) — 6 of each keeps a combined run around 234s, safely
-  // inside maxDuration=300 (settle's default of 15 would overrun here, since
-  // this route's per-item call cost is higher).
-  const limit = Math.min(8, Math.max(1, Number(url.searchParams.get("limit")) || 6));
+  // Raised from 6/8 for production volume. At 50-100 predictions a day the
+  // scoped set reaches 100-200 distinct teams, which the old ceiling could only
+  // cycle through every 2-4 days — far too slow for team news.
+  //
+  // 25 teams costs ~100 throttled calls; at MIN_GAP_MS=250 that is ~25s of
+  // pacing plus latency, landing around 40-60s and leaving ample room inside
+  // maxDuration=300 for the league/fixture/h2h/squad slices that follow.
+  //
+  // The tiering in orderTeamsByPriority means this is a ceiling, not a target:
+  // teams already inside their tier's freshness tolerance are skipped entirely,
+  // so a quiet period costs far fewer calls than a busy one.
+  const limit = Math.min(30, Math.max(1, Number(url.searchParams.get("limit")) || 25));
 
   // Fixture detail is batched one call per kickoff DAY (see
   // refreshFixtureDetailsForDay), so its slice is counted in days, not
@@ -55,7 +62,7 @@ export async function GET(req: Request) {
     getScopedH2HTargets(),
   ]);
   const [orderedTeams, orderedLeagues, orderedFixtureDays, staleH2H] = await Promise.all([
-    orderTeamsByStaleness(teamTargets),
+    orderTeamsByPriority(teamTargets),
     orderLeaguesByStaleness(leagueTargets),
     orderFixtureDaysByStaleness(fixtureTargets),
     selectStaleH2HTargets(h2hTargets),

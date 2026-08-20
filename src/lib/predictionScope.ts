@@ -4,6 +4,8 @@ import { computeStat, type WinRateStat } from "@/lib/trackRecord";
 import { leagueSlug, teamSlug, matchSlug, matchKey, h2hSlug, h2hPairKey, kickoffDay } from "@/lib/slug";
 import { computeH2HStats, type H2HMeeting, type H2HStats } from "@/lib/h2h";
 import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/lib/leagues";
+import type { TeamDigest } from "@/lib/ai/digest";
+import type { LeagueStandingRow } from "@/lib/enrichment";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
 // has no leagueName/homeTeam/awayTeam index and no slug column (see
@@ -30,6 +32,7 @@ const SCOPED_SELECT = {
   confidence: true,
   reasoning: true,
   matchPreview: true,
+  analysisJson: true,
   outcome: true,
   publishedAt: true,
 } as const;
@@ -52,6 +55,7 @@ export type ScopedResult = {
     confidence: number;
     reasoning: string;
     matchPreview: string | null;
+    analysisJson: unknown;
     outcome: string;
     publishedAt: Date | null;
   }[];
@@ -444,4 +448,79 @@ export const getLeagueEnrichment = cache(async (leagueApiId: number | null) => {
   if (leagueApiId == null) return null;
   const row = await prisma.leagueEnrichmentCache.findUnique({ where: { leagueApiId } });
   return row?.fetchedAt ? row : null;
+});
+
+/**
+ * The cached TeamDigest for a team, or null when no successful refresh has
+ * landed yet.
+ *
+ * This is the SAME projection the AI prompt is built from (see
+ * TeamEnrichmentCache.teamDigestJson in schema.prisma), which is the point: the
+ * model and the reader work from one set of numbers rather than two
+ * independently-derived ones.
+ *
+ * `rank`/`points` arrive null — standings are a league-level fetch — and are
+ * filled by getMatchTeamDigests below from the league cache the page reads
+ * anyway. Falls back to null for rows cached before the column existed; callers
+ * degrade to the older statsJson/lastFixtures panels rather than showing gaps.
+ */
+export const getTeamDigest = cache(async (teamApiId: number | null): Promise<TeamDigest | null> => {
+  const row = await getTeamEnrichment(teamApiId);
+  if (!row?.teamDigestJson) return null;
+  return row.teamDigestJson as unknown as TeamDigest;
+});
+
+/**
+ * Both sides' digests for one fixture, with league position merged in.
+ *
+ * One league-cache read serves the rank/points of both teams and the standings
+ * neighbourhood the page renders, so this is the only place that read happens
+ * — the alternative (each component fetching what it needs) would repeat it
+ * three times per page.
+ */
+export const getMatchTeamDigests = cache(
+  async (
+    homeTeamApiId: number | null,
+    awayTeamApiId: number | null,
+    leagueApiId: number | null,
+  ): Promise<{ home: TeamDigest | null; away: TeamDigest | null; standings: LeagueStandingRow[] | null }> => {
+    const [home, away, league] = await Promise.all([
+      getTeamDigest(homeTeamApiId),
+      getTeamDigest(awayTeamApiId),
+      getLeagueEnrichment(leagueApiId),
+    ]);
+
+    const standings = (league?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
+
+    // Mutating a copy rather than the cached object: React's cache() hands the
+    // same instance to every caller in a request, so writing rank onto it would
+    // leak into whatever else read that team this render.
+    const withRank = (d: TeamDigest | null, teamApiId: number | null): TeamDigest | null => {
+      if (!d || !standings || teamApiId == null) return d;
+      const row = standings.find((r) => r.teamId === teamApiId);
+      if (!row) return d;
+      return { ...d, rank: row.rank, points: row.points };
+    };
+
+    return { home: withRank(home, homeTeamApiId), away: withRank(away, awayTeamApiId), standings };
+  },
+);
+
+/**
+ * Cached head-to-head meetings for a team pair, most recent first.
+ *
+ * Keyed by the pair rather than by slug (getH2HBySlug above), because the match
+ * page already holds both team ids and has no reason to round-trip through a
+ * name-derived slug to reach the same row.
+ *
+ * An empty array is returned both for "never met" and "not fetched yet" — the
+ * caller renders nothing either way, which is the same behaviour, so the
+ * distinction the H2H page draws via fetchedAt isn't needed here.
+ */
+export const getH2HMeetings = cache(async (teamAApiId: number | null, teamBApiId: number | null): Promise<H2HMeeting[]> => {
+  const key = h2hPairKey(teamAApiId, teamBApiId);
+  if (!key) return [];
+  const row = await prisma.h2HCache.findUnique({ where: { pairKey: key } });
+  if (!row?.fetchedAt) return [];
+  return (row.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
 });

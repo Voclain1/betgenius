@@ -175,6 +175,24 @@ model TeamEnrichmentCache {
   form          String? // e.g. "WWDLW", from /teams/statistics
   statsJson     Json?
   lastFixtures  Json?
+  // The TeamDigest half of src/lib/ai/digest.ts, written by the SAME
+  // buildTeamDigest() the AI prompt is built from — one projection of
+  // /teams/statistics + /injuries + /fixtures, so the model and the match page
+  // can never be reading differently-derived numbers for the same team.
+  //
+  // Carries what statsJson deliberately does not: home/away record splits, goal
+  // averages per venue, clean sheets, failed-to-score, formations, streak, and
+  // the current availability list. All of it comes off the api-football calls
+  // refreshTeamCache ALREADY makes — /injuries in particular was fetched and
+  // discarded before this column existed — so it costs no extra quota.
+  //
+  // `rank`/`points` inside are always null here: standings are a league-level
+  // fetch, not part of the team refresh. The match page fills them from
+  // LeagueEnrichmentCache.standingsJson, which it reads anyway.
+  //
+  // Null on rows cached before this column; readers fall back to statsJson/
+  // lastFixtures/form, which are still written alongside it.
+  teamDigestJson Json?
   // Squad and coach move on a transfer-window timescale, so they carry their
   // own squadFetchedAt on a 7-day TTL. Sharing `fetchedAt` — which the 3-hourly
   // form refresh owns — would force a squad re-fetch every cycle, and make
@@ -327,6 +345,17 @@ model Prediction {
   confidence   Int
   reasoning    String
   matchPreview String?
+  // Structured AI output beyond the prose: { keyFactors: string[] }.
+  //
+  // keyFactors has been requested by the prompt since the beginning and thrown
+  // away at persist time, so it exists in every past AIJob.rawOutput — see
+  // scripts/backfill-analysis.ts, which populates this for existing rows at no
+  // AI cost. Deliberately NOT a new prompt field: Phase 3 changes no prompt and
+  // no output schema, so previously-generated predictions stay fully valid.
+  //
+  // Duplicated across the rows of one fixture the same way matchPreview is —
+  // one AI job produces several market rows that share its analysis.
+  analysisJson Json?
   contextComplete Boolean @default(true) // false = AI-generated with zero live data (all football-API context calls came back empty/failed)
   outcome      String    @default("PENDING")
   // A1 settlement: no Fixture-ingestion pipeline exists in this app (Livescores/
@@ -394,11 +423,22 @@ model AIJob {
   rawOutput   String
   status      String       @default("COMPLETED")
   contextComplete Boolean  @default(true) // false = every football-API context call (team search, form, standings, h2h) came back empty/failed
-  // The full football payload passed to Gemini — home/away team context (form,
-  // injuries, last fixtures), standings and h2h, plus the fixture identifiers
-  // needed to rebuild the prompt. Persisted so a rewrite can re-ask Gemini from
-  // the exact same evidence without spending API-Football quota: a rewrite is a
-  // writing/judgement problem, not a stale-data problem.
+  // Gemini's own usageMetadata for this call. Recorded so prompt-size changes
+  // are measured rather than estimated — the digest work in src/lib/ai/digest.ts
+  // is justified by these two columns, and any future regression in prompt size
+  // shows up here instead of on the bill. Null on jobs predating the columns,
+  // and on any provider that doesn't report usage.
+  promptTokens Int?
+  outputTokens Int?
+  // Wall-clock time for the model call, in milliseconds. Recorded alongside the
+  // token counts so the generation panel can show p50/p95 latency and spot a
+  // provider degrading before it starts failing outright.
+  durationMs   Int?
+  // The evidence passed to the model, as a versioned StoredContext (see
+  // src/lib/ai/context.ts). v1 rows hold the raw api-football payloads; v2 rows
+  // hold the MatchDigest actually prompted with. Persisted so a rewrite can
+  // re-ask from the exact same evidence without spending API-Football quota:
+  // a rewrite is a writing/judgement problem, not a stale-data problem.
   //
   // Null on jobs created before this column existed — those predictions cannot
   // be rewritten without a re-fetch, and the rewrite endpoint refuses rather
@@ -409,6 +449,51 @@ model AIJob {
   reviewerNote String?
   createdAt   DateTime     @default(now())
   predictions Prediction[]
+}
+
+// One row per fixture the scheduled generator has tried to produce predictions
+// for. NOT a job queue: nothing is ever enqueued here in advance.
+//
+// Candidates are DERIVED each run from upcoming fixtures that have no Prediction
+// yet (src/lib/generation/selector.ts), because Prediction rows already are the
+// state — pre-enqueuing would create a second source of truth that goes stale
+// the moment a fixture is postponed. What derivation alone cannot do is stop
+// retrying a fixture that fails forever, and that is exactly what this table is
+// for: attempts, backoff, and a terminal ABANDONED state that takes a fixture
+// out of the candidate pool without burning quota on it every run.
+//
+// Keyed by matchKey ("{homeApiId}-{awayApiId}-{UTC day}", src/lib/slug.ts) —
+// the same fixture identity FixtureDetailCache, matchSlug and
+// getPublishedMatchIndex already use, so a fixture means the same thing
+// everywhere. The unique constraint is also what makes concurrent or repeated
+// runs idempotent: bulk generation previously had NO duplicate guard at all and
+// would happily produce a second set of predictions for the same fixture.
+model GenerationAttempt {
+  id            String    @id @default(cuid())
+  matchKey      String    @unique
+  fixtureApiId  Int?
+  leagueApiId   Int?
+  homeTeam      String
+  awayTeam      String
+  kickoff       DateTime
+  // PENDING | SUCCEEDED | FAILED | ABANDONED
+  // FAILED is retryable and carries nextAttemptAt; ABANDONED is the dead letter
+  // — retries exhausted, visible in the admin panel, never selected again.
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  lastError     String?
+  lastAttemptAt DateTime?
+  // When this fixture becomes eligible again after a failure. Null on a fresh
+  // or terminal row.
+  nextAttemptAt DateTime?
+  // Rows produced on success, for tracing a fixture to its output without
+  // re-deriving the match key.
+  predictionIds String[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([kickoff])
 }
 
 model AdminTask {

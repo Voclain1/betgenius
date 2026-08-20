@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { setPredictionCategories } from "@/lib/predictions";
+import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
 import { MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
 
@@ -91,19 +91,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data.overUnder = deriveOverUnderText(data.ouLine, data.ouDirection);
   }
 
-  if (action === "APPROVE") {
-    data.status = "APPROVED";
-    data.approvedById = session!.user.id;
-    data.approvedAt = new Date();
-  } else if (action === "PUBLISH") {
-    data.status = "PUBLISHED";
-    data.publishedAt = new Date();
-    if (!data.approvedById) {
-      data.approvedById = session!.user.id;
-      data.approvedAt = new Date();
-    }
-  } else if (action === "ARCHIVE") {
-    data.status = "ARCHIVED";
+  if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {
+    // Shared with the bulk endpoint so the two can't drift — see
+    // reviewTransition in src/lib/predictions.ts.
+    const existing = await prisma.prediction.findUnique({ where: { id: params.id }, select: { approvedById: true } });
+    Object.assign(data, reviewTransition(action, session!.user.id, { approvedById: data.approvedById ?? existing?.approvedById ?? null }));
   } else if (action === "SETTLE") {
     if (!outcome) return NextResponse.json({ error: "outcome is required to settle a prediction" }, { status: 400 });
     data.outcome = outcome;

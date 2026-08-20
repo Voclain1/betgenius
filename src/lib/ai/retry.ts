@@ -1,10 +1,14 @@
 /**
  * Retry policy for transient Gemini failures.
  *
- * Split out of gemini.ts so the policy can be exercised directly with injected
- * failures — the behaviour that matters here (how many attempts, how long
- * between them, what is and isn't retried) is not observable from the outside
- * when it's buried in a live API call.
+ * Split out of the provider (src/lib/ai/providers/gemini.ts) so the policy can
+ * be exercised directly with injected failures — the behaviour that matters
+ * here (how many attempts, how long between them, what is and isn't retried) is
+ * not observable from the outside when it's buried in a live API call.
+ *
+ * Gemini-specific by design. `isModelUnavailable` and `isQuotaExhausted` are
+ * also read by the provider chain in src/lib/ai/analysis.ts to decide when to
+ * fail over, but the backoff loop below wraps only the Gemini request.
  *
  * Note the @google/genai SDK CAN retry for us: ApiClient.apiCall wires up
  * p-retry, but only when httpOptions.retryOptions is supplied, and falls
@@ -47,6 +51,23 @@ export function isModelUnavailable(err: unknown): boolean {
   return /\b503\b|UNAVAILABLE|overloaded/i.test(msg);
 }
 
+/**
+ * Is this an exhausted quota / rate limit rather than a broken request?
+ *
+ * Deliberately NOT retried in place — waiting does not refill a daily quota,
+ * and retrying spends whatever is left faster (see isModelUnavailable's note).
+ * It IS worth failing over to another provider, which is the one thing that
+ * genuinely resolves it, so the provider chain in src/lib/ai/analysis.ts keys
+ * off this separately from the 503 case.
+ */
+export function isQuotaExhausted(err: unknown): boolean {
+  const e = err as { status?: unknown; code?: unknown; message?: unknown; error?: { code?: unknown; status?: unknown } };
+  if (e?.status === 429 || e?.code === 429 || e?.error?.code === 429) return true;
+  if (e?.error?.status === "RESOURCE_EXHAUSTED") return true;
+  const msg = typeof e?.message === "string" ? e.message : "";
+  return /\b429\b|RESOURCE_EXHAUSTED|quota|rate limit/i.test(msg);
+}
+
 /** Raised once the retries are spent, so callers can tell exhaustion from a hard failure. */
 export class ModelUnavailableError extends Error {
   constructor(attempts: number, cause: unknown) {
@@ -75,7 +96,7 @@ export async function withUnavailableRetry<T>(call: () => Promise<T>, label: str
       if (!isModelUnavailable(err)) throw err;
       if (attempt >= MAX_ATTEMPTS) throw new ModelUnavailableError(MAX_ATTEMPTS, err);
       const waitMs = RETRY_BACKOFF_MS[attempt - 1];
-      console.warn(`[ai/gemini] ${label}: 503 unavailable on attempt ${attempt}/${MAX_ATTEMPTS}, retrying in ${waitMs}ms`);
+      console.warn(`[ai/provider/gemini] ${label}: 503 unavailable on attempt ${attempt}/${MAX_ATTEMPTS}, retrying in ${waitMs}ms`);
       await sleep(waitMs);
     }
   }

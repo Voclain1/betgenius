@@ -15,6 +15,7 @@ type Row = {
   confidence: number;
   reasoning: string;
   createdAt: string;
+  kickoff: string | null;
   leagueApiId: number | null;
   leagueName: string | null;
   homeTeam: string | null;
@@ -32,13 +33,41 @@ const OUTCOME_STYLES: Record<string, string> = {
   VOID: "bg-gray-500/20 text-gray-300",
 };
 
+/**
+ * Ordering options for the review queue.
+ *
+ * "Kickoff soonest" is the default and the one that matters: nothing
+ * auto-publishes, so a candidate that reaches kickoff unreviewed is wasted
+ * work, and the nearest kickoff is always the most perishable decision.
+ */
+const SORTS = {
+  KICKOFF: "Kickoff soonest",
+  CONFIDENCE: "Confidence high to low",
+  CREATED: "Newest first",
+} as const;
+type SortKey = keyof typeof SORTS;
+
+/** Inside this many hours, a still-unreviewed candidate is flagged as about to be wasted. */
+const EXPIRY_WARNING_HOURS = 12;
+
 export default function AdminPredictions() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [filter, setFilter] = useState<string>("ALL");
+  // Defaults to the review queue rather than ALL: at generation volume this
+  // page is a work list first and an archive second.
+  const [filter, setFilter] = useState<string>("PENDING_REVIEW");
+  const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
+  const [leagueFilter, setLeagueFilter] = useState<string>("ALL");
+  const [minConfidence, setMinConfidence] = useState<number>(0);
+  const [sort, setSort] = useState<SortKey>("KICKOFF");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
 
   const load = async () => {
     const j = await fetch("/api/admin/predictions").then((r) => r.json());
     setRows(j.items);
+    // Selections refer to rows that may have just changed status — clearing
+    // avoids acting twice on something already actioned.
+    setSelected(new Set());
   };
   useEffect(() => { load(); }, []);
 
@@ -66,25 +95,125 @@ export default function AdminPredictions() {
     load();
   };
 
-  const shown = rows.filter((r) => filter === "ALL" || r.status === filter);
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const bulk = async (action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
+    if (selected.size === 0) return;
+    if (!confirm(`${action.toLowerCase()} ${selected.size} prediction(s)?`)) return;
+    setBusy(true);
+    try {
+      await fetch("/api/admin/predictions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selected], action }),
+      });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const leagues = [...new Set(rows.map((r) => r.leagueName).filter((l): l is string => !!l))].sort();
+
+  const shown = rows
+    .filter((r) => filter === "ALL" || r.status === filter)
+    .filter(
+      (r) =>
+        categoryFilter === "ALL" ||
+        (r.categories?.length ? r.categories.some((c) => c.category === categoryFilter) : r.category === categoryFilter),
+    )
+    .filter((r) => leagueFilter === "ALL" || r.leagueName === leagueFilter)
+    .filter((r) => r.confidence >= minConfidence)
+    .sort((a, b) => {
+      if (sort === "CONFIDENCE") return b.confidence - a.confidence;
+      if (sort === "CREATED") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      // Unknown kickoffs sort last rather than to the top, where they would
+      // crowd out the rows that actually need a decision.
+      const ak = a.kickoff ? new Date(a.kickoff).getTime() : Infinity;
+      const bk = b.kickoff ? new Date(b.kickoff).getTime() : Infinity;
+      return ak - bk;
+    });
+
+  const pendingCount = rows.filter((r) => r.status === "PENDING_REVIEW").length;
+  const expiringSoon = rows.filter(
+    (r) =>
+      r.status === "PENDING_REVIEW" &&
+      r.kickoff &&
+      new Date(r.kickoff).getTime() - Date.now() < EXPIRY_WARNING_HOURS * 3600_000,
+  ).length;
+  const allShownSelected = shown.length > 0 && shown.every((r) => selected.has(r.id));
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Predictions</h1>
-        <div className="flex items-center gap-3">
-          <select value={filter} onChange={(e) => setFilter(e.target.value)}
-            className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
-            {["ALL", "DRAFT", "PENDING_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"].map((s) => <option key={s}>{s}</option>)}
-          </select>
-          <Link href="/admin/predictions/new" className="btn btn-primary text-sm">Post prediction</Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Predictions</h1>
+          <p className="text-sm text-gray-400">
+            {pendingCount} awaiting review
+            {expiringSoon > 0 && <span className="text-amber-400"> · {expiringSoon} kick off within {EXPIRY_WARNING_HOURS}h</span>}
+          </p>
         </div>
+        <Link href="/admin/predictions/new" className="btn btn-primary text-sm">Post prediction</Link>
       </div>
-      <div className="overflow-hidden rounded-xl border border-brand-border">
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}
+          className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
+          {["ALL", "DRAFT", "PENDING_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"].map((s) => <option key={s}>{s}</option>)}
+        </select>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
+          className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
+          {["ALL", "FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"].map((c) => <option key={c}>{c}</option>)}
+        </select>
+        <select value={leagueFilter} onChange={(e) => setLeagueFilter(e.target.value)}
+          className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
+          <option>ALL</option>
+          {leagues.map((l) => <option key={l}>{l}</option>)}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}
+          className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
+          {Object.entries(SORTS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <label className="flex items-center gap-2 text-sm text-gray-400">
+          Min confidence
+          <input type="number" min={0} max={100} value={minConfidence}
+            onChange={(e) => setMinConfidence(Number(e.target.value) || 0)}
+            className="w-16 rounded-md border border-brand-border bg-brand-card px-2 py-2 text-sm" />
+        </label>
+      </div>
+
+      {/* Bulk bar appears only once rows are selected, so the reviewer opts into
+          acting on many at once rather than having the option sit there. */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-brand bg-brand/5 px-3 py-2">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <button disabled={busy} className="btn btn-ghost text-xs" onClick={() => bulk("APPROVE")}>Approve</button>
+          <button disabled={busy} className="btn btn-primary text-xs" onClick={() => bulk("PUBLISH")}>Publish</button>
+          <button disabled={busy} className="btn btn-ghost text-xs" onClick={() => bulk("ARCHIVE")}>Archive</button>
+          <button className="text-xs text-gray-400 hover:underline" onClick={() => setSelected(new Set())}>Clear</button>
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-xl border border-brand-border">
         <table className="w-full text-sm">
           <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
             <tr>
+              <th className="w-8 px-3 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Select all shown"
+                  checked={allShownSelected}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(shown.map((r) => r.id)) : new Set())}
+                />
+              </th>
               <th className="px-3 py-2">Match</th>
+              <th className="px-3 py-2">Kickoff</th>
               <th className="px-3 py-2">League</th>
               <th className="px-3 py-2">Categories</th>
               <th className="px-3 py-2">Market</th>
@@ -98,7 +227,13 @@ export default function AdminPredictions() {
           </thead>
           <tbody className="divide-y divide-brand-border">
             {shown.map((r) => (
-              <tr key={r.id} className={!r.contextComplete ? "bg-amber-500/5" : undefined}>
+              <tr
+                key={r.id}
+                className={selected.has(r.id) ? "bg-brand/5" : !r.contextComplete ? "bg-amber-500/5" : undefined}
+              >
+                <td className="px-3 py-2">
+                  <input type="checkbox" aria-label="Select prediction" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />
+                </td>
                 <td className="px-3 py-2">
                   <span className="flex items-center gap-1.5">
                     {!r.contextComplete && (
@@ -110,6 +245,11 @@ export default function AdminPredictions() {
                         ? `${r.fixture.homeTeam.name} vs ${r.fixture.awayTeam?.name}`
                         : "—"}
                   </span>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs text-gray-400">
+                  {r.kickoff
+                    ? new Date(r.kickoff).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                    : "—"}
                 </td>
                 <td className="px-3 py-2">
                   <LeagueBadge leagueApiId={r.leagueApiId} leagueName={r.leagueName} />
@@ -146,7 +286,7 @@ export default function AdminPredictions() {
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2 space-x-2 text-right whitespace-nowrap">
+                <td className="space-x-2 whitespace-nowrap px-3 py-2 text-right">
                   <Link href={`/admin/predictions/${r.id}`} className="text-xs text-gray-300 hover:underline">Edit</Link>
                   <button className="text-xs text-blue-400 hover:underline" onClick={() => act(r.id, "APPROVE")}>Approve</button>
                   <button className="text-xs text-brand hover:underline" onClick={() => act(r.id, "PUBLISH")}>Publish</button>
@@ -156,7 +296,7 @@ export default function AdminPredictions() {
               </tr>
             ))}
             {shown.length === 0 && (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-gray-400">No predictions</td></tr>
+              <tr><td colSpan={12} className="px-3 py-6 text-center text-gray-400">No predictions match these filters</td></tr>
             )}
           </tbody>
         </table>

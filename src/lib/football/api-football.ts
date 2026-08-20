@@ -189,6 +189,13 @@ export type StandingsEntry = {
   points: number;
   goalsDiff: number;
   form?: string;
+  /**
+   * The zone this position sits in, as the API labels it — e.g. "Promotion -
+   * Champions League (League phase)", "Relegation". Returned on every plan and
+   * verified against the live endpoint. Null for mid-table rows, which is
+   * itself meaningful: no label means nothing is at stake at that position.
+   */
+  description?: string | null;
   all: StandingsSplit;
   home?: StandingsSplit;
   away?: StandingsSplit;

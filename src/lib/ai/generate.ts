@@ -1,21 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { generatePredictionForFixture } from "@/lib/ai/gemini";
+import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { buildStoredContext } from "@/lib/ai/context";
-import { getTeamContext, getStandings, getHeadToHead, searchTeam, resolveSeason } from "@/lib/football/api-football";
+import { isDigestEmpty } from "@/lib/ai/digest";
+import { buildAnalysis } from "@/lib/predictionAnalysis";
+import { searchTeam } from "@/lib/football/api-football";
+import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
-
-// getTeamContext still returns a (truthy) object even when every field inside
-// it failed/came back empty, so a plain null-check on the object isn't enough.
-function isTeamContextEmpty(ctx: Awaited<ReturnType<typeof getTeamContext>> | null): boolean {
-  if (!ctx) return true;
-  const noStats = !ctx.statistics;
-  const noInjuries = !ctx.injuries || (Array.isArray(ctx.injuries) && ctx.injuries.length === 0);
-  const noFixtures = !ctx.lastFixtures || ctx.lastFixtures.length === 0;
-  return noStats && noInjuries && noFixtures;
-}
 
 export type GenerateFixtureInput = {
   fixtureId?: string;
@@ -26,12 +19,27 @@ export type GenerateFixtureInput = {
   kickoff: string;
   categories: string[]; // at least one; categories[0] becomes the primary `category`
   authorId: string;
+  /**
+   * Pre-resolved api-football team ids, when the caller already has them.
+   *
+   * The scheduled worker and the bulk route both read fixtures straight from
+   * /fixtures, whose rows already carry `teams.home.id` — passing them here
+   * skips two searchTeam calls (plus their retry variants) per fixture that
+   * were being spent re-deriving ids the caller was already holding. The manual
+   * single-fixture form has only names, so it still falls back to searchTeam.
+   */
+  homeTeamApiId?: number | null;
+  awayTeamApiId?: number | null;
 };
 
 /**
  * Resolves live context (form, injuries, standings, head-to-head) where possible,
- * asks Gemini for a prediction, and persists it as PENDING_REVIEW across all
+ * asks the model for a prediction, and persists it as PENDING_REVIEW across all
  * requested categories. Shared by the single-fixture and bulk-generate routes.
+ *
+ * Which provider answered is recorded on the AIJob (`model`, e.g.
+ * "gemini:gemini-2.5-flash" or "groq:openai/gpt-oss-120b") — see
+ * src/lib/ai/analysis.ts for the fallback chain.
  */
 export async function generateAndPersistPrediction(rawInput: GenerateFixtureInput) {
   // Trim/collapse whitespace up front so both the live-context lookups below
@@ -45,85 +53,77 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     league: normalizeName(rawInput.league),
   };
 
-  // Resolve from the fixture's own kickoff date/league, not "today" — a
-  // February fixture belongs to the season that started the previous August.
   const kickoffDate = new Date(input.kickoff);
-  const season = input.leagueApiId
-    ? await resolveSeason(input.leagueApiId, isNaN(kickoffDate.getTime()) ? new Date() : kickoffDate)
-    : new Date().getFullYear();
 
-  // Best-effort: resolve team ids from names so we can pull live context.
-  // Falls back to null context (model reasons from names alone) if lookup fails.
-  const [homeMatch, awayMatch] = input.leagueApiId
-    ? await Promise.all([searchTeam(input.home), searchTeam(input.away)])
-    : [null, null];
-  // One policy for one confidence signal: an unconfident match yields neither
-  // an id nor a name. Writing the id anyway (as this did originally) attaches
-  // another team's stats, form, injuries and h2h to the prediction and seeds
-  // the enrichment cache with them — a wrong-but-plausible id is strictly worse
-  // than a null one, because nothing downstream can tell it was a bad guess.
-  // Same fail-closed posture as the marketType/selection OTHER fallback below.
-  const homeApiId = homeMatch?.confident ? homeMatch.id : null;
-  const awayApiId = awayMatch?.confident ? awayMatch.id : null;
+  // Ids first. A caller that already holds them (any fixture-list-driven path)
+  // passes them straight through; only the manual form pays for a name lookup.
+  let homeApiId = rawInput.homeTeamApiId ?? null;
+  let awayApiId = rawInput.awayTeamApiId ?? null;
+  let homeTeamName = input.home;
+  let awayTeamName = input.away;
 
-  // Prefer the API's own spelling over what was typed/AI-generated, but only
-  // when the lookup was unambiguous — an unconfident match is more likely to
-  // be the wrong team than a useful correction. See searchTeam's TeamSearchResult.
-  const homeTeamName = homeMatch?.confident ? homeMatch.name : input.home;
-  const awayTeamName = awayMatch?.confident ? awayMatch.name : input.away;
+  if ((homeApiId == null || awayApiId == null) && input.leagueApiId) {
+    const [homeMatch, awayMatch] = await Promise.all([
+      homeApiId == null ? searchTeam(input.home) : Promise.resolve(null),
+      awayApiId == null ? searchTeam(input.away) : Promise.resolve(null),
+    ]);
+    // One policy for one confidence signal: an unconfident match yields neither
+    // an id nor a name. Writing the id anyway attaches another team's stats,
+    // form, injuries and h2h to the prediction and seeds the enrichment cache
+    // with them — a wrong-but-plausible id is strictly worse than a null one,
+    // because nothing downstream can tell it was a bad guess.
+    if (homeApiId == null && homeMatch?.confident) {
+      homeApiId = homeMatch.id;
+      // Prefer the API's own spelling, but only when the lookup was unambiguous.
+      homeTeamName = homeMatch.name;
+    }
+    if (awayApiId == null && awayMatch?.confident) {
+      awayApiId = awayMatch.id;
+      awayTeamName = awayMatch.name;
+    }
+  }
 
-  const [homeContext, awayContext, standings, h2h] = await Promise.all([
-    homeApiId && input.leagueApiId ? getTeamContext(homeApiId, input.leagueApiId, season) : Promise.resolve(null),
-    awayApiId && input.leagueApiId ? getTeamContext(awayApiId, input.leagueApiId, season) : Promise.resolve(null),
-    input.leagueApiId ? getStandings(input.leagueApiId, season) : Promise.resolve(null),
-    homeApiId && awayApiId ? getHeadToHead(homeApiId, awayApiId) : Promise.resolve(null),
-  ]);
-
-  const output = await generatePredictionForFixture({
-    home: input.home,
-    away: input.away,
+  // Cache-first assembly. With warm enrichment this spends no api-football
+  // quota at all; on a miss it refreshes through the cron's own writers so the
+  // next reader is warm too. See src/lib/ai/generationContext.ts.
+  const { digest, sources } = await buildGenerationDigest({
+    home: homeTeamName,
+    away: awayTeamName,
     league: input.league,
     kickoff: input.kickoff,
-    homeContext,
-    awayContext,
-    standings,
-    h2h,
+    homeApiId,
+    awayApiId,
+    leagueApiId: input.leagueApiId ?? null,
   });
 
-  // A league was specified (live context was expected) but every source —
-  // team form/injuries/stats for both sides, standings, and h2h — came back
-  // empty. Usually means the football API failed silently (bad key, plan
-  // restriction, rate limit) rather than the fixture genuinely having no data.
-  const contextComplete = !input.leagueApiId
-    ? true
-    : !(isTeamContextEmpty(homeContext) && isTeamContextEmpty(awayContext) && !standings && (!h2h || h2h.length === 0));
+  const startedAt = Date.now();
+  const { output, usage, model } = await generatePredictionForFixture({ digest });
+  const durationMs = Date.now() - startedAt;
+
+  // A league was specified (live context was expected) but nothing resolved —
+  // no stats, form, availability, h2h or standings for either side. Usually
+  // means the football API failed silently (bad key, plan restriction, rate
+  // limit) rather than the fixture genuinely having no data.
+  const contextComplete = !input.leagueApiId ? true : !isDigestEmpty(digest);
 
   const job = await prisma.aIJob.create({
     data: {
       userId: input.authorId,
       prompt: JSON.stringify(input),
-      model: process.env.GEMINI_MODEL || "gemini-flash-latest",
+      model,
       rawOutput: JSON.stringify(output),
       status: "COMPLETED",
       contextComplete,
-      // Everything the Gemini call was given, stored verbatim so a rewrite can
-      // reproduce the exact same evidence without re-hitting API-Football. The
-      // fixture identifiers ride along because the prompt is built from them
-      // too — storing only the football payload would leave a rewrite unable to
-      // reconstruct the question, just the answer.
-      // Cast: the context fields are `unknown` (raw api-football shapes this
-      // app doesn't model), which Prisma's InputJsonValue won't accept even
-      // though the values are plain JSON-serialisable objects.
-      context: buildStoredContext({
-        home: input.home,
-        away: input.away,
-        league: input.league,
-        kickoff: input.kickoff,
-        homeContext,
-        awayContext,
-        standings,
-        h2h,
-      }) as unknown as Prisma.InputJsonValue,
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      durationMs,
+      // Exactly what the model was shown, so a rewrite reproduces the same
+      // evidence without re-hitting API-Football. Storing the digest rather
+      // than the raw payloads means the replay is byte-identical to the
+      // original prompt instead of merely equivalent.
+      // Cast: MatchDigest is a plain JSON-serialisable object, but Prisma's
+      // InputJsonValue won't accept a named interface without it.
+      context: buildStoredContext(digest) as unknown as Prisma.InputJsonValue,
     },
   });
 
@@ -171,6 +171,10 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           confidence: Math.min(90, Math.max(0, Math.round(p.confidence))),
           reasoning: p.reasoning,
           matchPreview: output.matchPreview,
+          // keyFactors has been generated since the beginning and dropped here.
+          // Shared across this job's rows exactly as matchPreview is — one
+          // analysis, several market rows.
+          analysisJson: buildAnalysis(output) as unknown as Prisma.InputJsonValue,
           contextComplete,
           authorId: input.authorId,
           aiJobId: job.id,
@@ -181,5 +185,5 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     }),
   );
 
-  return { job, preview: output.matchPreview, predictions: created };
+  return { job, preview: output.matchPreview, predictions: created, sources, durationMs };
 }

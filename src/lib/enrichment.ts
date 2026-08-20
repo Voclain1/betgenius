@@ -30,8 +30,17 @@ import {
 } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { trimH2H } from "@/lib/h2h";
+import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
 
-export type TeamTarget = { teamApiId: number; teamName: string | null; leagueApiId: number | null; kickoff: Date | null };
+export type TeamTarget = {
+  teamApiId: number;
+  teamName: string | null;
+  leagueApiId: number | null;
+  /** Kickoff used for season resolution. */
+  kickoff: Date | null;
+  /** Soonest FUTURE kickoff for this team, which is what the refresh priority tiers key on. Null when the team has no upcoming fixture. */
+  nextKickoff?: Date | null;
+};
 export type LeagueTarget = { leagueApiId: number; kickoff: Date | null };
 export type FixtureTarget = { matchKey: string; homeTeamApiId: number; awayTeamApiId: number; kickoffDay: string };
 export type H2HTarget = { pairKey: string; teamAApiId: number; teamBApiId: number; latestKickoff: Date | null };
@@ -87,6 +96,18 @@ export type LeagueStandingRow = {
   form: string | null;
   home?: LeagueStandingSplit | null;
   away?: LeagueStandingSplit | null;
+  /**
+   * The competition's own label for this position — "Relegation", "Promotion -
+   * Champions League (League phase)". Comes off the same /standings response as
+   * everything else here, so it costs nothing, and it is what lets the match
+   * page say what is at stake without inferring it from rank arithmetic (which
+   * would need per-competition rules this app doesn't have).
+   *
+   * Null for mid-table rows, which is itself meaningful: no label means nothing
+   * is at stake there. Optional because rows cached before this field don't
+   * carry it.
+   */
+  zone?: string | null;
 };
 export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
 /**
@@ -241,21 +262,115 @@ export async function refreshTeamSquad(target: TeamTarget): Promise<{ teamApiId:
 
 /** Distinct team ids referenced by PUBLISHED predictions, each paired with the most recent row's league/kickoff (for season resolution). */
 export async function getScopedTeamTargets(): Promise<TeamTarget[]> {
-  const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", OR: [{ homeTeamApiId: { not: null } }, { awayTeamApiId: { not: null } }] },
-    select: { homeTeamApiId: true, awayTeamApiId: true, homeTeam: true, awayTeam: true, leagueApiId: true, kickoff: true },
-    orderBy: { publishedAt: "desc" },
-  });
+  // Scope is every team with a prediction that still matters, not just
+  // PUBLISHED ones. A fixture sitting in PENDING_REVIEW needs warm caches
+  // BEFORE it is reviewed and published, and a fixture the generator is about
+  // to pick up needs them before generation — refreshing only after publication
+  // meant the data was always one step behind the page that renders it.
+  const [rows, pending] = await Promise.all([
+    prisma.prediction.findMany({
+      where: {
+        status: { in: ["PUBLISHED", "APPROVED", "PENDING_REVIEW"] },
+        OR: [{ homeTeamApiId: { not: null } }, { awayTeamApiId: { not: null } }],
+      },
+      select: { homeTeamApiId: true, awayTeamApiId: true, homeTeam: true, awayTeam: true, leagueApiId: true, kickoff: true },
+      orderBy: { publishedAt: "desc" },
+    }),
+    prisma.generationAttempt.findMany({
+      where: { status: { in: ["PENDING", "FAILED"] }, kickoff: { gt: new Date() } },
+      select: { homeTeam: true, awayTeam: true, leagueApiId: true, kickoff: true, matchKey: true },
+    }),
+  ]);
+
+  const now = Date.now();
   const byId = new Map<number, TeamTarget>();
+
+  const note = (apiId: number | null, name: string | null, leagueApiId: number | null, kickoff: Date | null) => {
+    if (apiId == null) return;
+    const existing = byId.get(apiId);
+    // The soonest future kickoff wins — that is what the priority tiers read.
+    const future = kickoff && kickoff.getTime() > now ? kickoff : null;
+    if (!existing) {
+      byId.set(apiId, { teamApiId: apiId, teamName: name, leagueApiId, kickoff, nextKickoff: future });
+      return;
+    }
+    if (future && (!existing.nextKickoff || future < existing.nextKickoff)) {
+      existing.nextKickoff = future;
+      existing.kickoff = kickoff;
+      existing.leagueApiId = existing.leagueApiId ?? leagueApiId;
+    }
+  };
+
   for (const r of rows) {
-    if (r.homeTeamApiId != null && !byId.has(r.homeTeamApiId)) {
-      byId.set(r.homeTeamApiId, { teamApiId: r.homeTeamApiId, teamName: r.homeTeam, leagueApiId: r.leagueApiId, kickoff: r.kickoff });
-    }
-    if (r.awayTeamApiId != null && !byId.has(r.awayTeamApiId)) {
-      byId.set(r.awayTeamApiId, { teamApiId: r.awayTeamApiId, teamName: r.awayTeam, leagueApiId: r.leagueApiId, kickoff: r.kickoff });
-    }
+    note(r.homeTeamApiId, r.homeTeam, r.leagueApiId, r.kickoff);
+    note(r.awayTeamApiId, r.awayTeam, r.leagueApiId, r.kickoff);
   }
-  return [...byId.values()];
+  // Attempt rows carry team ids inside the matchKey ("home-away-day"), which is
+  // the only place they exist on that table.
+  for (const a of pending) {
+    const [home, away] = a.matchKey.split("-");
+    note(Number(home), a.homeTeam, a.leagueApiId, a.kickoff);
+    note(Number(away), a.awayTeam, a.leagueApiId, a.kickoff);
+  }
+
+  return [...byId.values()].filter((t) => Number.isFinite(t.teamApiId));
+}
+
+/**
+ * Refresh priority tiers, by how soon the team next plays.
+ *
+ * Pure staleness ordering treats a team playing in two hours identically to one
+ * playing next Saturday, so at volume the imminent fixture waits behind a queue
+ * of teams whose data nobody needs yet. Tiering by kickoff proximity fixes that
+ * and — because far-off teams stop being refreshed every cycle — actually
+ * reduces total api-football calls rather than adding to them.
+ *
+ * Team news is the field that moves fastest and matters most close to kickoff,
+ * which is why Tier A is tight.
+ */
+export const REFRESH_TIERS = [
+  { name: "A", withinHours: 24, maxAgeMs: 3 * 60 * 60_000 },
+  { name: "B", withinHours: 72, maxAgeMs: 12 * 60 * 60_000 },
+  { name: "C", withinHours: Infinity, maxAgeMs: 48 * 60 * 60_000 },
+] as const;
+
+export function tierFor(nextKickoff: Date | null | undefined, now: Date = new Date()): (typeof REFRESH_TIERS)[number] | null {
+  // No upcoming fixture: nothing on the site is about to render this team's
+  // data, so it is not refreshed at all until one appears.
+  if (!nextKickoff) return null;
+  const hours = (nextKickoff.getTime() - now.getTime()) / 3_600_000;
+  if (hours < 0) return null;
+  return REFRESH_TIERS.find((t) => hours <= t.withinHours) ?? null;
+}
+
+/**
+ * Teams due a refresh, most urgent first.
+ *
+ * A team is due when its cache is older than its tier's tolerance; teams inside
+ * tolerance are skipped entirely rather than ordered last, which is where the
+ * call saving comes from. Within the due set, ordering is by tier then by
+ * staleness, so the soonest kickoff is always served first.
+ */
+export async function orderTeamsByPriority(targets: TeamTarget[], now: Date = new Date()): Promise<TeamTarget[]> {
+  const existing = await prisma.teamEnrichmentCache.findMany({
+    where: { teamApiId: { in: targets.map((t) => t.teamApiId) } },
+    select: { teamApiId: true, lastAttemptAt: true, fetchedAt: true },
+  });
+  const byId = new Map(existing.map((r) => [r.teamApiId, r]));
+
+  const due: Array<{ target: TeamTarget; tierIndex: number; age: number }> = [];
+  for (const target of targets) {
+    const tier = tierFor(target.nextKickoff, now);
+    if (!tier) continue;
+    const row = byId.get(target.teamApiId);
+    const fetchedAt = row?.fetchedAt?.getTime() ?? null;
+    const age = fetchedAt === null ? Infinity : now.getTime() - fetchedAt;
+    if (age < tier.maxAgeMs) continue;
+    due.push({ target, tierIndex: REFRESH_TIERS.indexOf(tier), age });
+  }
+
+  due.sort((a, b) => a.tierIndex - b.tierIndex || b.age - a.age);
+  return due.map((d) => d.target);
 }
 
 /** Distinct league ids referenced by PUBLISHED predictions, each paired with the most recent row's kickoff (for season resolution). */
@@ -503,6 +618,26 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
     const form = typeof context?.statistics === "object" && context.statistics ? ((context.statistics as any).form ?? null) : null;
     const statsJson = trimStatistics(context?.statistics);
     const lastFixtures = trimLastFixtures(target.teamApiId, context?.lastFixtures ?? null);
+    // The same projection the AI prompt is built from. /injuries was already
+    // being fetched by getTeamContext above and discarded — this is where it
+    // stops being discarded, at no extra api-football cost.
+    //
+    // statsJson/lastFixtures/form are still written beside it: the team and
+    // league pages read those today, and rewriting every reader is not what
+    // this change is for. New readers prefer teamDigestJson.
+    const teamDigest = context
+      ? buildTeamDigest({
+          name: target.teamName ?? String(target.teamApiId),
+          apiId: target.teamApiId,
+          statistics: context.statistics,
+          injuries: context.injuries,
+          lastFixtures: context.lastFixtures ?? null,
+          // Standings are a league-level fetch, not part of this refresh — see
+          // the column comment in schema.prisma. Readers merge rank/points from
+          // LeagueEnrichmentCache.
+          standingsRow: null,
+        })
+      : null;
     // Venue rides along on the /teams response that already produced the crest.
     // Written as explicit nulls when absent so a club that loses its venue
     // upstream doesn't keep showing a stale stadium.
@@ -528,11 +663,13 @@ export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId:
       create: {
         teamApiId: target.teamApiId, teamName: target.teamName, leagueApiId: target.leagueApiId, season,
         crestUrl: teamInfo?.logo ?? null, ...venueFields, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
+        teamDigestJson: (teamDigest as unknown as Prisma.InputJsonValue) ?? undefined,
         fetchedAt: now, lastAttemptAt: now, lastError: null,
       },
       update: {
         teamName: target.teamName, leagueApiId: target.leagueApiId, season,
         crestUrl: teamInfo?.logo ?? null, ...venueFields, form, statsJson: statsJson ?? undefined, lastFixtures: lastFixtures ?? undefined,
+        teamDigestJson: (teamDigest as unknown as Prisma.InputJsonValue) ?? undefined,
         fetchedAt: now, lastAttemptAt: now, lastError: null,
       },
     });
@@ -713,6 +850,7 @@ function trimStandings(standings: StandingsEntry[] | null): LeagueStandingRow[] 
     form: s.form ?? null,
     home: splitOf(s.home),
     away: splitOf(s.away),
+    zone: s.description?.trim() || null,
   }));
 }
 

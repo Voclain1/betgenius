@@ -27,7 +27,15 @@ export async function GET(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
-  const limit = Math.min(30, Math.max(1, Number(url.searchParams.get("limit")) || 15));
+  // Raised from 15/30. Settlement has to keep pace with whatever publication
+  // rate the reviewer sustains, and at up to 100 predictions a day a daily run
+  // of 15 would fall permanently and increasingly behind.
+  //
+  // Sized for 8 runs a day (3-hourly, via cron-job.org — this plan's own crons
+  // are capped at once daily): 8 x 40 = 320/day against a 100/day ceiling, so a
+  // missed run self-heals rather than compounding. 40 predictions costs ~80
+  // throttled calls, roughly 60-90s, well inside maxDuration=300.
+  const limit = Math.min(60, Math.max(1, Number(url.searchParams.get("limit")) || 40));
 
   const candidates = await prisma.prediction.findMany({
     where: {

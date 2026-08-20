@@ -1,16 +1,18 @@
 /**
- * Re-ask Gemini for a fresh draft of an existing PENDING_REVIEW prediction,
+ * Re-ask the model for a fresh draft of an existing PENDING_REVIEW prediction,
  * reusing the football context stored on its AIJob.
  *
  * Deliberately makes ZERO API-Football calls: nothing here imports the
  * football client. A rewrite answers "write this differently", not "the data
- * changed" — so it costs one Gemini call and no daily football quota.
+ * changed" — so it costs one model call and no daily football quota.
  */
 import { prisma } from "@/lib/prisma";
-import { generatePredictionForFixture } from "@/lib/ai/gemini";
-import { parseStoredContext } from "@/lib/ai/context";
+import { Prisma } from "@prisma/client";
+import { generatePredictionForFixture } from "@/lib/ai/analysis";
+import { parseStoredContext, buildStoredContext } from "@/lib/ai/context";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
+import { buildAnalysis } from "@/lib/predictionAnalysis";
 
 /** A superseded draft, appended to Prediction.previousDrafts. */
 export type ArchivedDraft = {
@@ -52,23 +54,19 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     throw new RewriteError(`Only PENDING_REVIEW predictions can be rewritten (this one is ${prediction.status})`, 409);
   }
 
-  const context = parseStoredContext(prediction.aiJob?.context);
-  if (!context) {
+  // Handles both v1 (raw payloads, upgraded on read) and v2 (digest) rows —
+  // see src/lib/ai/context.ts.
+  const digest = parseStoredContext(prediction.aiJob?.context);
+  if (!digest) {
     throw new RewriteError(
       "This prediction has no stored football context — it was generated before contexts were saved. Rewriting it would need a fresh API-Football fetch, so regenerate it from the AI panel instead.",
       409,
     );
   }
 
-  const output = await generatePredictionForFixture({
-    home: context.home,
-    away: context.away,
-    league: context.league,
-    kickoff: context.kickoff,
-    homeContext: context.homeContext,
-    awayContext: context.awayContext,
-    standings: context.standings,
-    h2h: context.h2h,
+  const startedAt = Date.now();
+  const { output, usage, model } = await generatePredictionForFixture({
+    digest,
     reviewerNote,
     previousDraft: {
       matchPreview: prediction.matchPreview,
@@ -120,11 +118,16 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     data: {
       userId: requestedById,
       prompt: JSON.stringify({ rewriteOf: predictionId, reviewerNote }),
-      model: process.env.GEMINI_MODEL || "gemini-flash-latest",
+      model,
       rawOutput: JSON.stringify(output),
       status: "COMPLETED",
       contextComplete: prediction.contextComplete,
-      context: prediction.aiJob!.context as any,
+      promptTokens: usage.promptTokens,
+      outputTokens: usage.outputTokens,
+      durationMs: Date.now() - startedAt,
+      // Carry the digest forward in the CURRENT format, so a v1 row that gets
+      // rewritten stops being v1 rather than being re-upgraded on every round.
+      context: buildStoredContext(digest) as unknown as Prisma.InputJsonValue,
       reviewerNote,
     },
   });
@@ -134,6 +137,8 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     data: {
       matchPreview: output.matchPreview,
       reasoning: draft.reasoning,
+      // Key factors are part of the draft being replaced, so they move with it.
+      analysisJson: buildAnalysis(output) as unknown as Prisma.InputJsonValue,
       market,
       pick,
       marketType,
