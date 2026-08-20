@@ -10,6 +10,13 @@ body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
 .card {
   @apply bg-brand-card border border-brand-border rounded-xl p-4;
 }
+/* One weight for every section heading on a content page, so the visual
+   hierarchy matches the document outline. The match page previously mixed
+   text-sm and text-xl across sibling <h2>s, which made the rendered page
+   disagree with the heading structure a parser or screen reader sees. */
+.section-heading {
+  @apply text-base font-semibold text-gray-100;
+}
 .btn {
   @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition;
 }

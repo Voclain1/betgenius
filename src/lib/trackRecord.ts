@@ -115,3 +115,49 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
 
   return { totalSettledAllTime, windows, recentTips };
 });
+
+/**
+ * Settled record for one league, or null when the sample is too small to publish.
+ *
+ * The gate is the same MIN_SETTLED_SAMPLE_SIZE the /track-record page uses, and
+ * it is the whole point of this function: a win rate over four settled picks is
+ * noise dressed as evidence, and publishing it beside a confidence figure would
+ * be the least honest thing on the page. Below the bar this returns null and
+ * callers render nothing — not a hedged number, not "too early to say".
+ *
+ * Reads the same PUBLISHED + settled rows as getTrackRecordData, scoped by
+ * leagueApiId. No schema of its own, no new indexes: same full-scan-then-filter
+ * posture the rest of this module and predictionScope.ts already take at this
+ * data volume.
+ */
+export const getLeagueTrackRecord = cache(async (leagueApiId: number | null): Promise<WinRateStat | null> => {
+  if (leagueApiId == null) return null;
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", outcome: { not: "PENDING" }, leagueApiId },
+    select: { outcome: true },
+  });
+  if (rows.length < MIN_SETTLED_SAMPLE_SIZE) return null;
+  return computeStat(rows.map((r) => r.outcome));
+});
+
+/**
+ * Settled record for one team, across both home and away fixtures. Same gate
+ * and same reasoning as getLeagueTrackRecord.
+ *
+ * Matched on team API id rather than name so a spelling variant can't split one
+ * team's record into two — the same reason homeTeamApiId/awayTeamApiId are
+ * persisted at generation time.
+ */
+export const getTeamTrackRecord = cache(async (teamApiId: number | null): Promise<WinRateStat | null> => {
+  if (teamApiId == null) return null;
+  const rows = await prisma.prediction.findMany({
+    where: {
+      status: "PUBLISHED",
+      outcome: { not: "PENDING" },
+      OR: [{ homeTeamApiId: teamApiId }, { awayTeamApiId: teamApiId }],
+    },
+    select: { outcome: true },
+  });
+  if (rows.length < MIN_SETTLED_SAMPLE_SIZE) return null;
+  return computeStat(rows.map((r) => r.outcome));
+});

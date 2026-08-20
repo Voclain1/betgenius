@@ -1,0 +1,5 @@
+{
+  "//": "tsx-only override for scripts/check-match-render.tsx. The root config uses jsx \"preserve\" because Next's own compiler handles JSX; tsx honours that and emits classic React.createElement calls, which fail in components written for the automatic runtime (none of them import React). Switching to react-jsx here changes nothing about how the app builds.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "jsx": "react-jsx" }
+}
