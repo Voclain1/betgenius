@@ -17,6 +17,8 @@
  * any category.
  */
 
+import { randomUUID } from "crypto";
+
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { getUsageSnapshot } from "@/lib/football/usage";
@@ -28,14 +30,42 @@ import {
 } from "@/lib/generation/selector";
 
 /**
- * Postgres advisory lock key for the generation run.
+ * Lease key for the generation run. A row id in AppLock, not a lock manager.
  *
- * An arbitrary constant — advisory locks are a shared namespace keyed by
- * number, so this only has to be unique within this database. Session-scoped
- * (pg_try_advisory_lock, not the _xact variant) because the work spans many
- * transactions; released explicitly in a finally block.
+ * This used to be a Postgres advisory lock, which does not survive contact with
+ * a connection pooler. Every connection here goes through Neon's pgbouncer in
+ * transaction pooling mode, and that breaks session-scoped advisory locks in
+ * both directions at once — measured against production, not theorised:
+ *
+ *   - the lock lands on a pgbouncer backend, and the later unlock is routed to
+ *     whichever backend is free, which is usually a different one. The unlock
+ *     silently no-ops and the lock is stranded on an idle backend until the
+ *     compute recycles. Every later run then fails to acquire and reports
+ *     "already in progress" for hours.
+ *   - worse, two independent clients get multiplexed onto the SAME backend, and
+ *     pg_try_advisory_lock is re-entrant per session, so BOTH return true. The
+ *     guard fails open exactly when it is supposed to bite.
+ *
+ * pg_try_advisory_xact_lock does not rescue this. It releases at the end of its
+ * transaction, and each query here is its own implicit transaction, so the lock
+ * is gone before the next statement runs — no exclusion at all beyond a single
+ * SELECT. Holding one run's worth of work inside a single transaction is not an
+ * option either: a run lasts minutes and spends most of it awaiting a model.
+ *
+ * A lease is plain rows. It does not care which backend a statement lands on,
+ * and it expires by wall clock, so a run killed mid-flight heals itself.
  */
-const LOCK_KEY = 918_273_641;
+const LOCK_KEY = "generation-run";
+
+/**
+ * How long a claimed lease stays valid.
+ *
+ * Must exceed the platform's hard function timeout (300s), or a still-running
+ * run could have its lease stolen and a second run would start alongside it.
+ * Must also be short enough that a killed run's lease clears on its own well
+ * inside the 3-hourly schedule. Six minutes satisfies both.
+ */
+const LEASE_TTL_MS = 6 * 60_000;
 
 /**
  * Stop claiming new fixtures past this much elapsed time.
@@ -68,14 +98,40 @@ export type RunReport = {
   results: Array<{ fixture: string; kickoff: string; ok: boolean; predictions?: number; error?: string; terminal?: boolean }>;
 };
 
-/** Single-flight guard. Returns false when another run already holds the lock. */
-async function acquireLock(): Promise<boolean> {
-  const rows = await prisma.$queryRaw<Array<{ locked: boolean }>>`SELECT pg_try_advisory_lock(${LOCK_KEY}) AS locked`;
-  return rows[0]?.locked === true;
+/**
+ * Single-flight guard. Returns a holder token, or null when a live run holds
+ * the lease.
+ *
+ * One statement, so it is atomic without a transaction: the INSERT wins if no
+ * row exists, and the ON CONFLICT ... WHERE only fires when the existing lease
+ * has already expired. Two racing runs therefore cannot both get a row back —
+ * the loser's conflict clause finds an unexpired lease and updates nothing.
+ */
+async function acquireLock(now: Date): Promise<string | null> {
+  const holder = randomUUID();
+  const expiresAt = new Date(now.getTime() + LEASE_TTL_MS);
+  const rows = await prisma.$queryRaw<Array<{ holder: string }>>`
+    INSERT INTO "AppLock" ("key", "holder", "acquiredAt", "expiresAt")
+    VALUES (${LOCK_KEY}, ${holder}, ${now}, ${expiresAt})
+    ON CONFLICT ("key") DO UPDATE
+      SET "holder" = EXCLUDED."holder",
+          "acquiredAt" = EXCLUDED."acquiredAt",
+          "expiresAt" = EXCLUDED."expiresAt"
+      WHERE "AppLock"."expiresAt" <= ${now}
+    RETURNING "holder"
+  `;
+  return rows[0]?.holder === holder ? holder : null;
 }
 
-async function releaseLock(): Promise<void> {
-  await prisma.$queryRaw`SELECT pg_advisory_unlock(${LOCK_KEY})`.catch(() => {});
+/**
+ * Release our own lease and nobody else's.
+ *
+ * The holder check matters in the one case the TTL is meant to cover: if this
+ * run overran its lease and another run legitimately took over, this delete
+ * must not remove the new holder's claim on the way out.
+ */
+async function releaseLock(holder: string): Promise<void> {
+  await prisma.$executeRaw`DELETE FROM "AppLock" WHERE "key" = ${LOCK_KEY} AND "holder" = ${holder}`.catch(() => {});
 }
 
 /**
@@ -145,7 +201,8 @@ export async function runGeneration(opts: {
     elapsedMs: Date.now() - startedAt, results: [],
   });
 
-  if (!(await acquireLock())) return empty("another generation run is already in progress");
+  const holder = await acquireLock(opts.now ?? new Date());
+  if (!holder) return empty("another generation run is already in progress");
 
   try {
     const usage = await getUsageSnapshot();
@@ -212,6 +269,6 @@ export async function runGeneration(opts: {
     report.elapsedMs = Date.now() - startedAt;
     return report;
   } finally {
-    await releaseLock();
+    await releaseLock(holder);
   }
 }

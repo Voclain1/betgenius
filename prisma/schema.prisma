@@ -496,6 +496,26 @@ model GenerationAttempt {
   @@index([kickoff])
 }
 
+model AppLock {
+  // Cooperative lease, not a Postgres advisory lock.
+  //
+  // Advisory locks are session-scoped, and every connection here goes through
+  // Neon's pgbouncer in transaction pooling mode. That breaks them twice over:
+  // the unlock can land on a different backend than the lock did, stranding it
+  // until the compute recycles, and two separate clients multiplexed onto the
+  // SAME backend both acquire it re-entrantly, so it silently fails open. A
+  // lease is plain rows — it does not care which backend a statement lands on.
+  key        String   @id
+  // Random per run, so a holder can only release its own lease.
+  holder     String
+  acquiredAt DateTime @default(now())
+  // Past this, any run may steal the lease. Set above the platform's function
+  // timeout so a killed run self-heals without anyone touching the database.
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+}
+
 model AdminTask {
   id           String    @id @default(cuid())
   title        String
