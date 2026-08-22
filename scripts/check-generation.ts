@@ -94,7 +94,12 @@ for (const action of ["APPROVE", "PUBLISH", "ARCHIVE"] as const) {
 // --- Cost / provider arithmetic -------------------------------------------
 eq("provider: parsed from the model string", providerOf("gemini:gemini-2.5-flash"), "gemini");
 eq("provider: groq parsed", providerOf("groq:openai/gpt-oss-120b"), "groq");
-eq("provider: a legacy bare model name is kept whole", providerOf("gemini-flash-latest"), "gemini-flash-latest");
+// Legacy rows predate the provider prefix. They must land in the gemini bucket,
+// not a pseudo-provider of their own, or every one of them counts as a fallback.
+eq("provider: a legacy bare model name is gemini", providerOf("gemini-flash-latest"), "gemini");
+eq("provider: a legacy bare 2.5 name is gemini", providerOf("gemini-2.5-flash"), "gemini");
+eq("provider: an empty model string does not invent a provider", providerOf(""), "gemini");
+eq("provider: a prefixed model still wins over the legacy default", providerOf("groq:llama"), "groq");
 
 const cost = estimateCostUsd("gemini:gemini-2.5-flash", 2_000_000, 1_000_000);
 eq("cost: input and output priced separately", cost, 0.3 * 2 + 2.5);

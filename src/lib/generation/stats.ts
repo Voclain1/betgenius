@@ -61,10 +61,22 @@ export function estimateCostUsd(model: string, promptTokens: number, outputToken
   return (promptTokens / 1_000_000) * price.input + (outputTokens / 1_000_000) * price.output;
 }
 
-/** "gemini:gemini-2.5-flash" -> "gemini". Rows predating the provider prefix have no colon and are bucketed under their raw value. */
+/** The primary provider, for fallback-rate purposes. Everything else counts as a fallback. */
+const PRIMARY_PROVIDER = "gemini";
+
+/**
+ * "gemini:gemini-2.5-flash" -> "gemini".
+ *
+ * Rows written before the provider abstraction stored a bare model name with no
+ * prefix. Bucketing those under their raw value made each one its own
+ * pseudo-provider, and since fallbackPct is "everything that isn't the primary",
+ * every legacy row scored as a fallback — 7 of them were reporting a 70%+
+ * fallback rate on a chain that had not failed over once. Gemini was the only
+ * provider that existed when they were written, so that is what they are.
+ */
 export function providerOf(model: string): string {
   const i = model.indexOf(":");
-  return i === -1 ? model : model.slice(0, i);
+  return i === -1 ? PRIMARY_PROVIDER : model.slice(0, i);
 }
 
 /** Percentile over a sorted-in-place copy. Null for an empty sample rather than 0, which would read as "instant". */
@@ -100,9 +112,6 @@ export type GenerationStats = {
   predictionsCreatedToday: number;
   usage: UsageSnapshot;
 };
-
-/** The primary provider, for fallback-rate purposes. Everything else counts as a fallback. */
-const PRIMARY_PROVIDER = "gemini";
 
 function summarise(jobs: Array<{ model: string; status: string; promptTokens: number | null; outputTokens: number | null; durationMs: number | null }>): WindowSummary {
   const byProvider: Record<string, number> = {};
