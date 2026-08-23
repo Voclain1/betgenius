@@ -83,11 +83,12 @@ async function fetchHeroPick(): Promise<HeroPickData | null> {
   return row ? ({ ...row, homeTeam: row.homeTeam!, awayTeam: row.awayTeam! } as HeroPickData) : null;
 }
 
-const CATEGORY_LINKS: { label: string; slug: string }[] = [
-  { label: "Banker", slug: "banker" },
-  { label: "Today", slug: "today" },
-  { label: "Premium", slug: "premium" },
-  { label: "VIP", slug: "vip" },
+const CATEGORY_LINKS: { label: string; href: string }[] = [
+  { label: "Banker", href: "/predictions/banker" },
+  { label: "Today", href: "/predictions/today" },
+  { label: "Premium", href: "/predictions/premium" },
+  { label: "VIP", href: "/predictions/vip" },
+  { label: "Combos", href: "/combos" },
 ];
 
 export default async function HomePage() {
@@ -214,7 +215,7 @@ export default async function HomePage() {
 
         <div className="flex flex-wrap gap-3">
           {CATEGORY_LINKS.map((c) => (
-            <Link key={c.slug} href={`/predictions/${c.slug}`} className="btn btn-ghost">
+            <Link key={c.href} href={c.href} className="btn btn-ghost">
               {c.label}
             </Link>
           ))}

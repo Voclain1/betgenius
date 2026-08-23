@@ -31,6 +31,7 @@ const TIP_LINKS: NavLink[] = [
 
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/bet-builder", label: "Bet Builder" },
+  { href: "/combos", label: "Combos" },
   { href: "/track-record", label: "Track Record" },
 ];
 
