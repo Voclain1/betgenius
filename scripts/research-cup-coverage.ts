@@ -56,9 +56,20 @@ async function main() {
 
     const statusCounts: Record<string, number> = {};
     const specialFinishes: any[] = [];
+    const fixtureTeams = new Map<number, string>();
+    const roundBreakdown = new Map<string, { fixtures: number; teams: Map<number, string> }>();
     for (const fixture of fixtures.response) {
       const status = fixture.fixture?.status?.short ?? "UNKNOWN";
       statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+      const round = fixture.league?.round ?? "UNKNOWN";
+      const breakdown = roundBreakdown.get(round) ?? { fixtures: 0, teams: new Map<number, string>() };
+      breakdown.fixtures += 1;
+      for (const side of [fixture.teams?.home, fixture.teams?.away]) {
+        if (!side?.id) continue;
+        fixtureTeams.set(side.id, side.name);
+        breakdown.teams.set(side.id, side.name);
+      }
+      roundBreakdown.set(round, breakdown);
       if (status === "AET" || status === "PEN") {
         specialFinishes.push({
           fixture: `${fixture.teams?.home?.name} vs ${fixture.teams?.away?.name}`,
@@ -78,6 +89,13 @@ async function main() {
         results: fixtures.results,
         errors: errorsOf(fixtures.errors),
         rounds: [...new Set(fixtures.response.map((f: any) => f.league?.round).filter(Boolean))],
+        uniqueTeams: fixtureTeams.size,
+        roundBreakdown: [...roundBreakdown.entries()].map(([round, value]) => ({
+          round,
+          fixtures: value.fixtures,
+          uniqueTeams: value.teams.size,
+          sampleTeams: [...value.teams.values()].slice(0, 12),
+        })),
         statusCounts,
         specialFinishes: specialFinishes.slice(0, 3),
       },

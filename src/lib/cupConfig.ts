@@ -8,6 +8,32 @@ export const CUP_CONFIGS = [
     scopeNote: "Third Round Proper onward",
   },
   {
+    id: 48,
+    slug: "efl-cup",
+    name: "EFL Cup",
+    country: "England",
+    // Both naming schemes are live across adjacent API seasons.
+    rounds: ["Preliminary Round", "1st Round", "Round of 128", "2nd Round", "Round of 64", "3rd Round", "Round of 32", "4th Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+    scopeNote: "Full competition",
+  },
+  {
+    id: 143,
+    slug: "copa-del-rey",
+    name: "Copa del Rey",
+    country: "Spain",
+    rounds: ["Round of 128", "Round of 64", "Round of 32", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+    scopeNote: "Round of 128 onward",
+  },
+  {
+    id: 137,
+    slug: "coppa-italia",
+    name: "Coppa Italia",
+    country: "Italy",
+    // 2025 used numbered rounds; 2026 switched to bracket-size names.
+    rounds: ["Preliminary Round", "Round of 128", "1st Round", "Round of 64", "2nd Round", "Round of 32", "3rd Round", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+    scopeNote: "Full competition",
+  },
+  {
     id: 81,
     slug: "dfb-pokal",
     name: "DFB Pokal",
@@ -16,6 +42,14 @@ export const CUP_CONFIGS = [
     // aliases are omitted by the page, so each season still shows one round.
     rounds: ["1st Round", "Round of 64", "2nd Round", "Round of 32", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
     scopeNote: "Full competition",
+  },
+  {
+    id: 66,
+    slug: "coupe-de-france",
+    name: "Coupe de France",
+    country: "France",
+    rounds: ["Round of 64", "Round of 32", "Round of 16", "Quarter-finals", "Semi-finals", "Final"],
+    scopeNote: "Round of 64 onward",
   },
 ] as const;
 
@@ -36,9 +70,10 @@ export function isCupCompetition(id?: number | null): boolean {
 export function fixtureIsInCupScope(leagueApiId: number, round?: string | null): boolean {
   const cup = cupById(leagueApiId);
   if (!cup) return true;
-  // Only the FA Cup needs a scope cutoff. DFB Pokal intentionally includes
-  // the entire competition, including future API round-name variants.
-  if (leagueApiId === 81) return true;
+  // Full-scope cups accept future API round-name variants. Scoped cups use
+  // their explicit allow-list so qualifying fixtures never leak into pages or
+  // scheduled generation.
+  if (cup.scopeNote === "Full competition") return true;
   return !!round && (cup.rounds as readonly string[]).includes(round);
 }
 

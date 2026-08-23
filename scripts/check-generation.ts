@@ -89,8 +89,18 @@ check("cup scope: FA Cup excludes qualifying rounds", !fixtureIsInCupScope(45, "
 check("cup scope: FA Cup includes Third Round Proper API value", fixtureIsInCupScope(45, "Round of 64"));
 check("cup scope: DFB Pokal includes its opening round", fixtureIsInCupScope(81, "1st Round"));
 check("cup scope: DFB Pokal accepts current Round of 64 naming", fixtureIsInCupScope(81, "Round of 64"));
+check("cup scope: EFL Cup includes preliminary round", fixtureIsInCupScope(48, "Preliminary Round"));
+check("cup scope: Coppa Italia includes preliminary round", fixtureIsInCupScope(137, "Preliminary Round"));
+check("cup scope: Copa del Rey excludes regional qualifiers", !fixtureIsInCupScope(143, "1/128-finals"));
+check("cup scope: Copa del Rey includes Round of 128", fixtureIsInCupScope(143, "Round of 128"));
+check("cup scope: Coupe de France excludes Round of 128", !fixtureIsInCupScope(66, "Round of 128"));
+check("cup scope: Coupe de France includes Round of 64", fixtureIsInCupScope(66, "Round of 64"));
 check("cup priority: FA Cup follows the Championship", leaguePriorityRank(45) === leaguePriorityRank(40) + 1);
+check("cup priority: EFL Cup follows FA Cup", leaguePriorityRank(48) === leaguePriorityRank(45) + 1);
+check("cup priority: Copa del Rey follows La Liga", leaguePriorityRank(143) === leaguePriorityRank(140) + 1);
+check("cup priority: Coppa Italia follows Serie A", leaguePriorityRank(137) === leaguePriorityRank(135) + 1);
 check("cup priority: DFB Pokal follows Bundesliga", leaguePriorityRank(81) === leaguePriorityRank(78) + 1);
+check("cup priority: Coupe de France follows Ligue 1", leaguePriorityRank(66) === leaguePriorityRank(61) + 1);
 eq("cup risk: FA Cup receives VIP proxy calibration", resolveGenerationRisk(["FEATURED"], 45).calibration, "vip");
 eq("cup risk: DFB Pokal receives VIP proxy calibration", resolveGenerationRisk(["FEATURED"], 81).calibration, "vip");
 eq("categories: bulk add/remove preserves unaffected assignments", applyCategoryChanges(["FEATURED", "BANKER"], ["VIP"], ["FEATURED"]), ["BANKER", "VIP"]);

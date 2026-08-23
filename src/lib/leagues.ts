@@ -8,11 +8,15 @@
 export const LEAGUE_CATALOGUE = [
   // Top 5
   { id: 39, name: "Premier League", country: "England", tier: "top", kind: "league", flagCode: "gb-eng" },
+  { id: 48, name: "EFL Cup", country: "England", tier: "top", kind: "cup" },
   { id: 140, name: "La Liga", country: "Spain", tier: "top", kind: "league", flagCode: "es" },
+  { id: 143, name: "Copa del Rey", country: "Spain", tier: "top", kind: "cup" },
   { id: 135, name: "Serie A", country: "Italy", tier: "top", kind: "league", flagCode: "it" },
+  { id: 137, name: "Coppa Italia", country: "Italy", tier: "top", kind: "cup" },
   { id: 78, name: "Bundesliga", country: "Germany", tier: "top", kind: "league", flagCode: "de" },
   { id: 81, name: "DFB Pokal", country: "Germany", tier: "top", kind: "cup" },
   { id: 61, name: "Ligue 1", country: "France", tier: "top", kind: "league", flagCode: "fr" },
+  { id: 66, name: "Coupe de France", country: "France", tier: "top", kind: "cup" },
 
   // International tournaments
   { id: 1, name: "World Cup", country: "World", tier: "international", kind: "cup" },
@@ -67,11 +71,11 @@ export const LEAGUE_CATALOGUE = [
 
 /** Shared editorial order for generation and automatic curation. */
 export const LEAGUE_PRIORITY_ORDER = [
-  39, 40, 45, // England: Premier League, Championship, FA Cup
-  140, // Spain
-  135, // Italy
+  39, 40, 45, 48, // England: Premier League, Championship, FA Cup, EFL Cup
+  140, 143, // Spain: La Liga, Copa del Rey
+  135, 137, // Italy: Serie A, Coppa Italia
   78, 81, // Germany: Bundesliga, DFB Pokal
-  61, // France
+  61, 66, // France: Ligue 1, Coupe de France
   94, // Portugal
   2, 3, 848, // European continental competitions
   88, // Netherlands

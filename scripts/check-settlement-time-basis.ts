@@ -35,6 +35,51 @@ if (!eflPenalty.ok) throw new Error("Expected valid penalty fixture");
 assert.equal(resolveMarket("DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }, eflPenalty.home, eflPenalty.away), "WON");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "AWAY" }, eflPenalty.home, eflPenalty.away), "LOST");
 
+// Real Copa del Rey response: Universitario FC 1-3 Inter de Valdemoro after
+// extra time, level 1-1 at the end of regulation.
+const copaAet = regulationScoreOf({
+  fixture: { status: { short: "AET" } },
+  goals: { home: 1, away: 3 },
+  score: {
+    fulltime: { home: 1, away: 1 },
+    extratime: { home: 0, away: 2 },
+    penalty: { home: null, away: null },
+  },
+});
+assert.deepEqual(copaAet, { ok: true, home: 1, away: 1 });
+if (!copaAet.ok) throw new Error("Expected valid Copa del Rey AET fixture");
+assert.equal(resolveMarket("BTTS", { value: "YES" }, copaAet.home, copaAet.away), "WON");
+assert.equal(resolveMarket("MATCH_WINNER", { value: "AWAY" }, copaAet.home, copaAet.away), "LOST");
+
+// Real Coppa Italia response: Empoli 1-1 Reggiana, Empoli won 3-0 on pens.
+const coppaPenalty = regulationScoreOf({
+  fixture: { status: { short: "PEN" } },
+  goals: { home: 1, away: 1 },
+  score: {
+    fulltime: { home: 1, away: 1 },
+    extratime: { home: null, away: null },
+    penalty: { home: 3, away: 0 },
+  },
+});
+assert.deepEqual(coppaPenalty, { ok: true, home: 1, away: 1 });
+if (!coppaPenalty.ok) throw new Error("Expected valid Coppa Italia penalty fixture");
+assert.equal(resolveMarket("CORRECT_SCORE", { home: 1, away: 1 }, coppaPenalty.home, coppaPenalty.away), "WON");
+assert.equal(resolveMarket("MATCH_WINNER", { value: "HOME" }, coppaPenalty.home, coppaPenalty.away), "LOST");
+
+// Real Coupe de France response: Pontarlier 2-2 Sochaux before a shootout.
+// API-Football omitted the shootout tally. The defensive completeness rule
+// therefore fails closed instead of guessing, even though regulation is shown.
+const coupePenalty = regulationScoreOf({
+  fixture: { status: { short: "PEN" } },
+  goals: { home: 2, away: 2 },
+  score: {
+    fulltime: { home: 2, away: 2 },
+    extratime: { home: null, away: null },
+    penalty: { home: null, away: null },
+  },
+});
+assert.equal(coupePenalty.ok, false);
+
 // Real Copa del Rey response observed during research: contradictory aggregate
 // and component scores. This must be routed to manual settlement.
 const inconsistent = regulationScoreOf({
