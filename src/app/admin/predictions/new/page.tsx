@@ -22,7 +22,6 @@ export default function NewPrediction() {
     kickoff: "",
     leagueApiId: undefined as number | undefined,
     leagueName: "",
-    odds: "",
     confidence: 70,
     reasoning: "",
     matchPreview: "",
@@ -68,7 +67,6 @@ export default function NewPrediction() {
           otherPick: market.marketType === "OTHER" ? market.otherPick : undefined,
           ouLine: Number(market.ouLine),
           ouDirection: market.ouDirection,
-          odds: form.odds ? Number(form.odds) : undefined,
           confidence: form.confidence,
           reasoning: form.reasoning,
           matchPreview: form.matchPreview || undefined,
@@ -128,10 +126,6 @@ export default function NewPrediction() {
 
         <MarketSelectionFields value={market} onChange={setMarket} homeTeam={form.homeTeam} awayTeam={form.awayTeam} />
 
-        <label className="text-sm">Odds
-          <input type="number" step="0.01" value={form.odds} onChange={(e) => setForm({ ...form, odds: e.target.value })}
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-        </label>
         <label className="text-sm">Confidence %
           <input type="number" min={0} max={100} value={form.confidence}
             onChange={(e) => setForm({ ...form, confidence: Number(e.target.value) })}

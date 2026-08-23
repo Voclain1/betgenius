@@ -1,4 +1,20 @@
 import { prisma } from "@/lib/prisma";
+import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
+
+export const CATEGORY_VALUES = PREDICTION_CATEGORIES;
+
+export function applyCategoryChanges(
+  current: readonly string[],
+  add: readonly PredictionCategory[],
+  remove: readonly PredictionCategory[],
+): PredictionCategory[] {
+  const valid = new Set<string>(CATEGORY_VALUES);
+  const next = new Set(current.filter((c): c is PredictionCategory => valid.has(c)));
+  for (const category of remove) next.delete(category);
+  for (const category of add) next.add(category);
+  if (next.size === 0) throw new Error("At least one category is required");
+  return [...next];
+}
 
 /**
  * Replaces a prediction's category assignments with `categories`, and keeps

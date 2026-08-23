@@ -3,7 +3,7 @@ import { Lock } from "lucide-react";
 import { catStyles } from "@/components/PredictionCard";
 import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
 
-export type ComboLegView = { id: string; matchLabel: string; market: string; pick: string; odds: number };
+export type ComboLegView = { id: string; matchLabel: string; market: string; pick: string };
 export type ComboView = {
   id: string;
   title: string;
@@ -23,8 +23,6 @@ export function ComboCard({
   categoryLabel: string;
   bookmakers: BookmakerOption[];
 }) {
-  const combinedOdds = combo.legs.reduce((a, l) => a * l.odds, 1);
-
   return (
     <article className="card flex flex-col gap-4">
       <div>
@@ -48,15 +46,9 @@ export function ComboCard({
                   <div className="truncate font-medium">{i + 1}. {l.matchLabel}</div>
                   <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                 </div>
-                <span className="shrink-0 text-brand">{l.odds.toFixed(2)}</span>
               </li>
             ))}
           </ul>
-
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-400">Combined odds</span>
-            <span className="text-lg font-semibold text-brand">{combinedOdds.toFixed(2)}</span>
-          </div>
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             <Link href={`/bet-builder?combo=${combo.id}`} className="btn btn-ghost flex-1 justify-center">

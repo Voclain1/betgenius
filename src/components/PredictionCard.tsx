@@ -3,13 +3,13 @@ import { Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
 import { leagueSlug } from "@/lib/slug";
+import { competitionPredictionsHref } from "@/lib/cupConfig";
 
 export type PredictionRow = {
   id: string;
   category: string;
   market: string;
   pick: string;
-  odds: number | null;
   confidence: number | null;
   reasoning: string;
   matchPreview?: string | null;
@@ -60,7 +60,7 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
       {!hideMatchHeader && (home || leagueName) && (
         <div>
           {leagueName && (
-            <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`} className="hover:underline">
+            <Link href={competitionPredictionsHref(p.leagueApiId, leagueSlug(leagueName, p.leagueApiId))} className="hover:underline">
               <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />
             </Link>
           )}
@@ -72,7 +72,7 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
           )}
         </div>
       )}
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-2 gap-2 text-center">
         <div className="rounded-md bg-brand-bg p-2">
           <div className="text-[10px] uppercase text-gray-500">Market</div>
           <div className="text-sm font-medium">{p.market}</div>
@@ -82,10 +82,6 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
           <div className="text-sm font-semibold text-brand flex items-center justify-center gap-1">
             {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
           </div>
-        </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Odds</div>
-          <div className="text-sm font-medium">{p.odds ?? "—"}</div>
         </div>
       </div>
       {p.confidence !== null && p.confidence !== undefined && (

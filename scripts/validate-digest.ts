@@ -70,8 +70,7 @@ Rules:
       "reasoning": string
     }
   ],
-  "keyFactors": string[],          // 3-6 bullet points
-  "suggestedOdds": number | null   // decimal odds for the top pick
+  "keyFactors": string[]           // 3-6 bullet points
 }`;
 
 function oldPrompt(f: { home: string; away: string; league: string; kickoff: string }, homeContext: unknown, awayContext: unknown, h2h: unknown, standings: unknown) {

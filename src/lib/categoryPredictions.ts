@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
+import { lagosTodayBounds } from "@/lib/lagosDate";
 
 // Shared between /predictions/[category] and the account dashboard so the
 // two never end up running two slightly different queries for the same
@@ -32,9 +33,14 @@ export const CATEGORY_TO_SLUG = Object.fromEntries(
 // (and now the dashboard) so a given category's predictions are only fetched
 // once per request — React's cache() memoizes by arguments within a render pass.
 export const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
+  const today = lagosTodayBounds();
   return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", categories: { some: { category: cat } } },
-    orderBy: { publishedAt: "desc" },
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: today.start, lt: today.end },
+      ...(cat === "TODAY" ? {} : { categories: { some: { category: cat } } }),
+    },
+    orderBy: cat === "TODAY" ? { kickoff: "asc" } : [{ publishedAt: "desc" }, { kickoff: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
     take: 60,
   });

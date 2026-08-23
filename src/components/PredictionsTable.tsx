@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
 import { leagueSlug } from "@/lib/slug";
+import { competitionPredictionsHref } from "@/lib/cupConfig";
 
 export type PredictionTableRow = {
   id: string;
@@ -12,7 +13,6 @@ export type PredictionTableRow = {
   kickoff?: string | Date | null;
   pick: string;
   overUnder?: string | null;
-  odds: number | null;
   confidence: number | null;
   locked?: boolean;
   fixture?: {
@@ -33,7 +33,6 @@ export function PredictionsTable({ rows }: { rows: PredictionTableRow[] }) {
             <th className="px-3 py-2">Match</th>
             <th className="px-3 py-2">Pick</th>
             <th className="hidden px-3 py-2 sm:table-cell">Over/Under</th>
-            <th className="px-3 py-2 text-right">Odds</th>
             <th className="hidden px-3 py-2 text-right md:table-cell">Confidence</th>
             <th className="hidden px-3 py-2 md:table-cell">Kickoff</th>
           </tr>
@@ -48,7 +47,7 @@ export function PredictionsTable({ rows }: { rows: PredictionTableRow[] }) {
               <tr key={p.id} className="hover:bg-brand-card/50">
                 <td className="px-3 py-2">
                   {leagueName ? (
-                    <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
+                    <Link href={competitionPredictionsHref(p.leagueApiId, leagueSlug(leagueName, p.leagueApiId))}>
                       <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
                     </Link>
                   ) : (
@@ -60,7 +59,6 @@ export function PredictionsTable({ rows }: { rows: PredictionTableRow[] }) {
                 </td>
                 <td className="px-3 py-2 font-semibold text-brand">{p.locked ? "LOCKED" : p.pick}</td>
                 <td className="hidden px-3 py-2 sm:table-cell">{p.overUnder ?? "—"}</td>
-                <td className="px-3 py-2 text-right">{p.odds ?? "—"}</td>
                 <td className="hidden px-3 py-2 text-right md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-2 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}

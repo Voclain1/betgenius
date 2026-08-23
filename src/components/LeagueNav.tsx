@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import type { LeagueNavItem } from "@/lib/predictionScope";
+import { competitionPredictionsHref } from "@/lib/cupConfig";
 
 /**
  * A wrapping row of league pills linking to /predictions/league/[slug]. Used
@@ -20,7 +21,7 @@ export function LeagueNav({ leagues, empty }: { leagues: LeagueNavItem[]; empty:
       {leagues.map((l) => (
         <Link
           key={l.slug}
-          href={`/predictions/league/${l.slug}`}
+          href={competitionPredictionsHref(l.leagueApiId, l.slug)}
           title={l.country ? `${l.name} · ${l.country}` : l.name}
           className="inline-flex max-w-full items-center gap-2 rounded-full border border-brand-border bg-brand-card px-3 py-1.5 text-sm transition hover:border-brand hover:text-brand"
         >

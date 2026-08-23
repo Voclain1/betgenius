@@ -36,7 +36,6 @@ type Prediction = {
   overUnder: string | null;
   ouLine: number | null;
   ouDirection: string | null;
-  odds: number | null;
   confidence: number;
   reasoning: string;
   matchPreview: string | null;
@@ -72,7 +71,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [p, setP] = useState<Prediction | null>(null);
   const [form, setForm] = useState<{
-    odds: string; confidence: number; reasoning: string; matchPreview: string; categories: string[];
+    confidence: number; reasoning: string; matchPreview: string; categories: string[];
     leagueApiId: number | undefined; leagueName: string;
     homeTeam: string; awayTeam: string; kickoff: string;
   } | null>(null);
@@ -89,7 +88,6 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
     const pred = j.prediction;
     setP(pred);
     setForm({
-      odds: pred.odds?.toString() ?? "",
       confidence: pred.confidence,
       reasoning: pred.reasoning,
       matchPreview: pred.matchPreview ?? "",
@@ -143,7 +141,6 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         body: JSON.stringify({
           action: "EDIT",
           patch: {
-            odds: form.odds ? Number(form.odds) : undefined,
             confidence: form.confidence,
             reasoning: form.reasoning,
             matchPreview: form.matchPreview,
@@ -266,10 +263,6 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
 
         <MarketSelectionFields value={market} onChange={setMarket} homeTeam={form.homeTeam} awayTeam={form.awayTeam} />
 
-        <label className="text-sm">Odds
-          <input type="number" step="0.01" value={form.odds} onChange={(e) => setForm({ ...form, odds: e.target.value })}
-            className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-        </label>
         <label className="text-sm">Confidence %
           <input type="number" min={0} max={100} value={form.confidence}
             onChange={(e) => setForm({ ...form, confidence: Number(e.target.value) })}

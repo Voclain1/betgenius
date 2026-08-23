@@ -28,9 +28,7 @@ export default async function BetBuilderPage() {
     await Promise.all(
       unlockedCategories.map(async (cat) => {
         const rows = await getCategoryPredictions(cat);
-        const options: TipOption[] = rows
-          .filter((r): r is typeof r & { odds: number } => r.odds != null)
-          .map((r) => {
+        const options: TipOption[] = rows.map((r) => {
             const home = r.homeTeam ?? r.fixture?.homeTeam.name;
             const away = r.awayTeam ?? r.fixture?.awayTeam.name;
             return {
@@ -38,7 +36,6 @@ export default async function BetBuilderPage() {
               label: home && away ? `${home} vs ${away}` : "Match TBD",
               market: r.market,
               pick: r.pick,
-              odds: r.odds,
             };
           });
         return [cat, options] as const;

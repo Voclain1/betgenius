@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { lookupFinishedScore } from "@/lib/settlement";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
+import { curateAutomaticTips } from "@/lib/geniusCuration";
 
 // Bulk settlement runs sequentially through the throttled api-football queue
 // (up to 2 calls per prediction) — bound generously since Vercel Cron (and
@@ -27,6 +28,7 @@ export async function GET(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
+  const curation = await curateAutomaticTips();
   // Raised from 15/30. Settlement has to keep pace with whatever publication
   // rate the reviewer sustains, and at up to 100 predictions a day a daily run
   // of 15 would fall permanently and increasingly behind.
@@ -78,6 +80,17 @@ export async function GET(req: Request) {
         results.push({ id: p.id, match, result: "not_found", detail: lookup.reason });
         continue;
       }
+      if (lookup.status === "manual_required") {
+        await prisma.prediction.update({
+          where: { id: p.id },
+          data: {
+            manualSettlementOnly: true,
+            settlementNote: `Manual settlement required — ${lookup.reason}`,
+          },
+        });
+        results.push({ id: p.id, match, result: "manual_required", detail: lookup.reason });
+        continue;
+      }
 
       const outcome = resolveMarket(p.marketType as MarketType, p.selection as Selection, lookup.homeScore, lookup.awayScore);
 
@@ -110,6 +123,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
+    curation,
     checked: candidates.length,
     settled: results.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
     results,

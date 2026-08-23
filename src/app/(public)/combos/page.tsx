@@ -27,7 +27,7 @@ export default async function CombosPage() {
     ? await prisma.comboLeg.findMany({
         where: { comboId: { in: [...unlockedIds] } },
         orderBy: { order: "asc" },
-        select: { id: true, comboId: true, matchLabel: true, market: true, pick: true, odds: true },
+        select: { id: true, comboId: true, matchLabel: true, market: true, pick: true },
       })
     : [];
   const legsByCombo = new Map<string, typeof legs>();

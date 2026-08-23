@@ -13,6 +13,7 @@ import { parseStoredContext, buildStoredContext } from "@/lib/ai/context";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { buildAnalysis } from "@/lib/predictionAnalysis";
+import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 
 /** A superseded draft, appended to Prediction.previousDrafts. */
 export type ArchivedDraft = {
@@ -65,8 +66,14 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
   }
 
   const startedAt = Date.now();
+  const riskRoute = resolveGenerationRisk(
+    prediction.categories.map((c) => c.category),
+    prediction.leagueApiId,
+  );
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
+    tiers: riskRoute.promptTiers,
+    riskCalibration: riskRoute.calibration !== "legacy",
     reviewerNote,
     previousDraft: {
       matchPreview: prediction.matchPreview,
@@ -145,7 +152,7 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
       selection: selection ?? undefined,
       manualSettlementOnly: marketType === "OTHER",
       confidence: Math.min(90, Math.max(0, Math.round(draft.confidence))),
-      odds: output.suggestedOdds,
+      odds: null,
       ouLine,
       ouDirection,
       overUnder: deriveOverUnderText(ouLine, ouDirection),

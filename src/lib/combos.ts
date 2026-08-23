@@ -4,7 +4,6 @@ export type ComboLegInput = {
   matchLabel: string;
   market: string;
   pick: string;
-  odds: number;
   predictionId?: string | null;
 };
 
@@ -23,14 +22,10 @@ export async function setComboLegs(comboId: string, legs: ComboLegInput[]) {
         matchLabel: leg.matchLabel,
         market: leg.market,
         pick: leg.pick,
-        odds: leg.odds,
+        odds: 1, // legacy non-null column; no longer displayed or sourced from AI
         predictionId: leg.predictionId ?? null,
         order: i,
       })),
     }),
   ]);
-}
-
-export function combinedOdds(legs: { odds: number }[]) {
-  return legs.reduce((a, l) => a * l.odds, 1);
 }

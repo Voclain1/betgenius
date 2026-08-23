@@ -19,7 +19,7 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /** Free-tier categories only — VIP/PREMIUM stay a deliberate manual action, as in the bulk route. */
-const FREE_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;
+const FREE_CATEGORIES = ["FEATURED", "GENIUS", "BANKER"] as const;
 
 const Query = z.object({
   limit: z.coerce.number().min(1).max(25).default(12),
@@ -69,7 +69,7 @@ export async function GET(req: Request) {
 
   const report = await runGeneration({
     authorId,
-    categories: valid.length ? valid : ["TODAY"],
+    categories: valid.length ? valid : ["FEATURED"],
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     limit,
   });

@@ -4,6 +4,7 @@ import { absoluteUrl } from "@/lib/seo";
 import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
+import { isLagosToday } from "@/lib/lagosDate";
 
 // Regenerated hourly rather than on every request — a sitemap doesn't need
 // to reflect the last few minutes of publishing activity.
@@ -60,7 +61,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // One entry per category that actually has published rows — mirrors the
   // noindex-when-empty gate on /predictions/[category].
   for (const cat of PREDICTION_CATEGORIES) {
-    const catRows = rows.filter((r) => r.categories.some((c) => c.category === cat));
+    const catRows = rows.filter((r) => !!r.kickoff && isLagosToday(r.kickoff) && (
+      cat === "TODAY" || r.categories.some((c) => c.category === cat)
+    ));
     if (catRows.length === 0) continue;
     entries.push({
       url: absoluteUrl(`/predictions/${cat.toLowerCase()}`),

@@ -38,6 +38,7 @@ import {
 import type { StandingsEntry } from "@/lib/football/api-football";
 import type { H2HMeeting } from "@/lib/h2h";
 import { h2hPairKey } from "@/lib/slug";
+import { isCupCompetition } from "@/lib/cupConfig";
 
 /**
  * How old a cached team digest may be before generation refreshes it.
@@ -161,6 +162,7 @@ export type GenerationContextInput = {
   homeApiId: number | null;
   awayApiId: number | null;
   leagueApiId: number | null;
+  round?: string | null;
 };
 
 /**
@@ -194,7 +196,8 @@ export async function buildGenerationDigest(
   let standingsRows: LeagueStandingRow[] | null = null;
   let leaguePlayers: { scorers: LeaguePlayerStat[]; assists: LeaguePlayerStat[] } = { scorers: [], assists: [] };
 
-  if (input.leagueApiId != null) {
+  const cupFixture = isCupCompetition(input.leagueApiId);
+  if (input.leagueApiId != null && !cupFixture) {
     const leagueRow = await prisma.leagueEnrichmentCache.findUnique({
       where: { leagueApiId: input.leagueApiId },
       select: { standingsJson: true, fetchedAt: true, topScorersJson: true, topAssistsJson: true, playersFetchedAt: true },
@@ -271,7 +274,14 @@ export async function buildGenerationDigest(
   const away = withRank(awayDigest ?? emptyDigest(input.away, input.awayApiId), input.awayApiId);
 
   const digest = assembleMatchDigest({
-    fixture: { home: input.home, away: input.away, league: input.league, kickoff: input.kickoff },
+    fixture: {
+      home: input.home,
+      away: input.away,
+      league: input.league,
+      kickoff: input.kickoff,
+      competitionType: cupFixture ? "CUP" : "LEAGUE",
+      round: input.round ?? null,
+    },
     homeTeam: { ...home, keyPlayers: keyPlayersFor(input.homeApiId, leaguePlayers.scorers, leaguePlayers.assists) },
     awayTeam: { ...away, keyPlayers: keyPlayersFor(input.awayApiId, leaguePlayers.scorers, leaguePlayers.assists) },
     homeApiId: input.homeApiId,

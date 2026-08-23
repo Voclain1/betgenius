@@ -9,6 +9,7 @@ import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
+import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 
 export type GenerateFixtureInput = {
   fixtureId?: string;
@@ -30,6 +31,8 @@ export type GenerateFixtureInput = {
    */
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
+  /** API-Football knockout round, supplied by fixture-list generation paths. */
+  round?: string | null;
 };
 
 /**
@@ -94,10 +97,16 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     homeApiId,
     awayApiId,
     leagueApiId: input.leagueApiId ?? null,
+    round: input.round ?? null,
   });
 
   const startedAt = Date.now();
-  const { output, usage, model } = await generatePredictionForFixture({ digest });
+  const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId);
+  const { output, usage, model } = await generatePredictionForFixture({
+    digest,
+    tiers: riskRoute.promptTiers,
+    riskCalibration: riskRoute.calibration !== "legacy",
+  });
   const durationMs = Date.now() - startedAt;
 
   // A league was specified (live context was expected) but nothing resolved —
@@ -167,7 +176,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           ouLine,
           ouDirection,
           overUnder: deriveOverUnderText(ouLine, ouDirection),
-          odds: output.suggestedOdds,
+          odds: null,
           confidence: Math.min(90, Math.max(0, Math.round(p.confidence))),
           reasoning: p.reasoning,
           matchPreview: output.matchPreview,

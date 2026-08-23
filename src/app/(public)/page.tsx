@@ -17,6 +17,7 @@ import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import type { PredictionCategory } from "@/lib/enums";
+import { lagosTodayBounds } from "@/lib/lagosDate";
 
 export const revalidate = 60;
 
@@ -26,8 +27,9 @@ export const metadata: Metadata = {
 };
 
 async function fetchFeatured() {
+  const today = lagosTodayBounds();
   return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", categories: { some: { category: "FEATURED" } } },
+    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category: "FEATURED" } } },
     orderBy: { publishedAt: "desc" },
     take: 6,
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
@@ -36,8 +38,9 @@ async function fetchFeatured() {
 
 // Same shape as fetchFeatured — just GENIUS, capped at 3 for the homepage excerpt.
 async function fetchGeniusPreview() {
+  const today = lagosTodayBounds();
   return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", categories: { some: { category: "GENIUS" } } },
+    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category: "GENIUS" } } },
     orderBy: { publishedAt: "desc" },
     take: 3,
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
@@ -59,18 +62,20 @@ async function fetchGeniusPreview() {
  * public picks — the hero then renders its original single-column form.
  */
 async function fetchHeroPick(): Promise<HeroPickData | null> {
+  const today = lagosTodayBounds();
   const base = {
     status: "PUBLISHED" as const,
     homeTeam: { not: null },
     awayTeam: { not: null },
-    categories: { some: { category: { in: ["FEATURED", "GENIUS", "TODAY"] } } },
+    kickoff: { gte: today.start, lt: today.end },
+    categories: { some: { category: { in: ["FEATURED", "GENIUS"] } } },
   };
   const select = {
     homeTeam: true, awayTeam: true, kickoff: true, leagueName: true, leagueApiId: true,
-    market: true, pick: true, confidence: true, odds: true,
+    market: true, pick: true, confidence: true,
   };
   const upcoming = await prisma.prediction.findFirst({
-    where: { ...base, kickoff: { gte: new Date() } },
+    where: { ...base, kickoff: { gte: new Date(), lt: today.end } },
     orderBy: { confidence: "desc" },
     select,
   });
@@ -268,7 +273,7 @@ export default async function HomePage() {
         <Link href="/bet-builder" className="card hover:border-brand">
           <div className="text-brand text-sm font-semibold">BUILD</div>
           <div className="mt-1 text-lg font-semibold">Bet builder</div>
-          <p className="text-sm text-gray-400">Combine picks, compute your accumulator odds instantly.</p>
+          <p className="text-sm text-gray-400">Combine picks into a clear selection list.</p>
         </Link>
         <Link href="/statspad" className="card hover:border-brand">
           <div className="text-brand text-sm font-semibold">STATS</div>

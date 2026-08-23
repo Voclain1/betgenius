@@ -126,8 +126,12 @@ export function deriveOverUnderText(line?: number | null, direction?: string | n
 
 export type SettlementOutcome = "WON" | "LOST" | "VOID" | null; // null = cannot auto-resolve (OTHER, or bad input)
 
-export function resolveMarket(marketType: MarketType, selection: Selection, homeScore: number, awayScore: number): SettlementOutcome {
+/** Scores passed here must be regulation-time scores; extra time and shootouts never count for these markets. */
+export function resolveMarket(marketType: MarketType, selection: Selection, regulationHomeScore: number, regulationAwayScore: number): SettlementOutcome {
   if (marketType === "OTHER" || !isValidSelection(marketType, selection)) return null;
+
+  const homeScore = regulationHomeScore;
+  const awayScore = regulationAwayScore;
 
   switch (marketType) {
     case "MATCH_WINNER": {

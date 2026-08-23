@@ -17,7 +17,7 @@
  * Run with the JSX override the automatic runtime needs:
  *   npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-render.tsx
  */
-import type React from "react";
+import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TeamNewsPanel } from "../src/components/TeamNewsPanel";
 import { MatchStatsComparison } from "../src/components/MatchStatsComparison";
@@ -173,11 +173,11 @@ check("standings: renders nothing when neither side has played",
 // ===========================================================================
 // Verdict and key factors render their content.
 // ===========================================================================
-const verdict = html(<MatchVerdict market="Match Winner" pick="Arsenal" confidence={72} odds={1.85} overUnder="Over 2.5 Goals" />);
+const verdict = html(<MatchVerdict market="Match Winner" pick="Arsenal" confidence={72} overUnder="Over 2.5 Goals" />);
 check("verdict: shows the pick", verdict.includes("Arsenal"), verdict);
 check("verdict: shows the confidence", verdict.includes("72"), verdict);
 check("verdict: shows the band", verdict.includes("Solid"), verdict);
-check("verdict: handles null odds", html(<MatchVerdict market="M" pick="P" confidence={50} odds={null} overUnder={null} />).includes("—"));
+check("verdict: handles missing over/under", html(<MatchVerdict market="M" pick="P" confidence={50} overUnder={null} />).includes("—"));
 
 const kf = html(<KeyFactors analysisJson={buildAnalysis({ keyFactors: ["Home side unbeaten at home", "Away side missing top scorer"] })} />);
 check("key factors: renders each bullet", kf.includes("Home side unbeaten at home") && kf.includes("Away side missing top scorer"), kf);
@@ -200,7 +200,7 @@ const panels: Array<[string, string]> = [
   ["stats", html(<MatchStatsComparison homeTeam="H" awayTeam="A" homeDigest={digest({ home: { played: 8, win: 6, draw: 2, loss: 0, goalsFor: 23, goalsAgainst: 11 } })} awayDigest={null} />)],
   ["standings", html(<MatchStandingsContext standings={table} homeTeamApiId={103} awayTeamApiId={117} leagueName="L" leagueApiId={39} />)],
   ["h2h", html(<MatchH2HSummary meetings={h2h} homeTeam="A" awayTeam="B" homeTeamApiId={1} awayTeamApiId={2} h2hLink={null} />)],
-  ["verdict", html(<MatchVerdict market="M" pick="P" confidence={60} odds={2} overUnder={null} />)],
+  ["verdict", html(<MatchVerdict market="M" pick="P" confidence={60} overUnder={null} />)],
   ["key factors", html(<KeyFactors analysisJson={buildAnalysis({ keyFactors: ["a"] })} />)],
 ];
 for (const [name, markup] of panels) {

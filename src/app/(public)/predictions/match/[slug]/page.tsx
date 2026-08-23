@@ -220,7 +220,6 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           market={topRow.market}
           pick={topRow.pick}
           confidence={topRow.confidence ?? 0}
-          odds={topRow.odds}
           overUnder={topRow.overUnder}
         />
       )}

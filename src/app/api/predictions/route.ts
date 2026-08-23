@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
+import { lagosTodayBounds } from "@/lib/lagosDate";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -17,8 +18,17 @@ export async function GET(req: Request) {
   const tier = session?.user?.tier;
   const status = session?.user?.subStatus;
 
+  const today = lagosTodayBounds();
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", ...(category ? { categories: { some: { category } } } : {}) },
+    where: {
+      status: "PUBLISHED",
+      ...(category
+        ? {
+            kickoff: { gte: today.start, lt: today.end },
+            ...(category === "TODAY" ? {} : { categories: { some: { category } } }),
+          }
+        : {}),
+    },
     orderBy: [{ publishedAt: "desc" }],
     take: 60,
     include: {

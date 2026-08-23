@@ -33,7 +33,6 @@ const CreateBody = z.object({
   otherPick: z.string().optional(),
   ouLine: z.number().positive(),
   ouDirection: z.enum(["OVER", "UNDER"]),
-  odds: z.number().optional(),
   confidence: z.number().min(0).max(100),
   reasoning: z.string(),
   matchPreview: z.string().optional(),

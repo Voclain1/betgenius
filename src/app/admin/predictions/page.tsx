@@ -4,6 +4,8 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 
+const CATEGORY_VALUES = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
+
 type Row = {
   id: string;
   category: string;
@@ -61,6 +63,9 @@ export default function AdminPredictions() {
   const [sort, setSort] = useState<SortKey>("KICKOFF");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [categoriesToAdd, setCategoriesToAdd] = useState<Set<string>>(new Set());
+  const [categoriesToRemove, setCategoriesToRemove] = useState<Set<string>>(new Set());
 
   const load = async () => {
     const j = await fetch("/api/admin/predictions").then((r) => r.json());
@@ -114,6 +119,39 @@ export default function AdminPredictions() {
         body: JSON.stringify({ ids: [...selected], action }),
       });
       await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleCategoryChange = (category: string, mode: "add" | "remove") => {
+    const own = mode === "add" ? setCategoriesToAdd : setCategoriesToRemove;
+    const other = mode === "add" ? setCategoriesToRemove : setCategoriesToAdd;
+    own((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category); else next.add(category);
+      return next;
+    });
+    other((prev) => { const next = new Set(prev); next.delete(category); return next; });
+  };
+
+  const manageCategories = async () => {
+    if (selected.size === 0 || (categoriesToAdd.size === 0 && categoriesToRemove.size === 0)) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/predictions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selected], action: "MANAGE_CATEGORIES", add: [...categoriesToAdd], remove: [...categoriesToRemove] }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.failed?.length) throw new Error(result.error?.formErrors?.join(" ") || result.failed?.[0]?.error || "Category update failed");
+      setCategoriesToAdd(new Set());
+      setCategoriesToRemove(new Set());
+      setShowCategoryManager(false);
+      await load();
+    } catch (error: any) {
+      alert(error?.message ?? "Category update failed");
     } finally {
       setBusy(false);
     }
@@ -196,7 +234,23 @@ export default function AdminPredictions() {
           <button disabled={busy} className="btn btn-ghost text-xs" onClick={() => bulk("APPROVE")}>Approve</button>
           <button disabled={busy} className="btn btn-primary text-xs" onClick={() => bulk("PUBLISH")}>Publish</button>
           <button disabled={busy} className="btn btn-ghost text-xs" onClick={() => bulk("ARCHIVE")}>Archive</button>
+          <button disabled={busy} className="btn btn-ghost text-xs" onClick={() => setShowCategoryManager((v) => !v)}>Manage categories</button>
           <button className="text-xs text-gray-400 hover:underline" onClick={() => setSelected(new Set())}>Clear</button>
+          {showCategoryManager && (
+            <div className="basis-full space-y-2 border-t border-brand-border pt-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1 text-xs font-semibold text-emerald-300">Add</div>
+                  <div className="flex flex-wrap gap-2">{CATEGORY_VALUES.map((c) => <label key={`add-${c}`} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={categoriesToAdd.has(c)} onChange={() => toggleCategoryChange(c, "add")} />{c}</label>)}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold text-red-300">Remove</div>
+                  <div className="flex flex-wrap gap-2">{CATEGORY_VALUES.map((c) => <label key={`remove-${c}`} className="flex items-center gap-1 text-xs"><input type="checkbox" checked={categoriesToRemove.has(c)} onChange={() => toggleCategoryChange(c, "remove")} />{c}</label>)}</div>
+                </div>
+              </div>
+              <button disabled={busy || (categoriesToAdd.size === 0 && categoriesToRemove.size === 0)} className="btn btn-primary text-xs" onClick={manageCategories}>Apply category changes</button>
+            </div>
+          )}
         </div>
       )}
 

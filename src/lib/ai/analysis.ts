@@ -62,7 +62,6 @@ export type AIPredictionOutput = {
     reasoning: string; // markdown
   }>;
   keyFactors: string[];
-  suggestedOdds?: number;
 };
 
 /**
@@ -73,7 +72,7 @@ export type AIPredictionOutput = {
  */
 export type AIPredictionResult = { output: AIPredictionOutput; usage: AIUsage; model: string };
 
-const SYSTEM_PROMPT = `You are BetGenius, an expert football analyst.
+const BASE_SYSTEM_PROMPT = `You are BetGenius, an expert football analyst.
 You produce probabilistic match analyses grounded in the data you are given.
 
 Rules:
@@ -97,6 +96,13 @@ Rules:
 1e. A null field means "not available", never zero. Fields are omitted rather than
    zero-filled when a season has not started, so do not read a missing average as
    a team that cannot score.
+1f. When fixture.competitionType is "CUP", analyse it as a knockout cup tie.
+   Standings and league-position evidence do not apply and must never be mentioned.
+   Cup-specific team statistics may be based on a small, uneven sample against
+   opponents from different divisions, so treat them cautiously and prefer robust
+   recent all-competition form, availability and head-to-head evidence when present.
+   Use fixture.round when supplied, but do not invent aggregate scores, legs, replay
+   rules or qualification scenarios that are absent from the evidence digest.
 2. Return CONFIDENCE as a probability estimate (0-100). Be conservative — do not exceed 90
    unless the data is overwhelming.
 3. Never claim a prediction is guaranteed. Frame outputs as probabilities.
@@ -127,9 +133,34 @@ Rules:
       "reasoning": string
     }
   ],
-  "keyFactors": string[],          // 3-6 bullet points
-  "suggestedOdds": number | null   // decimal odds for the top pick
+  "keyFactors": string[]           // 3-6 bullet points
 }`;
+
+export type GenerationTier = "FEATURED" | "GENIUS" | "BANKER" | "VIP" | "PREMIUM" | "TODAY";
+
+export function buildSystemPrompt(tiers: GenerationTier[], riskCalibration = true): string {
+  if (!riskCalibration) return BASE_SYSTEM_PROMPT;
+
+  return `${BASE_SYSTEM_PROMPT}
+
+7. TIER-AWARE MARKET RISK CALIBRATION. The active tier context for this draft is:
+   ${tiers.length ? tiers.join(", ") : "UNSPECIFIED"}.
+   Apply the strictest applicable rule when more than one tier is active:
+   - GENIUS (safer): prefer a supported hedged market such as DOUBLE_CHANCE or a
+     conservative OVER_UNDER/BTTS position whenever the evidence does not show an
+     overwhelming mismatch. Do not use MATCH_WINNER merely because one side is a
+     moderate favorite. A straight MATCH_WINNER is acceptable only when the supplied
+     evidence shows a genuinely extreme, multi-signal advantage; explain why that high
+     bar is met in the reasoning.
+   - VIP or PREMIUM (more safer): use an even stricter safety bar. Default to
+     DOUBLE_CHANCE or a conservative OVER_UNDER/BTTS position even for a strongly
+     lopsided fixture. MATCH_WINNER should be genuinely exceptional, not the normal
+     recommendation for a heavy favorite.
+   - FEATURED, BANKER and TODAY: do not add any tier-specific hedging preference.
+     Choose the best-supported market under the original rules.
+   Market choice and reasoning must be made together from the evidence. Never change
+   or mechanically substitute a market after deciding the analysis.`;
+}
 
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
@@ -141,6 +172,10 @@ export async function generatePredictionForFixture(input: {
   reviewerNote?: string | null;
   /** Present only on a rewrite — triggers the revision framing and higher sampling temperature. */
   previousDraft?: PreviousDraft | null;
+  /** Category context conditions market-risk selection in the system prompt. */
+  tiers: GenerationTier[];
+  /** Comparison harness only: false reproduces the pre-calibration prompt. */
+  riskCalibration?: boolean;
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -205,7 +240,7 @@ Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
   const request = {
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(input.tiers, input.riskCalibration !== false),
     user: userPrompt,
     label,
     // Raised only for rewrites. First-pass generation stays on the model

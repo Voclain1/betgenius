@@ -131,7 +131,14 @@ const NEIGHBOUR_RADIUS = 3;
 
 export type MatchDigest = {
   v: 2;
-  fixture: { home: string; away: string; league: string; kickoff: string };
+  fixture: {
+    home: string;
+    away: string;
+    league: string;
+    kickoff: string;
+    competitionType?: "CUP" | "LEAGUE";
+    round?: string | null;
+  };
   teams: { home: TeamDigest; away: TeamDigest };
   h2h: { meetings: H2HMeeting[]; stats: H2HStats } | null;
   standings: StandingsContext | null;

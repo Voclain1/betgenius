@@ -127,6 +127,13 @@ export type FixtureRow = {
     away: { id: number; name: string; logo?: string };
   };
   goals: { home: number | null; away: number | null };
+  score?: {
+    halftime?: { home: number | null; away: number | null } | null;
+    /** Regulation-time score for settlement; extra time and shootout are separate. */
+    fulltime?: { home: number | null; away: number | null } | null;
+    extratime?: { home: number | null; away: number | null } | null;
+    penalty?: { home: number | null; away: number | null } | null;
+  };
 };
 
 export function getFixturesByDate(date: string) {

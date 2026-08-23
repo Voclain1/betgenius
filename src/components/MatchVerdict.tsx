@@ -16,13 +16,11 @@ export function MatchVerdict({
   market,
   pick,
   confidence,
-  odds,
   overUnder,
 }: {
   market: string;
   pick: string;
   confidence: number;
-  odds: number | null;
   overUnder: string | null;
 }) {
   const band = confidenceBand(confidence);
@@ -34,7 +32,7 @@ export function MatchVerdict({
         <span className={`chip text-[10px] ${CONFIDENCE_BAND_STYLES[band]}`}>{band}</span>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-2 gap-2 text-center">
         <div className="rounded-md bg-brand-bg p-2">
           <div className="text-[10px] uppercase text-gray-500">Market</div>
           <div className="text-sm font-medium">{market}</div>
@@ -42,10 +40,6 @@ export function MatchVerdict({
         <div className="rounded-md bg-brand-bg p-2">
           <div className="text-[10px] uppercase text-gray-500">Pick</div>
           <div className="text-sm font-semibold text-brand">{pick}</div>
-        </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Odds</div>
-          <div className="text-sm font-medium">{odds ?? "—"}</div>
         </div>
       </div>
 

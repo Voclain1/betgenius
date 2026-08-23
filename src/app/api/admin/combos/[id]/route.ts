@@ -28,7 +28,6 @@ const Patch = z.object({
         matchLabel: z.string().min(1),
         market: z.string().min(1),
         pick: z.string().min(1),
-        odds: z.number().positive(),
         predictionId: z.string().nullable().optional(),
       }),
     )

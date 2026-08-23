@@ -11,6 +11,7 @@ export const LEAGUE_CATALOGUE = [
   { id: 140, name: "La Liga", country: "Spain", tier: "top", kind: "league", flagCode: "es" },
   { id: 135, name: "Serie A", country: "Italy", tier: "top", kind: "league", flagCode: "it" },
   { id: 78, name: "Bundesliga", country: "Germany", tier: "top", kind: "league", flagCode: "de" },
+  { id: 81, name: "DFB Pokal", country: "Germany", tier: "top", kind: "cup" },
   { id: 61, name: "Ligue 1", country: "France", tier: "top", kind: "league", flagCode: "fr" },
 
   // International tournaments
@@ -27,6 +28,8 @@ export const LEAGUE_CATALOGUE = [
   { id: 144, name: "Jupiler Pro League", country: "Belgium", tier: "mid", kind: "league", flagCode: "be" },
   { id: 203, name: "Süper Lig", country: "Turkey", tier: "mid", kind: "league", flagCode: "tr" },
   { id: 40, name: "Championship", country: "England", tier: "mid", kind: "league", flagCode: "gb-eng" },
+  { id: 45, name: "FA Cup", country: "England", tier: "top", kind: "cup" },
+  { id: 307, name: "Pro League", country: "Saudi Arabia", tier: "world", kind: "league", flagCode: "sa" },
 
   // Smaller European leagues
   { id: 207, name: "Super League", country: "Switzerland", tier: "minor", kind: "league", flagCode: "ch" },
@@ -39,6 +42,15 @@ export const LEAGUE_CATALOGUE = [
   { id: 106, name: "Ekstraklasa", country: "Poland", tier: "minor", kind: "league", flagCode: "pl" },
   { id: 197, name: "Super League 1", country: "Greece", tier: "minor", kind: "league", flagCode: "gr" },
   { id: 210, name: "HNL", country: "Croatia", tier: "minor", kind: "league", flagCode: "hr" },
+  { id: 235, name: "Premier League", country: "Russia", tier: "minor", kind: "league", flagCode: "ru" },
+  { id: 286, name: "Super Liga", country: "Serbia", tier: "minor", kind: "league", flagCode: "rs" },
+  { id: 345, name: "Czech Liga", country: "Czech Republic", tier: "minor", kind: "league", flagCode: "cz" },
+  { id: 333, name: "Premier League", country: "Ukraine", tier: "minor", kind: "league", flagCode: "ua" },
+  { id: 110, name: "Premier League", country: "Wales", tier: "minor", kind: "league", flagCode: "gb-wls" },
+  { id: 172, name: "First League", country: "Bulgaria", tier: "minor", kind: "league", flagCode: "bg" },
+  { id: 315, name: "Premijer Liga", country: "Bosnia", tier: "minor", kind: "league", flagCode: "ba" },
+  { id: 342, name: "Premier League", country: "Armenia", tier: "minor", kind: "league", flagCode: "am" },
+  { id: 419, name: "Premyer Liqa", country: "Azerbaijan", tier: "minor", kind: "league", flagCode: "az" },
   { id: 329, name: "Meistriliiga", country: "Estonia", tier: "minor", kind: "league", flagCode: "ee" },
   { id: 244, name: "Veikkausliiga", country: "Finland", tier: "minor", kind: "league", flagCode: "fi" },
   { id: 283, name: "Liga I", country: "Romania", tier: "minor", kind: "league", flagCode: "ro" },
@@ -52,6 +64,45 @@ export const LEAGUE_CATALOGUE = [
   { id: 71, name: "Serie A", country: "Brazil", tier: "world", kind: "league", flagCode: "br" },
   { id: 399, name: "NPFL", country: "Nigeria", tier: "world", kind: "league", flagCode: "ng" },
 ] as const;
+
+/** Shared editorial order for generation and automatic curation. */
+export const LEAGUE_PRIORITY_ORDER = [
+  39, 40, 45, // England: Premier League, Championship, FA Cup
+  140, // Spain
+  135, // Italy
+  78, 81, // Germany: Bundesliga, DFB Pokal
+  61, // France
+  94, // Portugal
+  2, 3, 848, // European continental competitions
+  88, // Netherlands
+  144, // Belgium
+  307, // Saudi Arabia
+  203, // Turkey
+  113, 114, // Sweden
+  235, // Russia
+  103, // Norway
+  286, // Serbia
+  345, // Czech Republic
+  210, // Croatia
+  333, // Ukraine
+  110, // Wales
+  172, // Bulgaria
+  315, // Bosnia
+  329, // Estonia
+  365, // Latvia
+  342, // Armenia
+  218, // Austria
+  419, // Azerbaijan
+  116, // Belarus
+  71, // Brazil
+] as const;
+
+const LEAGUE_PRIORITY_RANK = new Map<number, number>(LEAGUE_PRIORITY_ORDER.map((id, index) => [id, index]));
+
+export function leaguePriorityRank(leagueApiId?: number | null): number {
+  if (leagueApiId == null) return LEAGUE_PRIORITY_ORDER.length;
+  return LEAGUE_PRIORITY_RANK.get(leagueApiId) ?? LEAGUE_PRIORITY_ORDER.length;
+}
 
 /**
  * The leagues the PUBLIC surfaces treat as headline competitions: the
@@ -71,7 +122,7 @@ export const LEAGUE_CATALOGUE = [
  * season for it with real scorelines. Its 2027 season opens 2026-08-28, so it
  * contributes nothing to the current window — expected, not a fault.
  */
-const MAJOR_LEAGUE_IDS = [
+export const MAJOR_LEAGUE_IDS = [
   39, // Premier League (England)
   140, // La Liga
   135, // Serie A (Italy)

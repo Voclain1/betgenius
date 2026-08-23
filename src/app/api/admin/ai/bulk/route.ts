@@ -17,7 +17,7 @@ export const maxDuration = 300;
 
 // Bulk generation is scoped to free-tier categories only — VIP/PREMIUM tips
 // stay a deliberate, manual, one-at-a-time admin action.
-const FREE_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;
+const FREE_CATEGORIES = ["FEATURED", "GENIUS", "BANKER"] as const;
 
 const Body = z.object({
   date: z.string().min(1), // YYYY-MM-DD
@@ -75,6 +75,7 @@ export async function POST(req: Request) {
         league: leagueNameById.get(f.league.id) ?? f.league.name,
         leagueApiId: f.league.id,
         kickoff: f.fixture.date,
+        round: f.league.round ?? null,
         categories: [...categories],
         authorId: session!.user.id,
       });

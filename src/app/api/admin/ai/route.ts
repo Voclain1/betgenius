@@ -19,7 +19,7 @@ const Body = z.object({
   league: z.string().min(1),
   leagueApiId: z.number().optional(),
   kickoff: z.string(),
-  category: z.enum(["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"]).default("TODAY"),
+  category: z.enum(["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"]).default("FEATURED"),
 });
 
 export async function POST(req: Request) {

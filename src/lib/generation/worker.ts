@@ -238,6 +238,7 @@ export async function runGeneration(opts: {
           league: c.leagueName,
           leagueApiId: c.leagueApiId,
           kickoff: c.kickoff.toISOString(),
+          round: c.round,
           categories: opts.categories,
           authorId: opts.authorId,
           // The fixture list already carried these — passing them through is

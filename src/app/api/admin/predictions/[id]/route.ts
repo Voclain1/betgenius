@@ -32,7 +32,6 @@ const Patch = z.object({
       outcome: z.enum(["PENDING", "WON", "LOST", "VOID"]).optional(),
       finalHomeScore: z.number().int().min(0).nullable().optional(),
       finalAwayScore: z.number().int().min(0).nullable().optional(),
-      odds: z.number().optional(),
       confidence: z.number().min(0).max(100).optional(),
       reasoning: z.string().optional(),
       matchPreview: z.string().optional(),

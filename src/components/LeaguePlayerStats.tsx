@@ -51,6 +51,18 @@ function Row({ stat, rank, board }: { stat: LeaguePlayerStat; rank: number; boar
   );
 }
 
+export function TopScorersLeaderboard({ scorers }: { scorers: LeaguePlayerStat[] }) {
+  if (scorers.length === 0) return <EmptyState>No scorers recorded for this cup season yet.</EmptyState>;
+  return (
+    <div className="divide-y divide-brand-border rounded-xl border border-brand-border bg-brand-bg/60">
+      <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] uppercase text-gray-500">
+        <span className="w-4 shrink-0">#</span><span className="flex-1">Player</span><span>Goals</span>
+      </div>
+      {scorers.map((stat, index) => <Row key={stat.playerId} stat={stat} rank={index + 1} board="scorers" />)}
+    </div>
+  );
+}
+
 /**
  * Top scorers / assists / cards for a league.
  *

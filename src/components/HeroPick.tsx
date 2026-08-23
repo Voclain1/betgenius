@@ -11,12 +11,11 @@ export type HeroPickData = {
   market: string;
   pick: string;
   confidence: number;
-  odds: number | null;
 };
 
 /**
  * The proof beside the hero's claim: one real published pick, with its market,
- * confidence and odds.
+ * confidence.
  *
  * Only ever shows a pick from a publicly-viewable category, so a first-time
  * visitor sees an actual prediction rather than a locked teaser — a hero whose
@@ -42,14 +41,10 @@ export function HeroPick({ pick, trackRecord }: { pick: HeroPickData; trackRecor
         {pick.homeTeam} <span className="text-gray-500">vs</span> {pick.awayTeam}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div>
         <div className="rounded-md bg-brand-card p-2">
           <div className="text-[10px] uppercase text-gray-500">{pick.market}</div>
           <div className="truncate text-sm font-semibold text-brand">{pick.pick}</div>
-        </div>
-        <div className="rounded-md bg-brand-card p-2">
-          <div className="text-[10px] uppercase text-gray-500">Odds</div>
-          <div className="text-sm font-semibold">{pick.odds ?? "—"}</div>
         </div>
       </div>
 

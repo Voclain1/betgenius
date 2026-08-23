@@ -6,8 +6,8 @@ import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { RewriteRequest } from "@/components/RewriteRequest";
 
-const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
-const FREE_CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER"] as const;
+const CATS = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
+const FREE_CATS = ["FEATURED", "GENIUS", "BANKER"] as const;
 
 const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
   tier,
@@ -22,7 +22,7 @@ export default function AIPanel() {
     league: LEAGUE_CATALOGUE[0].name as string,
     leagueApiId: LEAGUE_CATALOGUE[0].id as number | undefined,
     kickoff: new Date().toISOString().slice(0, 16),
-    category: "TODAY" as (typeof CATS)[number],
+    category: "FEATURED" as (typeof CATS)[number],
   });
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function AIPanel() {
   const [bulkForm, setBulkForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     leagueApiIds: [LEAGUE_CATALOGUE[0].id] as number[],
-    categories: ["TODAY"] as string[],
+    categories: ["FEATURED"] as string[],
     limit: 5,
   });
   const [bulkResult, setBulkResult] = useState<any>(null);
@@ -216,7 +216,7 @@ export default function AIPanel() {
       <div className="border-t border-brand-border pt-6">
         <h2 className="text-xl font-bold">Bulk generate — free tiers</h2>
         <p className="text-sm text-gray-400">
-          Auto-generate tips for a whole day's fixtures across the free categories (Featured, Genius, Today, Banker).
+          Auto-generate tips for a whole day's fixtures across the free categories (Featured, Genius, Banker).
           VIP and Premium tips stay manual, one at a time, above. Everything lands as Pending review — nothing publishes automatically.
         </p>
         <p className="mt-1 text-xs text-gray-500">

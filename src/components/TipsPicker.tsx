@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Lock } from "lucide-react";
 
-export type TipOption = { id: string; label: string; market: string; pick: string; odds: number };
+export type TipOption = { id: string; label: string; market: string; pick: string };
 export type TipCategory = { key: string; label: string; locked: boolean; options: TipOption[] };
 
 // The "pick from our tips" UI — shared between Bet Builder's manual slip
@@ -64,7 +64,6 @@ export function TipsPicker({
                   <div className="truncate text-gray-400">{opt.market} — {opt.pick}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-brand">{opt.odds.toFixed(2)}</span>
                   <button
                     onClick={() => onAdd(opt)}
                     disabled={added}

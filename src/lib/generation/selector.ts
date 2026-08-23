@@ -16,7 +16,9 @@
 import { prisma } from "@/lib/prisma";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { matchKey } from "@/lib/slug";
-import { LEAGUE_CATALOGUE } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, leaguePriorityRank } from "@/lib/leagues";
+import { lagosDateKey } from "@/lib/lagosDate";
+import { fixtureIsInCupScope } from "@/lib/cupConfig";
 
 /**
  * The generation window, in hours before kickoff.
@@ -32,6 +34,7 @@ import { LEAGUE_CATALOGUE } from "@/lib/leagues";
  * team news, and a full review cycle still ahead of it.
  */
 export const GENERATE_FROM_HOURS = 12;
+export const SAME_DAY_GENERATE_FROM_HOURS = 2;
 export const GENERATE_UNTIL_HOURS = 48;
 
 /** Backoff schedule by attempt count. Beyond the last entry the fixture is abandoned. */
@@ -48,6 +51,7 @@ export type Candidate = {
   homeTeamApiId: number;
   awayTeamApiId: number;
   kickoff: Date;
+  round: string | null;
   /** Existing ledger row, when this fixture has been tried before. */
   priorAttempts: number;
 };
@@ -76,7 +80,7 @@ export async function selectCandidates(opts: {
   const leagueIds = opts.leagueApiIds?.length ? opts.leagueApiIds : LEAGUE_CATALOGUE.map((l) => l.id);
   const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
 
-  const from = new Date(now.getTime() + GENERATE_FROM_HOURS * 3_600_000);
+  const from = new Date(now.getTime() + SAME_DAY_GENERATE_FROM_HOURS * 3_600_000);
   const until = new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000);
   const fromDay = from.toISOString().slice(0, 10);
   const untilDay = until.toISOString().slice(0, 10);
@@ -94,10 +98,14 @@ export async function selectCandidates(opts: {
 
   // Only unstarted fixtures with both team ids and a kickoff genuinely inside
   // the window — the day-granular API query returns whole days at the edges.
+  const todayKey = lagosDateKey(now);
+  const normalFrom = new Date(now.getTime() + GENERATE_FROM_HOURS * 3_600_000);
   const inWindow = rows.filter((f) => {
     if (f.fixture.status.short !== "NS") return false;
+    if (!fixtureIsInCupScope(f.league.id, f.league.round)) return false;
     const k = new Date(f.fixture.date);
-    return !isNaN(k.getTime()) && k >= from && k <= until;
+    if (isNaN(k.getTime()) || k < from || k > until) return false;
+    return lagosDateKey(k) === todayKey || k >= normalFrom;
   });
 
   const keyed = inWindow
@@ -146,13 +154,20 @@ export async function selectCandidates(opts: {
       homeTeamApiId: f.teams.home.id,
       awayTeamApiId: f.teams.away.id,
       kickoff: new Date(f.fixture.date),
+      round: f.league.round ?? null,
       priorAttempts: attempt?.attempts ?? 0,
     });
   }
 
-  // Soonest kickoff first: the fixture closest to going off is both the most
-  // urgent to review and the one whose team news is most settled.
-  candidates.sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
+  // Exhaust today's remaining eligible fixtures before tomorrow+, regardless
+  // of whether an early tomorrow kickoff is chronologically closer to now.
+  candidates.sort((a, b) => {
+    const aToday = lagosDateKey(a.kickoff) === todayKey ? 0 : 1;
+    const bToday = lagosDateKey(b.kickoff) === todayKey ? 0 : 1;
+    return aToday - bToday
+      || leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId)
+      || a.kickoff.getTime() - b.kickoff.getTime();
+  });
 
   return { candidates: candidates.slice(0, opts.limit), scanned: keyed.length, discoveryCalls };
 }

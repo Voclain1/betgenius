@@ -28,7 +28,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const legs = await prisma.comboLeg.findMany({
     where: { comboId: meta.id },
     orderBy: { order: "asc" },
-    select: { id: true, matchLabel: true, market: true, pick: true, odds: true },
+    select: { id: true, matchLabel: true, market: true, pick: true },
   });
 
   return NextResponse.json({

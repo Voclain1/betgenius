@@ -3,16 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { TipsPicker, type TipCategory, type TipOption } from "@/components/TipsPicker";
 import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
+import { calculateSlip } from "@/lib/betBuilderMath";
 
 export type { TipCategory, TipOption, BookmakerOption };
 
-type Leg = { id: string; label: string; market: string; pick: string; odds: number };
+type Leg = { id: string; label: string; market: string; pick: string; odds: number | null };
+type ManualDraft = Omit<Leg, "odds"> & { odds: string };
 
 function formatSummary(legs: Leg[]) {
   if (legs.length === 0) return "No legs added yet.";
-  const lines = legs.map((l, i) => `${i + 1}. ${l.label} — ${l.market}: ${l.pick} @ ${l.odds.toFixed(2)}`);
-  const total = legs.reduce((a, l) => a * l.odds, 1);
-  return `BetGenius picks:\n${lines.join("\n")}\n\nTotal odds: ${total.toFixed(2)}`;
+  const lines = legs.map((l, i) => `${i + 1}. ${l.label} — ${l.market}: ${l.pick}`);
+  return `BetGenius picks:\n${lines.join("\n")}`;
 }
 
 export function BetBuilderClient({
@@ -24,24 +25,23 @@ export function BetBuilderClient({
 }) {
   const searchParams = useSearchParams();
   const [legs, setLegs] = useState<Leg[]>([]);
-  const [stake, setStake] = useState(10);
   const [source, setSource] = useState<"manual" | "tips">("manual");
-  const [draft, setDraft] = useState<Leg>({ id: "", label: "", market: "1X2", pick: "Home", odds: 1.9 });
+  const [draft, setDraft] = useState<ManualDraft>({ id: "", label: "", market: "1X2", pick: "Home", odds: "" });
   const [bookmakerId, setBookmakerId] = useState(bookmakers[0]?.id ?? "");
   const [copied, setCopied] = useState(false);
+  const [stake, setStake] = useState("10");
 
-  const total = useMemo(() => legs.reduce((a, l) => a * l.odds, 1), [legs]);
-  const potential = total * stake;
   const legIds = useMemo(() => new Set(legs.map((l) => l.id)), [legs]);
   const selectedBookmaker = bookmakers.find((b) => b.id === bookmakerId);
   const summaryText = formatSummary(legs);
+  const calculation = useMemo(() => calculateSlip(legs, Number(stake)), [legs, stake]);
   const canContinue = legs.length > 0 && !!selectedBookmaker;
 
   const addTip = (opt: TipOption) => {
     if (legIds.has(opt.id)) return;
     // Functional update so rapid successive adds can't read the same stale
     // `legs` and have the second silently overwrite the first.
-    setLegs((prev) => [...prev, { id: opt.id, label: opt.label, market: opt.market, pick: opt.pick, odds: opt.odds }]);
+    setLegs((prev) => [...prev, { id: opt.id, label: opt.label, market: opt.market, pick: opt.pick, odds: null }]);
   };
 
   // Kept in sync so the combo-loading effect below can read the current
@@ -75,7 +75,7 @@ export function BetBuilderClient({
         label: l.matchLabel,
         market: l.market,
         pick: l.pick,
-        odds: l.odds,
+        odds: null,
       }));
       setLegs(newLegs);
       setSource("manual");
@@ -145,17 +145,19 @@ export function BetBuilderClient({
                   <input value={draft.pick} onChange={(e) => setDraft({ ...draft, pick: e.target.value })}
                     className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
                 </label>
-                <label className="text-sm">Odds
-                  <input type="number" step="0.01" min="1.01" value={draft.odds}
-                    onChange={(e) => setDraft({ ...draft, odds: Number(e.target.value) })}
+                <label className="text-sm">Your bookmaker odds
+                  <input type="number" min="1.01" step="0.01" inputMode="decimal"
+                    value={draft.odds} onChange={(e) => setDraft({ ...draft, odds: e.target.value })}
+                    placeholder="e.g. 1.90"
                     className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
                 </label>
               </div>
               <button className="btn btn-primary"
                 onClick={() => {
-                  if (!draft.label) return;
-                  setLegs((prev) => [...prev, { ...draft, id: crypto.randomUUID() }]);
-                  setDraft({ ...draft, label: "", pick: "Home" });
+                  const odds = Number(draft.odds);
+                  if (!draft.label || !Number.isFinite(odds) || odds <= 1) return;
+                  setLegs((prev) => [...prev, { ...draft, odds, id: crypto.randomUUID() }]);
+                  setDraft({ ...draft, label: "", pick: "Home", odds: "" });
                 }}>Add leg</button>
             </>
           ) : (
@@ -173,10 +175,10 @@ export function BetBuilderClient({
                 <li key={l.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <div className="min-w-0">
                     <div className="truncate font-medium">{l.label}</div>
+                    <div className="truncate text-gray-500">{l.odds === null ? "No verified odds" : `Odds: ${l.odds.toFixed(2)}`}</div>
                     <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
-                    <span className="text-brand">{l.odds.toFixed(2)}</span>
                     <button onClick={() => setLegs((prev) => prev.filter((x) => x.id !== l.id))}
                       className="text-xs text-gray-400 hover:text-red-400">Remove</button>
                   </div>
@@ -189,15 +191,23 @@ export function BetBuilderClient({
 
       <aside className="h-fit space-y-4">
         <div className="card space-y-3">
-          <h2 className="font-semibold">Summary</h2>
+          <h2 className="font-semibold">Bet calculation</h2>
           <label className="block text-sm">Stake
-            <input type="number" min="0" value={stake} onChange={(e) => setStake(Number(e.target.value))}
+            <input type="number" min="0.01" step="0.01" inputMode="decimal"
+              value={stake} onChange={(e) => setStake(e.target.value)}
               className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
           </label>
-          <div className="text-sm">Total odds: <span className="font-semibold text-brand">{total.toFixed(2)}</span></div>
-          <div className="text-sm">Potential return: <span className="font-semibold text-brand">{potential.toFixed(2)}</span></div>
+          {calculation ? (
+            <div className="space-y-1 text-sm">
+              <p>Combined odds: <strong>{calculation.combinedOdds.toFixed(2)}</strong></p>
+              <p>Potential return: <strong>{calculation.potentialReturn.toFixed(2)}</strong></p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400">
+              Combined odds and potential return are available only when every leg was entered manually with your bookmaker's odds.
+            </p>
+          )}
         </div>
-
         <div className="card space-y-3">
           <h2 className="font-semibold">Continue to bookmaker</h2>
           {bookmakers.length === 0 ? (

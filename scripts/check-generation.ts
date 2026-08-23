@@ -14,10 +14,17 @@
  *
  * Run: npx tsx scripts/check-generation.ts
  */
-import { nextAttemptAt, RETRY_BACKOFF_MINUTES, MAX_GENERATION_ATTEMPTS, GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "../src/lib/generation/selector";
+import { nextAttemptAt, RETRY_BACKOFF_MINUTES, MAX_GENERATION_ATTEMPTS, GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "../src/lib/generation/selector";
+import { isLagosToday, lagosTodayBounds } from "../src/lib/lagosDate";
 import { tierFor, REFRESH_TIERS } from "../src/lib/enrichment";
 import { reviewTransition } from "../src/lib/predictions";
 import { estimateCostUsd, providerOf, priceFor } from "../src/lib/generation/stats";
+import { CURATION_MAX, CURATION_MIN, GENIUS_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR, selectCuratedIds } from "../src/lib/geniusCuration";
+import { buildSystemPrompt } from "../src/lib/ai/analysis";
+import { resolveGenerationRisk, VIP_PROXY_LEAGUE_CUTOFF, VIP_PROXY_LEAGUE_IDS } from "../src/lib/ai/generationRisk";
+import { fixtureIsInCupScope } from "../src/lib/cupConfig";
+import { leaguePriorityRank } from "../src/lib/leagues";
+import { applyCategoryChanges } from "../src/lib/predictions";
 
 let passed = 0;
 const failures: string[] = [];
@@ -42,7 +49,54 @@ eq("backoff: attempt ceiling matches the schedule length", MAX_GENERATION_ATTEMP
 // --- Generation window ----------------------------------------------------
 check("window: opens before it closes", GENERATE_FROM_HOURS < GENERATE_UNTIL_HOURS);
 check("window: leaves at least a half day for review before kickoff", GENERATE_FROM_HOURS >= 12);
+check("window: same-day floor preserves review time but covers most remaining games", SAME_DAY_GENERATE_FROM_HOURS > 0 && SAME_DAY_GENERATE_FROM_HOURS <= 2);
 check("window: does not generate more than two days out, where team news is unsettled", GENERATE_UNTIL_HOURS <= 48);
+const lagosBounds = lagosTodayBounds(new Date("2026-08-22T23:30:00Z"));
+eq("Lagos day: starts at 23:00 UTC on the preceding date", lagosBounds.start.toISOString(), "2026-08-22T23:00:00.000Z");
+eq("Lagos day: ends exactly 24 hours later", lagosBounds.end.toISOString(), "2026-08-23T23:00:00.000Z");
+check("Lagos day: midnight rollover is date-derived", isLagosToday("2026-08-23T22:59:59Z", new Date("2026-08-22T23:30:00Z")));
+check("Lagos day: excludes the next calendar date", !isLagosToday("2026-08-23T23:00:00Z", new Date("2026-08-22T23:30:00Z")));
+
+const geniusPool = [
+  { id: "minor-90", leagueApiId: 113, confidence: 90 },
+  { id: "prem-65", leagueApiId: 39, confidence: 65 },
+  { id: "prem-80", leagueApiId: 39, confidence: 80 },
+  { id: "liga-75", leagueApiId: 140, confidence: 75 },
+  { id: "serie-72", leagueApiId: 135, confidence: 72 },
+  { id: "ligue-60", leagueApiId: 61, confidence: 60 },
+];
+eq("priority: England precedes Spain", leaguePriorityRank(39) < leaguePriorityRank(140), true);
+eq("priority: Spain precedes Italy", leaguePriorityRank(140) < leaguePriorityRank(135), true);
+eq("priority: listed leagues precede unknown leagues", leaguePriorityRank(71) < leaguePriorityRank(99999), true);
+eq("Genius: explicit league priority precedes confidence and floor relaxes to five", selectCuratedIds(geniusPool, GENIUS_CONFIDENCE_FLOOR), ["prem-80", "prem-65", "liga-75", "serie-72", "ligue-60"]);
+const broadPool = Array.from({ length: 20 }, (_, i) => ({ id: `row-${String(i).padStart(2, "0")}`, leagueApiId: i % 2 ? 39 : 140, confidence: i < 10 ? 80 : i < 15 ? 72 : 60 }));
+eq("Genius: maximum is fifteen", selectCuratedIds(broadPool, GENIUS_CONFIDENCE_FLOOR).length, CURATION_MAX);
+eq("VIP: maximum is fifteen", selectCuratedIds(broadPool.map((r) => ({ ...r, confidence: 80 })), VIP_CONFIDENCE_FLOOR).length, CURATION_MAX);
+check("curation: minimum remains five", CURATION_MIN === 5);
+const geniusSet = new Set(selectCuratedIds(broadPool, GENIUS_CONFIDENCE_FLOOR));
+const vipSet = new Set(selectCuratedIds(broadPool, VIP_CONFIDENCE_FLOOR));
+check("curation: GENIUS and VIP can overlap", [...geniusSet].some((id) => vipSet.has(id)));
+check("curation: GENIUS and VIP are independently bounded", geniusSet.size !== vipSet.size);
+check("prompt: GENIUS receives safer-market calibration", buildSystemPrompt(["GENIUS"]).includes("GENIUS (safer)"));
+check("prompt: VIP/PREMIUM receive the stricter calibration", buildSystemPrompt(["VIP"]).includes("VIP or PREMIUM (more safer)"));
+check("prompt: legacy comparison omits calibration", !buildSystemPrompt(["PREMIUM"], false).includes("TIER-AWARE MARKET RISK CALIBRATION"));
+eq("risk routing: cutoff contains exactly twelve priority entries", VIP_PROXY_LEAGUE_IDS.length, VIP_PROXY_LEAGUE_CUTOFF);
+eq("risk routing: top-priority league uses VIP calibration", resolveGenerationRisk(["FEATURED"], 39).calibration, "vip");
+eq("risk routing: first league below cutoff uses GENIUS calibration", resolveGenerationRisk(["FEATURED"], 307).calibration, "genius");
+eq("risk routing: unknown league uses GENIUS baseline", resolveGenerationRisk(["FEATURED"], 999999).calibration, "genius");
+eq("risk routing: BANKER bypasses VIP proxy", resolveGenerationRisk(["FEATURED", "BANKER"], 39).calibration, "legacy");
+check("cup scope: FA Cup excludes qualifying rounds", !fixtureIsInCupScope(45, "3rd Round Qualifying"));
+check("cup scope: FA Cup includes Third Round Proper API value", fixtureIsInCupScope(45, "Round of 64"));
+check("cup scope: DFB Pokal includes its opening round", fixtureIsInCupScope(81, "1st Round"));
+check("cup scope: DFB Pokal accepts current Round of 64 naming", fixtureIsInCupScope(81, "Round of 64"));
+check("cup priority: FA Cup follows the Championship", leaguePriorityRank(45) === leaguePriorityRank(40) + 1);
+check("cup priority: DFB Pokal follows Bundesliga", leaguePriorityRank(81) === leaguePriorityRank(78) + 1);
+eq("cup risk: FA Cup receives VIP proxy calibration", resolveGenerationRisk(["FEATURED"], 45).calibration, "vip");
+eq("cup risk: DFB Pokal receives VIP proxy calibration", resolveGenerationRisk(["FEATURED"], 81).calibration, "vip");
+eq("categories: bulk add/remove preserves unaffected assignments", applyCategoryChanges(["FEATURED", "BANKER"], ["VIP"], ["FEATURED"]), ["BANKER", "VIP"]);
+let rejectedEmptyCategories = false;
+try { applyCategoryChanges(["FEATURED"], [], ["FEATURED"]); } catch { rejectedEmptyCategories = true; }
+check("categories: bulk changes reject an empty final assignment", rejectedEmptyCategories);
 
 // --- Refresh priority tiers ----------------------------------------------
 eq("tier: kickoff in 2h is tier A", tierFor(hoursFrom(2), NOW)?.name, "A");
