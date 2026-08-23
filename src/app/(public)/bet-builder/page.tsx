@@ -36,6 +36,7 @@ export default async function BetBuilderPage() {
               label: home && away ? `${home} vs ${away}` : "Match TBD",
               market: r.market,
               pick: r.pick,
+              kickoff: r.kickoff?.toISOString() ?? r.fixture?.kickoff?.toISOString() ?? null,
             };
           });
         return [cat, options] as const;

@@ -7,6 +7,18 @@ export type ComboLegInput = {
   predictionId?: string | null;
 };
 
+/** A published combo stays browseable until its final linked leg kicks off. */
+export function comboIsUpcoming(kickoffs: readonly (Date | string | null)[], now: Date = new Date()): boolean {
+  const valid = kickoffs
+    .filter((value): value is Date | string => value != null)
+    .map((value) => typeof value === "string" ? new Date(value) : value)
+    .filter((value) => !Number.isNaN(value.getTime()));
+  // Manual-only/legacy combos have no resolvable kickoff; preserve their
+  // existing visibility rather than hiding them on missing data.
+  if (valid.length === 0) return true;
+  return Math.max(...valid.map((value) => value.getTime())) > now.getTime();
+}
+
 /**
  * Replaces a combo's legs wholesale, in the given order — mirrors
  * setPredictionCategories's delete+recreate approach: the admin UI edits the

@@ -5,15 +5,22 @@ import { canViewCategory } from "@/lib/access";
 import { CATEGORY_NAMES } from "@/lib/categoryPredictions";
 import type { PredictionCategory } from "@/lib/enums";
 import { ComboCard, type ComboView } from "@/components/ComboCard";
+import { comboIsUpcoming } from "@/lib/combos";
 
 export default async function CombosPage() {
   const session = await getServerSession(authOptions);
 
-  const combos = await prisma.combo.findMany({
+  const allCombos = await prisma.combo.findMany({
     where: { published: true },
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, description: true, category: true },
+    select: { id: true, title: true, description: true, category: true, legs: { select: { predictionId: true } } },
   });
+  const predictionIds = [...new Set(allCombos.flatMap((combo) => combo.legs.map((leg) => leg.predictionId).filter((id): id is string => !!id)))];
+  const predictionKickoffs = predictionIds.length
+    ? await prisma.prediction.findMany({ where: { id: { in: predictionIds } }, select: { id: true, kickoff: true } })
+    : [];
+  const kickoffByPrediction = new Map(predictionKickoffs.map((prediction) => [prediction.id, prediction.kickoff]));
+  const combos = allCombos.filter((combo) => comboIsUpcoming(combo.legs.map((leg) => leg.predictionId ? kickoffByPrediction.get(leg.predictionId) ?? null : null)));
 
   const unlocked = combos.filter((c) =>
     canViewCategory(c.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role),

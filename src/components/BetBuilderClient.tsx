@@ -161,7 +161,7 @@ export function BetBuilderClient({
                 }}>Add leg</button>
             </>
           ) : (
-            <TipsPicker categories={categories} addedIds={legIds} onAdd={addTip} />
+            <TipsPicker categories={categories} addedIds={legIds} onAdd={addTip} dateScope="today-only" />
           )}
         </div>
 

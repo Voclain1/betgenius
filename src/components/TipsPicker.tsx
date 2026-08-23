@@ -2,9 +2,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Lock } from "lucide-react";
+import { lagosTodayBounds } from "@/lib/lagosDate";
 
-export type TipOption = { id: string; label: string; market: string; pick: string };
+export type TipDateScope = "today-only" | "today-and-future";
+export type TipOption = { id: string; label: string; market: string; pick: string; kickoff: string | null };
 export type TipCategory = { key: string; label: string; locked: boolean; options: TipOption[] };
+
+export function tipMatchesDateScope(kickoff: string | null, scope: TipDateScope, now: Date = new Date()): boolean {
+  if (!kickoff) return false;
+  const value = new Date(kickoff);
+  if (Number.isNaN(value.getTime())) return false;
+  const today = lagosTodayBounds(now);
+  return scope === "today-only"
+    ? value >= today.start && value < today.end
+    : value >= today.start;
+}
 
 // The "pick from our tips" UI — shared between Bet Builder's manual slip
 // builder and the admin Combo editor's leg picker so both stay pixel-for-
@@ -13,15 +25,18 @@ export function TipsPicker({
   categories,
   addedIds,
   onAdd,
+  dateScope,
 }: {
   categories: TipCategory[];
   addedIds: Set<string>;
   onAdd: (opt: TipOption) => void;
+  dateScope: TipDateScope;
 }) {
   const [activeCategory, setActiveCategory] = useState(
     () => categories.find((c) => !c.locked)?.key ?? categories[0]?.key,
   );
   const category = categories.find((c) => c.key === activeCategory);
+  const visibleOptions = category?.options.filter((option) => tipMatchesDateScope(option.kickoff, dateScope)) ?? [];
 
   return (
     <div className="space-y-3">
@@ -51,11 +66,11 @@ export function TipsPicker({
           <p className="text-sm text-gray-400">Subscribe to unlock {category.label}.</p>
           <Link href="/pricing" className="btn btn-primary text-sm">Upgrade</Link>
         </div>
-      ) : category && category.options.length === 0 ? (
+      ) : category && visibleOptions.length === 0 ? (
         <p className="py-4 text-sm text-gray-400">No published tips in this category yet.</p>
       ) : (
         <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-lg border border-brand-border">
-          {category?.options.map((opt) => {
+          {visibleOptions.map((opt) => {
             const added = addedIds.has(opt.id);
             return (
               <li key={opt.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">

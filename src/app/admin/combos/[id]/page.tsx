@@ -70,9 +70,9 @@ export default function EditCombo({ params }: { params: { id: string } }) {
     return PREDICTION_CATEGORIES.map((cat) => {
       const options: TipOption[] = predictions
         .filter((p) => p.status === "PUBLISHED")
-        .filter((p) => !!p.kickoff && isLagosToday(p.kickoff))
         .filter((p) => cat === "TODAY"
-          || (p.categories?.length ? p.categories.some((c) => c.category === cat) : p.category === cat))
+          ? !!p.kickoff && isLagosToday(p.kickoff)
+          : (p.categories?.length ? p.categories.some((c) => c.category === cat) : p.category === cat))
         .map((p) => {
           const home = p.homeTeam ?? p.fixture?.homeTeam?.name;
           const away = p.awayTeam ?? p.fixture?.awayTeam?.name;
@@ -81,6 +81,7 @@ export default function EditCombo({ params }: { params: { id: string } }) {
             label: home && away ? `${home} vs ${away}` : "Match TBD",
             market: p.market,
             pick: p.pick,
+            kickoff: p.kickoff,
           };
         });
       return { key: cat, label: cat, locked: false, options };
@@ -206,7 +207,7 @@ export default function EditCombo({ params }: { params: { id: string } }) {
         <details className="rounded-lg border border-brand-border">
           <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-300">Pick from our tips</summary>
           <div className="border-t border-brand-border p-3">
-            <TipsPicker categories={tipCategories} addedIds={addedPredictionIds} onAdd={addFromTip} />
+            <TipsPicker categories={tipCategories} addedIds={addedPredictionIds} onAdd={addFromTip} dateScope="today-and-future" />
           </div>
         </details>
 
