@@ -6,9 +6,10 @@ export const CURATION_MIN = 5;
 export const CURATION_MAX = 15;
 export const GENIUS_CONFIDENCE_FLOOR = 70;
 export const VIP_CONFIDENCE_FLOOR = 75;
+export const PREMIUM_CONFIDENCE_FLOOR = 75;
 
 type Rankable = { id: string; leagueApiId: number | null; confidence: number };
-type AutoCategory = "GENIUS" | "VIP";
+type AutoCategory = "GENIUS" | "VIP" | "PREMIUM";
 
 export function selectCuratedIds<T extends Rankable>(rows: readonly T[], floor: number, min = CURATION_MIN, max = CURATION_MAX): string[] {
   const ranked = [...rows].sort((a, b) =>
@@ -17,8 +18,17 @@ export function selectCuratedIds<T extends Rankable>(rows: readonly T[], floor: 
     || a.id.localeCompare(b.id),
   );
   const aboveFloor = ranked.filter((r) => r.confidence >= floor);
-  const count = Math.min(max, Math.max(Math.min(min, ranked.length), aboveFloor.length));
-  return ranked.slice(0, count).map((r) => r.id);
+  const chosen = aboveFloor.slice(0, max);
+  const chosenIds = new Set(chosen.map((row) => row.id));
+  // The floor is eligibility, not merely a count hint. Relax only when fewer
+  // than the minimum qualify, filling from the same league-first ranking.
+  for (const row of ranked) {
+    if (chosen.length >= Math.min(min, ranked.length)) break;
+    if (chosenIds.has(row.id)) continue;
+    chosen.push(row);
+    chosenIds.add(row.id);
+  }
+  return ranked.filter((row) => chosenIds.has(row.id)).slice(0, max).map((row) => row.id);
 }
 
 async function curateCategory(category: AutoCategory, floor: number, now: Date) {
@@ -41,8 +51,9 @@ async function curateCategory(category: AutoCategory, floor: number, now: Date) 
 
 export const curateGeniusTips = (now: Date = new Date()) => curateCategory("GENIUS", GENIUS_CONFIDENCE_FLOOR, now);
 export const curateVipTips = (now: Date = new Date()) => curateCategory("VIP", VIP_CONFIDENCE_FLOOR, now);
+export const curatePremiumTips = (now: Date = new Date()) => curateCategory("PREMIUM", PREMIUM_CONFIDENCE_FLOOR, now);
 
 export async function curateAutomaticTips(now: Date = new Date()) {
-  const [genius, vip] = await Promise.all([curateGeniusTips(now), curateVipTips(now)]);
-  return { genius, vip };
+  const [genius, vip, premium] = await Promise.all([curateGeniusTips(now), curateVipTips(now), curatePremiumTips(now)]);
+  return { genius, vip, premium };
 }
