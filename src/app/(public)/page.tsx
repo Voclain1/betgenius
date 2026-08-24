@@ -24,7 +24,7 @@ export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: { absolute: `${SITE_NAME} — Football tips, predictions, livescores` },
-  description: "Football predictions across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
+  description: "Football predictions today across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
 };
 
 /**
@@ -140,8 +140,8 @@ export default async function HomePage() {
       <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-6 md:p-10">
         <div className={`grid items-center gap-8 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
           <div>
-            <h1 className="text-3xl font-bold md:text-5xl">
-              Football tips, <span className="text-brand">backed by the numbers</span>.
+            <h1 className="text-[26px] font-bold leading-[1.15] sm:text-3xl md:text-5xl">
+              Football Predictions Today — Including Today&apos;s Banker
             </h1>
             <p className="mt-3 max-w-2xl text-gray-300 md:text-lg">
               Data-driven picks across every major league, each with a confidence rating and the reasoning behind it.
