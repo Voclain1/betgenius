@@ -58,8 +58,8 @@ export function HeroPick({ pick, trackRecord }: { pick: HeroPickData; trackRecor
         </div>
       </div>
 
-      {/* The claim above is "powered by AI"; this is the settled evidence for
-          it. Hidden entirely below the sample gate the track-record page
+      {/* The headline above claims picks "backed by the numbers"; this is the
+          settled evidence for it. Hidden entirely below the sample gate the track-record page
           itself enforces, rather than showing a rate nobody should trust. */}
       {trackRecord && (
         <div className="flex items-baseline gap-2 border-t border-brand-border pt-2 text-xs text-gray-400">

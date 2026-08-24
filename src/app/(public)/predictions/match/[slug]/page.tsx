@@ -73,7 +73,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   if (!match) {
     return {
       title: "Match predictions",
-      description: "No predictions published for this match — check back soon for AI-powered football predictions.",
+      description: "No predictions published for this match — check back soon for our latest football predictions.",
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/match/${params.slug}` },
     };

@@ -24,7 +24,7 @@ export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: { absolute: `${SITE_NAME} — Football tips, predictions, livescores` },
-  description: "AI-powered football predictions across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
+  description: "Football predictions across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
 };
 
 /**
@@ -140,8 +140,13 @@ export default async function HomePage() {
       <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-6 md:p-10">
         <div className={`grid items-center gap-8 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
           <div>
+            {/* The headline sells what a reader actually gets — a call, a
+                confidence figure and the reasoning — rather than the
+                technology that produces it. How the picks are made is
+                disclosed in the footer of every page and in full at
+                /methodology; it is just no longer the pitch. */}
             <h1 className="text-3xl font-bold md:text-5xl">
-              Football tips, powered by <span className="text-brand">AI</span>.
+              Football tips, <span className="text-brand">backed by the numbers</span>.
             </h1>
             <p className="mt-3 max-w-2xl text-gray-300 md:text-lg">
               Data-driven picks across every major league, each with a confidence rating and the reasoning behind it.

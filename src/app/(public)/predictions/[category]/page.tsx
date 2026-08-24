@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: { category: string 
   if (rows.length === 0) {
     return {
       title: name,
-      description: `No ${name.toLowerCase()} published yet — check back soon for AI-powered football predictions.`,
+      description: `No ${name.toLowerCase()} published yet — check back soon for our latest football predictions.`,
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/${params.category}` },
     };
@@ -35,7 +35,7 @@ export async function generateMetadata({ params }: { params: { category: string 
 
   return {
     title: name,
-    description: `${rows.length} live ${name.toLowerCase()}${sample ? ` — including ${sample}` : ""}. AI-powered football predictions updated daily.`,
+    description: `${rows.length} live ${name.toLowerCase()}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     alternates: { canonical: `/predictions/${params.category}` },
   };
 }

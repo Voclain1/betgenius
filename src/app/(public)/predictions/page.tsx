@@ -4,12 +4,12 @@ import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "Football Predictions & Betting Tips",
-  description: "Browse AI-powered football predictions by category — Featured, Genius, Today's picks, Banker, VIP and Premium tips.",
+  description: "Browse football predictions by category — Featured, Genius, Today's picks, Banker, VIP and Premium tips.",
 };
 
 const cats = [
   { slug: "featured", name: "Featured tips", desc: "Editor-picked, highest-conviction plays." },
-  { slug: "genius", name: "Genius tips", desc: "AI-first picks scored by our model." },
+  { slug: "genius", name: "Genius tips", desc: "Our highest-scoring picks of the day, ranked by confidence." },
   { slug: "today", name: "Today's predictions", desc: "Every match happening today." },
   { slug: "banker", name: "Banker", desc: "Our single most-confident pick." },
   { slug: "vip", name: "VIP", desc: "Subscriber-only edge plays." },

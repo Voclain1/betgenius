@@ -19,7 +19,7 @@ const tiers = [
     id: "PREMIUM" as const,
     name: "Premium",
     glyph: "◆",
-    features: ["Everything in VIP", "Premium category tips", "AI match previews", "Priority support"],
+    features: ["Everything in VIP", "Premium category tips", "In-depth match previews", "Priority support"],
     color: "border-premium/40",
     accent: "text-premium",
   },

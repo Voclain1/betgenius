@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     default: `${SITE_NAME} — Football tips, predictions, livescores`,
     template: `%s | ${SITE_NAME}`,
   },
-  description: "AI-powered football predictions, tips, livescores, fixtures and stats.",
+  description: "Football predictions, tips, livescores, fixtures and stats.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

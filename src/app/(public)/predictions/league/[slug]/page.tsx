@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   if (rows.length === 0) {
     return {
       title: "League predictions",
-      description: "No predictions published yet for this league — check back soon for AI-powered football predictions.",
+      description: "No predictions published yet for this league — check back soon for our latest football predictions.",
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/league/${params.slug}` },
     };
@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
   return {
     title: name,
-    description: `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. AI-powered football predictions updated daily.`,
+    description: `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     alternates: { canonical: `/predictions/league/${params.slug}` },
   };
 }
