@@ -23,11 +23,14 @@ import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const { rows } = await getPublishedByLeagueSlug(params.slug);
+  const isEnglishPremierLeague = params.slug === "premier-league-39" || rows[0]?.leagueApiId === 39;
 
   if (rows.length === 0) {
     return {
-      title: "League predictions",
-      description: "No predictions published yet for this league — check back soon for our latest football predictions.",
+      title: isEnglishPremierLeague ? "EPL Predictions — Premier League" : "League predictions",
+      description: isEnglishPremierLeague
+        ? "No EPL predictions are published today — check back soon for the latest Premier League picks."
+        : "No predictions published yet for this league — check back soon for our latest football predictions.",
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/league/${params.slug}` },
     };
@@ -41,8 +44,10 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     .join(", ");
 
   return {
-    title: name,
-    description: `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    title: isEnglishPremierLeague ? "EPL Predictions — Premier League" : name,
+    description: isEnglishPremierLeague
+      ? `${rows.length} EPL predictions${sample ? ` — including ${sample}` : ""}. Premier League picks with confidence ratings, updated daily.`
+      : `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     alternates: { canonical: `/predictions/league/${params.slug}` },
   };
 }

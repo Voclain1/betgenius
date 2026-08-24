@@ -13,6 +13,11 @@ export async function generateMetadata({ params }: { params: { category: string 
   const cat = SLUGS[params.category];
   if (!cat) return {};
   const name = NAMES[cat];
+  const seoTitle = cat === "TODAY" ? "Today's Predictions" : cat === "VIP" ? "VIP Predictions" : name;
+  const seoPhrase = cat === "TODAY" ? "today's predictions" : cat === "VIP" ? "VIP predictions" : name.toLowerCase();
+  const emptyDescription = cat === "TODAY"
+    ? "Today's predictions are not published yet — check back soon for our latest football picks."
+    : `No ${seoPhrase} published yet — check back soon for our latest football predictions.`;
   const rows = await getCategoryPredictions(cat);
 
   // Thin/empty content shouldn't claim a rich, specific title as if it had
@@ -20,8 +25,8 @@ export async function generateMetadata({ params }: { params: { category: string 
   // nothing on it yet.
   if (rows.length === 0) {
     return {
-      title: name,
-      description: `No ${name.toLowerCase()} published yet — check back soon for our latest football predictions.`,
+      title: seoTitle,
+      description: emptyDescription,
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/${params.category}` },
     };
@@ -34,8 +39,8 @@ export async function generateMetadata({ params }: { params: { category: string 
     .join(", ");
 
   return {
-    title: name,
-    description: `${rows.length} live ${name.toLowerCase()}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    title: seoTitle,
+    description: `${rows.length} ${cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     alternates: { canonical: `/predictions/${params.category}` },
   };
 }
