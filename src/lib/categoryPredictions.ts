@@ -2,6 +2,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
+import { orderForDisplay } from "@/lib/predictionOrdering";
 
 // Shared between /predictions/[category] and the account dashboard so the
 // two never end up running two slightly different queries for the same
@@ -34,14 +35,19 @@ export const CATEGORY_TO_SLUG = Object.fromEntries(
 // once per request — React's cache() memoizes by arguments within a render pass.
 export const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
   const today = lagosTodayBounds();
-  return prisma.prediction.findMany({
+  const rows = await prisma.prediction.findMany({
     where: {
       status: "PUBLISHED",
       kickoff: { gte: today.start, lt: today.end },
       ...(cat === "TODAY" ? {} : { categories: { some: { category: cat } } }),
     },
-    orderBy: cat === "TODAY" ? { kickoff: "asc" } : [{ publishedAt: "desc" }, { kickoff: "asc" }],
+    // Deterministic, but not the order the page renders in — the ranking in
+    // orderForDisplay decides that. This clause exists so the `take` below
+    // always cuts the same 60 rows out of a larger day, rather than letting an
+    // unordered query decide which ones the ranking never gets to see.
+    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
     take: 60,
   });
+  return orderForDisplay(rows);
 });

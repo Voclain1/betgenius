@@ -18,6 +18,7 @@ import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
+import { orderForDisplay, compareByEditorialRank } from "@/lib/predictionOrdering";
 
 export const revalidate = 60;
 
@@ -26,36 +27,42 @@ export const metadata: Metadata = {
   description: "AI-powered football predictions across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
 };
 
-async function fetchFeatured() {
+/**
+ * The day's picks in one category, strongest first.
+ *
+ * The cap is applied AFTER ranking, not as a `take` on the query. Slicing in
+ * the database would hand the ranking six arbitrary rows to sort among
+ * themselves, so the homepage would show the six most recently published
+ * picks in a nicer order rather than the six best picks — which is the whole
+ * point of the ordering.
+ */
+async function fetchTopOfCategory(category: string, limit: number) {
   const today = lagosTodayBounds();
-  return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category: "FEATURED" } } },
-    orderBy: { publishedAt: "desc" },
-    take: 6,
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category } } },
+    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
   });
+  return orderForDisplay(rows).slice(0, limit);
 }
 
-// Same shape as fetchFeatured — just GENIUS, capped at 3 for the homepage excerpt.
-async function fetchGeniusPreview() {
-  const today = lagosTodayBounds();
-  return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category: "GENIUS" } } },
-    orderBy: { publishedAt: "desc" },
-    take: 3,
-    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
-  });
-}
+const fetchFeatured = () => fetchTopOfCategory("FEATURED", 6);
+const fetchGeniusPreview = () => fetchTopOfCategory("GENIUS", 3);
 
 /**
  * The pick shown beside the hero headline.
  *
- * Chosen as the HIGHEST-CONFIDENCE upcoming pick from a category any visitor
- * can read (FEATURED/GENIUS/TODAY are public per canViewCategory) — not the
- * most recent. A hero is an argument for the product, so it should lead with
- * the strongest call currently standing, and it must not be a locked row: a
+ * Chosen as the STRONGEST upcoming pick from a category any visitor can read
+ * (FEATURED/GENIUS/TODAY are public per canViewCategory) — not the most
+ * recent. A hero is an argument for the product, so it should lead with the
+ * strongest call currently standing, and it must not be a locked row: a
  * headline promising football tips whose only example is padlocked argues
  * against itself.
+ *
+ * "Strongest" is the site-wide editorial rank (league priority, then
+ * confidence), not confidence alone: an 88% pick in the Premier League is a
+ * better shop window than a 91% pick in the Latvian Virsliga, and the hero
+ * should not be the one surface that disagrees with every list below it.
  *
  * Falls back to the highest-confidence public pick regardless of kickoff when
  * nothing upcoming is published, and to nothing at all when there are no
@@ -74,12 +81,16 @@ async function fetchHeroPick(): Promise<HeroPickData | null> {
     homeTeam: true, awayTeam: true, kickoff: true, leagueName: true, leagueApiId: true,
     market: true, pick: true, confidence: true,
   };
-  const upcoming = await prisma.prediction.findFirst({
+  // `id` is selected only so the ranking has its stable tiebreaker; it is not
+  // part of HeroPickData and never reaches the component.
+  const rank = <T extends { id: string; leagueApiId: number | null; confidence: number }>(rows: T[]): T | null =>
+    [...rows].sort(compareByEditorialRank)[0] ?? null;
+
+  const upcoming = await prisma.prediction.findMany({
     where: { ...base, kickoff: { gte: new Date(), lt: today.end } },
-    orderBy: { confidence: "desc" },
-    select,
+    select: { ...select, id: true },
   });
-  const row = upcoming ?? (await prisma.prediction.findFirst({ where: base, orderBy: { confidence: "desc" }, select }));
+  const row = rank(upcoming) ?? rank(await prisma.prediction.findMany({ where: base, select: { ...select, id: true } }));
   return row ? ({ ...row, homeTeam: row.homeTeam!, awayTeam: row.awayTeam! } as HeroPickData) : null;
 }
 

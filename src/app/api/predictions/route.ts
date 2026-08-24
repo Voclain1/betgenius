@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
+import { orderForDisplay } from "@/lib/predictionOrdering";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   const status = session?.user?.subStatus;
 
   const today = lagosTodayBounds();
-  const rows = await prisma.prediction.findMany({
+  const unordered = await prisma.prediction.findMany({
     where: {
       status: "PUBLISHED",
       ...(category
@@ -29,7 +30,9 @@ export async function GET(req: Request) {
           }
         : {}),
     },
-    orderBy: [{ publishedAt: "desc" }],
+    // See getCategoryPredictions: a deterministic cut of the day, re-ranked
+    // below into the order every surface displays picks in.
+    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     take: 60,
     include: {
       fixture: { include: { homeTeam: true, awayTeam: true, league: true } },
@@ -37,6 +40,8 @@ export async function GET(req: Request) {
       categories: true,
     },
   });
+
+  const rows = orderForDisplay(unordered);
 
   const shaped = rows.map((r) => {
     // Gate on the requested category page when one is set; otherwise a row is

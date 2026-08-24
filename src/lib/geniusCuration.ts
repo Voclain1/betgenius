@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { leaguePriorityRank } from "@/lib/leagues";
+import { compareByEditorialRank } from "@/lib/predictionOrdering";
 
 export const CURATION_MIN = 5;
 export const CURATION_MAX = 15;
@@ -12,11 +12,10 @@ type Rankable = { id: string; leagueApiId: number | null; confidence: number };
 type AutoCategory = "GENIUS" | "VIP" | "PREMIUM";
 
 export function selectCuratedIds<T extends Rankable>(rows: readonly T[], floor: number, min = CURATION_MIN, max = CURATION_MAX): string[] {
-  const ranked = [...rows].sort((a, b) =>
-    leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId)
-    || b.confidence - a.confidence
-    || a.id.localeCompare(b.id),
-  );
+  // Same ranking the site now displays every list of picks in — imported
+  // rather than restated so curation and display can never disagree about
+  // which pick is the strongest.
+  const ranked = [...rows].sort(compareByEditorialRank);
   const aboveFloor = ranked.filter((r) => r.confidence >= floor);
   const chosen = aboveFloor.slice(0, max);
   const chosenIds = new Set(chosen.map((row) => row.id));

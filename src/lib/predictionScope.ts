@@ -6,6 +6,7 @@ import { computeH2HStats, type H2HMeeting, type H2HStats } from "@/lib/h2h";
 import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/lib/leagues";
 import type { TeamDigest } from "@/lib/ai/digest";
 import type { LeagueStandingRow } from "@/lib/enrichment";
+import { orderForDisplay } from "@/lib/predictionOrdering";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
 // has no leagueName/homeTeam/awayTeam index and no slug column (see
@@ -62,26 +63,31 @@ export type ScopedResult = {
   stat: WinRateStat;
 };
 
-/** All published predictions whose leagueSlug(leagueName, leagueApiId) matches `slug`, most recent first. */
+/**
+ * All published predictions whose leagueSlug(leagueName, leagueApiId) matches
+ * `slug`, in the site-wide display order: still-pending picks first (strongest
+ * first), then settled ones as a reverse-chronological archive. See
+ * src/lib/predictionOrdering.ts for why history is not re-ranked.
+ */
 export const getPublishedByLeagueSlug = cache(async (slug: string): Promise<ScopedResult> => {
   const candidates = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", leagueName: { not: null } },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = candidates.filter((r) => leagueSlug(r.leagueName!, r.leagueApiId) === slug);
+  const rows = orderForDisplay(candidates.filter((r) => leagueSlug(r.leagueName!, r.leagueApiId) === slug));
   return { rows, stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)) };
 });
 
-/** All published predictions where homeTeam or awayTeam slugs to `slug`, most recent first. */
+/** All published predictions where homeTeam or awayTeam slugs to `slug`, in the same display order as the league scope above. */
 export const getPublishedByTeamSlug = cache(async (slug: string): Promise<ScopedResult> => {
   const candidates = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }] },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = candidates.filter(
-    (r) => (r.homeTeam && teamSlug(r.homeTeam) === slug) || (r.awayTeam && teamSlug(r.awayTeam) === slug),
+  const rows = orderForDisplay(
+    candidates.filter((r) => (r.homeTeam && teamSlug(r.homeTeam) === slug) || (r.awayTeam && teamSlug(r.awayTeam) === slug)),
   );
   return { rows, stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)) };
 });
@@ -107,8 +113,12 @@ export type MatchScopedResult = ScopedResult & {
  * Aggregation is by matchKey (both team ids + the kickoff's UTC day, see
  * src/lib/slug.ts); the slug is its readable projection and is what the route
  * carries. Rows are matched on the slug the same way the league/team scopes
- * match theirs — computed per row, never parsed — then ordered by confidence
- * so the strongest pick for the match leads.
+ * match theirs — computed per row, never parsed — then put in the site-wide
+ * display order so the strongest pick for the match leads. Every row here
+ * shares one league, so that reduces to confidence descending, but going
+ * through the shared comparator gets the `id` tiebreaker with it: a bare
+ * confidence sort left equally-confident markets in database order, which is
+ * not guaranteed to be the same from one request to the next.
  *
  * `kickoff` on the returned match is the EARLIEST across the rows. Rows for
  * one fixture can disagree on the exact timestamp while agreeing on the day
@@ -122,9 +132,7 @@ export const getPublishedByMatchSlug = cache(async (slug: string): Promise<Match
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = candidates
-    .filter((r) => matchSlug(r) === slug)
-    .sort((a, b) => b.confidence - a.confidence);
+  const rows = orderForDisplay(candidates.filter((r) => matchSlug(r) === slug));
 
   if (rows.length === 0) return { rows, stat: computeStat([]), match: null };
 
@@ -291,7 +299,7 @@ export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => 
     orderBy: { kickoff: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = candidates.filter((r) => h2hSlug(r.homeTeam, r.awayTeam) === slug);
+  const rows = orderForDisplay(candidates.filter((r) => h2hSlug(r.homeTeam, r.awayTeam) === slug));
   const withIds = rows.find((r) => r.homeTeamApiId != null && r.awayTeamApiId != null);
 
   if (rows.length === 0 || !withIds) return { pair: null, meetings: [], stats: null, fetchedAt: null, rows };
