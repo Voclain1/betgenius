@@ -140,11 +140,6 @@ export default async function HomePage() {
       <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-6 md:p-10">
         <div className={`grid items-center gap-8 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
           <div>
-            {/* The headline sells what a reader actually gets — a call, a
-                confidence figure and the reasoning — rather than the
-                technology that produces it. How the picks are made is
-                disclosed in the footer of every page and in full at
-                /methodology; it is just no longer the pitch. */}
             <h1 className="text-3xl font-bold md:text-5xl">
               Football tips, <span className="text-brand">backed by the numbers</span>.
             </h1>

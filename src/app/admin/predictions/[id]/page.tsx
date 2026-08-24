@@ -231,7 +231,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
           <div className="text-sm text-amber-200">
             <b>Generated with no live data.</b> Every football-data lookup (team form, injuries, standings, head-to-head)
-            came back empty for this fixture — the AI reasoned from team names alone. Double-check the pick and reasoning
+            came back empty for this fixture — the analysis used team names alone. Double-check the pick and reasoning
             before approving, and consider verifying the football-data API is actually returning data (plan/season coverage,
             rate limit) before generating more like it.
           </div>

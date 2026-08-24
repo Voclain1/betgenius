@@ -23,6 +23,11 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
 
 const ms = (v: number | null) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`);
 const usd = (v: number) => (v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
+const providerLabel = (provider: string) => provider === "gemini" ? "Primary engine" : "Fallback engine";
+const safeOperationalError = (error: string | null | undefined) => error
+  ?.replace(/gemini/gi, "generation service")
+  .replace(/\bAI\b/gi, "generation")
+  .replace(/GROQ_API_KEY|GEMINI_API_KEY/gi, "provider configuration");
 
 function WindowCard({ title, s }: { title: string; s: WindowSummary }) {
   const providers = Object.entries(s.byProvider);
@@ -40,7 +45,7 @@ function WindowCard({ title, s }: { title: string; s: WindowSummary }) {
       {providers.length > 0 && (
         <div className="flex flex-wrap gap-2 text-xs text-gray-400">
           {providers.map(([p, n]) => (
-            <span key={p} className="chip bg-gray-500/20">{p}: {n}</span>
+            <span key={p} className="chip bg-gray-500/20">{providerLabel(p)}: {n}</span>
           ))}
         </div>
       )}
@@ -93,7 +98,7 @@ export default async function GenerationPage() {
               <li key={a.matchKey} className="flex flex-wrap justify-between gap-2">
                 <span className="text-gray-300">{a.homeTeam} vs {a.awayTeam}</span>
                 <span className="text-xs text-gray-500">
-                  attempt {a.attempts} · next {a.nextAttemptAt ? a.nextAttemptAt.toLocaleString() : "—"} · {a.lastError?.slice(0, 80)}
+                  attempt {a.attempts} · next {a.nextAttemptAt ? a.nextAttemptAt.toLocaleString() : "—"} · {safeOperationalError(a.lastError)?.slice(0, 80)}
                 </span>
               </li>
             ))}
@@ -104,12 +109,12 @@ export default async function GenerationPage() {
       {stats.deadLetters.length > 0 && (
         <div className="card space-y-2 border-red-500/30">
           <h2 className="text-sm font-semibold text-red-300">Abandoned fixtures</h2>
-          <p className="text-[11px] text-gray-500">Retries exhausted. These will not be attempted again — generate manually from the AI panel if still wanted.</p>
+          <p className="text-[11px] text-gray-500">Retries exhausted. These will not be attempted again — generate manually from the generation panel if still wanted.</p>
           <ul className="space-y-1 text-sm">
             {stats.deadLetters.map((a) => (
               <li key={a.matchKey} className="flex flex-wrap justify-between gap-2">
                 <span className="text-gray-300">{a.homeTeam} vs {a.awayTeam}</span>
-                <span className="text-xs text-gray-500">{a.attempts} attempts · {a.lastError?.slice(0, 90)}</span>
+                <span className="text-xs text-gray-500">{a.attempts} attempts · {safeOperationalError(a.lastError)?.slice(0, 90)}</span>
               </li>
             ))}
           </ul>

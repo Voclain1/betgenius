@@ -89,7 +89,7 @@ export default function NewPrediction() {
         <Link href="/admin/predictions" className="text-sm text-gray-400 hover:underline">← Back to predictions</Link>
         <h1 className="mt-1 text-2xl font-bold">Post a prediction</h1>
         <p className="text-sm text-gray-400">
-          For tips prepared offline — enter it directly, no AI involved. It lands as Pending review, same as everything else,
+          For tips prepared offline — enter them directly without automated generation. They land as Pending review, same as everything else,
           so you can double-check before it goes live.
         </p>
       </div>

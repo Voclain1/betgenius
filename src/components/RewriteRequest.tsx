@@ -72,7 +72,7 @@ export function RewriteRequest({
       </label>
       <p className="text-xs text-gray-500">
         Leave empty for a plain regenerate. Reuses the football data already fetched for this fixture — no new
-        API-Football requests — but <b>each rewrite is one real Gemini API call</b>. Iterate as many rounds as you need;
+        API-Football requests — but <b>each rewrite runs a fresh analysis</b>. Iterate as many rounds as you need;
         the previous draft is kept for audit.
       </p>
       {error && <div className="text-sm text-red-400">{error}</div>}

@@ -85,7 +85,7 @@ export function matchTitle(input: { homeTeam: string; awayTeam: string; kickoff:
  * Meta description led by the actual call.
  *
  * The previous description ("N published predictions for X vs Y — Match Winner,
- * Over/Under. AI-powered picks with confidence and full reasoning.") described
+ * Over/Under, with confidence and full reasoning.") described
  * the PAGE. This describes the ANSWER, which is what a searcher is deciding
  * whether to click. Falls back to the shape of the page when no readable pick
  * exists — a locked-only fixture must not leak its pick into a meta tag.
@@ -193,6 +193,6 @@ export function organizationJsonLd() {
     "@type": "Organization",
     name: SITE_NAME,
     url: SITE_URL,
-    description: "AI-assisted football predictions grounded in verified match data, with a published settled-results record.",
+    description: "Football predictions grounded in verified match data, with a published settled-results record.",
   };
 }

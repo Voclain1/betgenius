@@ -33,6 +33,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } catch (err: any) {
     if (err instanceof RewriteError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("[rewrite]", err);
-    return NextResponse.json({ error: err?.message ?? "Rewrite failed" }, { status: 500 });
+    return NextResponse.json({ error: "Rewrite failed. Try again shortly." }, { status: 500 });
   }
 }

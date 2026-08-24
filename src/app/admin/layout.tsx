@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 const items = [
   { href: "/admin", label: "Overview" },
-  { href: "/admin/ai", label: "AI panel" },
+  { href: "/admin/ai", label: "Generation panel" },
   { href: "/admin/predictions", label: "Predictions" },
   { href: "/admin/generation", label: "Generation" },
   { href: "/admin/combos", label: "Combos" },

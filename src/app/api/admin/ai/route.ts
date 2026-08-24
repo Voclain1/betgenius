@@ -56,6 +56,6 @@ export async function POST(req: Request) {
         status: "FAILED",
       },
     });
-    return NextResponse.json({ error: err?.message ?? "AI generation failed" }, { status: 500 });
+    return NextResponse.json({ error: "Prediction generation failed. Try again shortly." }, { status: 500 });
   }
 }

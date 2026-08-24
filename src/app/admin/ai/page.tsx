@@ -116,9 +116,9 @@ export default function AIPanel() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">AI panel</h1>
+        <h1 className="text-2xl font-bold">Generation panel</h1>
         <p className="text-sm text-gray-400">
-          Generate a match preview and pick candidates with Gemini. Nothing goes live until you approve and publish.
+          Prepare a match preview and pick candidates. Nothing goes live until you approve and publish.
         </p>
       </div>
 
@@ -161,7 +161,7 @@ export default function AIPanel() {
         <div className="md:col-span-2 flex justify-end">
           <button disabled={busy || !form.home || !form.away} onClick={generate}
             className="btn btn-primary disabled:opacity-50">
-            {busy ? "Generating…" : "Generate with Gemini"}
+            {busy ? "Generating…" : "Generate predictions"}
           </button>
         </div>
       </div>
@@ -209,8 +209,8 @@ export default function AIPanel() {
       )}
 
       <div className="card text-xs text-gray-500">
-        <b>Accuracy note.</b> No model can guarantee 99% accuracy. Gemini returns probabilistic picks and a preview grounded
-        in the fixture/form/injuries/standings data we pass it — capped at 90% confidence in the prompt. Treat every tip as a probability, not a certainty.
+        <b>Accuracy note.</b> No prediction can guarantee 99% accuracy. Picks and previews are grounded in the available
+        fixture, form, injury and standings data and capped at 90% confidence. Treat every tip as a probability, not a certainty.
       </div>
 
       <div className="border-t border-brand-border pt-6">

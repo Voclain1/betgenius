@@ -26,9 +26,6 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/statspad", priority: 0.5 },
   { path: "/bet-builder", priority: 0.5 },
   { path: "/pricing", priority: 0.5 },
-  // Low priority, but it must be crawlable: it is where the AI disclosure that
-  // used to sit in the homepage headline now lives in full.
-  { path: "/methodology", priority: 0.3 },
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

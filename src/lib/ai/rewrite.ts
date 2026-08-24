@@ -60,7 +60,7 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
   const digest = parseStoredContext(prediction.aiJob?.context);
   if (!digest) {
     throw new RewriteError(
-      "This prediction has no stored football context — it was generated before contexts were saved. Rewriting it would need a fresh API-Football fetch, so regenerate it from the AI panel instead.",
+      "This prediction has no stored football context — it was created before contexts were saved. Rewriting it would need a fresh API-Football fetch, so regenerate it from the generation panel instead.",
       409,
     );
   }

@@ -87,7 +87,7 @@ export async function POST(req: Request) {
         contextComplete: predictions[0]?.contextComplete,
       });
     } catch (err: any) {
-      results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: false, error: err?.message ?? String(err) });
+      results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: false, error: "Prediction generation failed. Try again shortly." });
     }
   }
 
