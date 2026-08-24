@@ -23,11 +23,11 @@ import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import {
-  selectCandidates,
   nextAttemptAt,
   MAX_GENERATION_ATTEMPTS,
   type Candidate,
 } from "@/lib/generation/selector";
+import { selectQueuedCandidates } from "@/lib/generation/queue";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -75,7 +75,7 @@ const LEASE_TTL_MS = 6 * 60_000;
  * by choice rather than by being killed — the difference between "resumable"
  * and "lost the last fixture's state".
  */
-const SOFT_DEADLINE_MS = 240_000;
+const SOFT_DEADLINE_MS = 22_000;
 
 /** Below this remaining daily api-football budget the run stops early rather than starting work it can't finish. */
 const MIN_QUOTA_HEADROOM = 200;
@@ -210,22 +210,18 @@ export async function runGeneration(opts: {
       return empty(`api-football daily budget nearly exhausted (${usage.remaining} left)`, usage.remaining);
     }
 
-    const { candidates, discoveryCalls } = await selectCandidates({
-      leagueApiIds: opts.leagueApiIds,
-      now: opts.now,
-      limit: opts.limit,
-    });
+    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds });
 
     const report: RunReport = {
       ok: true, claimed: candidates.length, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
-      cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls,
+      cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0,
       quotaRemaining: usage.remaining, elapsedMs: 0, results: [],
     };
 
     for (const c of candidates) {
       // Stop claiming new work rather than risk being killed mid-fixture. The
       // remaining candidates are simply re-derived next run.
-      if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
+      if (Date.now() - startedAt >= SOFT_DEADLINE_MS) {
         report.reason = "soft deadline reached — remaining fixtures deferred to the next run";
         break;
       }
