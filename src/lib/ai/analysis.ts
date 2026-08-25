@@ -107,13 +107,17 @@ Rules:
    unless the data is overwhelming.
 3. Never claim a prediction is guaranteed. Frame outputs as probabilities.
 4. Every prediction has a primary pick, expressed as "marketType" + "selection", using ONLY
-   one of these five marketType values and the EXACT matching selection shape:
+   one of these six marketType values and the EXACT matching selection shape:
 
    - "MATCH_WINNER"   -> selection: { "value": "HOME" | "DRAW" | "AWAY" }
    - "DOUBLE_CHANCE"  -> selection: { "value": "HOME_OR_DRAW" | "AWAY_OR_DRAW" | "HOME_OR_AWAY" }
    - "OVER_UNDER"     -> selection: { "line": number, "direction": "OVER" | "UNDER" }   // e.g. line 2.5
    - "BTTS"           -> selection: { "value": "YES" | "NO" }
    - "CORRECT_SCORE"  -> selection: { "home": integer >= 0, "away": integer >= 0 }
+   - "WIN_EITHER_HALF" -> selection: { "value": "HOME" | "AWAY" }
+     Wins if the chosen side outscores the opponent in the first half OR in the
+     second half taken on its own. Losing the other half, or the match overall,
+     does not matter. There is no draw option — the bet is on a side.
 
    Do not invent other marketType values and do not deviate from these selection shapes.
 5. Every prediction ALSO has a separate, always-present total-goals over/under call —
@@ -125,7 +129,7 @@ Rules:
   "matchPreview": string,          // 2-4 short paragraphs in markdown
   "predictions": [
     {
-      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE",
+      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF",
       "selection": { ... shape per marketType, see rule 4 ... },
       "overUnderLine": number,
       "overUnderDirection": "OVER" | "UNDER",
@@ -138,10 +142,33 @@ Rules:
 
 export type GenerationTier = "FEATURED" | "GENIUS" | "BANKER" | "VIP" | "PREMIUM" | "TODAY";
 
-export function buildSystemPrompt(tiers: GenerationTier[], riskCalibration = true): string {
-  if (!riskCalibration) return BASE_SYSTEM_PROMPT;
+/**
+ * Market-risk calibration modes.
+ *
+ * "off"        reproduces the pre-calibration prompt (comparison harness only).
+ * "tiered"     the original calibration: hedging preference keyed to the TIER.
+ * "margin"     the current rule: hedging keyed to the fixture's actual MARGIN,
+ *              with tier only moving where the bar sits.
+ *
+ * Kept as three explicit modes rather than a boolean so the harness can put
+ * "tiered" and "margin" side by side on the same stored evidence — the only way
+ * to show what a prompt change actually does, rather than asserting it.
+ */
+export type RiskCalibrationMode = "off" | "tiered" | "margin";
 
-  return `${BASE_SYSTEM_PROMPT}
+/**
+ * The original tier-keyed calibration. Retained verbatim for comparison; not
+ * used in production.
+ *
+ * Its defect is the VIP/PREMIUM clause, which instructs the model to hedge
+ * "even for a strongly lopsided fixture". Measured against real market prices,
+ * that is exactly what it did: on fixtures where the book made the favourite
+ * 65%+, VIP-tier drafts took the straight winner 35.7% of the time against
+ * GENIUS-tier's 72.7% — a 37pp gap on fixtures of the same lopsidedness
+ * (mean favourite 72.1% vs 73.2%).
+ */
+function tieredCalibrationBlock(tiers: GenerationTier[]): string {
+  return `
 
 7. TIER-AWARE MARKET RISK CALIBRATION. The active tier context for this draft is:
    ${tiers.length ? tiers.join(", ") : "UNSPECIFIED"}.
@@ -162,6 +189,84 @@ export function buildSystemPrompt(tiers: GenerationTier[], riskCalibration = tru
    or mechanically substitute a market after deciding the analysis.`;
 }
 
+/**
+ * Margin-keyed calibration.
+ *
+ * The rule the hedging policy was always meant to express: how much to hedge
+ * follows the SIZE OF THE MISMATCH in the evidence, not the tier alone. Three
+ * bands, stated as bands so the model has to place the fixture in one rather
+ * than defaulting to a single safe market for everything.
+ *
+ * Tier still matters, but only as a modifier on where the bar sits — it can no
+ * longer instruct hedging a fixture the evidence calls overwhelming, which is
+ * what the tiered version did for VIP/PREMIUM.
+ */
+function marginCalibrationBlock(tiers: GenerationTier[]): string {
+  const cautious = tiers.some((t) => t === "GENIUS" || t === "VIP" || t === "PREMIUM");
+  return `
+
+7. MARKET RISK CALIBRATION BY MARGIN. The active tier context for this draft is:
+   ${tiers.length ? tiers.join(", ") : "UNSPECIFIED"}.
+
+   First judge HOW LOPSIDED this fixture is from the supplied evidence — league
+   position and points gap, recent form and scoring rates, home/away splits,
+   head-to-head, and the injury/suspension picture. Then choose the market that
+   matches that margin. The three bands are:
+
+   - EXTREME MISMATCH (an overwhelming, multi-signal advantage: a large table and
+     points gap, clearly stronger form and goal difference, no offsetting injury
+     or fixture-congestion story). Take the straight MATCH_WINNER. Hedging a
+     fixture this one-sided gives away nearly all of the value for almost no
+     reduction in risk, and it is not the safer choice merely because it sounds
+     safer. State in the reasoning which signals put the fixture in this band.
+
+   - MODERATE FAVOURITE (one side is clearly better, but the evidence is mixed:
+     a narrower gap, patchy form, a significant absence, or a strong away record
+     against them). Hedge. Use DOUBLE_CHANCE, WIN_EITHER_HALF, or a conservative
+     OVER_UNDER or BTTS position where the goal-scoring evidence supports it
+     better than the result does.
+
+     WIN_EITHER_HALF is a hedge on a DIFFERENT axis from DOUBLE_CHANCE, and the
+     two suit different evidence. DOUBLE_CHANCE protects against losing the
+     match; WIN_EITHER_HALF protects against not winning it across ninety
+     minutes, and pays on a side that dominates a period without seeing it out.
+     Prefer WIN_EITHER_HALF over DOUBLE_CHANCE when the evidence points to a
+     side that scores in bursts, starts fast, or finishes strongly — a good
+     scoring rate paired with defensive lapses or late goals conceded. Prefer
+     DOUBLE_CHANCE when the side is solid but low-scoring, since a team that
+     wins 1-0 on an early goal has still won a half only if it outscores the
+     opponent within one of them.
+
+   - CLOSE FIXTURE (the sides are comparable, or the evidence disagrees with
+     itself). Either hedge with DOUBLE_CHANCE or a conservative OVER_UNDER/BTTS
+     position, or take a narrower position with a CORRESPONDINGLY LOWER
+     CONFIDENCE. Do not report high confidence on a fixture the evidence does not
+     separate — a close game honestly marked at 55% is more useful than the same
+     game dressed up at 75%.
+
+   ${cautious
+     ? `This draft is for a cautious tier (${tiers.join(", ")}). Set the bar for
+   "extreme" HIGHER than you otherwise would, and when a fixture sits on the
+   boundary between two bands, choose the more hedged one. This raises the bar;
+   it does NOT authorise hedging a fixture the evidence genuinely shows to be
+   overwhelming.`
+     : `This draft is for a standard tier. Apply the bands as written, with no
+   additional hedging preference.`}
+
+   Market choice and reasoning must be made together from the evidence. Never change
+   or mechanically substitute a market after deciding the analysis.`;
+}
+
+export function buildSystemPrompt(tiers: GenerationTier[], calibration: RiskCalibrationMode | boolean = "margin"): string {
+  // Back-compat with the original boolean: false meant "no calibration", true
+  // meant the tiered block that was current at the time.
+  const mode: RiskCalibrationMode =
+    calibration === false ? "off" : calibration === true ? "tiered" : calibration;
+
+  if (mode === "off") return BASE_SYSTEM_PROMPT;
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}`;
+}
+
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
 
@@ -174,8 +279,12 @@ export async function generatePredictionForFixture(input: {
   previousDraft?: PreviousDraft | null;
   /** Category context conditions market-risk selection in the system prompt. */
   tiers: GenerationTier[];
-  /** Comparison harness only: false reproduces the pre-calibration prompt. */
-  riskCalibration?: boolean;
+  /**
+   * Which market-risk calibration to prompt with. Defaults to "margin", the
+   * production rule. The harness (scripts/compare-market-calibration.ts) passes
+   * "tiered" or "off" to render the earlier prompts against the same evidence.
+   */
+  riskCalibration?: RiskCalibrationMode | boolean;
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -240,7 +349,7 @@ Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
   const request = {
-    system: buildSystemPrompt(input.tiers, input.riskCalibration !== false),
+    system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin"),
     user: userPrompt,
     label,
     // Raised only for rewrites. First-pass generation stays on the model
