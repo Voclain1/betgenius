@@ -3,20 +3,25 @@ import { leaguePriorityRank } from "@/lib/leagues";
 /**
  * The single display order for every list of picks on the site.
  *
- * The ranking itself — league priority first, then confidence descending — is
- * the same one automatic curation already uses to decide WHICH picks become
- * GENIUS/VIP/PREMIUM (see selectCuratedIds in src/lib/geniusCuration.ts, which
- * imports its comparator from here so there is exactly one definition of
- * "strongest pick" in the codebase). Applying it to display order too means a
- * visitor meets the same editorial judgement on every feed, not only inside the
- * curated tiers: previously these lists came back in publish order, so a
- * 92%-confidence Premier League pick sat below whatever was approved most
- * recently.
+ * CONFIDENCE LEADS. In any category, the highest-confidence pick sits at the
+ * top; competition priority only breaks ties between picks of equal
+ * confidence. A reader scanning a feed is asking "what is the strongest call
+ * here", and the answer to that is the confidence figure printed on the card —
+ * a list whose first row shows a lower number than the row beneath it reads as
+ * broken, whatever ordering justifies it.
+ *
+ * This is deliberately NOT the ranking used to CHOOSE picks. Selection —
+ * which picks become GENIUS/VIP/PREMIUM (selectCuratedIds in
+ * src/lib/geniusCuration.ts) and which wins the Bet of the Day slot — still
+ * leads with competition priority via compareByEditorialRank below, because
+ * "which fixtures deserve featuring" is an editorial question and a Premier
+ * League tie is worth more shop-window space than a Latvian one. The two
+ * questions have different answers, so they have different comparators.
  *
  * Two properties this must have, and one it must not:
  *
  * - TOTAL. Every comparison ends in a decision, with `id` as the final
- *   tiebreaker. Two rows that agree on league and confidence would otherwise
+ *   tiebreaker. Two rows that agree on confidence and league would otherwise
  *   be left in whatever order the database happened to return, which can
  *   differ between requests — that is exactly the reorder-on-every-reload
  *   jitter this ordering has to avoid. Nothing here reads the clock or any
@@ -65,16 +70,22 @@ export function comparePredictionsForDisplay(a: DisplayRankable, b: DisplayRanka
   }
 
   return (
-    leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId) ||
     confidenceOf(b) - confidenceOf(a) ||
+    leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId) ||
     a.id.localeCompare(b.id)
   );
 }
 
 /**
- * Ranking used purely to CHOOSE picks (curation), where every candidate is an
- * unsettled pick for today and the pending/settled split above is irrelevant.
- * Kept beside the display comparator so the two can never drift apart.
+ * Ranking used purely to CHOOSE picks — automatic curation, and Bet of the Day
+ * selection. Every candidate here is an unsettled pick for today, so the
+ * pending/settled split above is irrelevant.
+ *
+ * Competition priority leads here, unlike the display comparator: this decides
+ * which fixtures are worth featuring at all, and that is an editorial judgement
+ * about the fixture rather than a reading of the confidence figure. Kept beside
+ * the display comparator precisely so the difference between the two is visible
+ * in one file rather than being an accident spread across call sites.
  */
 export function compareByEditorialRank(a: DisplayRankable, b: DisplayRankable): number {
   return (

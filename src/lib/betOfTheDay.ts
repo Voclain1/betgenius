@@ -185,10 +185,11 @@ export type Candidate = {
  * Everything eligible for the slot today, strongest first.
  *
  * The pool is today's published picks that have not yet kicked off and that
- * clear the odds gate; ranking is compareByEditorialRank — the same league-
- * priority-then-confidence order curation and every display list already use,
- * so Bet of the Day is the top of the ordering the site already shows rather
- * than a fourth opinion about what "best" means.
+ * clear the odds gate; ranking is compareByEditorialRank — the same
+ * league-priority-then-confidence order automatic curation uses to choose what
+ * to feature. Display lists lead with confidence instead, so the Bet of the Day
+ * is not necessarily the top row of any feed: this picks the fixture worth the
+ * single slot, which is an editorial call, not a reading of the highest number.
  *
  * Returns rejected candidates too (with their reasons) so the admin panel and
  * the verification script can explain why a pick did not qualify.

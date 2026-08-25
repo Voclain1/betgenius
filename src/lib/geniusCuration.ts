@@ -12,9 +12,10 @@ type Rankable = { id: string; leagueApiId: number | null; confidence: number };
 type AutoCategory = "GENIUS" | "VIP" | "PREMIUM";
 
 export function selectCuratedIds<T extends Rankable>(rows: readonly T[], floor: number, min = CURATION_MIN, max = CURATION_MAX): string[] {
-  // Same ranking the site now displays every list of picks in — imported
-  // rather than restated so curation and display can never disagree about
-  // which pick is the strongest.
+  // Competition priority first, then confidence — the editorial ranking for
+  // CHOOSING which picks get featured. Deliberately not the display order,
+  // which leads with confidence; see the note in src/lib/predictionOrdering.ts
+  // on why selecting a pick and ordering a list are different questions.
   const ranked = [...rows].sort(compareByEditorialRank);
   const aboveFloor = ranked.filter((r) => r.confidence >= floor);
   const chosen = aboveFloor.slice(0, max);

@@ -3,7 +3,12 @@
  *
  * Two properties matter, and they fail in different ways:
  *   CORRECT — every adjacent pair in a rendered feed obeys the ranking
- *             (pending before settled; then league priority; then confidence).
+ *             (pending before settled; then confidence descending; then
+ *             competition priority as a tiebreak).
+ *   TOP ROW — the single highest-confidence pending pick leads every category.
+ *             Checked separately from pairwise ordering: a comparator bug that
+ *             only misplaces the first row would otherwise be reported as a
+ *             generic ordering failure rather than as the thing users see.
  *   STABLE  — the same rows always produce the same sequence, so a page does
  *             not reshuffle between reloads. Checked by re-sorting shuffled
  *             copies of the same batch and demanding an identical id sequence,
@@ -103,6 +108,18 @@ async function main() {
     const rows = (await getCategoryPredictions(cat)) as unknown as Row[];
     problems.push(...checkOrdered(`/predictions/${cat.toLowerCase()}`, rows));
     problems.push(...checkStable(`/predictions/${cat.toLowerCase()}`, rows));
+
+    // The headline guarantee: highest confidence on top, in every category.
+    const pending = rows.filter((r) => !r.outcome || r.outcome === "PENDING");
+    if (pending.length > 1) {
+      const best = Math.max(...pending.map((r) => r.confidence ?? 50));
+      const leadConfidence = pending[0].confidence ?? 50;
+      if (leadConfidence !== best) {
+        problems.push(
+          `/predictions/${cat.toLowerCase()}: top row is ${leadConfidence}% but the feed contains a ${best}% pick — highest confidence must lead`,
+        );
+      }
+    }
     summary.push({
       surface: `/predictions/${cat.toLowerCase()}`,
       rows: rows.length,

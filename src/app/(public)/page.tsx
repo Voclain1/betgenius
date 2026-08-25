@@ -20,7 +20,7 @@ import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { orderForDisplay, compareByEditorialRank } from "@/lib/predictionOrdering";
+import { orderForDisplay, comparePredictionsForDisplay } from "@/lib/predictionOrdering";
 
 export const revalidate = 60;
 
@@ -61,10 +61,10 @@ const fetchGeniusPreview = () => fetchTopOfCategory("GENIUS", 3);
  * headline promising football tips whose only example is padlocked argues
  * against itself.
  *
- * "Strongest" is the site-wide editorial rank (league priority, then
- * confidence), not confidence alone: an 88% pick in the Premier League is a
- * better shop window than a 91% pick in the Latvian Virsliga, and the hero
- * should not be the one surface that disagrees with every list below it.
+ * "Strongest" means the site-wide DISPLAY order — highest confidence first —
+ * so the hero shows the same pick that leads the feeds beneath it. Using the
+ * editorial (league-priority-first) rank here instead would make the hero the
+ * one surface disagreeing with every list on the page.
  *
  * Falls back to the highest-confidence public pick regardless of kickoff when
  * nothing upcoming is published, and to nothing at all when there are no
@@ -86,7 +86,7 @@ async function fetchHeroPick(): Promise<HeroPickData | null> {
   // `id` is selected only so the ranking has its stable tiebreaker; it is not
   // part of HeroPickData and never reaches the component.
   const rank = <T extends { id: string; leagueApiId: number | null; confidence: number }>(rows: T[]): T | null =>
-    [...rows].sort(compareByEditorialRank)[0] ?? null;
+    [...rows].sort(comparePredictionsForDisplay)[0] ?? null;
 
   const upcoming = await prisma.prediction.findMany({
     where: { ...base, kickoff: { gte: new Date(), lt: today.end } },
