@@ -1,5 +1,5 @@
 "use client";
-import { getLeagueVisual } from "@/lib/leagues";
+import { getLeagueVisual, normalizeLeagueName } from "@/lib/leagues";
 
 export function LeagueBadge({
   leagueApiId,
@@ -13,7 +13,9 @@ export function LeagueBadge({
   size?: number;
 }) {
   const visual = getLeagueVisual(leagueApiId);
-  const name = leagueName ?? visual?.name;
+  // Safety net for legacy rows only. New generation rejects placeholders
+  // before persistence and queued work carries the provider name.
+  const name = normalizeLeagueName(leagueName) ?? visual?.name;
 
   if (!visual) {
     return name ? <span className="text-xs text-gray-400">{name}</span> : <span className="text-xs text-gray-600">—</span>;

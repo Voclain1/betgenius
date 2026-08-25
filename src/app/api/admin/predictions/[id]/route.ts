@@ -8,6 +8,7 @@ import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
+import { normalizeLeagueName } from "@/lib/leagues";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -67,6 +68,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
   const data: any = { ...rest };
+  if (rest.leagueName !== undefined) {
+    const leagueName = rest.leagueName === null ? null : normalizeLeagueName(rest.leagueName);
+    if (rest.leagueName !== null && !leagueName) {
+      return NextResponse.json({ error: "leagueName must be a real competition name, not a placeholder" }, { status: 400 });
+    }
+    data.leagueName = leagueName;
+  }
 
   if (marketType) {
     if (marketType === "OTHER") {

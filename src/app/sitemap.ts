@@ -5,6 +5,7 @@ import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { isLagosToday } from "@/lib/lagosDate";
+import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 
 // Regenerated hourly rather than on every request — a sitemap doesn't need
 // to reflect the last few minutes of publishing activity.
@@ -79,12 +80,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const leagueGroups = new Map<string, Date | null>();
   for (const r of rows) {
     if (!r.leagueName) continue;
+    if (cupById(r.leagueApiId)) continue;
     const slug = leagueSlug(r.leagueName, r.leagueApiId);
     const prev = leagueGroups.get(slug);
     leagueGroups.set(slug, maxDate([prev ?? null, r.publishedAt]) ?? null);
   }
   for (const [slug, lastModified] of leagueGroups) {
     entries.push({ url: absoluteUrl(`/predictions/league/${slug}`), lastModified: lastModified ?? undefined, changeFrequency: "weekly", priority: 0.6 });
+  }
+
+  // Cup pages exist independently of whether a prediction has been published
+  // today. Their fixture/result archive is provider-backed, while lastModified
+  // follows the latest published pick when one exists.
+  for (const cup of CUP_CONFIGS) {
+    entries.push({
+      url: absoluteUrl(`/predictions/cup/${cup.slug}`),
+      lastModified: maxDate(rows.filter((r) => r.leagueApiId === cup.id).map((r) => r.publishedAt)),
+      changeFrequency: "daily",
+      priority: cup.format === "hybrid" ? 0.7 : 0.6,
+    });
   }
 
   // Teams — same idea, grouped by teamSlug across both homeTeam and awayTeam.

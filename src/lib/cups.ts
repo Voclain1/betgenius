@@ -1,8 +1,9 @@
 import { cache } from "react";
-import { getFixturesByLeague, getTopScorers, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
-import { trimPlayerStats, type LeaguePlayerStat } from "@/lib/enrichment";
+import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
+import type { LeaguePlayerStat, LeagueStandingRow } from "@/lib/enrichment";
 import type { LeagueClub } from "@/lib/predictionScope";
 import { cupBySlug, fixtureIsInCupScope, type CupConfig } from "@/lib/cupConfig";
+import { prisma } from "@/lib/prisma";
 export { cupBySlug } from "@/lib/cupConfig";
 
 export type CupPageData = {
@@ -12,6 +13,7 @@ export type CupPageData = {
   rounds: string[];
   clubs: LeagueClub[];
   scorers: LeaguePlayerStat[];
+  standings: LeagueStandingRow[];
 };
 
 async function loadSeason(cup: CupConfig, season: number): Promise<FixtureRow[]> {
@@ -34,12 +36,22 @@ export const getCupPageData = cache(async (slug: string, requestedSeason?: numbe
     fixtures = await loadSeason(cup, season);
   }
 
-  const roundOrder = cup.rounds as readonly string[];
+  // Provider round labels change between seasons. Configured aliases establish
+  // editorial order; newly observed labels are retained rather than silently
+  // dropping a round from a full-scope cup page.
+  const observedRounds = [...new Set(fixtures.map((fixture) => fixture.league.round).filter((round): round is string => !!round))];
+  const unknownRounds = observedRounds
+    .filter((round) => !cup.rounds.includes(round))
+    .sort((a, b) => {
+      const first = (round: string) => Math.min(...fixtures.filter((fixture) => fixture.league.round === round).map((fixture) => new Date(fixture.fixture.date).getTime()));
+      return first(a) - first(b);
+    });
+  const roundOrder = [...cup.rounds, ...unknownRounds];
   fixtures.sort((a, b) =>
     roundOrder.indexOf(a.league.round ?? "") - roundOrder.indexOf(b.league.round ?? "")
     || new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime(),
   );
-  const rounds = roundOrder.filter((round) => fixtures.some((fixture) => fixture.league.round === round));
+  const rounds = roundOrder.filter((round) => observedRounds.includes(round));
 
   const clubMap = new Map<number, LeagueClub>();
   for (const fixture of fixtures) {
@@ -48,7 +60,11 @@ export const getCupPageData = cache(async (slug: string, requestedSeason?: numbe
     }
   }
   const clubs = [...clubMap.values()].sort((a, b) => a.teamName.localeCompare(b.teamName));
-  const scorers = trimPlayerStats(await getTopScorers(cup.id, season), "goals");
+  const leagueCache = cup.capabilities.playerStats || cup.capabilities.standings
+    ? await prisma.leagueEnrichmentCache.findUnique({ where: { leagueApiId: cup.id }, select: { topScorersJson: true, standingsJson: true } })
+    : null;
+  const scorers = (leagueCache?.topScorersJson as unknown as LeaguePlayerStat[] | null) ?? [];
+  const standings = (leagueCache?.standingsJson as unknown as LeagueStandingRow[] | null) ?? [];
 
-  return { cup, season, fixtures, rounds, clubs, scorers };
+  return { cup, season, fixtures, rounds, clubs, scorers, standings };
 });

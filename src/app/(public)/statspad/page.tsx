@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
+import { cupSupports } from "@/lib/cupConfig";
 
-const LEAGUE_TIERS = Array.from(new Set(LEAGUE_CATALOGUE.map((l) => l.tier))).map((tier) => ({
+const STANDINGS_COMPETITIONS = LEAGUE_CATALOGUE.filter((league) => cupSupports(league.id, "standings"));
+const LEAGUE_TIERS = Array.from(new Set(STANDINGS_COMPETITIONS.map((l) => l.tier))).map((tier) => ({
   tier,
   label: LEAGUE_TIER_LABELS[tier] ?? tier,
-  leagues: LEAGUE_CATALOGUE.filter((l) => l.tier === tier),
+  leagues: STANDINGS_COMPETITIONS.filter((l) => l.tier === tier),
 }));
 
 export default function StatsPad() {

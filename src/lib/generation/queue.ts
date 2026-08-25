@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey } from "@/lib/lagosDate";
-import { LEAGUE_CATALOGUE, leaguePriorityRank } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, leaguePriorityRank, normalizeLeagueName } from "@/lib/leagues";
 import { selectCandidates, type Candidate } from "@/lib/generation/selector";
 
 const DISCOVERY_BUDGET_MS = 20_000;
@@ -18,6 +18,11 @@ export type DiscoveryReport = {
   elapsedMs: number;
   reason?: string;
 };
+
+export function resolveQueuedLeagueName(leagueApiId: number, discoveredName?: string | null): string | null {
+  const catalogueName = LEAGUE_CATALOGUE.find((league) => league.id === leagueApiId)?.name;
+  return normalizeLeagueName(catalogueName) ?? normalizeLeagueName(discoveredName);
+}
 
 /**
  * Discover one deterministic slice of the catalogue and cache its candidates
@@ -67,9 +72,11 @@ export async function discoverGenerationCandidates(opts: {
           matchKey: candidate.matchKey,
           fixtureApiId: candidate.fixtureApiId,
           leagueApiId: candidate.leagueApiId,
+          leagueName: candidate.leagueName,
           homeTeam: candidate.homeTeam,
           awayTeam: candidate.awayTeam,
           kickoff: candidate.kickoff,
+          round: candidate.round,
           status: "PENDING",
         })),
         skipDuplicates: true,
@@ -136,24 +143,41 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
       data: { status: "SUCCEEDED", nextAttemptAt: null, lastError: null },
     });
   }
-  const leagueNames = new Map<number, string>(LEAGUE_CATALOGUE.map((league) => [league.id, league.name]));
   const today = lagosDateKey(now);
+
+  const unresolvedAttemptIds = attempts
+    .filter((attempt) => !generated.has(attempt.matchKey))
+    .filter((attempt) => attempt.leagueApiId != null)
+    .filter((attempt) => !resolveQueuedLeagueName(attempt.leagueApiId!, attempt.leagueName))
+    .map((attempt) => attempt.id);
+  if (unresolvedAttemptIds.length) {
+    await prisma.generationAttempt.updateMany({
+      where: { id: { in: unresolvedAttemptIds } },
+      data: {
+        status: "FAILED",
+        lastError: "Generation deferred: no real league name was available from the catalogue or discovery payload",
+        nextAttemptAt: new Date(now.getTime() + 15 * 60_000),
+      },
+    });
+  }
 
   const candidates = attempts.flatMap((attempt): Candidate[] => {
     if (generated.has(attempt.matchKey) || attempt.fixtureApiId == null || attempt.leagueApiId == null) return [];
+    const leagueName = resolveQueuedLeagueName(attempt.leagueApiId, attempt.leagueName);
+    if (!leagueName) return [];
     const [homeId, awayId] = attempt.matchKey.split("-").map(Number);
     if (!Number.isFinite(homeId) || !Number.isFinite(awayId)) return [];
     return [{
       matchKey: attempt.matchKey,
       fixtureApiId: attempt.fixtureApiId,
       leagueApiId: attempt.leagueApiId,
-      leagueName: leagueNames.get(attempt.leagueApiId) ?? "Unknown competition",
+      leagueName,
       homeTeam: attempt.homeTeam,
       awayTeam: attempt.awayTeam,
       homeTeamApiId: homeId,
       awayTeamApiId: awayId,
       kickoff: attempt.kickoff,
-      round: null,
+      round: attempt.round,
       priorAttempts: attempt.attempts,
     }];
   });

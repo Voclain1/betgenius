@@ -12,6 +12,7 @@ import { normalizeName } from "@/lib/slug";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories } from "@/lib/doublesTargeting";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
+import { normalizeLeagueName } from "@/lib/leagues";
 
 /**
  * Thrown when a draft asserts certainty. Carries the violations so the failure
@@ -71,6 +72,10 @@ export type GenerateFixtureInput = {
  * src/lib/ai/analysis.ts for the fallback chain.
  */
 export async function generateAndPersistPrediction(rawInput: GenerateFixtureInput) {
+  const leagueName = normalizeLeagueName(rawInput.league);
+  if (!leagueName) {
+    throw new Error("Prediction generation requires a real league name; placeholders cannot be persisted");
+  }
   // Trim/collapse whitespace up front so both the live-context lookups below
   // and the persisted row use the same team/league text (src/lib/slug.ts
   // computes read-time slugs from these fields — a stray double-space
@@ -79,7 +84,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     ...rawInput,
     home: normalizeName(rawInput.home),
     away: normalizeName(rawInput.away),
-    league: normalizeName(rawInput.league),
+    league: normalizeName(leagueName),
   };
 
   const kickoffDate = new Date(input.kickoff);

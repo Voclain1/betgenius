@@ -22,9 +22,10 @@ import { estimateCostUsd, providerOf, priceFor } from "../src/lib/generation/sta
 import { CURATION_MAX, CURATION_MIN, GENIUS_CONFIDENCE_FLOOR, PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR, selectCuratedIds } from "../src/lib/geniusCuration";
 import { buildSystemPrompt } from "../src/lib/ai/analysis";
 import { resolveGenerationRisk, VIP_PROXY_LEAGUE_CUTOFF, VIP_PROXY_LEAGUE_IDS } from "../src/lib/ai/generationRisk";
-import { fixtureIsInCupScope } from "../src/lib/cupConfig";
-import { leaguePriorityRank } from "../src/lib/leagues";
+import { CUP_CONFIGS, competitionPredictionsHref, cupSupports, fixtureIsInCupScope } from "../src/lib/cupConfig";
+import { LEAGUE_CATALOGUE, LEAGUE_PRIORITY_ORDER, assertLeaguePriorityCatalogueInvariant, leaguePriorityRank, normalizeLeagueName } from "../src/lib/leagues";
 import { applyCategoryChanges } from "../src/lib/predictions";
+import { resolveQueuedLeagueName } from "../src/lib/generation/queue";
 
 let passed = 0;
 const failures: string[] = [];
@@ -68,6 +69,19 @@ const geniusPool = [
 eq("priority: England precedes Spain", leaguePriorityRank(39) < leaguePriorityRank(140), true);
 eq("priority: Spain precedes Italy", leaguePriorityRank(140) < leaguePriorityRank(135), true);
 eq("priority: listed leagues precede unknown leagues", leaguePriorityRank(71) < leaguePriorityRank(99999), true);
+let priorityInvariantRejectedMissingId = false;
+try {
+  assertLeaguePriorityCatalogueInvariant([...LEAGUE_PRIORITY_ORDER, 999999]);
+} catch {
+  priorityInvariantRejectedMissingId = true;
+}
+check("priority invariant: every priority id is catalogued", LEAGUE_PRIORITY_ORDER.every((id) => LEAGUE_CATALOGUE.some((league) => league.id === id)));
+check("priority invariant negative control: an uncatalogued future id fails", priorityInvariantRejectedMissingId);
+eq("league names: legacy placeholder is rejected", normalizeLeagueName("Unknown competition"), null);
+eq("league names: provider name is retained", normalizeLeagueName("  Danish   Cup "), "Danish Cup");
+eq("league resolution: catalogue name wins", resolveQueuedLeagueName(121, "Provider Danish Name"), "Danish Cup");
+eq("league resolution: provider name covers an uncatalogued id", resolveQueuedLeagueName(999998, "Provider Cup"), "Provider Cup");
+eq("league resolution: a missing/placeholder-only name is rejected", resolveQueuedLeagueName(999998, "Unknown competition"), null);
 eq("Genius: floor filters first, league priority ranks, and only the fifth slot relaxes", selectCuratedIds(geniusPool, GENIUS_CONFIDENCE_FLOOR), ["prem-80", "prem-65", "liga-75", "serie-72", "minor-90"]);
 const broadPool = Array.from({ length: 20 }, (_, i) => ({ id: `row-${String(i).padStart(2, "0")}`, leagueApiId: i % 2 ? 39 : 140, confidence: i < 10 ? 80 : i < 15 ? 72 : 60 }));
 eq("Genius: maximum is fifteen", selectCuratedIds(broadPool, GENIUS_CONFIDENCE_FLOOR).length, CURATION_MAX);
@@ -111,6 +125,15 @@ check("cup scope: Copa del Rey excludes regional qualifiers", !fixtureIsInCupSco
 check("cup scope: Copa del Rey includes Round of 128", fixtureIsInCupScope(143, "Round of 128"));
 check("cup scope: Coupe de France excludes Round of 128", !fixtureIsInCupScope(66, "Round of 128"));
 check("cup scope: Coupe de France includes Round of 64", fixtureIsInCupScope(66, "Round of 64"));
+const requestedCupIds = [2, 3, 848, 45, 48, 143, 137, 81, 66, 96, 90, 147, 181, 206, 199, 220, 209, 121, 105, 115, 108, 212, 732, 285, 347, 335, 359, 112, 167, 321, 384];
+eq("cup coverage: all 31 requested competitions are configured", CUP_CONFIGS.length, requestedCupIds.length);
+check("cup coverage: requested provider ids are unique", new Set(requestedCupIds).size === requestedCupIds.length);
+check("cup coverage: every requested cup is in the generation catalogue", requestedCupIds.every((id) => LEAGUE_CATALOGUE.some((league) => league.id === id)));
+check("cup scope: full-scope cups retain future provider round aliases", fixtureIsInCupScope(96, "Provider Renamed Round"));
+eq("cup links: UEFA competitions use dedicated cup pages", competitionPredictionsHref(2, "champions-league-2"), "/predictions/cup/uefa-champions-league");
+check("cup capabilities: pure knockout cups do not advertise standings", !cupSupports(96, "standings"));
+check("cup capabilities: UEFA hybrid competitions advertise standings", cupSupports(2, "standings"));
+check("cup capabilities: sparse cups are excluded from odds workloads", !cupSupports(212, "odds"));
 check("cup priority: FA Cup follows the Championship", leaguePriorityRank(45) === leaguePriorityRank(40) + 1);
 check("cup priority: EFL Cup follows FA Cup", leaguePriorityRank(48) === leaguePriorityRank(45) + 1);
 check("cup priority: Copa del Rey follows La Liga", leaguePriorityRank(143) === leaguePriorityRank(140) + 1);

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { setPredictionCategories } from "@/lib/predictions";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
+import { normalizeLeagueName } from "@/lib/leagues";
 import { z } from "zod";
 
 export async function GET() {
@@ -44,6 +45,10 @@ export async function POST(req: Request) {
   const parsed = CreateBody.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, ...rest } = parsed.data;
+  const leagueName = rest.leagueName == null ? rest.leagueName : normalizeLeagueName(rest.leagueName);
+  if (rest.leagueName != null && !leagueName) {
+    return NextResponse.json({ error: "leagueName must be a real competition name, not a placeholder" }, { status: 400 });
+  }
 
   if (marketType === "OTHER") {
     if (!otherMarket || !otherPick) {
@@ -62,7 +67,7 @@ export async function POST(req: Request) {
       // Trim/collapse whitespace so a stray double-space or trailing space
       // can't produce a second league/team slug for what's really the same
       // one (src/lib/slug.ts computes slugs from these fields at read time).
-      leagueName: rest.leagueName != null ? normalizeName(rest.leagueName) : rest.leagueName,
+      leagueName,
       homeTeam: rest.homeTeam != null ? normalizeName(rest.homeTeam) : rest.homeTeam,
       awayTeam: rest.awayTeam != null ? normalizeName(rest.awayTeam) : rest.awayTeam,
       category: categories[0],

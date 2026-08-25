@@ -553,6 +553,9 @@ model GenerationAttempt {
   matchKey      String    @unique
   fixtureApiId  Int?
   leagueApiId   Int?
+  // Provider-supplied name captured with the fixture during discovery. This
+  // survives catalogue/version drift between the discovery and worker runs.
+  leagueName    String?
   homeTeam      String
   awayTeam      String
   kickoff       DateTime

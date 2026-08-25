@@ -38,7 +38,7 @@ import {
 import type { StandingsEntry } from "@/lib/football/api-football";
 import type { H2HMeeting } from "@/lib/h2h";
 import { h2hPairKey } from "@/lib/slug";
-import { isCupCompetition } from "@/lib/cupConfig";
+import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
 
 /**
  * How old a cached team digest may be before generation refreshes it.
@@ -197,7 +197,7 @@ export async function buildGenerationDigest(
   let leaguePlayers: { scorers: LeaguePlayerStat[]; assists: LeaguePlayerStat[] } = { scorers: [], assists: [] };
 
   const cupFixture = isCupCompetition(input.leagueApiId);
-  if (input.leagueApiId != null && !cupFixture) {
+  if (input.leagueApiId != null && (!cupFixture || cupSupports(input.leagueApiId, "standings"))) {
     const leagueRow = await prisma.leagueEnrichmentCache.findUnique({
       where: { leagueApiId: input.leagueApiId },
       select: { standingsJson: true, fetchedAt: true, topScorersJson: true, topAssistsJson: true, playersFetchedAt: true },

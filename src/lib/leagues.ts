@@ -28,29 +28,46 @@ export const LEAGUE_CATALOGUE = [
 
   // Mid-tier European leagues
   { id: 88, name: "Eredivisie", country: "Netherlands", tier: "mid", kind: "league", flagCode: "nl" },
+  { id: 90, name: "KNVB Beker", country: "Netherlands", tier: "mid", kind: "cup" },
   { id: 94, name: "Primeira Liga", country: "Portugal", tier: "mid", kind: "league", flagCode: "pt" },
+  { id: 96, name: "Taça de Portugal", country: "Portugal", tier: "mid", kind: "cup" },
   { id: 144, name: "Jupiler Pro League", country: "Belgium", tier: "mid", kind: "league", flagCode: "be" },
+  { id: 147, name: "Belgian Cup", country: "Belgium", tier: "mid", kind: "cup" },
   { id: 203, name: "Süper Lig", country: "Turkey", tier: "mid", kind: "league", flagCode: "tr" },
+  { id: 206, name: "Turkish Cup", country: "Turkey", tier: "mid", kind: "cup" },
   { id: 40, name: "Championship", country: "England", tier: "mid", kind: "league", flagCode: "gb-eng" },
   { id: 45, name: "FA Cup", country: "England", tier: "top", kind: "cup" },
   { id: 307, name: "Pro League", country: "Saudi Arabia", tier: "world", kind: "league", flagCode: "sa" },
 
   // Smaller European leagues
   { id: 207, name: "Super League", country: "Switzerland", tier: "minor", kind: "league", flagCode: "ch" },
+  { id: 209, name: "Swiss Cup", country: "Switzerland", tier: "minor", kind: "cup" },
   { id: 218, name: "Bundesliga", country: "Austria", tier: "minor", kind: "league", flagCode: "at" },
+  { id: 220, name: "Austrian Cup", country: "Austria", tier: "minor", kind: "cup" },
   { id: 179, name: "Premiership", country: "Scotland", tier: "minor", kind: "league", flagCode: "gb-sct" },
+  { id: 181, name: "Scottish Cup", country: "Scotland", tier: "minor", kind: "cup" },
   { id: 119, name: "Superliga", country: "Denmark", tier: "minor", kind: "league", flagCode: "dk" },
+  { id: 121, name: "Danish Cup", country: "Denmark", tier: "minor", kind: "cup" },
   { id: 103, name: "Eliteserien", country: "Norway", tier: "minor", kind: "league", flagCode: "no" },
+  { id: 105, name: "Norwegian Cup", country: "Norway", tier: "minor", kind: "cup" },
   { id: 113, name: "Allsvenskan", country: "Sweden", tier: "minor", kind: "league", flagCode: "se" },
+  { id: 115, name: "Svenska Cupen", country: "Sweden", tier: "minor", kind: "cup" },
   { id: 114, name: "Superettan", country: "Sweden", tier: "minor", kind: "league", flagCode: "se" },
   { id: 106, name: "Ekstraklasa", country: "Poland", tier: "minor", kind: "league", flagCode: "pl" },
+  { id: 108, name: "Polish Cup", country: "Poland", tier: "minor", kind: "cup" },
   { id: 197, name: "Super League 1", country: "Greece", tier: "minor", kind: "league", flagCode: "gr" },
+  { id: 199, name: "Greek Cup", country: "Greece", tier: "minor", kind: "cup" },
   { id: 210, name: "HNL", country: "Croatia", tier: "minor", kind: "league", flagCode: "hr" },
+  { id: 212, name: "Croatian Cup", country: "Croatia", tier: "minor", kind: "cup" },
   { id: 235, name: "Premier League", country: "Russia", tier: "minor", kind: "league", flagCode: "ru" },
   { id: 286, name: "Super Liga", country: "Serbia", tier: "minor", kind: "league", flagCode: "rs" },
+  { id: 732, name: "Serbian Cup", country: "Serbia", tier: "minor", kind: "cup" },
   { id: 345, name: "Czech Liga", country: "Czech Republic", tier: "minor", kind: "league", flagCode: "cz" },
+  { id: 347, name: "Czech Cup", country: "Czech Republic", tier: "minor", kind: "cup" },
   { id: 333, name: "Premier League", country: "Ukraine", tier: "minor", kind: "league", flagCode: "ua" },
+  { id: 335, name: "Ukrainian Cup", country: "Ukraine", tier: "minor", kind: "cup" },
   { id: 110, name: "Premier League", country: "Wales", tier: "minor", kind: "league", flagCode: "gb-wls" },
+  { id: 112, name: "Welsh Cup", country: "Wales", tier: "minor", kind: "cup" },
   { id: 172, name: "First League", country: "Bulgaria", tier: "minor", kind: "league", flagCode: "bg" },
   { id: 315, name: "Premijer Liga", country: "Bosnia", tier: "minor", kind: "league", flagCode: "ba" },
   { id: 342, name: "Premier League", country: "Armenia", tier: "minor", kind: "league", flagCode: "am" },
@@ -58,11 +75,18 @@ export const LEAGUE_CATALOGUE = [
   { id: 329, name: "Meistriliiga", country: "Estonia", tier: "minor", kind: "league", flagCode: "ee" },
   { id: 244, name: "Veikkausliiga", country: "Finland", tier: "minor", kind: "league", flagCode: "fi" },
   { id: 283, name: "Liga I", country: "Romania", tier: "minor", kind: "league", flagCode: "ro" },
+  { id: 285, name: "Romanian Cup", country: "Romania", tier: "minor", kind: "cup" },
   { id: 394, name: "Super Liga", country: "Moldova", tier: "minor", kind: "league", flagCode: "md" },
   { id: 365, name: "Virsliga", country: "Latvia", tier: "minor", kind: "league", flagCode: "lv" },
   { id: 362, name: "A Lyga", country: "Lithuania", tier: "minor", kind: "league", flagCode: "lt" },
   { id: 389, name: "Premier League", country: "Kazakhstan", tier: "minor", kind: "league", flagCode: "kz" },
   { id: 116, name: "Premier League", country: "Belarus", tier: "minor", kind: "league", flagCode: "by" },
+
+  // Other requested European domestic cups
+  { id: 359, name: "FAI Cup", country: "Ireland", tier: "minor", kind: "cup" },
+  { id: 167, name: "Icelandic Cup", country: "Iceland", tier: "minor", kind: "cup" },
+  { id: 321, name: "Cyprus Cup", country: "Cyprus", tier: "minor", kind: "cup" },
+  { id: 384, name: "Israeli State Cup", country: "Israel", tier: "minor", kind: "cup" },
 
   // Major non-European leagues
   { id: 71, name: "Serie A", country: "Brazil", tier: "world", kind: "league", flagCode: "br" },
@@ -76,30 +100,74 @@ export const LEAGUE_PRIORITY_ORDER = [
   135, 137, // Italy: Serie A, Coppa Italia
   78, 81, // Germany: Bundesliga, DFB Pokal
   61, 66, // France: Ligue 1, Coupe de France
-  94, // Portugal
+  94, 96, // Portugal
   2, 3, 848, // European continental competitions
-  88, // Netherlands
-  144, // Belgium
+  88, 90, // Netherlands
+  144, 147, // Belgium
   307, // Saudi Arabia
-  203, // Turkey
-  113, 114, // Sweden
+  203, 206, // Turkey
+  113, 114, 115, // Sweden
   235, // Russia
-  103, // Norway
-  286, // Serbia
-  345, // Czech Republic
-  210, // Croatia
-  333, // Ukraine
-  110, // Wales
+  103, 105, // Norway
+  286, 732, // Serbia
+  345, 347, // Czech Republic
+  210, 212, // Croatia
+  333, 335, // Ukraine
+  110, 112, // Wales
   172, // Bulgaria
   315, // Bosnia
   329, // Estonia
   365, // Latvia
   342, // Armenia
-  218, // Austria
+  218, 220, // Austria
   419, // Azerbaijan
   116, // Belarus
+  207, 209, // Switzerland
+  119, 121, // Denmark
+  106, 108, // Poland
+  197, 199, // Greece
+  283, 285, // Romania
+  359, // Ireland
+  167, // Iceland
+  321, // Cyprus
+  384, // Israel
   71, // Brazil
 ] as const;
+
+const NON_LEAGUE_NAMES = new Set([
+  "unknown competition",
+  "unknown league",
+  "n/a",
+  "na",
+  "tbd",
+  "-",
+  "—",
+]);
+
+/** Returns a real competition name, never a UI/data placeholder. */
+export function normalizeLeagueName(name?: string | null): string | null {
+  const normalized = name?.trim().replace(/\s+/g, " ") ?? "";
+  if (!normalized || NON_LEAGUE_NAMES.has(normalized.toLowerCase())) return null;
+  return normalized;
+}
+
+/**
+ * Build-time/runtime invariant: generation priority may never reference a
+ * competition that the catalogue cannot name. Parameters make the negative
+ * case directly testable without mutating these readonly constants.
+ */
+export function assertLeaguePriorityCatalogueInvariant(
+  priority: readonly number[] = LEAGUE_PRIORITY_ORDER,
+  catalogue: readonly { id: number }[] = LEAGUE_CATALOGUE,
+): void {
+  const catalogueIds = new Set(catalogue.map((league) => league.id));
+  const missing = priority.filter((id) => !catalogueIds.has(id));
+  if (missing.length) {
+    throw new Error(`LEAGUE_PRIORITY_ORDER contains ids missing from LEAGUE_CATALOGUE: ${missing.join(", ")}`);
+  }
+}
+
+assertLeaguePriorityCatalogueInvariant();
 
 const LEAGUE_PRIORITY_RANK = new Map<number, number>(LEAGUE_PRIORITY_ORDER.map((id, index) => [id, index]));
 

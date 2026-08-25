@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CupRounds } from "@/components/CupRounds";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
 import { TopScorersLeaderboard } from "@/components/LeaguePlayerStats";
+import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { getCupPageData, cupBySlug } from "@/lib/cups";
 import { getPublishedMatchIndex } from "@/lib/predictionScope";
 import { leagueLogoUrl } from "@/lib/leagues";
@@ -44,15 +45,24 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         <CupRounds rounds={data.rounds} fixtures={data.fixtures} linkIndex={matchIndex} />
       </section>
 
+      {data.cup.capabilities.standings && data.standings.length > 0 && (
+        <section className="card space-y-3">
+          <h2 className="text-xl font-semibold">Standings</h2>
+          <LeagueStandingsTable rows={data.standings} />
+        </section>
+      )}
+
       <section className="space-y-3">
         <div className="flex items-end justify-between gap-2"><h2 className="text-xl font-semibold">Participating teams</h2><span className="text-sm text-gray-400">{data.clubs.length} clubs</span></div>
         <LeagueClubGrid clubs={data.clubs} />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-xl font-semibold">Top scorers</h2>
-        <TopScorersLeaderboard scorers={data.scorers} />
-      </section>
+      {data.cup.capabilities.playerStats && (
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">Top scorers</h2>
+          <TopScorersLeaderboard scorers={data.scorers} />
+        </section>
+      )}
     </div>
   );
 }
