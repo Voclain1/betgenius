@@ -24,11 +24,17 @@ export function resolveGenerationRisk(
   categories: readonly string[],
   leagueApiId?: number | null,
 ): GenerationRiskRoute {
-  if (categories.some((category) => category.toUpperCase() === "BANKER")) {
+  // BET_OF_THE_DAY rides the SAME branch as BANKER rather than getting a tier
+  // of its own. The slot wants the bolder, uncalibrated market style — a pick
+  // priced 2.20-4.50 is by definition not what the hedged calibration produces
+  // — and the BANKER path already is that posture, tested and in use. Adding a
+  // parallel prompt tier would mean two things to keep in step with no
+  // behavioural difference between them.
+  if (categories.some((category) => ["BANKER", "BET_OF_THE_DAY"].includes(category.toUpperCase()))) {
     return {
       calibration: "legacy",
       promptTiers: ["BANKER"],
-      reason: "BANKER category intent preserves the original uncalibrated market style",
+      reason: "BANKER/BET_OF_THE_DAY category intent preserves the original uncalibrated market style",
     };
   }
 

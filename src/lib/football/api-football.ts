@@ -439,3 +439,36 @@ export function getHeadToHead(homeTeamId: number, awayTeamId: number, last = 10)
   return apiFetch<FixtureRow[]>("/fixtures/headtohead", { h2h: `${homeTeamId}-${awayTeamId}`, last });
 }
 
+/**
+ * Pre-match bookmaker odds for one fixture.
+ *
+ * The response nests bookmaker -> bet (market) -> values (selections), and is
+ * large: ~2,500 prices across 300+ markets for a well-covered fixture. Callers
+ * are expected to trim it immediately (see trimOdds in src/lib/odds.ts) rather
+ * than store or pass it around whole.
+ *
+ * Verified against the live API on this plan for every competition in
+ * LEAGUE_PRIORITY_ORDER — see scripts/research-odds-coverage.ts. Two findings
+ * from that research matter to callers:
+ *
+ *   - Coverage is a LEAD-TIME property, not a league property. Every tracked
+ *     competition carries odds, including the smallest; fixtures inside 72h of
+ *     kickoff returned prices 100% of the time, fixtures beyond 7 days only
+ *     13%. An empty response for a distant fixture is normal, not a fault.
+ *   - `update` is the API's own timestamp for the quote. It is the only
+ *     staleness signal available, and prices are shown to readers, so it is
+ *     stored and displayed rather than discarded.
+ */
+export type OddsValue = { value: string; odd: string };
+export type OddsBet = { id: number; name: string; values: OddsValue[] };
+export type OddsBookmaker = { id: number; name: string; bets: OddsBet[] };
+export type OddsResponse = {
+  fixture: { id: number; date?: string };
+  league?: { id: number; season: number };
+  update?: string;
+  bookmakers: OddsBookmaker[];
+};
+
+export function getOdds(fixtureId: number) {
+  return apiFetch<OddsResponse[]>("/odds", { fixture: fixtureId });
+}

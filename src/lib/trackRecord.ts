@@ -10,7 +10,7 @@ import { MARKET_TYPES, type MarketType } from "@/lib/markets";
 // Revisit as the site's settled-tip volume grows.
 export const MIN_SETTLED_SAMPLE_SIZE = 20;
 
-export const TRACK_RECORD_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
+export const TRACK_RECORD_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"] as const;
 export const TRACK_RECORD_MARKET_TYPES = MARKET_TYPES.filter((m) => m !== "OTHER") as Exclude<MarketType, "OTHER">[];
 export const WINDOW_OPTIONS = [7, 30, 90] as const;
 export type WindowDays = (typeof WINDOW_OPTIONS)[number];

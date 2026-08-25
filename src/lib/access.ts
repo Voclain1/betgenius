@@ -24,6 +24,10 @@ export function canViewCategory(
     case "FEATURED":
     case "GENIUS":
     case "TODAY":
+    // Public. Bet of the Day is the homepage's shop window — the one pick a
+    // visitor is shown to judge the product by — so padlocking it would defeat
+    // the reason the slot exists.
+    case "BET_OF_THE_DAY":
       return true;
     case "BANKER":
       // Free to view once registered — no active subscription required, just a login.

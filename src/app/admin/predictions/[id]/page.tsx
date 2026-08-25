@@ -91,7 +91,11 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       confidence: pred.confidence,
       reasoning: pred.reasoning,
       matchPreview: pred.matchPreview ?? "",
-      categories: pred.categories.map((c: any) => c.category),
+      // BET_OF_THE_DAY is excluded from the editable set on purpose: it has no
+      // checkbox (it moves only via the pin action), and leaving it in this
+      // array would send a value the PATCH schema rejects. The API re-attaches
+      // it on save for rows that hold it.
+      categories: pred.categories.map((c: any) => c.category).filter((c: string) => c !== "BET_OF_THE_DAY"),
       leagueApiId: pred.leagueApiId ?? undefined,
       leagueName: pred.leagueName ?? "",
       homeTeam: pred.homeTeam ?? "",
@@ -204,11 +208,37 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
     load();
   };
 
+  /**
+   * Move the single Bet of the Day slot onto this prediction.
+   *
+   * Confirmed rather than fired on one click: pinning silently un-pins
+   * whatever held the slot before, and that displaced pick does not come back
+   * on its own. The admin should know they are replacing something.
+   */
+  const pinBetOfTheDay = async () => {
+    if (!confirm("Pin this as Bet of the Day? The current Bet of the Day will be replaced and will not return on its own.")) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/predictions/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "PIN_BET_OF_THE_DAY" }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) setError(j?.error ?? "Could not pin as Bet of the Day");
+      else load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     if (!confirm("Delete this prediction? This cannot be undone.")) return;
     await fetch(`/api/admin/predictions/${params.id}`, { method: "DELETE" });
     router.push("/admin/predictions");
   };
+
+  const isBetOfTheDay = !!p?.categories?.some((c) => c.category === "BET_OF_THE_DAY");
 
   if (error && !p) return <div className="card text-red-400">{error}</div>;
   if (!p || !form || !market) return <div className="text-gray-400">Loading…</div>;
@@ -403,6 +433,17 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           <button className="btn btn-ghost text-sm" onClick={() => act("APPROVE")}>Approve</button>
           <button className="btn btn-primary text-sm" onClick={() => act("PUBLISH")}>Publish</button>
           <button className="btn btn-ghost text-sm" onClick={() => act("ARCHIVE")}>Archive</button>
+          {/* Only a published pick can hold the slot — the API enforces this
+              too; disabling here just avoids offering an action that will be
+              refused. */}
+          <button
+            className="btn btn-ghost text-sm disabled:opacity-40"
+            disabled={busy || p.status !== "PUBLISHED" || isBetOfTheDay}
+            title={p.status !== "PUBLISHED" ? "Publish this prediction first" : isBetOfTheDay ? "Already the Bet of the Day" : "Replace the current Bet of the Day with this pick"}
+            onClick={pinBetOfTheDay}
+          >
+            {isBetOfTheDay ? "★ Bet of the Day" : "Pin as Bet of the Day"}
+          </button>
         </div>
         <button className="text-sm text-red-400 hover:underline" onClick={remove}>Delete prediction</button>
       </div>

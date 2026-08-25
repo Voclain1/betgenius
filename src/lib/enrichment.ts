@@ -22,6 +22,7 @@ import {
   getSquad,
   getCoaches,
   resolveSeason,
+  getOdds,
   type FixtureRow,
   type StandingsEntry,
   type StandingsSplit,
@@ -29,7 +30,10 @@ import {
   type CoachEntry,
 } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
+import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import { trimH2H } from "@/lib/h2h";
+import { trimOdds } from "@/lib/odds";
+import { lagosTodayBounds } from "@/lib/lagosDate";
 import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
 
 export type TeamTarget = {
@@ -961,4 +965,238 @@ export async function orderLeaguesByStaleness(targets: LeagueTarget[]): Promise<
   });
   const attemptMap = new Map(existing.map((r) => [r.leagueApiId, r.lastAttemptAt?.getTime() ?? -Infinity]));
   return [...targets].sort((a, b) => (attemptMap.get(a.leagueApiId) ?? -Infinity) - (attemptMap.get(b.leagueApiId) ?? -Infinity));
+}
+
+// ---------------------------------------------------------------------------
+// Bookmaker odds (FixtureOddsCache) — backs Bet of the Day.
+// ---------------------------------------------------------------------------
+
+export type OddsTarget = {
+  matchKey: string;
+  fixtureApiId: number;
+  kickoff: Date;
+  /**
+   * "published" = a live pick a reader can see, so its price is re-checked
+   * hourly near kickoff. "candidate" = an un-generated fixture priced once, so
+   * price-first Bet of the Day targeting can decide whether it is worth
+   * generating a bolder pick for. The distinction is what keeps the widened
+   * scope cheap: candidates outnumber published picks and none of their prices
+   * are ever shown to anyone.
+   */
+  kind: "published" | "candidate";
+};
+
+/**
+ * Fixtures eligible for an odds refresh: TODAY's published predictions only,
+ * still ahead of kickoff, whose fixture id FixtureDetailCache has already
+ * resolved.
+ *
+ * Three deliberate narrowings, each one saving calls:
+ *
+ *   - Today only. Bet of the Day is a daily slot, so odds for a fixture three
+ *     days out buy nothing, and the research measured coverage cratering past
+ *     7 days anyway (13% hit rate) — those calls would mostly return nothing.
+ *   - Not yet kicked off. A price for a match in progress is not actionable
+ *     and settlement, not odds, is what a finished fixture needs.
+ *   - Requires a cached fixtureApiId. /odds takes api-football's fixture id and
+ *     nothing else; FixtureDetailCache already resolves that id from the day's
+ *     slate, so reading it here keeps this workload at ONE call per fixture.
+ *     A fixture the detail refresh hasn't reached yet is simply skipped — it
+ *     will be eligible on the next cycle, which is cheaper than resolving the
+ *     same id twice.
+ */
+export async function getScopedOddsTargets(now: Date = new Date()): Promise<OddsTarget[]> {
+  const published = await getPublishedOddsTargets(now);
+  const candidates = await getCandidateOddsTargets(now);
+  // A fixture that is both published and still queued is a published target —
+  // the stricter refresh cadence wins, and it must not be priced twice.
+  const seen = new Set(published.map((t) => t.matchKey));
+  return [...published, ...candidates.filter((c) => !seen.has(c.matchKey))];
+}
+
+/**
+ * Un-generated fixtures in the generation window, for price-first Bet of the
+ * Day targeting.
+ *
+ * Read straight off the GenerationAttempt ledger, which already carries
+ * api-football's `fixtureApiId` — so unlike the published targets below, these
+ * need no FixtureDetailCache lookup at all.
+ *
+ * Horizon is capped at ODDS_CANDIDATE_HORIZON_MS rather than following the
+ * ledger, because pricing a fixture the research says has a 13% chance of
+ * carrying odds is quota spent to re-confirm an empty response.
+ *
+ * Measured cost before this was added: a mean of 42.5 and a peak of 88 ranked-
+ * league candidates entering the ledger per day, each priced ONCE (see
+ * selectStaleOddsTargets) — about 1% of the 7,500/day ceiling.
+ */
+export const ODDS_CANDIDATE_HORIZON_MS = 72 * 60 * 60 * 1000;
+
+export async function getCandidateOddsTargets(now: Date = new Date()): Promise<OddsTarget[]> {
+  const rows = await prisma.generationAttempt.findMany({
+    where: {
+      status: "PENDING",
+      kickoff: { gt: now, lte: new Date(now.getTime() + ODDS_CANDIDATE_HORIZON_MS) },
+      fixtureApiId: { not: null },
+      leagueApiId: { not: null },
+    },
+    select: { matchKey: true, fixtureApiId: true, leagueApiId: true, kickoff: true },
+  });
+  return rows
+    // Only leagues the editorial ordering ranks can ever win the slot, so
+    // pricing anything else would buy a number nothing reads.
+    .filter((r) => leaguePriorityRank(r.leagueApiId) < LEAGUE_PRIORITY_ORDER.length)
+    .map((r) => ({ matchKey: r.matchKey, fixtureApiId: r.fixtureApiId!, kickoff: r.kickoff, kind: "candidate" as const }));
+}
+
+async function getPublishedOddsTargets(now: Date = new Date()): Promise<OddsTarget[]> {
+  const { start, end } = lagosTodayBounds(now);
+  const rows = await prisma.prediction.findMany({
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: start, lt: end },
+      homeTeamApiId: { not: null },
+      awayTeamApiId: { not: null },
+    },
+    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+  });
+
+  const byKey = new Map<string, { matchKey: string; kickoff: Date }>();
+  for (const r of rows) {
+    const key = matchKey(r);
+    if (!key || byKey.has(key) || !r.kickoff || r.kickoff <= now) continue;
+    byKey.set(key, { matchKey: key, kickoff: r.kickoff });
+  }
+  if (byKey.size === 0) return [];
+
+  const details = await prisma.fixtureDetailCache.findMany({
+    where: { matchKey: { in: [...byKey.keys()] }, fixtureApiId: { not: null } },
+    select: { matchKey: true, fixtureApiId: true },
+  });
+
+  const targets: OddsTarget[] = [];
+  for (const d of details) {
+    const base = byKey.get(d.matchKey);
+    if (base) targets.push({ matchKey: d.matchKey, fixtureApiId: d.fixtureApiId!, kickoff: base.kickoff, kind: "published" });
+  }
+  return targets;
+}
+
+/** Refresh interval inside 24h of kickoff — prices move as the market firms up. */
+export const ODDS_NEAR_KICKOFF_TTL_MS = 60 * 60 * 1000;
+/**
+ * Back-off before retrying a fixture whose last odds fetch failed.
+ *
+ * Without this, a fixture no bookmaker has priced is retried on EVERY cycle
+ * forever: `!fetchedAt` alone means "never succeeded", which is permanently
+ * true for a fixture that never gets priced. Measured on a live run — two such
+ * fixtures re-spent a call each on eight consecutive cycles and would have gone
+ * on doing so all day.
+ *
+ * An hour is long enough to stop the leak and short enough that a market
+ * opening late is picked up the same day.
+ */
+export const ODDS_FAILED_RETRY_MS = 60 * 60 * 1000;
+/** Inside this window of kickoff, a fixture is refreshed hourly rather than once. */
+export const ODDS_NEAR_KICKOFF_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Which targets are actually due, on the cadence the research justifies:
+ * hourly inside 24h of kickoff, once beyond that.
+ *
+ * The asymmetry is measured, not assumed. Odds density is near-total inside
+ * 72h (100% of sampled fixtures carried prices, 11-14 books deep) and collapses
+ * past 7 days (13%, and thin where present), so a distant fixture re-polled
+ * every hour spends quota re-confirming the same sparse answer. Inside a day of
+ * kickoff the opposite is true: the book is deep, prices move, and a stale
+ * quote is one a reader could act on wrongly.
+ *
+ * "Once beyond that" means once SUCCESSFULLY — a target whose last attempt
+ * failed is still due, otherwise a single bad response would freeze a fixture
+ * out of the slot for the rest of the day.
+ */
+export async function selectStaleOddsTargets(targets: OddsTarget[], now: Date = new Date()): Promise<OddsTarget[]> {
+  if (targets.length === 0) return [];
+  const existing = await prisma.fixtureOddsCache.findMany({
+    where: { matchKey: { in: targets.map((t) => t.matchKey) } },
+    select: { matchKey: true, fetchedAt: true, lastAttemptAt: true },
+  });
+  const byKey = new Map(existing.map((r) => [r.matchKey, r]));
+
+  const due = targets.filter((t) => {
+    const row = byKey.get(t.matchKey);
+    if (!row?.fetchedAt) {
+      // Never fetched, or every attempt so far failed. New targets are due
+      // immediately; ones that already failed wait out the back-off rather than
+      // re-spending a call on every cycle.
+      if (!row?.lastAttemptAt) return true;
+      return now.getTime() - row.lastAttemptAt.getTime() >= ODDS_FAILED_RETRY_MS;
+    }
+    // Candidates are priced ONCE. Their price is only ever read to decide
+    // whether a fixture is worth generating a bolder pick for — a decision made
+    // once — and no reader ever sees it, so re-polling them would be the whole
+    // cost of the widened scope multiplied by 24 for no benefit.
+    if (t.kind === "candidate") return false;
+    const nearKickoff = t.kickoff.getTime() - now.getTime() <= ODDS_NEAR_KICKOFF_WINDOW_MS;
+    if (!nearKickoff) return false;
+    return now.getTime() - row.fetchedAt.getTime() >= ODDS_NEAR_KICKOFF_TTL_MS;
+  });
+
+  // Published picks first — a stale price in front of a reader matters more
+  // than an unpriced candidate — then soonest kickoff.
+
+  return due.sort(
+    (a, b) =>
+      Number(a.kind === "candidate") - Number(b.kind === "candidate") || a.kickoff.getTime() - b.kickoff.getTime(),
+  );
+}
+
+/**
+ * Fetch and store one fixture's odds.
+ *
+ * Same write invariants as every other refresh here: `fetchedAt` and
+ * `oddsJson` are touched only on a real hit, so a failed cycle leaves the
+ * previous prices readable rather than blanking the Bet of the Day slot.
+ *
+ * An empty response is recorded as a FAILURE rather than as an empty success,
+ * which is the opposite of the choice H2HCache makes. The reasoning differs
+ * because the fact differs: "these two have never met" is a real answer about
+ * the world, whereas "no bookmaker has priced this yet" is a temporary state
+ * that will change before kickoff — so it should stay due for another attempt,
+ * not be cached as settled.
+ */
+export async function refreshOddsCache(target: OddsTarget): Promise<{ matchKey: string; result: "ok" | "failed" | "error"; detail?: string }> {
+  const now = new Date();
+  const base = { matchKey: target.matchKey, fixtureApiId: target.fixtureApiId };
+
+  let raw: Awaited<ReturnType<typeof getOdds>> = null;
+  try {
+    raw = await getOdds(target.fixtureApiId);
+  } catch (err: any) {
+    const lastError = err?.message ?? String(err);
+    await prisma.fixtureOddsCache
+      .upsert({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
+      .catch(() => {});
+    return { matchKey: target.matchKey, result: "error", detail: lastError };
+  }
+
+  const trimmed = trimOdds(raw?.[0]);
+  if (!trimmed) {
+    const lastError = raw === null ? "No response from api-football — see server logs" : "No bookmaker prices quoted for this fixture yet";
+    await prisma.fixtureOddsCache
+      .upsert({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
+      .catch(() => {});
+    return { matchKey: target.matchKey, result: "failed", detail: lastError };
+  }
+
+  const payload = {
+    ...base,
+    oddsJson: trimmed as unknown as Prisma.InputJsonValue,
+    bookmakerCount: trimmed.bookmakerCount,
+    fetchedAt: now,
+    lastAttemptAt: now,
+    lastError: null,
+  };
+  await prisma.fixtureOddsCache.upsert({ where: { matchKey: target.matchKey }, create: payload, update: payload });
+  return { matchKey: target.matchKey, result: "ok", detail: `${trimmed.bookmakerCount} bookmakers, ${trimmed.markets.length} markets` };
 }

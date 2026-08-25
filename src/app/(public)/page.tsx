@@ -11,6 +11,8 @@ import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
 import { MatchLink } from "@/components/MatchLink";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
+import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
+import { getBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
@@ -103,7 +105,7 @@ const CATEGORY_LINKS: { label: string; href: string }[] = [
 ];
 
 export default async function HomePage() {
-  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, trackRecord] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, trackRecord, betOfTheDay] = await Promise.all([
     fetchFeatured(),
     fetchGeniusPreview(),
     getServerSession(authOptions),
@@ -111,6 +113,7 @@ export default async function HomePage() {
     getPublishedMatchIndex(),
     fetchHeroPick(),
     getTrackRecordData(),
+    getBetOfTheDay(),
   ]);
   const popular = popularLeagues(leagues);
 
@@ -232,6 +235,21 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* Directly above Featured, and rendered only when a pick actually holds
+          the slot — an empty "Bet of the Day" heading would advertise a
+          promise the page is not keeping. */}
+      {betOfTheDay && (
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Bet of the Day</h2>
+            <Link href="/predictions/bet-of-the-day" className="text-sm text-brand hover:underline">
+              Full reasoning →
+            </Link>
+          </div>
+          <BetOfTheDayCard data={betOfTheDay} variant="hero" />
+        </section>
+      )}
 
       <section>
         <div className="mb-4 flex items-center justify-between">

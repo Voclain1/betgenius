@@ -11,7 +11,8 @@ export type PredictionCategory =
   | "TODAY"
   | "BANKER"
   | "VIP"
-  | "PREMIUM";
+  | "PREMIUM"
+  | "BET_OF_THE_DAY";
 export type PredictionStatus =
   | "DRAFT"
   | "PENDING_REVIEW"
@@ -28,4 +29,9 @@ export const PREDICTION_CATEGORIES = [
   "BANKER",
   "VIP",
   "PREMIUM",
+  // Single-slot: at most one prediction carries this tag at a time, enforced
+  // transactionally in src/lib/betOfTheDay.ts rather than by the schema —
+  // PredictionCategoryLink's unique key is (prediction, category), which can
+  // stop a duplicate tag on ONE row but cannot express "one row site-wide".
+  "BET_OF_THE_DAY",
 ] as const satisfies readonly PredictionCategory[];

@@ -15,9 +15,12 @@ import {
   refreshH2HCache,
   refreshLeaguePlayerStats,
   refreshTeamSquad,
+  getScopedOddsTargets,
+  selectStaleOddsTargets,
+  refreshOddsCache,
 } from "@/lib/enrichment";
 
-export const ENRICHMENT_WORKLOADS = ["teams", "leagues", "fixture-details", "h2h", "player-stats", "squads"] as const;
+export const ENRICHMENT_WORKLOADS = ["teams", "leagues", "fixture-details", "h2h", "player-stats", "squads", "odds"] as const;
 export type EnrichmentWorkload = (typeof ENRICHMENT_WORKLOADS)[number];
 
 const DEFAULT_BUDGET_MS = 20_000;
@@ -108,6 +111,19 @@ export async function runEnrichmentWorkload(
     report = await runBudgeted(queue, options.limit, startedAt, budgetMs, async (target) => {
       const r = await refreshLeaguePlayerStats(target);
       return { id: target.leagueApiId, result: r.result, detail: r.detail ?? r.counts };
+    });
+  } else if (workload === "odds") {
+    // One api-football call per fixture, unlike fixture-details' one-per-day:
+    // /odds takes a fixture id and has no slate form, so there is nothing to
+    // batch. The narrow scope (today's un-kicked-off published picks) is what
+    // keeps that affordable — see getScopedOddsTargets.
+    const targets = await getScopedOddsTargets();
+    const queue = await selectStaleOddsTargets(targets);
+    scoped = targets.length;
+    eligible = queue.length;
+    report = await runBudgeted(queue, options.limit, startedAt, budgetMs, async (target) => {
+      const r = await refreshOddsCache(target);
+      return { id: target.matchKey, result: r.result, detail: r.detail };
     });
   } else {
     const targets = await getScopedTeamTargets();

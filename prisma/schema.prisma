@@ -14,32 +14,33 @@ datasource db {
 // Role: "USER" | "ADMIN_PENDING" | "ADMIN" | "SUPER_ADMIN"
 // SubscriptionTier: "FREE" | "VIP" | "PREMIUM"
 // SubscriptionStatus: "PENDING" | "ACTIVE" | "CANCELED" | "EXPIRED"
-// PredictionCategory: "FEATURED" | "GENIUS" | "TODAY" | "BANKER" | "VIP" | "PREMIUM"
+// PredictionCategory: "FEATURED" | "GENIUS" | "TODAY" | "BANKER" | "VIP" | "PREMIUM" | "BET_OF_THE_DAY"
 // PredictionStatus: "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "PUBLISHED" | "ARCHIVED"
 // Outcome: "PENDING" | "WON" | "LOST" | "VOID"
 // TaskStatus: "OPEN" | "IN_PROGRESS" | "DONE"
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  emailVerified  DateTime? // Required by PrismaAdapter's AdapterUser shape — every OAuth createUser() call includes it (null for a fresh sign-up), even though nothing here reads it back. Missing this column is what throws Prisma's "Unknown argument `emailVerified`" and surfaces as NextAuth's generic OAuthCreateAccount error.
-  passwordHash   String?
-  name           String?
-  image          String?
-  role           String   @default("USER")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime? // Required by PrismaAdapter's AdapterUser shape — every OAuth createUser() call includes it (null for a fresh sign-up), even though nothing here reads it back. Missing this column is what throws Prisma's "Unknown argument `emailVerified`" and surfaces as NextAuth's generic OAuthCreateAccount error.
+  passwordHash  String?
+  name          String?
+  image         String?
+  role          String    @default("USER")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  subscription   Subscription?
-  predictions    Prediction[]  @relation("PredictionAuthor")
-  approvals      Prediction[]  @relation("PredictionApprover")
-  settlements    Prediction[]  @relation("PredictionSettler")
-  rewriteRequests Prediction[] @relation("PredictionRewriteRequester")
-  assignedTasks  AdminTask[]   @relation("AssignedTo")
-  createdTasks   AdminTask[]   @relation("CreatedBy")
-  betSlips       BetSlip[]
-  aiJobs         AIJob[]
-  accounts       Account[]
+  subscription    Subscription?
+  predictions     Prediction[]  @relation("PredictionAuthor")
+  approvals       Prediction[]  @relation("PredictionApprover")
+  settlements     Prediction[]  @relation("PredictionSettler")
+  rewriteRequests Prediction[]  @relation("PredictionRewriteRequester")
+  betOfDayPins    Prediction[]  @relation("PredictionBetOfDayPinner")
+  assignedTasks   AdminTask[]   @relation("AssignedTo")
+  createdTasks    AdminTask[]   @relation("CreatedBy")
+  betSlips        BetSlip[]
+  aiJobs          AIJob[]
+  accounts        Account[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -127,11 +128,11 @@ model Fixture {
 }
 
 model Standing {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   leagueId     String
-  league       League @relation(fields: [leagueId], references: [id])
+  league       League  @relation(fields: [leagueId], references: [id])
   teamId       String
-  team         Team   @relation(fields: [teamId], references: [id])
+  team         Team    @relation(fields: [teamId], references: [id])
   rank         Int
   points       Int
   played       Int
@@ -159,22 +160,22 @@ model Standing {
 // the data columns, so a later transient failure can't blank out
 // previously-good cached data.
 model TeamEnrichmentCache {
-  id            String    @id @default(cuid())
-  teamApiId     Int       @unique
-  teamName      String? // last-known display name — debug/admin only, never used to key lookups
-  leagueApiId   Int? // representative league used to fetch season-scoped stats
-  season        Int?
-  crestUrl      String?
+  id             String    @id @default(cuid())
+  teamApiId      Int       @unique
+  teamName       String? // last-known display name — debug/admin only, never used to key lookups
+  leagueApiId    Int? // representative league used to fetch season-scoped stats
+  season         Int?
+  crestUrl       String?
   // Venue comes back inline on the same /teams lookup that yields the crest —
   // no extra call. Nullable throughout: api-football omits venue for some
   // clubs, and the team page renders nothing rather than a placeholder.
-  venueName     String?
-  venueCity     String?
-  venueAddress  String?
-  venueCapacity Int?
-  form          String? // e.g. "WWDLW", from /teams/statistics
-  statsJson     Json?
-  lastFixtures  Json?
+  venueName      String?
+  venueCity      String?
+  venueAddress   String?
+  venueCapacity  Int?
+  form           String? // e.g. "WWDLW", from /teams/statistics
+  statsJson      Json?
+  lastFixtures   Json?
   // The TeamDigest half of src/lib/ai/digest.ts, written by the SAME
   // buildTeamDigest() the AI prompt is built from — one projection of
   // /teams/statistics + /injuries + /fixtures, so the model and the match page
@@ -201,10 +202,10 @@ model TeamEnrichmentCache {
   squadJson      Json? // SquadPlayer[] in src/lib/enrichment.ts
   coachJson      Json? // TeamCoach, or null when no current coach resolves
   squadFetchedAt DateTime?
-  fetchedAt     DateTime?
-  lastAttemptAt DateTime?
-  lastError     String?
-  updatedAt     DateTime  @updatedAt
+  fetchedAt      DateTime?
+  lastAttemptAt  DateTime?
+  lastError      String?
+  updatedAt      DateTime  @updatedAt
 
   @@index([lastAttemptAt])
 }
@@ -294,6 +295,45 @@ model H2HCache {
   @@index([lastAttemptAt])
 }
 
+// Bookmaker odds for one fixture, backing Bet of the Day.
+//
+// Same contract as every other cache in this file: the cron workload is the
+// only writer (src/lib/enrichment.ts), pages read it, and `fetchedAt` is set
+// ONLY on a successful fetch, so a later failure leaves good prices in place
+// rather than blanking them.
+//
+// Keyed by matchKey, like FixtureDetailCache — Prediction still has no fixture
+// id of its own. `fixtureApiId` is not re-resolved here either: the odds
+// refresh READS the id FixtureDetailCache already resolved from the day's
+// slate, which is what keeps this workload at one api-football call per
+// fixture instead of two.
+//
+// Scope is today's PUBLISHED predictions only, and refresh is hourly inside
+// 24h of kickoff, once beyond it. That cadence is measured, not guessed: the
+// research in scripts/research-odds-coverage.ts found odds present for 100% of
+// fixtures inside 72h and only 13% beyond 7 days, so refreshing a distant
+// fixture repeatedly spends quota re-confirming an empty response.
+//
+// oddsJson is TRIMMED at write time to the four headline markets and, within
+// each, a best and median price per selection — not the raw payload. A single
+// /odds response carries ~2,500 prices across 300+ markets; storing it whole
+// would put megabytes of exotic lines in the database to render four numbers.
+model FixtureOddsCache {
+  id             String    @id @default(cuid())
+  matchKey       String    @unique
+  fixtureApiId   Int? // read from FixtureDetailCache, never resolved here
+  oddsJson       Json? // FixtureOdds in src/lib/odds.ts
+  // Denormalised out of oddsJson so the display gate ("best of N books") and
+  // the threshold check can filter without deserialising the payload.
+  bookmakerCount Int?
+  fetchedAt      DateTime?
+  lastAttemptAt  DateTime?
+  lastError      String?
+  updatedAt      DateTime  @updatedAt
+
+  @@index([lastAttemptAt])
+}
+
 // One row per (UTC day, api-football endpoint path), atomically incremented on
 // every dispatched request — see src/lib/football/usage.ts. The Pro plan's
 // 7,500/day ceiling is enforced against the SUM of these rows rather than an
@@ -316,35 +356,35 @@ model ApiUsage {
 }
 
 model Prediction {
-  id           String    @id @default(cuid())
-  fixtureId    String?
-  fixture      Fixture?  @relation(fields: [fixtureId], references: [id])
-  category     String // primary category — kept in sync with `categories[0]` for backward compat
-  categories   PredictionCategoryLink[]
-  leagueApiId  Int? // API-Football league id — see src/lib/leagues.ts for the known list
-  leagueName   String?
-  homeTeam     String? // free-text match info — not tied to the Fixture ingestion table
-  awayTeam     String?
-  homeTeamApiId Int? // API-Football team id, resolved via searchTeam() in generate.ts — persisted so the enrichment refresh job (src/lib/enrichment.ts) never needs to re-guess a name→id match
-  awayTeamApiId Int?
-  kickoff      DateTime?
-  status       String    @default("DRAFT")
+  id                   String                   @id @default(cuid())
+  fixtureId            String?
+  fixture              Fixture?                 @relation(fields: [fixtureId], references: [id])
+  category             String // primary category — kept in sync with `categories[0]` for backward compat
+  categories           PredictionCategoryLink[]
+  leagueApiId          Int? // API-Football league id — see src/lib/leagues.ts for the known list
+  leagueName           String?
+  homeTeam             String? // free-text match info — not tied to the Fixture ingestion table
+  awayTeam             String?
+  homeTeamApiId        Int? // API-Football team id, resolved via searchTeam() in generate.ts — persisted so the enrichment refresh job (src/lib/enrichment.ts) never needs to re-guess a name→id match
+  awayTeamApiId        Int?
+  kickoff              DateTime?
+  status               String                   @default("DRAFT")
   // market/pick/overUnder below are DISPLAY strings — for every marketType
   // except OTHER they're derived from the structured fields, never typed
   // directly, so auto-settlement (src/lib/markets.ts) has a fixed vocabulary
   // to work from instead of unparseable free text.
-  marketType   String    @default("OTHER") // MATCH_WINNER | DOUBLE_CHANCE | OVER_UNDER | BTTS | CORRECT_SCORE | OTHER
-  selection    Json? // shape depends on marketType — see src/lib/markets.ts; null for OTHER
-  manualSettlementOnly Boolean @default(true) // true for OTHER (and any row predating this field) — never auto-resolved
-  market       String
-  pick         String
-  ouLine       Float? // secondary over/under pick — present on every new prediction regardless of marketType
-  ouDirection  String? // OVER | UNDER
-  overUnder    String? // display string derived from ouLine/ouDirection, e.g. "Over 2.5 Goals"
-  odds         Float?
-  confidence   Int
-  reasoning    String
-  matchPreview String?
+  marketType           String                   @default("OTHER") // MATCH_WINNER | DOUBLE_CHANCE | OVER_UNDER | BTTS | CORRECT_SCORE | OTHER
+  selection            Json? // shape depends on marketType — see src/lib/markets.ts; null for OTHER
+  manualSettlementOnly Boolean                  @default(true) // true for OTHER (and any row predating this field) — never auto-resolved
+  market               String
+  pick                 String
+  ouLine               Float? // secondary over/under pick — present on every new prediction regardless of marketType
+  ouDirection          String? // OVER | UNDER
+  overUnder            String? // display string derived from ouLine/ouDirection, e.g. "Over 2.5 Goals"
+  odds                 Float?
+  confidence           Int
+  reasoning            String
+  matchPreview         String?
   // Structured AI output beyond the prose: { keyFactors: string[] }.
   //
   // keyFactors has been requested by the prompt since the beginning and thrown
@@ -355,35 +395,35 @@ model Prediction {
   //
   // Duplicated across the rows of one fixture the same way matchPreview is —
   // one AI job produces several market rows that share its analysis.
-  analysisJson Json?
-  contextComplete Boolean @default(true) // false = AI-generated with zero live data (all football-API context calls came back empty/failed)
-  outcome      String    @default("PENDING")
+  analysisJson         Json?
+  contextComplete      Boolean                  @default(true) // false = AI-generated with zero live data (all football-API context calls came back empty/failed)
+  outcome              String                   @default("PENDING")
   // A1 settlement: no Fixture-ingestion pipeline exists in this app (Livescores/
   // Fixtures/Standings all hit API-Football live per-request, nothing is written
   // to the Fixture table), so the finished score is looked up per-prediction and
   // stored here directly — consistent with homeTeam/awayTeam already being free
   // text rather than a Fixture relation. See src/app/api/admin/settle/route.ts.
-  finalHomeScore Int?
-  finalAwayScore Int?
+  finalHomeScore       Int?
+  finalAwayScore       Int?
   // settledById null + settledAt set  = auto-settled (src/app/api/admin/settle)
   // settledById set                   = manual admin override (A2)
   // settlementNote: why a PENDING row hasn't auto-settled — cleared once outcome is set
-  settledById  String?
-  settledBy    User?     @relation("PredictionSettler", fields: [settledById], references: [id])
-  settledAt    DateTime?
-  settlementNote String?
-  authorId     String
-  author       User      @relation("PredictionAuthor", fields: [authorId], references: [id])
-  approvedById String?
-  approvedBy   User?     @relation("PredictionApprover", fields: [approvedById], references: [id])
-  approvedAt   DateTime?
+  settledById          String?
+  settledBy            User?                    @relation("PredictionSettler", fields: [settledById], references: [id])
+  settledAt            DateTime?
+  settlementNote       String?
+  authorId             String
+  author               User                     @relation("PredictionAuthor", fields: [authorId], references: [id])
+  approvedById         String?
+  approvedBy           User?                    @relation("PredictionApprover", fields: [approvedById], references: [id])
+  approvedAt           DateTime?
   // Rewrite audit — same shape as approvedById/approvedAt and settledById/
   // settledAt: who asked for the last regeneration and when. rewriteCount is
   // denormalised so the UI can show "3 rewrites" without parsing the JSON.
   rewriteRequestedById String?
-  rewriteRequestedBy   User?  @relation("PredictionRewriteRequester", fields: [rewriteRequestedById], references: [id])
+  rewriteRequestedBy   User?                    @relation("PredictionRewriteRequester", fields: [rewriteRequestedById], references: [id])
   rewriteRequestedAt   DateTime?
-  rewriteCount         Int    @default(0)
+  rewriteCount         Int                      @default(0)
   // Superseded drafts, oldest first: [{ matchPreview, reasoning, market, pick,
   // confidence, odds, marketType, selection, ouLine, ouDirection, replacedAt,
   // requestedById, reviewerNote }]. A JSON column rather than a version table
@@ -391,12 +431,25 @@ model Prediction {
   // never queried across rows — the same reasoning that put selection/statsJson
   // in Json columns. A join table would add a model and a migration for data
   // nothing filters or aggregates on.
-  previousDrafts Json?
-  publishedAt  DateTime?
-  aiJobId      String?
-  aiJob        AIJob?    @relation(fields: [aiJobId], references: [id])
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  previousDrafts       Json?
+  // Bet of the Day manual pin. Same audit shape as approvedById/approvedAt and
+  // settledById/settledAt above: who pinned it, and when.
+  //
+  // `betOfDayPinnedAt` is not decoration — it is what protects an admin's
+  // choice from the auto-selection cron. A pin made for the current Lagos day
+  // makes auto-selection stand down for that day (see src/lib/betOfTheDay.ts),
+  // so a human decision is never silently reverted a few minutes later by a
+  // scheduled job. Cleared whenever the tag moves to another row, so a stale
+  // pin cannot keep suppressing auto-selection after the pick it belonged to
+  // has been replaced.
+  betOfDayPinnedById   String?
+  betOfDayPinnedBy     User?                    @relation("PredictionBetOfDayPinner", fields: [betOfDayPinnedById], references: [id])
+  betOfDayPinnedAt     DateTime?
+  publishedAt          DateTime?
+  aiJobId              String?
+  aiJob                AIJob?                   @relation(fields: [aiJobId], references: [id])
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
 
   @@index([category, status])
   @@index([publishedAt])
@@ -415,25 +468,25 @@ model PredictionCategoryLink {
 }
 
 model AIJob {
-  id          String       @id @default(cuid())
-  userId      String
-  user        User         @relation(fields: [userId], references: [id])
-  prompt      String
-  model       String
-  rawOutput   String
-  status      String       @default("COMPLETED")
-  contextComplete Boolean  @default(true) // false = every football-API context call (team search, form, standings, h2h) came back empty/failed
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id])
+  prompt          String
+  model           String
+  rawOutput       String
+  status          String       @default("COMPLETED")
+  contextComplete Boolean      @default(true) // false = every football-API context call (team search, form, standings, h2h) came back empty/failed
   // Gemini's own usageMetadata for this call. Recorded so prompt-size changes
   // are measured rather than estimated — the digest work in src/lib/ai/digest.ts
   // is justified by these two columns, and any future regression in prompt size
   // shows up here instead of on the bill. Null on jobs predating the columns,
   // and on any provider that doesn't report usage.
-  promptTokens Int?
-  outputTokens Int?
+  promptTokens    Int?
+  outputTokens    Int?
   // Wall-clock time for the model call, in milliseconds. Recorded alongside the
   // token counts so the generation panel can show p50/p95 latency and spot a
   // provider degrading before it starts failing outright.
-  durationMs   Int?
+  durationMs      Int?
   // The evidence passed to the model, as a versioned StoredContext (see
   // src/lib/ai/context.ts). v1 rows hold the raw api-football payloads; v2 rows
   // hold the MatchDigest actually prompted with. Persisted so a rewrite can
@@ -443,12 +496,12 @@ model AIJob {
   // Null on jobs created before this column existed — those predictions cannot
   // be rewritten without a re-fetch, and the rewrite endpoint refuses rather
   // than silently regenerating from a weaker prompt.
-  context     Json?
+  context         Json?
   // Reviewer direction for rewrites ("focus on the injury angle"); null on the
   // original generation. Kept per-job so each round's instruction is auditable.
-  reviewerNote String?
-  createdAt   DateTime     @default(now())
-  predictions Prediction[]
+  reviewerNote    String?
+  createdAt       DateTime     @default(now())
+  predictions     Prediction[]
 }
 
 // One row per fixture the scheduled generator has tried to produce predictions

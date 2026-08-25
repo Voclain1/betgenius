@@ -15,6 +15,7 @@ export const CATEGORY_SLUGS: Record<string, PredictionCategory> = {
   banker: "BANKER",
   vip: "VIP",
   premium: "PREMIUM",
+  "bet-of-the-day": "BET_OF_THE_DAY",
 };
 
 export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
@@ -24,6 +25,7 @@ export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
   BANKER: "Banker",
   VIP: "VIP tips",
   PREMIUM: "Premium tips",
+  BET_OF_THE_DAY: "Bet of the Day",
 };
 
 export const CATEGORY_TO_SLUG = Object.fromEntries(
