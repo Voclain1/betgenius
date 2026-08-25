@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { SearchBox } from "@/components/SearchBox";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -163,7 +164,7 @@ export function Nav() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 border-b border-brand-border bg-black/40 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link href="/" className="text-xl font-bold tracking-tight">
             <span className="text-brand">Bet</span>Genius
@@ -191,6 +192,11 @@ export function Nav() {
           <div className="hidden md:block">
             <SearchBox />
           </div>
+
+          {/* Always visible, both breakpoints. Unlike the auth actions it is a
+              single icon-width control, so it costs nothing in the mobile bar
+              and does not need to hide in the drawer to fit. */}
+          <ThemeToggle />
 
           <AuthActions isAdmin={isAdmin} user={user} className="hidden items-center gap-2 md:flex" />
 

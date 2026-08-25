@@ -222,10 +222,10 @@ export default function EditCombo({ params }: { params: { id: string } }) {
                   <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button onClick={() => move(i, -1)} disabled={i === 0} className="rounded p-1 text-gray-400 hover:text-white disabled:opacity-30">
+                  <button onClick={() => move(i, -1)} disabled={i === 0} className="rounded p-1 text-gray-400 hover:text-gray-100 disabled:opacity-30">
                     <ArrowUp size={14} />
                   </button>
-                  <button onClick={() => move(i, 1)} disabled={i === legs.length - 1} className="rounded p-1 text-gray-400 hover:text-white disabled:opacity-30">
+                  <button onClick={() => move(i, 1)} disabled={i === legs.length - 1} className="rounded p-1 text-gray-400 hover:text-gray-100 disabled:opacity-30">
                     <ArrowDown size={14} />
                   </button>
                   <button onClick={() => setLegs((prev) => prev.filter((x) => x.legId !== l.legId))} className="rounded p-1 text-gray-400 hover:text-red-400">

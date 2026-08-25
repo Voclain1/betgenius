@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Menu, X, Lock } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export type DashboardNavItem = {
   key: string;
@@ -123,7 +124,7 @@ export function DashboardShell({
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-brand-border bg-black/40 px-4 py-3 backdrop-blur">
+        <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-brand-border surface-blur px-4 py-3 backdrop-blur">
           <button
             type="button"
             aria-label="Toggle sidebar"
@@ -134,6 +135,10 @@ export function DashboardShell({
             <Menu size={18} />
           </button>
           <span className="font-semibold">{title}</span>
+          {/* Pushed right so the admin/dashboard shell carries the same control
+              as the public nav — a theme chosen on one must be changeable on
+              the other, since they are the same site to a signed-in admin. */}
+          <ThemeToggle className="ml-auto" />
         </div>
         <main className="flex-1 space-y-6 p-4 sm:p-6">{children}</main>
       </div>

@@ -86,7 +86,7 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
 export function MatchRow({ fx, linkIndex }: { fx: FixtureRow; linkIndex?: MatchLinkIndex }) {
   const group = classifyStatus(fx.fixture.status.short);
   const showScore = group !== "upcoming";
-  const scoreTone = group === "live" ? "text-white" : "text-gray-200";
+  const scoreTone = group === "live" ? "text-gray-100" : "text-gray-200";
   const href = matchHref(fx, linkIndex);
 
   const teams = (
@@ -230,7 +230,7 @@ export function PillTabs<T extends string>({ options, active, onChange }: { opti
           key={o.key}
           type="button"
           onClick={() => onChange(o.key)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${active === o.key ? "bg-brand text-black" : "text-gray-400 hover:text-white"}`}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${active === o.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"}`}
         >
           {o.label}
         </button>
@@ -262,7 +262,7 @@ export function StatusTabs({
           type="button"
           onClick={() => onChange(t.key)}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-            active === t.key ? "bg-brand text-black" : "text-gray-400 hover:text-white"
+            active === t.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
           }`}
         >
           {t.label} <span className="tabular-nums opacity-70">({counts[t.key]})</span>
@@ -289,7 +289,7 @@ export function LeagueScopeToggle({ scope, onChange }: { scope: LeagueScope; onC
           type="button"
           onClick={() => onChange(s.key)}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-            scope === s.key ? "bg-brand text-black" : "text-gray-400 hover:text-white"
+            scope === s.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
           }`}
         >
           {s.label}

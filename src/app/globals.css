@@ -2,10 +2,220 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+/*
+  THEME TOKENS
+  ============
 
-html, body { background: #0a0f14; color: #e5e7eb; min-height: 100%; }
-body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
+  Every colour in the app resolves through these variables, including the
+  `gray-*`, `red-*`, `emerald-*` and `amber-*` utility classes — tailwind.config.ts
+  points those palette entries at the variables below rather than at Tailwind's
+  fixed hex values. That is what makes ~400 existing `text-gray-400`-style
+  classes across 76 files theme-aware without editing any of them.
+
+  Values are space-separated RGB CHANNELS, not hex, so Tailwind's alpha syntax
+  keeps working: `bg-brand/20` compiles to `rgb(var(--brand) / 0.2)`.
+
+  Resolution order, highest priority first:
+    1. html[data-theme="light"|"dark"]  — an explicit choice, persisted
+    2. prefers-color-scheme              — when the user has chosen "system"
+    3. :root                             — the default below
+
+  The GRAY SCALE INVERTS between themes. In dark, gray-100 is the brightest
+  (headings) and gray-500 the most muted; in light, gray-100 is the darkest and
+  gray-500 a mid grey. The semantic meaning of each step — "most prominent" to
+  "most muted" — is preserved, which is why the existing class names still read
+  correctly in both.
+*/
+
+:root {
+  /* Dark is the default: it is the design the site was built in, so an
+     unresolved theme renders the known-good look rather than a half-migrated
+     light one. Change the two blocks marked DEFAULT-SWAP to flip this. */
+  color-scheme: dark;
+
+  --bg: 10 15 20; /* #0a0f14 */
+  --card: 17 24 32; /* #111820 */
+  --border: 28 37 48; /* #1c2530 */
+
+  --brand: 0 200 83; /* #00c853 */
+  --brand-dark: 0 163 68; /* #00a344 */
+  /* Text that sits ON the brand colour. Black reads best on the bright dark-theme
+     green; the light theme uses a deeper green and flips this to white. */
+  --on-brand: 0 0 0;
+
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+
+  --emerald-300: 110 231 183;
+  --emerald-500: 16 185 129;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --red-500: 239 68 68;
+  --amber-200: 253 230 138;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --yellow-300: 253 224 71;
+  --yellow-400: 250 204 21;
+  --yellow-500: 234 179 8;
+
+  --vip: 245 197 24; /* #f5c518 */
+  --premium: 168 85 247; /* #a855f7 */
+
+  /* Translucent bar behind the sticky nav. Distinct from a modal scrim, which
+     stays dark in both themes — a scrim's job is to dim the page, a bar's job
+     is to stay legible against whatever scrolls under it. */
+  --surface: 0 0 0;
+  --surface-alpha: 0.4;
+}
+
+/* "System" setting: no data-theme attribute, so the OS preference decides.
+   Guarded against [data-theme] so an explicit choice always wins. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --bg: 247 248 250; /* #f7f8fa — off-white; pure white makes the green glare */
+    --card: 255 255 255;
+    --border: 226 231 237;
+
+    /* #007c33. Darker than it looks necessary: white-on-brand must clear WCAG
+       AA (4.5:1) because it is the primary button, and `text-brand` is
+       body-size link text on a near-white card, which needs the same. The
+       obvious #00963e scored 3.87:1 on both and was rejected — see
+       scripts/check-theme-contrast.ts. */
+    --brand: 0 124 51;
+    --brand-dark: 0 97 41;
+    --on-brand: 255 255 255;
+
+    --gray-100: 11 18 32;
+    --gray-200: 22 32 44;
+    --gray-300: 51 64 78;
+    --gray-400: 90 102 114;
+    --gray-500: 113 124 136;
+    --gray-600: 148 158 169;
+
+    --emerald-300: 4 108 78;
+    --emerald-500: 16 160 112;
+    --red-300: 176 32 32;
+    --red-400: 197 40 40;
+    --red-500: 220 60 60;
+    --amber-200: 120 53 15;
+    --amber-300: 146 64 14;
+    --amber-400: 168 75 16;
+    --yellow-300: 133 100 4;
+    --yellow-400: 150 112 6;
+    --yellow-500: 168 126 8;
+
+    --vip: 161 98 7;
+    --premium: 126 34 206;
+
+    --surface: 255 255 255;
+    --surface-alpha: 0.72;
+  }
+}
+
+/* DEFAULT-SWAP: an explicit light choice. Duplicates the block above rather
+   than sharing it, because a media query and an attribute selector cannot be
+   combined into one rule without making the media query authoritative. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: 247 248 250;
+  --card: 255 255 255;
+  --border: 226 231 237;
+
+  --brand: 0 124 51; /* see the note in the prefers-color-scheme block above */
+  --brand-dark: 0 97 41;
+  --on-brand: 255 255 255;
+
+  --gray-100: 11 18 32;
+  --gray-200: 22 32 44;
+  --gray-300: 51 64 78;
+  --gray-400: 90 102 114;
+  --gray-500: 113 124 136;
+  --gray-600: 148 158 169;
+
+  --emerald-300: 4 108 78;
+  --emerald-500: 16 160 112;
+  --red-300: 176 32 32;
+  --red-400: 197 40 40;
+  --red-500: 220 60 60;
+  --amber-200: 120 53 15;
+  --amber-300: 146 64 14;
+  --amber-400: 168 75 16;
+  --yellow-300: 133 100 4;
+  --yellow-400: 150 112 6;
+  --yellow-500: 168 126 8;
+
+  --vip: 161 98 7;
+  --premium: 126 34 206;
+
+  --surface: 255 255 255;
+  --surface-alpha: 0.72;
+}
+
+/* DEFAULT-SWAP: an explicit dark choice must restore the dark tokens even when
+   the OS prefers light, so the values are restated rather than inherited. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: 10 15 20;
+  --card: 17 24 32;
+  --border: 28 37 48;
+
+  --brand: 0 200 83;
+  --brand-dark: 0 163 68;
+  --on-brand: 0 0 0;
+
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+
+  --emerald-300: 110 231 183;
+  --emerald-500: 16 185 129;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --red-500: 239 68 68;
+  --amber-200: 253 230 138;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --yellow-300: 253 224 71;
+  --yellow-400: 250 204 21;
+  --yellow-500: 234 179 8;
+
+  --vip: 245 197 24;
+  --premium: 168 85 247;
+
+  --surface: 0 0 0;
+  --surface-alpha: 0.4;
+}
+
+html,
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--gray-200));
+  min-height: 100%;
+}
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Suppress transitions during a theme switch. Without this every element with
+   a `transition` animates its colour independently and the change arrives as a
+   ripple rather than as a switch. Applied by the toggle for one frame. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
 
 .card {
   @apply bg-brand-card border border-brand-border rounded-xl p-4;
@@ -20,6 +230,17 @@ body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
 .btn {
   @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition;
 }
-.btn-primary { @apply bg-brand text-black hover:bg-brand-dark; }
-.btn-ghost { @apply border border-brand-border text-white hover:bg-brand-card; }
-.chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold; }
+.btn-primary {
+  @apply bg-brand text-on-brand hover:bg-brand-dark;
+}
+.btn-ghost {
+  @apply border border-brand-border text-gray-100 hover:bg-brand-card;
+}
+.chip {
+  @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+}
+
+/* The translucent sticky bar behind the nav — see --surface above. */
+.surface-blur {
+  background: rgb(var(--surface) / var(--surface-alpha));
+}

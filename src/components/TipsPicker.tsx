@@ -48,7 +48,7 @@ export function TipsPicker({
             onClick={() => setActiveCategory(c.key)}
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
               activeCategory === c.key
-                ? "bg-brand text-black"
+                ? "bg-brand text-on-brand"
                 : c.locked
                   ? "bg-brand-bg text-gray-500 hover:bg-brand-border"
                   : "bg-brand-bg text-gray-300 hover:bg-brand-border"

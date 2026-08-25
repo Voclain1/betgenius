@@ -15,7 +15,7 @@ const TIER_COPY: Record<SubscriptionTier, { label: string; glyph: string | null 
 };
 
 const TIER_STYLES: Record<SubscriptionTier, { frame: string; text: string }> = {
-  FREE: { frame: "border-brand-border bg-brand-card", text: "text-white" },
+  FREE: { frame: "border-brand-border bg-brand-card", text: "text-gray-100" },
   VIP: {
     frame: "border-vip/40 bg-gradient-to-br from-vip/15 via-brand-card to-brand-card shadow-[0_0_50px_-24px_rgba(245,197,24,0.8)]",
     text: "text-vip",

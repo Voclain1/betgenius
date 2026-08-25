@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -40,7 +41,13 @@ export const metadata: Metadata = {
  * letterboxed bars.
  */
 export const viewport: Viewport = {
-  themeColor: "#00c853",
+  // Two entries so the browser chrome matches the rendered page in both
+  // themes. A single value would leave the address bar showing the dark green
+  // over a light page.
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0a0f14" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -48,7 +55,15 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: the boot script below sets data-theme on <html>
+    // before React hydrates, so the server-rendered markup for this element
+    // legitimately differs from the client's. The warning would be noise.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Runs before first paint to prevent a flash of the wrong theme —
+            see THEME_INIT_SCRIPT for why React cannot do this job. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         {/* Emitted once site-wide so BetGenius is understood as an entity
             rather than a set of unrelated pages. No rich result is expected

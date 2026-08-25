@@ -118,7 +118,7 @@ export function BetBuilderClient({
                   type="button"
                   onClick={() => setSource(s)}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                    source === s ? "bg-brand text-black" : "text-gray-400 hover:text-white"
+                    source === s ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
                   }`}
                 >
                   {s === "manual" ? "Manual entry" : "From our tips"}
