@@ -8,8 +8,8 @@
  * under a longer name) rather than genuinely compound. Historical data makes
  * that concrete — 2 of the 3 real multi-market fixtures ever generated paired
  * MATCH_WINNER Home with DOUBLE_CHANCE Home-or-Draw, which it already implies.
- * So every returned pair is run through a compatibility check and only the
- * survivors are counted.
+ * So every returned pair is run through checkLegCompatibility (src/lib/
+ * sameGameDouble.ts) and only the survivors are counted.
  *
  * Replays the digest stored on AIJob.context rather than re-fetching evidence,
  * exactly as scripts/compare-market-calibration.ts does: the model sees the
@@ -31,98 +31,7 @@ export {};
 const react = require("react");
 react.cache = (fn: any) => fn;
 
-import type { MarketType, Selection } from "../src/lib/markets";
-
-/* ------------------------------------------------------------------------ *
- * Compatibility check — RESEARCH PROTOTYPE.
- *
- * Lives here rather than in src/lib because the production table is a separate,
- * not-yet-approved build step. It is kept deliberately literal so the verdicts
- * can be read against the proposal rather than inferred from clever code.
- * ------------------------------------------------------------------------ */
-
-export type Verdict = { ok: true } | { ok: false; reason: "CONTRADICTORY" | "REDUNDANT"; detail: string };
-
-export type Leg = { marketType: MarketType; selection: Selection };
-
-/** The side a pick backs, where it backs one — used to spot opposed picks. */
-function backedSide(leg: Leg): "HOME" | "AWAY" | null {
-  const sel = leg.selection as any;
-  if (leg.marketType === "MATCH_WINNER" || leg.marketType === "WIN_EITHER_HALF") {
-    return sel?.value === "HOME" ? "HOME" : sel?.value === "AWAY" ? "AWAY" : null;
-  }
-  if (leg.marketType === "DOUBLE_CHANCE") {
-    return sel?.value === "HOME_OR_DRAW" ? "HOME" : sel?.value === "AWAY_OR_DRAW" ? "AWAY" : null;
-  }
-  return null;
-}
-
-export function compatible(a: Leg, b: Leg): Verdict {
-  const pair = (x: MarketType, y: MarketType) =>
-    (a.marketType === x && b.marketType === y) || (a.marketType === y && b.marketType === x);
-
-  if (a.marketType === b.marketType) {
-    return { ok: false, reason: "REDUNDANT", detail: `same marketType (${a.marketType}) twice` };
-  }
-
-  // An exact score already fixes result, total and both-teams-scored, so every
-  // partner is implied by it or impossible with it.
-  if (a.marketType === "CORRECT_SCORE" || b.marketType === "CORRECT_SCORE") {
-    return { ok: false, reason: "REDUNDANT", detail: "CORRECT_SCORE determines every other market" };
-  }
-
-  // Backing a side to win covers "that side or draw" and "either side", and
-  // contradicts "the other side or draw". No combination survives.
-  if (pair("MATCH_WINNER", "DOUBLE_CHANCE")) {
-    const mw = a.marketType === "MATCH_WINNER" ? a : b;
-    const dc = a.marketType === "DOUBLE_CHANCE" ? a : b;
-    const mwSide = (mw.selection as any)?.value;
-    const dcVal = (dc.selection as any)?.value;
-    const covers: Record<string, string[]> = {
-      HOME_OR_DRAW: ["HOME", "DRAW"],
-      AWAY_OR_DRAW: ["AWAY", "DRAW"],
-      HOME_OR_AWAY: ["HOME", "AWAY"],
-    };
-    const implied = covers[dcVal]?.includes(mwSide);
-    return implied
-      ? { ok: false, reason: "REDUNDANT", detail: `${mwSide} already implies ${dcVal}` }
-      : { ok: false, reason: "CONTRADICTORY", detail: `${mwSide} cannot occur within ${dcVal}` };
-  }
-
-  // Winning on aggregate means (h1-a1)+(h2-a2) > 0, so at least one term is
-  // positive: MATCH_WINNER strictly implies WIN_EITHER_HALF on the same side.
-  if (pair("MATCH_WINNER", "WIN_EITHER_HALF")) {
-    const sideA = backedSide(a);
-    const sideB = backedSide(b);
-    if (sideA && sideA === sideB) {
-      return { ok: false, reason: "REDUNDANT", detail: "winning the match implies winning a half" };
-    }
-    // Technically possible (away wins H1, home wins the tie) but reads as
-    // self-contradictory on a card, so it is excluded on presentation grounds.
-    return { ok: false, reason: "CONTRADICTORY", detail: "opposed sides across result and half markets" };
-  }
-
-  // BTTS YES means at least two goals, which settles low O/U lines outright.
-  if (pair("BTTS", "OVER_UNDER")) {
-    const btts = (a.marketType === "BTTS" ? a : b).selection as any;
-    const ou = (a.marketType === "OVER_UNDER" ? a : b).selection as any;
-    const line = Number(ou?.line);
-    if (btts?.value === "YES" && Number.isFinite(line) && line <= 1.5) {
-      return ou?.direction === "UNDER"
-        ? { ok: false, reason: "CONTRADICTORY", detail: `BTTS Yes cannot coexist with Under ${line}` }
-        : { ok: false, reason: "REDUNDANT", detail: `BTTS Yes already implies Over ${line}` };
-    }
-  }
-
-  // Two picks that back opposite sides across any remaining market pair.
-  const sideA = backedSide(a);
-  const sideB = backedSide(b);
-  if (sideA && sideB && sideA !== sideB) {
-    return { ok: false, reason: "CONTRADICTORY", detail: `backs ${sideA} and ${sideB}` };
-  }
-
-  return { ok: true };
-}
+import { checkLegCompatibility, type Leg } from "../src/lib/sameGameDouble";
 
 /* ------------------------------------------------------------------------ */
 
@@ -207,7 +116,7 @@ async function main() {
       let anyOk = false;
       for (let i = 0; i < legs.length; i++) {
         for (let j = i + 1; j < legs.length; j++) {
-          const v = compatible(legs[i], legs[j]);
+          const v = checkLegCompatibility(legs[i], legs[j]);
           const desc = `${label(legs[i])}  +  ${label(legs[j])}`;
           if (v.ok) {
             anyOk = true;
@@ -249,8 +158,4 @@ market mix returned:`);
   await prisma.$disconnect();
 }
 
-// Only runs when invoked directly, so the compatibility predicate above can be
-// imported and asserted against real historical pairs by check-leg-compatibility.ts.
-if (require.main === module) {
-  main().catch((e) => { console.error(e); process.exit(1); });
-}
+main().catch((e) => { console.error(e); process.exit(1); });

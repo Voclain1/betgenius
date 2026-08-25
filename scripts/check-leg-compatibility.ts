@@ -11,11 +11,12 @@
  * Run: npx tsx scripts/check-leg-compatibility.ts
  */
 export {};
-import { compatible, type Leg } from "./measure-market-breadth";
+import { checkLegCompatibility, composeComboOutcome, comboConfidenceCeiling, type Leg } from "../src/lib/sameGameDouble";
+import type { Outcome } from "../src/lib/enums";
 
 let failures = 0;
 function expect(label: string, a: Leg, b: Leg, want: "ok" | "REDUNDANT" | "CONTRADICTORY") {
-  const v = compatible(a, b);
+  const v = checkLegCompatibility(a, b);
   const got = v.ok ? "ok" : v.reason;
   const pass = got === want;
   if (!pass) failures++;
@@ -60,6 +61,73 @@ expect("WEH Home + BTTS No", weh("HOME"), btts("NO"), "ok");
 expect("WEH Home + Over 2.5", weh("HOME"), ou(2.5, "OVER"), "ok");
 expect("BTTS Yes + Over 2.5 (line above implication)", btts("YES"), ou(2.5, "OVER"), "ok");
 expect("BTTS No + Under 2.5", btts("NO"), ou(2.5, "UNDER"), "ok");
+
+
+/* ---------------------------------------------------------------------- *
+ * Outcome composition.
+ * ---------------------------------------------------------------------- */
+
+function expectOutcome(label: string, a: Outcome, b: Outcome, want: Outcome | null) {
+  const got = composeComboOutcome(a, b);
+  const pass = got === want;
+  if (!pass) failures++;
+  console.log(`  ${pass ? "PASS" : "FAIL"}  ${label.padEnd(56)} want=${want ?? "null"} got=${got ?? "null"}`);
+}
+
+console.log("\ncomposition — both legs must land:");
+expectOutcome("WON + WON", "WON", "WON", "WON");
+expectOutcome("WON + LOST", "WON", "LOST", "LOST");
+expectOutcome("LOST + WON", "LOST", "WON", "LOST");
+expectOutcome("LOST + LOST", "LOST", "LOST", "LOST");
+
+console.log("\ncomposition — VOID propagates to the whole double:");
+expectOutcome("VOID + WON", "VOID", "WON", "VOID");
+expectOutcome("WON + VOID", "WON", "VOID", "VOID");
+expectOutcome("VOID + VOID", "VOID", "VOID", "VOID");
+// A void leg is NOT removed to reduce the double to its surviving leg, which
+// is what a real book would do. See the note on composeComboOutcome.
+expectOutcome("VOID + LOST voids rather than losing", "VOID", "LOST", "VOID");
+
+console.log("\ncomposition — not yet settleable:");
+expectOutcome("PENDING + WON", "PENDING", "WON", null);
+expectOutcome("WON + PENDING", "WON", "PENDING", null);
+expectOutcome("PENDING + PENDING", "PENDING", "PENDING", null);
+expectOutcome("PENDING + LOST stays unsettled", "PENDING", "LOST", null);
+
+console.log("\ncomposition is order-independent:");
+const OUTCOMES: Outcome[] = ["PENDING", "WON", "LOST", "VOID"];
+let asymmetric = 0;
+for (const x of OUTCOMES) {
+  for (const y of OUTCOMES) {
+    if (composeComboOutcome(x, y) !== composeComboOutcome(y, x)) {
+      asymmetric++;
+      failures++;
+      console.log(`  FAIL  ${x} + ${y} disagrees with its reverse`);
+    }
+  }
+}
+if (asymmetric === 0) console.log(`  PASS  all ${OUTCOMES.length ** 2} ordered pairs agree with their reverse`);
+
+console.log("\nconfidence ceiling is a bound, never a product:");
+function expectCeiling(a: number, b: number, want: number) {
+  const got = comboConfidenceCeiling(a, b);
+  const pass = got === want;
+  if (!pass) failures++;
+  console.log(`  ${pass ? "PASS" : "FAIL"}  ceiling(${a}, ${b})`.padEnd(58) + ` want=${want} got=${got}`);
+}
+expectCeiling(72, 62, 62);
+expectCeiling(62, 72, 62);
+expectCeiling(70, 70, 70);
+// The independence product here would be 45%. It must NOT be what we return:
+// correlated legs make that number wrong in an unknown direction, whereas
+// min() is true under every correlation.
+const product = Math.round((72 * 62) / 100);
+if (comboConfidenceCeiling(72, 62) === product) {
+  failures++;
+  console.log(`  FAIL  ceiling returned the independence product (${product}) instead of the bound`);
+} else {
+  console.log(`  PASS  ceiling is the bound (62), not the independence product (${product})`);
+}
 
 console.log(`\n${failures === 0 ? "PASS" : "FAIL"} — ${failures} failure(s)`);
 if (failures) process.exitCode = 1;
