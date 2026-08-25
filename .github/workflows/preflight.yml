@@ -1,0 +1,54 @@
+# Pre-flight checks on every push and pull request.
+#
+# The schema-sync step is the reason this workflow exists. A column can sit in
+# prisma/schema.prisma without ever being pushed to the database while every
+# other signal stays green — typecheck, the whole assertion suite, even the
+# production build — because none of them touches that column. The application
+# is then unrunnable in production and nothing says so until a cron throws
+# P2022. See scripts/check-schema-sync.ts.
+#
+# DATABASE_URL must be set as a repository secret for the schema check to mean
+# anything. Until it is, that step SKIPS rather than fails, so adding this
+# workflow does not turn the repo red before the secret exists.
+
+name: preflight
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` runs postinstall, which is `prisma generate` — the client has
+      # to exist before anything typechecks.
+      - name: Install
+        run: npm ci
+
+      # Runs before the build: a schema/database disagreement should be
+      # reported as itself, not as a confusing downstream failure.
+      - name: Schema matches the live database
+        run: npm run check:schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Build
+        run: npx next build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Placeholder values: the build only needs these to exist, and using
+          # the real secrets here would put them in a build log for no gain.
+          NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret
+          NEXTAUTH_URL: http://localhost:3000
