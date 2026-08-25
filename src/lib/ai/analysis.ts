@@ -10,6 +10,7 @@
  * similar-looking rows.
  */
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
+import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
@@ -343,8 +344,14 @@ export function buildSystemPrompt(
   // calibration has already narrowed which markets are appropriate.
   const breadthBlock = breadth === "multi" ? multiMarketBlock() : "";
 
-  if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}`;
-  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}`;
+  // Appended to EVERY prompt, including the "off" comparison mode. The ban is
+  // not a feature of one calibration or one pipeline — no draft may assert
+  // certainty — and generation now rejects a draft that breaks it, so the
+  // prompt and the scan have to agree in all modes.
+  const certaintyBlock = certaintyProhibitionBlock();
+
+  if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}${certaintyBlock}`;
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}${certaintyBlock}`;
 }
 
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */

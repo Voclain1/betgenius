@@ -5,6 +5,12 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { runGeneration } from "@/lib/generation/worker";
 import {
+  MARKET_CONFIRMED_INTENT,
+  MARKET_CONFIRMED_DAILY_QUOTA,
+  marketConfirmedQuotaRemaining,
+  applyMarketConfirmedGate,
+} from "@/lib/marketConfirmedPipeline";
+import {
   DOUBLES_DAILY_QUOTA,
   doublesQuotaRemaining,
 } from "@/lib/doublesTargeting";
@@ -152,8 +158,34 @@ export async function GET(req: Request) {
     doublesTargeting = { quota: DOUBLES_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
   }
 
+  /**
+   * The dedicated Market-Confirmed pass.
+   *
+   * Requested with ?marketConfirmed=1 rather than a category, because its rows
+   * are not VIP/PREMIUM picks until they pass the odds gate — tagging them up
+   * front would put ungated picks straight into the paid feeds.
+   */
+  const wantsMarketConfirmed = url.searchParams.get("marketConfirmed") === "1";
+  let marketConfirmedTargeting: Record<string, unknown> | undefined;
+
+  if (wantsMarketConfirmed) {
+    const remaining = await marketConfirmedQuotaRemaining();
+    if (remaining <= 0) {
+      return NextResponse.json({
+        ok: true,
+        skipped: "daily Market-Confirmed generation quota already spent",
+        quota: MARKET_CONFIRMED_DAILY_QUOTA,
+        generatedToday: MARKET_CONFIRMED_DAILY_QUOTA,
+        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+      });
+    }
+    effectiveLimit = Math.min(remaining, effectiveLimit);
+    marketConfirmedTargeting = { quota: MARKET_CONFIRMED_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
+  }
+
   const report = await runGeneration({
     authorId,
+    intent: wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : undefined,
     categories: valid.length ? valid : ["FEATURED"],
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     matchKeys,
@@ -161,6 +193,33 @@ export async function GET(req: Request) {
   });
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
+  if (marketConfirmedTargeting) {
+    // The gate runs in the SAME request, immediately after generation, so a
+    // passing pick is promoted before anything else can look at the feeds and
+    // so the odds quote is still inside its two-hour freshness window.
+    const gate = await applyMarketConfirmedGate();
+    return NextResponse.json({
+      ...report,
+      marketConfirmed: {
+        ...marketConfirmedTargeting,
+        evaluated: gate.evaluated,
+        fixtures: gate.fixtures,
+        promoted: gate.promoted.map((p) => ({
+          fixture: p.fixture, pick: p.pick,
+          model: p.verdict.modelProbability,
+          market: p.verdict.marketProbability,
+          gapPP: p.verdict.gapPP,
+          bookmakers: p.verdict.bookmakers,
+        })),
+        rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
+          const k = r.verdict.reason ?? "?";
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {}),
+        runnersUp: gate.runnersUp.length,
+      },
+    }, { status: 200 });
+  }
   if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
 
   // A run that found the lock held is a normal outcome, not a failure — the

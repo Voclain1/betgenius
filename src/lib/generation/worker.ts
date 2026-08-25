@@ -191,6 +191,8 @@ async function recordAttempt(
 export async function runGeneration(opts: {
   authorId: string;
   categories: string[];
+  /** Recorded on AIJob.prompt so daily quotas can count attempts by intent. */
+  intent?: string;
   leagueApiIds?: number[];
   /** Explicit fixture allow-list — used by price-first Bet of the Day targeting. */
   matchKeys?: string[];
@@ -223,7 +225,7 @@ export async function runGeneration(opts: {
 
     // Doubles cost about twice a normal fixture, so they get a tighter cutoff
     // derived from cron-job.org's 30s ceiling rather than the general one.
-    const startCutoffMs = startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS);
+    const startCutoffMs = startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS, opts.intent);
 
     for (const c of candidates) {
       // Stop claiming new work rather than risk being killed mid-fixture. The
@@ -243,6 +245,7 @@ export async function runGeneration(opts: {
           kickoff: c.kickoff.toISOString(),
           round: c.round,
           categories: opts.categories,
+          intent: opts.intent,
           authorId: opts.authorId,
           // The fixture list already carried these — passing them through is
           // what removes the two searchTeam calls per fixture.

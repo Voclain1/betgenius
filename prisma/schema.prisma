@@ -442,6 +442,33 @@ model Prediction {
   // scheduled job. Cleared whenever the tag moves to another row, so a stale
   // pin cannot keep suppressing auto-selection after the pick it belonged to
   // has been replaced.
+  // How this row came to be a paid-tier pick.
+  //
+  // "STANDARD_CURATED" — the default and the state of every row that predates
+  // this field: chosen by geniusCuration.ts's ranking, which recalculates from
+  // scratch on every run and freely adds and removes rows.
+  //
+  // "MARKET_CONFIRMED" — produced by the dedicated pipeline and passed the
+  // 75/75/10 odds-agreement gate (src/lib/marketConfirmed.ts).
+  //
+  // An EXPLICIT column rather than something inferred from category tags,
+  // because the two are not the same fact: a Market-Confirmed pick carries the
+  // VIP/PREMIUM tags exactly like a curated one, so the tags cannot tell them
+  // apart. Curation's unconditional recalculation would then strip a dedicated
+  // pick the moment its ranking preferred something else. This column is what
+  // curation reads to know it must not.
+  provenance           String                   @default("STANDARD_CURATED")
+  // The odds-agreement evidence behind a MARKET_CONFIRMED pick, as shown to
+  // readers: { modelProbability, marketProbability, gapPP, bookmakers, market,
+  // value, quoteFetchedAt }.
+  //
+  // Persisted rather than recomputed at render time because it is a record of
+  // what the market said WHEN THE PICK WAS MADE. Prices move; recomputing would
+  // quietly restate the badge as the fixture approached, and a reader could see
+  // a "Market 78%" claim become "Market 61%" with no indication the pick had
+  // not changed. A JSON column for the same reason selection and analysisJson
+  // are: read only alongside its own row, never filtered or aggregated across.
+  marketConfirmation   Json?
   betOfDayPinnedById   String?
   betOfDayPinnedBy     User?                    @relation("PredictionBetOfDayPinner", fields: [betOfDayPinnedById], references: [id])
   betOfDayPinnedAt     DateTime?
@@ -529,6 +556,9 @@ model GenerationAttempt {
   homeTeam      String
   awayTeam      String
   kickoff       DateTime
+  // Provider stage/round retained so cup generation can reason about group,
+  // knockout and two-legged contexts after discovery is decoupled from work.
+  round         String?
   // PENDING | SUCCEEDED | FAILED | ABANDONED
   // FAILED is retryable and carries nextAttemptAt; ABANDONED is the dead letter
   // — retries exhausted, visible in the admin panel, never selected again.

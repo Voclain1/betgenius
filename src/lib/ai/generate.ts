@@ -11,6 +11,20 @@ import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type Market
 import { normalizeName } from "@/lib/slug";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories } from "@/lib/doublesTargeting";
+import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
+
+/**
+ * Thrown when a draft asserts certainty. Carries the violations so the failure
+ * is actionable — which phrase, in which field — rather than a bare rejection.
+ */
+export class CertaintyLanguageError extends Error {
+  readonly violations: CertaintyViolation[];
+  constructor(violations: CertaintyViolation[]) {
+    super(`Draft rejected — prohibited certainty language: ${violations.map((v) => `${v.field}:"${v.match}"`).join(", ")}`);
+    this.name = "CertaintyLanguageError";
+    this.violations = violations;
+  }
+}
 
 export type GenerateFixtureInput = {
   fixtureId?: string;
@@ -34,6 +48,17 @@ export type GenerateFixtureInput = {
   awayTeamApiId?: number | null;
   /** API-Football knockout round, supplied by fixture-list generation paths. */
   round?: string | null;
+  /**
+   * What this job is FOR, when that is not simply its categories.
+   *
+   * Recorded because the whole input object is persisted as AIJob.prompt, which
+   * is how daily quotas are counted. Market-Confirmed generation cannot be
+   * identified by categories the way doubles can — its rows are tagged
+   * VIP/PREMIUM only AFTER they pass the odds gate, and a job that generated a
+   * pick which then failed the gate still spent its slot and its money. The
+   * quota has to count attempts, so the attempt has to be labelled.
+   */
+  intent?: string;
 };
 
 /**
@@ -107,7 +132,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // assembled from two independently-reasoned rows; every other job asks for
   // one, exactly as before. Derived from the categories rather than passed in,
   // so the job's intent and its prompt cannot disagree.
-  const marketBreadth = marketBreadthForCategories(input.categories);
+  const marketBreadth = marketBreadthForCategories(input.categories, input.intent);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
@@ -142,6 +167,21 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       context: buildStoredContext(digest) as unknown as Prisma.InputJsonValue,
     },
   });
+
+  // Deterministic certainty scan, BEFORE anything is persisted.
+  //
+  // The prompt has forbidden certainty language since the beginning, with
+  // nothing behind it but the model's compliance. This rejects rather than
+  // edits: stripping the offending word would leave prose written to argue
+  // inevitability, minus the one token that made the claim reviewable.
+  const certaintyViolations = scanDraftForCertainty({
+    matchPreview: output.matchPreview,
+    keyFactors: output.keyFactors,
+    reasoning: output.predictions.map((p) => p.reasoning).join("\n\n"),
+  });
+  if (certaintyViolations.length > 0) {
+    throw new CertaintyLanguageError(certaintyViolations);
+  }
 
   const created = await Promise.all(
     output.predictions.map(async (p) => {

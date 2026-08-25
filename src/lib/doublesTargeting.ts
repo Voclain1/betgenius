@@ -71,7 +71,13 @@ export async function doublesQuotaRemaining(now: Date = new Date()): Promise<num
  * categories: the caller already says what the job is FOR, and threading a
  * second parameter through every layer would let the two disagree.
  */
-export function marketBreadthForCategories(categories: readonly string[]): "single" | "multi" {
+export function marketBreadthForCategories(categories: readonly string[], intent?: string | null): "single" | "multi" {
+  // Market-Confirmed generation also wants several markets per fixture, for a
+  // different reason: the odds gate rejects most selections, so a fixture that
+  // offers only one has one chance to clear it. Its intent is not a category —
+  // its rows are tagged VIP/PREMIUM only after they pass — so it is matched
+  // here explicitly rather than through the category list.
+  if (intent === "MARKET_CONFIRMED") return "multi";
   return categories.includes(SAME_GAME_DOUBLE) ? "multi" : "single";
 }
 
@@ -121,6 +127,17 @@ export const DOUBLES_START_CUTOFF_MS = Math.max(0, DOUBLES_CLIENT_BUDGET_MS - DO
  * general 22s cutoff: at 22s elapsed a doubles fixture would be started with
  * 8s of client budget left and about 27s of work to do.
  */
-export function startCutoffMsForCategories(categories: readonly string[], defaultCutoffMs: number): number {
+export function startCutoffMsForCategories(
+  categories: readonly string[],
+  defaultCutoffMs: number,
+  intent?: string | null,
+): number {
+  // Market-Confirmed generation was measured SEPARATELY rather than assumed to
+  // match: 26.8, 25.7, 23.6 and 24.3s per fixture, mean 25.1s. That is the same
+  // regime as doubles — both ask for several markets and both pay the same
+  // ~15s of throttled api-football fetches — so it takes the same tight cutoff
+  // rather than the general 22s one, which would start a fixture with 8s of
+  // client budget left and ~25s of work to do.
+  if (intent === "MARKET_CONFIRMED") return DOUBLES_START_CUTOFF_MS;
   return categories.includes(SAME_GAME_DOUBLE) ? DOUBLES_START_CUTOFF_MS : defaultCutoffMs;
 }

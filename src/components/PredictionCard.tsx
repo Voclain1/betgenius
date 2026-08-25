@@ -4,6 +4,7 @@ import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
 import { leagueSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
+import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
 
 export type PredictionRow = {
   id: string;
@@ -12,6 +13,8 @@ export type PredictionRow = {
   pick: string;
   /** Present so a same-game double can label its confidence honestly — see below. */
   marketType?: string | null;
+  /** Set only on Market-Confirmed picks; renders the badge below the pick. */
+  marketConfirmation?: MarketConfirmation | null;
   confidence: number | null;
   reasoning: string;
   matchPreview?: string | null;
@@ -86,6 +89,10 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
           </div>
         </div>
       </div>
+      {/* Below the pick, above the confidence bar: the badge qualifies the number
+          that follows it, so it has to be read first. Locked rows never reach
+          here — a reader who cannot see the pick is not shown its evidence. */}
+      {p.marketConfirmation && !p.locked && <MarketConfirmedBadge confirmation={p.marketConfirmation} />}
       {p.confidence !== null && p.confidence !== undefined && (
         <div>
           <div className="mb-1 flex justify-between text-xs text-gray-400">
