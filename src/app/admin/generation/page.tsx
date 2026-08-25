@@ -1,4 +1,5 @@
 import { getGenerationStats, type WindowSummary } from "@/lib/generation/stats";
+import { getBetOfDayCalibration, type BetOfDayCalibration } from "@/lib/betOfDayCalibration";
 
 export const dynamic = "force-dynamic";
 
@@ -53,8 +54,99 @@ function WindowCard({ title, s }: { title: string; s: WindowSummary }) {
   );
 }
 
+/**
+ * Standing calibration panel for Bet of the Day.
+ *
+ * Permanent, not a pre-launch check. The bolder prompt path this category uses
+ * had never run in production before the category existed, and every future
+ * model or prompt change re-opens the same question — so "does 70% mean 70%"
+ * has to stay on screen rather than being answered once in a script.
+ *
+ * Deliberately shows its own uncertainty. A gap of 12pp on nine settled picks
+ * is noise; the same gap on ninety is a broken model, and a panel that printed
+ * only the gap would make those look identical.
+ */
+function CalibrationPanel({ c }: { c: BetOfDayCalibration }) {
+  const tone = c.gate.passes === false ? "border-red-500/40" : c.gate.passes === true ? "border-brand/40" : "border-brand-border";
+  const gapColour = c.overconfidenceGapPP == null ? "" : c.overconfidenceGapPP > 0 ? "text-red-300" : "text-brand";
+
+  return (
+    <div className={`card space-y-3 ${tone}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Bet of the Day calibration</h2>
+        <span className="text-[11px] text-gray-500">quota {c.quota}/day · measured by generation intent, not by tag</span>
+      </div>
+
+      {c.settled === 0 ? (
+        <p className="text-sm text-gray-400">
+          No Bet of the Day predictions have settled yet{c.pending > 0 ? ` — ${c.pending} awaiting a result` : ""}. This panel
+          fills in as they resolve.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat label="Settled" value={c.settled} hint={`${c.won}W / ${c.lost}L · ${c.pending} pending`} />
+            <Stat label="Mean confidence" value={c.meanConfidence == null ? "—" : `${c.meanConfidence}%`} hint="what the model claimed" />
+            <Stat label="Actual strike rate" value={c.actualStrikeRate == null ? "—" : `${c.actualStrikeRate}%`} hint="what actually happened" />
+            <Stat label="Market implied" value={c.meanImplied == null ? "—" : `${c.meanImplied}%`} hint="context, not a target" />
+          </div>
+
+          <div className="rounded-md bg-brand-bg p-3">
+            <div className="text-[10px] uppercase text-gray-500">Overconfidence gap</div>
+            <div className={`text-lg font-semibold tabular-nums ${gapColour}`}>
+              {c.overconfidenceGapPP == null ? "—" : `${c.overconfidenceGapPP > 0 ? "+" : ""}${c.overconfidenceGapPP}pp`}
+              {c.standardErrorPP != null && <span className="ml-2 text-xs font-normal text-gray-500">± {c.standardErrorPP}pp (1 SE)</span>}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              confidence minus outcomes · positive means the model claims more than it delivers
+              {c.significant === false ? " · within noise at this sample size" : c.significant === true ? " · beyond 2 SE" : ""}
+            </div>
+          </div>
+
+          {c.buckets.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-left text-gray-500">
+                  <tr>
+                    <th className="py-1">Confidence band</th>
+                    <th className="py-1 text-right">Settled</th>
+                    <th className="py-1 text-right">Claimed</th>
+                    <th className="py-1 text-right">Actual</th>
+                    <th className="py-1 text-right">Gap</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-brand-border">
+                  {c.buckets.map((b) => (
+                    <tr key={b.label}>
+                      <td className="py-1 text-gray-300">{b.label}</td>
+                      <td className="py-1 text-right tabular-nums">{b.settled}</td>
+                      <td className="py-1 text-right tabular-nums">{b.meanConfidence}%</td>
+                      <td className="py-1 text-right tabular-nums">{b.actualStrikeRate}%</td>
+                      <td className={`py-1 text-right tabular-nums ${b.gapPP > 0 ? "text-red-300" : "text-brand"}`}>
+                        {b.gapPP > 0 ? "+" : ""}{b.gapPP}pp
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      <div className="border-t border-brand-border pt-2">
+        <div className="text-[10px] uppercase text-gray-500">Volume gate</div>
+        <p className="text-xs text-gray-400">{c.gate.verdict}</p>
+        <p className="mt-1 text-[11px] text-gray-500">
+          Sample {c.settled}/{c.gate.minimumSample} · the quota is raised on evidence, never on elapsed time.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default async function GenerationPage() {
-  const stats = await getGenerationStats();
+  const [stats, calibration] = await Promise.all([getGenerationStats(), getBetOfDayCalibration()]);
 
   return (
     <div className="space-y-6">
@@ -64,6 +156,8 @@ export default async function GenerationPage() {
           Scheduled runs produce candidates only — every prediction lands in review, nothing publishes itself.
         </p>
       </div>
+
+      <CalibrationPanel c={calibration} />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Awaiting review" value={stats.pendingReview} hint="the real bottleneck" />

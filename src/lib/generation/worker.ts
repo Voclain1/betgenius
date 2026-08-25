@@ -191,6 +191,8 @@ export async function runGeneration(opts: {
   authorId: string;
   categories: string[];
   leagueApiIds?: number[];
+  /** Explicit fixture allow-list — used by price-first Bet of the Day targeting. */
+  matchKeys?: string[];
   limit: number;
   now?: Date;
 }): Promise<RunReport> {
@@ -210,7 +212,7 @@ export async function runGeneration(opts: {
       return empty(`api-football daily budget nearly exhausted (${usage.remaining} left)`, usage.remaining);
     }
 
-    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds });
+    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds, matchKeys: opts.matchKeys });
 
     const report: RunReport = {
       ok: true, claimed: candidates.length, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,

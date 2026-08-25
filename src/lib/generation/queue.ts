@@ -92,12 +92,25 @@ export async function discoverGenerationCandidates(opts: {
   };
 }
 
-/** Read generation work solely from the cached ledger; no football API calls. */
-export async function selectQueuedCandidates(opts: { limit: number; now?: Date; leagueApiIds?: number[] }): Promise<Candidate[]> {
+/**
+ * Read generation work solely from the cached ledger; no football API calls.
+ *
+ * `matchKeys` narrows to an explicitly chosen set. Bet of the Day generation
+ * uses it to hand over fixtures already selected by market price (see
+ * selectBetOfTheDayTargets), which is what lets price-first targeting reuse
+ * this worker, lock and ledger rather than growing a second pipeline. Every
+ * other guarantee still applies to those fixtures unchanged — the
+ * already-generated exclusion, retry backoff, and terminal states.
+ */
+export async function selectQueuedCandidates(opts: { limit: number; now?: Date; leagueApiIds?: number[]; matchKeys?: string[] }): Promise<Candidate[]> {
   const now = opts.now ?? new Date();
+  // An empty (not absent) matchKeys array means "nothing was selected", which
+  // must return nothing rather than falling through to the whole ledger.
+  if (opts.matchKeys && opts.matchKeys.length === 0) return [];
   const attempts = await prisma.generationAttempt.findMany({
     where: {
       kickoff: { gt: now },
+      matchKey: opts.matchKeys?.length ? { in: opts.matchKeys } : undefined,
       leagueApiId: opts.leagueApiIds?.length ? { in: opts.leagueApiIds } : undefined,
       OR: [
         { status: "PENDING" },
