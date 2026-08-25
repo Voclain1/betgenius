@@ -257,14 +257,94 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
    or mechanically substitute a market after deciding the analysis.`;
 }
 
-export function buildSystemPrompt(tiers: GenerationTier[], calibration: RiskCalibrationMode | boolean = "margin"): string {
+/**
+ * How many market calls one analysis should produce.
+ *
+ * "single" is production: one primary pick per fixture, which is what the
+ * pipeline has always emitted in practice (171 of 174 real jobs).
+ *
+ * "multi" asks for 2-3 picks on DISTINCT markets so a same-game double can be
+ * assembled from two independently-reasoned rows. It is deliberately opt-in and
+ * NOT yet wired into generation: every row created by one job inherits the same
+ * categories (see generate.ts), so switching production to "multi" would put
+ * two or three rows for the SAME fixture into every feed. That is a separate
+ * decision from whether the model can produce usable pairs at all, which is
+ * what this mode exists to measure.
+ */
+export type MarketBreadth = "single" | "multi";
+
+/**
+ * Asks for several markets on one fixture, and — more importantly — rules out
+ * the pairs that look like combos but are not.
+ *
+ * The ban list is not stylistic. Two picks on one fixture can relate three
+ * ways: they can contradict (impossible together), they can NEST (one logically
+ * implies the other, so the pair is really just the stricter pick under a
+ * longer name), or they can genuinely both constrain. Only the third is a
+ * combo. Real generated data shows the model reaches for the nested case
+ * unprompted — 2 of the 3 historical multi-market fixtures paired MATCH_WINNER
+ * Home with DOUBLE_CHANCE Home-or-Draw, which is implied by it and adds nothing.
+ *
+ * Stated as evidence rules rather than as a lookup table because the model is
+ * choosing markets from analysis, and a bare table invites it to satisfy the
+ * table instead of the reasoning.
+ */
+function multiMarketBlock(): string {
+  return `
+
+MULTIPLE MARKET CALLS
+=====================
+Return 2 or 3 entries in "predictions" for this fixture, each on a DIFFERENT
+marketType, each independently reasoned from the evidence with its own
+"confidence" and its own "reasoning". Do not restate one pick's reasoning for
+another. Return fewer entries — even just one — if the evidence only supports
+one honest call. A thin or contradictory digest should produce one pick, never
+padding.
+
+The entries must be able to stand together as separate statements about the
+match. Two rules make that true, and both are absolute:
+
+1. NEVER pair picks where one already guarantees the other. The pair would be
+   the stricter pick alone, dressed up. Specifically:
+   - MATCH_WINNER with DOUBLE_CHANCE — banned in every combination. Backing a
+     side to win already covers "that side or draw" and "either side"; backing a
+     side to win contradicts "the other side or draw". There is no usable pair.
+   - MATCH_WINNER with WIN_EITHER_HALF on the same side — banned. A side that
+     wins the match must have outscored the opponent in at least one half.
+   - BTTS "YES" with OVER_UNDER at line 1.5 or lower — banned. Both teams
+     scoring already means at least two goals.
+   - CORRECT_SCORE with anything — banned. An exact score already fixes the
+     result, the goal total and whether both teams scored.
+   - The same marketType twice — banned.
+
+2. NEVER pair picks that cannot both be true:
+   - BTTS "YES" with OVER_UNDER "UNDER" at line 1.5 or lower is impossible.
+   - Opposite sides across two markets is contradictory.
+
+Good pairings put the picks on different DIMENSIONS of the match — the result,
+the goal total, whether both teams score, or how a single half goes. For
+example a result call plus a goals call, or a goals call plus a both-teams-
+to-score call at a line that does not already follow from it.
+
+Order the entries with your highest-conviction call FIRST.`;
+}
+
+export function buildSystemPrompt(
+  tiers: GenerationTier[],
+  calibration: RiskCalibrationMode | boolean = "margin",
+  breadth: MarketBreadth = "single",
+): string {
   // Back-compat with the original boolean: false meant "no calibration", true
   // meant the tiered block that was current at the time.
   const mode: RiskCalibrationMode =
     calibration === false ? "off" : calibration === true ? "tiered" : calibration;
 
-  if (mode === "off") return BASE_SYSTEM_PROMPT;
-  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}`;
+  // Appended last so the market-count instruction is read after the risk
+  // calibration has already narrowed which markets are appropriate.
+  const breadthBlock = breadth === "multi" ? multiMarketBlock() : "";
+
+  if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}`;
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}`;
 }
 
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
@@ -285,6 +365,12 @@ export async function generatePredictionForFixture(input: {
    * "tiered" or "off" to render the earlier prompts against the same evidence.
    */
   riskCalibration?: RiskCalibrationMode | boolean;
+  /**
+   * How many market calls to ask for. Defaults to "single", which is what
+   * production generation uses. Only the same-game-double research harness
+   * (scripts/measure-market-breadth.ts) passes "multi" — see MarketBreadth.
+   */
+  marketBreadth?: MarketBreadth;
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -349,7 +435,7 @@ Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
   const request = {
-    system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin"),
+    system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin", input.marketBreadth ?? "single"),
     user: userPrompt,
     label,
     // Raised only for rewrites. First-pass generation stays on the model

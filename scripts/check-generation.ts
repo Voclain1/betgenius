@@ -82,9 +82,20 @@ check("curation: GENIUS and VIP can overlap", [...geniusSet].some((id) => vipSet
 check("curation: a prediction can qualify for GENIUS, VIP and PREMIUM", [...premiumSet].some((id) => geniusSet.has(id) && vipSet.has(id)));
 check("curation: GENIUS and VIP are independently bounded", geniusSet.size !== vipSet.size);
 eq("curation: PREMIUM applies its own 75% selection", [...premiumSet], [...vipSet]);
-check("prompt: GENIUS receives safer-market calibration", buildSystemPrompt(["GENIUS"]).includes("GENIUS (safer)"));
-check("prompt: VIP/PREMIUM receive the stricter calibration", buildSystemPrompt(["VIP"]).includes("VIP or PREMIUM (more safer)"));
-check("prompt: legacy comparison omits calibration", !buildSystemPrompt(["PREMIUM"], false).includes("TIER-AWARE MARKET RISK CALIBRATION"));
+// These two assert the TIERED block, which stopped being the default in
+// c37c16a when calibration moved to margin-keyed. They must name the mode
+// explicitly — passing no mode now renders the margin block, which carries
+// neither string.
+check("prompt: tiered mode gives GENIUS safer-market calibration", buildSystemPrompt(["GENIUS"], "tiered").includes("GENIUS (safer)"));
+check("prompt: tiered mode gives VIP/PREMIUM the stricter calibration", buildSystemPrompt(["VIP"], "tiered").includes("VIP or PREMIUM (more safer)"));
+check("prompt: margin is the default calibration", buildSystemPrompt(["GENIUS"]).includes("MARKET RISK CALIBRATION BY MARGIN"));
+check("prompt: legacy comparison omits calibration", !buildSystemPrompt(["PREMIUM"], false).includes("MARKET RISK CALIBRATION"));
+// Multi-market breadth is opt-in: production generation must be byte-identical
+// to what it was before the same-game-double research added the mode.
+eq("prompt: default breadth equals explicit single", buildSystemPrompt(["GENIUS"]), buildSystemPrompt(["GENIUS"], "margin", "single"));
+check("prompt: single breadth omits the multi-market block", !buildSystemPrompt(["GENIUS"]).includes("MULTIPLE MARKET CALLS"));
+check("prompt: multi breadth adds the multi-market block", buildSystemPrompt(["GENIUS"], "margin", "multi").includes("MULTIPLE MARKET CALLS"));
+check("prompt: multi breadth keeps calibration", buildSystemPrompt(["GENIUS"], "margin", "multi").includes("MARKET RISK CALIBRATION BY MARGIN"));
 eq("risk routing: cutoff contains exactly twelve priority entries", VIP_PROXY_LEAGUE_IDS.length, VIP_PROXY_LEAGUE_CUTOFF);
 eq("risk routing: top-priority league uses VIP calibration", resolveGenerationRisk(["FEATURED"], 39).calibration, "vip");
 eq("risk routing: first league below cutoff uses GENIUS calibration", resolveGenerationRisk(["FEATURED"], 307).calibration, "genius");
