@@ -13,6 +13,7 @@
 export {};
 import { checkLegCompatibility, composeComboOutcome, comboConfidenceCeiling, type Leg } from "../src/lib/sameGameDouble";
 import type { Outcome } from "../src/lib/enums";
+import { AUTO_MARKET_TYPES, ADMIN_MARKET_TYPES, MARKET_TYPES, isValidSelection, resolveMarket } from "../src/lib/markets";
 
 let failures = 0;
 function expect(label: string, a: Leg, b: Leg, want: "ok" | "REDUNDANT" | "CONTRADICTORY") {
@@ -128,6 +129,64 @@ if (comboConfidenceCeiling(72, 62) === product) {
 } else {
   console.log(`  PASS  ceiling is the bound (62), not the independence product (${product})`);
 }
+
+
+/* ---------------------------------------------------------------------- *
+ * Guards: a double must never be generated, typed in, or scoreline-resolved.
+ * ---------------------------------------------------------------------- */
+
+function check(label: string, ok: boolean) {
+  if (!ok) failures++;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}`);
+}
+
+console.log("\nguards:");
+check(
+  "SAME_GAME_DOUBLE is a real market type",
+  (MARKET_TYPES as readonly string[]).includes("SAME_GAME_DOUBLE"),
+);
+// AUTO_MARKET_TYPES is interpolated into the model's instructions. A double
+// there would invite the model to emit legIds pointing at nothing.
+check(
+  "the AI is never offered SAME_GAME_DOUBLE",
+  !(AUTO_MARKET_TYPES as readonly string[]).includes("SAME_GAME_DOUBLE"),
+);
+// The generic admin editor cannot check that two hand-typed legs share a
+// fixture or do not contradict each other.
+check(
+  "the admin editor cannot set SAME_GAME_DOUBLE",
+  !(ADMIN_MARKET_TYPES as readonly string[]).includes("SAME_GAME_DOUBLE"),
+);
+check(
+  "the admin editor still offers every other market type",
+  MARKET_TYPES.filter((m) => m !== "SAME_GAME_DOUBLE").every((m) =>
+    (ADMIN_MARKET_TYPES as readonly string[]).includes(m),
+  ),
+);
+// resolveMarket stays a pure scoreline resolver: a double has no scoreline
+// that settles it, so it must decline rather than guess.
+check(
+  "resolveMarket refuses a double even with a valid selection",
+  resolveMarket("SAME_GAME_DOUBLE", { legIds: ["a", "b"] } as never, 2, 1) === null,
+);
+check(
+  "resolveMarket refuses a double on every scoreline",
+  [[0, 0], [1, 0], [0, 1], [3, 3]].every(([h, a]) =>
+    resolveMarket("SAME_GAME_DOUBLE", { legIds: ["a", "b"] } as never, h, a) === null,
+  ),
+);
+
+console.log("\nselection validation:");
+check("accepts exactly two distinct ids", isValidSelection("SAME_GAME_DOUBLE", { legIds: ["a", "b"] }));
+check("rejects one id", !isValidSelection("SAME_GAME_DOUBLE", { legIds: ["a"] }));
+check("rejects three ids", !isValidSelection("SAME_GAME_DOUBLE", { legIds: ["a", "b", "c"] }));
+// A row doubled with itself would settle as that row while presenting as a
+// compound pick — strictly worse than not existing.
+check("rejects the same id twice", !isValidSelection("SAME_GAME_DOUBLE", { legIds: ["a", "a"] }));
+check("rejects empty ids", !isValidSelection("SAME_GAME_DOUBLE", { legIds: ["", "b"] }));
+check("rejects non-string ids", !isValidSelection("SAME_GAME_DOUBLE", { legIds: [1, 2] }));
+check("rejects a missing legIds", !isValidSelection("SAME_GAME_DOUBLE", {}));
+check("rejects null", !isValidSelection("SAME_GAME_DOUBLE", null));
 
 console.log(`\n${failures === 0 ? "PASS" : "FAIL"} — ${failures} failure(s)`);
 if (failures) process.exitCode = 1;

@@ -12,7 +12,8 @@ export type PredictionCategory =
   | "BANKER"
   | "VIP"
   | "PREMIUM"
-  | "BET_OF_THE_DAY";
+  | "BET_OF_THE_DAY"
+  | "SAME_GAME_DOUBLE";
 export type PredictionStatus =
   | "DRAFT"
   | "PENDING_REVIEW"
@@ -34,4 +35,11 @@ export const PREDICTION_CATEGORIES = [
   // PredictionCategoryLink's unique key is (prediction, category), which can
   // stop a duplicate tag on ONE row but cannot express "one row site-wide".
   "BET_OF_THE_DAY",
+  // Two picks on ONE fixture, published as a single compound pick. Named a
+  // "double" rather than a "combo" because /combos is already the multi-FIXTURE
+  // accumulator builder, and the two would be impossible to tell apart in the
+  // admin nav. Deliberately free rather than VIP/PREMIUM: both legs must land,
+  // so a double is higher-variance than either leg alone, which is the opposite
+  // of what those tiers promise.
+  "SAME_GAME_DOUBLE",
 ] as const satisfies readonly PredictionCategory[];

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { lookupFinishedScore } from "@/lib/settlement";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
+import { settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
 
 // Bulk settlement runs sequentially through the throttled api-football queue
 // (up to 2 calls per prediction) — bound generously since Vercel Cron (and
@@ -48,6 +49,11 @@ export async function GET(req: Request) {
       homeTeam: { not: null },
       awayTeam: { not: null },
       kickoff: { lt: new Date(Date.now() - SETTLEMENT_BUFFER_MS) },
+      // Doubles are settled in the second pass below, from their legs. They
+      // must not come through here: there is no scoreline that resolves one,
+      // so each would burn two api-football calls only to be filed as
+      // unresolvable.
+      marketType: { not: "SAME_GAME_DOUBLE" },
     },
     orderBy: { kickoff: "asc" },
     take: limit,
@@ -125,10 +131,18 @@ export async function GET(req: Request) {
     }
   }
 
+  // SECOND PASS — same-game doubles, settled from their legs rather than from
+  // a scoreline. Runs after the loop above because those legs may have been
+  // settled seconds ago in this very request. See settleSameGameDoubles.
+  const doubleResults = await settleSameGameDoubles();
+
   return NextResponse.json({
     curation,
     checked: candidates.length,
     settled: results.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
     results,
+    doublesChecked: doubleResults.length,
+    doublesSettled: doubleResults.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
+    doubleResults,
   });
 }

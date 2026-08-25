@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
-import { MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
+import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -47,7 +47,7 @@ const Patch = z.object({
       homeTeam: z.string().nullable().optional(),
       awayTeam: z.string().nullable().optional(),
       kickoff: z.coerce.date().nullable().optional(),
-      marketType: z.enum(MARKET_TYPES).optional(),
+      marketType: z.enum(ADMIN_MARKET_TYPES).optional(),
       selection: z.any().optional(),
       otherMarket: z.string().optional(),
       otherPick: z.string().optional(),

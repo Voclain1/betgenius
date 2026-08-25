@@ -18,5 +18,10 @@
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // `artifacts` holds gitignored scratch — screenshots, JSON dumps, and a full
+  // nested COPY of the repo from a past deploy experiment. Left in, `**/*.ts`
+  // pulls that duplicate tree into every typecheck, so a stale snapshot of a
+  // file that has since changed fails `next build` even though nothing the
+  // site ships is wrong. Scratch must not be able to break the build.
+  "exclude": ["node_modules", "artifacts"]
 }

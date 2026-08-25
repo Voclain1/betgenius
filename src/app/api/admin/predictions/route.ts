@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { setPredictionCategories } from "@/lib/predictions";
-import { MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
+import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
 import { z } from "zod";
 
@@ -27,7 +27,7 @@ const CreateBody = z.object({
   homeTeam: z.string().optional(),
   awayTeam: z.string().optional(),
   kickoff: z.coerce.date().optional(),
-  marketType: z.enum(MARKET_TYPES),
+  marketType: z.enum(ADMIN_MARKET_TYPES),
   selection: z.any().optional(),
   otherMarket: z.string().optional(),
   otherPick: z.string().optional(),

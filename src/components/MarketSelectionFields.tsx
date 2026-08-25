@@ -1,6 +1,6 @@
 "use client";
 import {
-  MARKET_TYPES,
+  ADMIN_MARKET_TYPES,
   MATCH_WINNER_VALUES,
   DOUBLE_CHANCE_VALUES,
   OU_DIRECTIONS,
@@ -17,6 +17,8 @@ const MARKET_TYPE_LABELS: Record<MarketType, string> = {
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
   WIN_EITHER_HALF: "Win Either Half",
+  // Present for exhaustiveness only — doubles are assembled, never picked here.
+  SAME_GAME_DOUBLE: "Same-Game Double",
   OTHER: "Other (free text — always settled manually)",
 };
 
@@ -55,7 +57,7 @@ export function MarketSelectionFields({
         <select value={value.marketType}
           onChange={(e) => onChange({ ...value, marketType: e.target.value as MarketType, selection: null })}
           className={inputCls}>
-          {MARKET_TYPES.map((m) => <option key={m} value={m}>{MARKET_TYPE_LABELS[m]}</option>)}
+          {ADMIN_MARKET_TYPES.map((m) => <option key={m} value={m}>{MARKET_TYPE_LABELS[m]}</option>)}
         </select>
       </label>
 

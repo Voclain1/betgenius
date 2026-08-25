@@ -28,6 +28,10 @@ export function canViewCategory(
     // visitor is shown to judge the product by — so padlocking it would defeat
     // the reason the slot exists.
     case "BET_OF_THE_DAY":
+    // Free on purpose. A double needs BOTH legs to land, so it carries more
+    // variance than either leg on its own — putting it behind VIP/PREMIUM
+    // would sell the least reliable picks as the most curated ones.
+    case "SAME_GAME_DOUBLE":
       return true;
     case "BANKER":
       // Free to view once registered — no active subscription required, just a login.

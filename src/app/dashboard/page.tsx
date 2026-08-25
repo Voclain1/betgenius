@@ -31,6 +31,7 @@ const TILE_LABELS: Record<PredictionCategory, string> = {
   FEATURED: "Featured",
   GENIUS: "Genius",
   BET_OF_THE_DAY: "Bet of the Day",
+  SAME_GAME_DOUBLE: "Doubles",
   TODAY: "Today",
   BANKER: "Banker",
   VIP: "VIP",

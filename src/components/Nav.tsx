@@ -26,6 +26,9 @@ const TIP_LINKS: NavLink[] = [
   { href: "/predictions/genius", label: "Genius" },
   { href: "/predictions/featured", label: "Featured" },
   { href: "/predictions/banker", label: "Banker" },
+  // "Doubles", not "Combos" — /combos is the multi-FIXTURE accumulator builder,
+  // and two links a word apart would be indistinguishable in the nav.
+  { href: "/predictions/same-game-doubles", label: "Doubles" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
 ];

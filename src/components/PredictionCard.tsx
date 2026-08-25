@@ -10,6 +10,8 @@ export type PredictionRow = {
   category: string;
   market: string;
   pick: string;
+  /** Present so a same-game double can label its confidence honestly — see below. */
+  marketType?: string | null;
   confidence: number | null;
   reasoning: string;
   matchPreview?: string | null;
@@ -87,8 +89,19 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
       {p.confidence !== null && p.confidence !== undefined && (
         <div>
           <div className="mb-1 flex justify-between text-xs text-gray-400">
-            <span>Confidence</span>
-            <span>{p.confidence}%</span>
+            {/*
+              A same-game double's number is a CEILING, not an estimate.
+              P(A and B) <= min(P(A), P(B)) holds under any correlation, so
+              "no better than" is a true statement where a bare "Confidence"
+              would read as a joint probability we have not computed and could
+              not honestly compute — the legs are correlated. See
+              comboConfidenceCeiling in src/lib/sameGameDouble.ts.
+            */}
+            <span>{p.marketType === "SAME_GAME_DOUBLE" ? "Both must land" : "Confidence"}</span>
+            <span>
+              {p.marketType === "SAME_GAME_DOUBLE" ? "no better than " : ""}
+              {p.confidence}%
+            </span>
           </div>
           <div className="h-1.5 w-full rounded-full bg-brand-border">
             <div className="h-full rounded-full bg-brand" style={{ width: `${p.confidence}%` }} />

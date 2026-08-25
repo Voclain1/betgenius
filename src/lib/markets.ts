@@ -6,12 +6,49 @@
 // makes auto-settlement (see resolveMarket) safe to run later. OTHER is the
 // escape hatch for exotic markets: free-text market/pick, always manual.
 
-export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "OTHER"] as const;
+export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "SAME_GAME_DOUBLE", "OTHER"] as const;
 export type MarketType = (typeof MARKET_TYPES)[number];
 
-// The structured (non-OTHER) types a caller — e.g. Gemini — should be
-// producing. OTHER is reserved for the manual admin escape hatch.
-export const AUTO_MARKET_TYPES = MARKET_TYPES.filter((m) => m !== "OTHER") as Exclude<MarketType, "OTHER">[];
+// The structured types a caller — e.g. Gemini — should be producing.
+//
+// OTHER is reserved for the manual admin escape hatch. SAME_GAME_DOUBLE is
+// excluded for a different reason: it is COMPOSED from two already-generated
+// predictions, never generated. This list is interpolated straight into the
+// model's instructions (see analysis.ts), so leaving it in would invite the
+// model to emit a double whose legIds point at nothing.
+export const AUTO_MARKET_TYPES = MARKET_TYPES.filter(
+  (m) => m !== "OTHER" && m !== "SAME_GAME_DOUBLE",
+) as Exclude<MarketType, "OTHER" | "SAME_GAME_DOUBLE">[];
+
+// What the generic admin prediction editor may set. A double's selection is a
+// pair of references to other rows, not something meaningful to type into a
+// form, and one assembled by hand could pair legs from different fixtures or
+// legs that contradict each other — neither of which the editor can check.
+// Doubles are created by the assembler and nowhere else. Same reasoning that
+// keeps BET_OF_THE_DAY out of the generic category editor.
+// Spelled out rather than filtered because z.enum() needs a non-empty TUPLE,
+// which Array.filter cannot produce. The two type assertions below make the
+// list self-checking: it cannot drift from MARKET_TYPES without a compile
+// error, and it cannot silently regain SAME_GAME_DOUBLE.
+export const ADMIN_MARKET_TYPES = [
+  "MATCH_WINNER",
+  "DOUBLE_CHANCE",
+  "OVER_UNDER",
+  "BTTS",
+  "CORRECT_SCORE",
+  "WIN_EITHER_HALF",
+  "OTHER",
+] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE">[];
+
+// Every admin-editable type is a real market type, and every market type
+// except SAME_GAME_DOUBLE is admin-editable. Adding a market type without
+// deciding which side it belongs on is a compile error, not an oversight.
+type _AdminCoversAllButDouble = Exclude<MarketType, "SAME_GAME_DOUBLE"> extends
+  (typeof ADMIN_MARKET_TYPES)[number]
+  ? true
+  : never;
+const _adminMarketTypesAreComplete: _AdminCoversAllButDouble = true;
+void _adminMarketTypesAreComplete;
 
 export const MATCH_WINNER_VALUES = ["HOME", "DRAW", "AWAY"] as const;
 export const DOUBLE_CHANCE_VALUES = ["HOME_OR_DRAW", "AWAY_OR_DRAW", "HOME_OR_AWAY"] as const;
@@ -26,6 +63,16 @@ export type OverUnderSelection = { line: number; direction: (typeof OU_DIRECTION
 export type BttsSelection = { value: (typeof BTTS_VALUES)[number] };
 export type WinEitherHalfSelection = { value: (typeof WIN_EITHER_HALF_VALUES)[number] };
 export type CorrectScoreSelection = { home: number; away: number };
+/**
+ * A same-game double: the ids of the two Prediction rows it is composed of.
+ *
+ * The only selection shape that REFERENCES other rows rather than describing
+ * an outcome on its own. That is deliberate — the legs are real published
+ * picks with their own reasoning, confidence and settlement, and duplicating
+ * their content here would create a second copy that could drift from the
+ * rows readers actually see.
+ */
+export type SameGameDoubleSelection = { legIds: [string, string] };
 
 export type Selection =
   | MatchWinnerSelection
@@ -34,6 +81,7 @@ export type Selection =
   | BttsSelection
   | CorrectScoreSelection
   | WinEitherHalfSelection
+  | SameGameDoubleSelection
   | null; // OTHER
 
 const MARKET_LABELS: Record<MarketType, string> = {
@@ -43,6 +91,7 @@ const MARKET_LABELS: Record<MarketType, string> = {
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
   WIN_EITHER_HALF: "Win Either Half",
+  SAME_GAME_DOUBLE: "Same-Game Double",
   OTHER: "Other",
 };
 
@@ -76,6 +125,18 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
         (selection.home as number) >= 0 &&
         (selection.away as number) >= 0
       );
+    case "SAME_GAME_DOUBLE": {
+      if (!isObj(selection) || !Array.isArray(selection.legIds)) return false;
+      const ids = selection.legIds;
+      // Exactly two, both real ids, and not the same row twice — a "double"
+      // of one prediction with itself would settle as that prediction while
+      // presenting as a compound pick.
+      return (
+        ids.length === 2 &&
+        ids.every((id) => typeof id === "string" && id.length > 0) &&
+        ids[0] !== ids[1]
+      );
+    }
     case "OTHER":
       return selection == null;
     default:
@@ -119,6 +180,11 @@ export function deriveMarketAndPick(
       const s = selection as CorrectScoreSelection;
       return { market: MARKET_LABELS.CORRECT_SCORE, pick: `${h} ${s.home}-${s.away} ${a}` };
     }
+    // A double's pick text names both legs, which live in other rows this pure
+    // function cannot read. The assembler derives each leg's text with this
+    // same function and writes the combined string, passing it as `fallback`.
+    case "SAME_GAME_DOUBLE":
+      return fallback ?? { market: MARKET_LABELS.SAME_GAME_DOUBLE, pick: "" };
     case "OTHER":
     default:
       return fallback ?? { market: MARKET_LABELS.OTHER, pick: "" };
@@ -155,6 +221,12 @@ export function resolveMarket(
   halftime?: HalfTimeScore | null,
 ): SettlementOutcome {
   if (marketType === "OTHER" || !isValidSelection(marketType, selection)) return null;
+  // A same-game double resolves from its two LEGS' outcomes, which live in
+  // other rows. Reading them would make this function impure and force every
+  // caller and every test to have a database. It stays a pure scoreline
+  // resolver; composeComboOutcome in src/lib/sameGameDouble.ts does the
+  // composition, and the settle route calls it after the legs are settled.
+  if (marketType === "SAME_GAME_DOUBLE") return null;
 
   const homeScore = regulationHomeScore;
   const awayScore = regulationAwayScore;
