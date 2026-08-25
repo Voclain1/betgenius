@@ -7,9 +7,12 @@
 # is then unrunnable in production and nothing says so until a cron throws
 # P2022. See scripts/check-schema-sync.ts.
 #
-# DATABASE_URL must be set as a repository secret for the schema check to mean
-# anything. Until it is, that step SKIPS rather than fails, so adding this
-# workflow does not turn the repo red before the secret exists.
+# BOTH DATABASE_URL and DATABASE_URL_UNPOOLED must be set as repository
+# secrets. prisma/schema.prisma declares `directUrl = env("DATABASE_URL_UNPOOLED")`,
+# and Prisma uses that DIRECT connection for `migrate diff` — the pooled URL
+# alone is not enough, because pgbouncer does not support the introspection
+# the diff performs. Until both are set the step SKIPS rather than fails, so
+# adding this workflow does not turn the repo red before the secrets exist.
 
 name: preflight
 
@@ -40,6 +43,7 @@ jobs:
         run: npm run check:schema
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
 
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
@@ -48,6 +52,7 @@ jobs:
         run: npx next build
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           # Placeholder values: the build only needs these to exist, and using
           # the real secrets here would put them in a build log for no gain.
           NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret
