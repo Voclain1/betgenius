@@ -18,6 +18,7 @@
  */
 
 import { randomUUID } from "crypto";
+import { startCutoffMsForCategories } from "@/lib/doublesTargeting";
 
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
@@ -220,10 +221,14 @@ export async function runGeneration(opts: {
       quotaRemaining: usage.remaining, elapsedMs: 0, results: [],
     };
 
+    // Doubles cost about twice a normal fixture, so they get a tighter cutoff
+    // derived from cron-job.org's 30s ceiling rather than the general one.
+    const startCutoffMs = startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS);
+
     for (const c of candidates) {
       // Stop claiming new work rather than risk being killed mid-fixture. The
       // remaining candidates are simply re-derived next run.
-      if (Date.now() - startedAt >= SOFT_DEADLINE_MS) {
+      if (Date.now() - startedAt >= startCutoffMs) {
         report.reason = "soft deadline reached — remaining fixtures deferred to the next run";
         break;
       }

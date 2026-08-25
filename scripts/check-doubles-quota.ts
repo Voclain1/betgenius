@@ -17,8 +17,10 @@ react.cache = (fn: any) => fn;
 
 async function main() {
   const { prisma } = await import("../src/lib/prisma");
-  const { DOUBLES_DAILY_QUOTA, doublesGeneratedToday, doublesQuotaRemaining, marketBreadthForCategories } =
-    await import("../src/lib/doublesTargeting");
+  const {
+    DOUBLES_DAILY_QUOTA, doublesGeneratedToday, doublesQuotaRemaining, marketBreadthForCategories,
+    DOUBLES_CLIENT_BUDGET_MS, DOUBLES_FIXTURE_COST_MS, DOUBLES_START_CUTOFF_MS, startCutoffMsForCategories,
+  } = await import("../src/lib/doublesTargeting");
   const { getCategoryPredictions } = await import("../src/lib/categoryPredictions");
   const { setPredictionCategories } = await import("../src/lib/predictions");
   const { lagosTodayBounds } = await import("../src/lib/lagosDate");
@@ -44,6 +46,25 @@ async function main() {
   const left = await doublesQuotaRemaining();
   check("remaining = quota - used", left === Math.max(0, DOUBLES_DAILY_QUOTA - used), `used ${used}, remaining ${left}`);
   check("remaining never goes negative", left >= 0);
+
+  console.log("\nsoft budget:");
+  const GENERAL_CUTOFF = 22_000;
+  check("doubles get a tighter start cutoff than the general path",
+    startCutoffMsForCategories(["SAME_GAME_DOUBLE"], GENERAL_CUTOFF) < GENERAL_CUTOFF,
+    `${DOUBLES_START_CUTOFF_MS}ms vs ${GENERAL_CUTOFF}ms`);
+  // The whole point: nothing else changes behaviour.
+  for (const c of ["FEATURED", "GENIUS", "TODAY", "BANKER", "BET_OF_THE_DAY"]) {
+    check(`${c} keeps the general cutoff`, startCutoffMsForCategories([c], GENERAL_CUTOFF) === GENERAL_CUTOFF);
+  }
+  check("cutoff = client budget - measured fixture cost",
+    DOUBLES_START_CUTOFF_MS === DOUBLES_CLIENT_BUDGET_MS - DOUBLES_FIXTURE_COST_MS,
+    `${DOUBLES_CLIENT_BUDGET_MS} - ${DOUBLES_FIXTURE_COST_MS} = ${DOUBLES_START_CUTOFF_MS}`);
+  // Budgeted to the slowest observed run (29.9s), not the mean (25.4s).
+  check("fixture cost covers the slowest observed run", DOUBLES_FIXTURE_COST_MS >= 27_000);
+  check("a second fixture cannot start with too little runway",
+    DOUBLES_START_CUTOFF_MS + DOUBLES_FIXTURE_COST_MS <= DOUBLES_CLIENT_BUDGET_MS,
+    `${(DOUBLES_START_CUTOFF_MS + DOUBLES_FIXTURE_COST_MS) / 1000}s <= ${DOUBLES_CLIENT_BUDGET_MS / 1000}s`);
+  check("the cutoff is not negative", DOUBLES_START_CUTOFF_MS >= 0);
 
   // --- Feed isolation, against real feed queries ---
   const createdIds: string[] = [];
