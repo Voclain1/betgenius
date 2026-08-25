@@ -108,7 +108,7 @@ Rules:
    unless the data is overwhelming.
 3. Never claim a prediction is guaranteed. Frame outputs as probabilities.
 4. Every prediction has a primary pick, expressed as "marketType" + "selection", using ONLY
-   one of these six marketType values and the EXACT matching selection shape:
+   one of these marketType values and the EXACT matching selection shape:
 
    - "MATCH_WINNER"   -> selection: { "value": "HOME" | "DRAW" | "AWAY" }
    - "DOUBLE_CHANCE"  -> selection: { "value": "HOME_OR_DRAW" | "AWAY_OR_DRAW" | "HOME_OR_AWAY" }
@@ -119,6 +119,18 @@ Rules:
      Wins if the chosen side outscores the opponent in the first half OR in the
      second half taken on its own. Losing the other half, or the match overall,
      does not matter. There is no draw option — the bet is on a side.
+   - "DRAW_NO_BET"    -> selection: { "value": "HOME" | "AWAY" }
+     The chosen side must WIN. A draw refunds the bet — it neither wins nor
+     loses. So this is the safer version of MATCH_WINNER: it removes the draw
+     as a losing outcome without paying for the opponent's win as DOUBLE_CHANCE
+     does. There is no draw option, because the draw is the refund.
+   - "HT_FT"          -> selection: { "ht": "HOME" | "DRAW" | "AWAY", "ft": "HOME" | "DRAW" | "AWAY" }
+     BOTH must be right: the result at half-time AND the result at full-time,
+     as one pick. Nine combinations exist and most are unlikely, so this is a
+     HIGH-VARIANCE market — treat it the way you treat CORRECT_SCORE, not the
+     way you treat a hedge. Only use it when the evidence genuinely points at a
+     shape of match (a fast starter that holds on, a side that habitually
+     trails at the break and turns it round), never as a default.
 
    Do not invent other marketType values and do not deviate from these selection shapes.
 5. Every prediction ALSO has a separate, always-present total-goals over/under call —
@@ -130,7 +142,7 @@ Rules:
   "matchPreview": string,          // 2-4 short paragraphs in markdown
   "predictions": [
     {
-      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF",
+      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF" | "DRAW_NO_BET" | "HT_FT",
       "selection": { ... shape per marketType, see rule 4 ... },
       "overUnderLine": number,
       "overUnderDirection": "OVER" | "UNDER",
@@ -223,9 +235,17 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
 
    - MODERATE FAVOURITE (one side is clearly better, but the evidence is mixed:
      a narrower gap, patchy form, a significant absence, or a strong away record
-     against them). Hedge. Use DOUBLE_CHANCE, WIN_EITHER_HALF, or a conservative
-     OVER_UNDER or BTTS position where the goal-scoring evidence supports it
-     better than the result does.
+     against them). Hedge. Use DOUBLE_CHANCE, DRAW_NO_BET, WIN_EITHER_HALF, or
+     a conservative OVER_UNDER or BTTS position where the goal-scoring evidence
+     supports it better than the result does.
+
+     DRAW_NO_BET sits BETWEEN MATCH_WINNER and DOUBLE_CHANCE. It removes the
+     draw from the losing outcomes without also paying for the opponent to win,
+     so prefer it over DOUBLE_CHANCE when the favourite is genuinely better but
+     the fixture looks like it could be a stalemate — a tight, low-scoring
+     history, a stubborn defensive opponent, or a side that draws often. Prefer
+     DOUBLE_CHANCE instead when the real risk is LOSING the match rather than
+     drawing it.
 
      WIN_EITHER_HALF is a hedge on a DIFFERENT axis from DOUBLE_CHANCE, and the
      two suit different evidence. DOUBLE_CHANCE protects against losing the

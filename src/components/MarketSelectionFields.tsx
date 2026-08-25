@@ -17,6 +17,8 @@ const MARKET_TYPE_LABELS: Record<MarketType, string> = {
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
   WIN_EITHER_HALF: "Win Either Half",
+  DRAW_NO_BET: "Draw No Bet",
+  HT_FT: "Half-Time / Full-Time",
   // Present for exhaustiveness only — doubles are assembled, never picked here.
   SAME_GAME_DOUBLE: "Same-Game Double",
   OTHER: "Other (free text — always settled manually)",

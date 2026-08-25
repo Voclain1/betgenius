@@ -6,7 +6,7 @@
 // makes auto-settlement (see resolveMarket) safe to run later. OTHER is the
 // escape hatch for exotic markets: free-text market/pick, always manual.
 
-export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "SAME_GAME_DOUBLE", "OTHER"] as const;
+export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "DRAW_NO_BET", "HT_FT", "SAME_GAME_DOUBLE", "OTHER"] as const;
 export type MarketType = (typeof MARKET_TYPES)[number];
 
 // The structured types a caller — e.g. Gemini — should be producing.
@@ -37,6 +37,8 @@ export const ADMIN_MARKET_TYPES = [
   "BTTS",
   "CORRECT_SCORE",
   "WIN_EITHER_HALF",
+  "DRAW_NO_BET",
+  "HT_FT",
   "OTHER",
 ] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE">[];
 
@@ -56,12 +58,19 @@ export const OU_DIRECTIONS = ["OVER", "UNDER"] as const;
 export const BTTS_VALUES = ["YES", "NO"] as const;
 /** Which side is backed to win at least one half outright. No DRAW option — a draw is not a side. */
 export const WIN_EITHER_HALF_VALUES = ["HOME", "AWAY"] as const;
+/** Draw No Bet backs a side with the draw refunded — so there is no DRAW option. */
+export const DRAW_NO_BET_VALUES = ["HOME", "AWAY"] as const;
+/** Each half of an HT/FT pick is an ordinary 1X2 result. */
+export const HT_FT_VALUES = ["HOME", "DRAW", "AWAY"] as const;
 
 export type MatchWinnerSelection = { value: (typeof MATCH_WINNER_VALUES)[number] };
 export type DoubleChanceSelection = { value: (typeof DOUBLE_CHANCE_VALUES)[number] };
 export type OverUnderSelection = { line: number; direction: (typeof OU_DIRECTIONS)[number] };
 export type BttsSelection = { value: (typeof BTTS_VALUES)[number] };
 export type WinEitherHalfSelection = { value: (typeof WIN_EITHER_HALF_VALUES)[number] };
+export type DrawNoBetSelection = { value: (typeof DRAW_NO_BET_VALUES)[number] };
+/** Half-time result and full-time result, both required — this is one pick, not two. */
+export type HtFtSelection = { ht: (typeof HT_FT_VALUES)[number]; ft: (typeof HT_FT_VALUES)[number] };
 export type CorrectScoreSelection = { home: number; away: number };
 /**
  * A same-game double: the ids of the two Prediction rows it is composed of.
@@ -81,6 +90,8 @@ export type Selection =
   | BttsSelection
   | CorrectScoreSelection
   | WinEitherHalfSelection
+  | DrawNoBetSelection
+  | HtFtSelection
   | SameGameDoubleSelection
   | null; // OTHER
 
@@ -91,6 +102,8 @@ const MARKET_LABELS: Record<MarketType, string> = {
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
   WIN_EITHER_HALF: "Win Either Half",
+  DRAW_NO_BET: "Draw No Bet",
+  HT_FT: "Half-Time / Full-Time",
   SAME_GAME_DOUBLE: "Same-Game Double",
   OTHER: "Other",
 };
@@ -117,6 +130,16 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
       return isObj(selection) && (BTTS_VALUES as readonly unknown[]).includes(selection.value);
     case "WIN_EITHER_HALF":
       return isObj(selection) && (WIN_EITHER_HALF_VALUES as readonly unknown[]).includes(selection.value);
+    case "DRAW_NO_BET":
+      return isObj(selection) && (DRAW_NO_BET_VALUES as readonly unknown[]).includes(selection.value);
+    case "HT_FT":
+      // BOTH halves required. A selection carrying only one is not a partially
+      // specified HT/FT pick, it is a different market wearing this one's name.
+      return (
+        isObj(selection) &&
+        (HT_FT_VALUES as readonly unknown[]).includes(selection.ht) &&
+        (HT_FT_VALUES as readonly unknown[]).includes(selection.ft)
+      );
     case "CORRECT_SCORE":
       return (
         isObj(selection) &&
@@ -179,6 +202,15 @@ export function deriveMarketAndPick(
     case "CORRECT_SCORE": {
       const s = selection as CorrectScoreSelection;
       return { market: MARKET_LABELS.CORRECT_SCORE, pick: `${h} ${s.home}-${s.away} ${a}` };
+    }
+    case "DRAW_NO_BET": {
+      const v = (selection as DrawNoBetSelection).value;
+      return { market: MARKET_LABELS.DRAW_NO_BET, pick: `${v === "HOME" ? h : a} (draw no bet)` };
+    }
+    case "HT_FT": {
+      const sel = selection as HtFtSelection;
+      const side = (r: string) => (r === "HOME" ? h : r === "AWAY" ? a : "Draw");
+      return { market: MARKET_LABELS.HT_FT, pick: `${side(sel.ht)} at HT / ${side(sel.ft)} at FT` };
     }
     // A double's pick text names both legs, which live in other rows this pure
     // function cannot read. The assembler derives each leg's text with this
@@ -262,6 +294,43 @@ export function resolveMarket(
     case "CORRECT_SCORE": {
       const s = selection as CorrectScoreSelection;
       return s.home === homeScore && s.away === awayScore ? "WON" : "LOST";
+    }
+    /**
+     * DRAW NO BET — the backed side must win; a draw refunds the stake.
+     *
+     * VOID here is the market's defining feature, not an edge case. Roughly a
+     * quarter of matches end level, so this marketType will produce far more
+     * VOIDs than every existing one combined — see scripts/check-void-handling.ts,
+     * which exists to prove nothing downstream treats VOID as negligible.
+     */
+    case "DRAW_NO_BET": {
+      const v = (selection as DrawNoBetSelection).value;
+      if (homeScore === awayScore) return "VOID";
+      const winner = homeScore > awayScore ? "HOME" : "AWAY";
+      return v === winner ? "WON" : "LOST";
+    }
+    /**
+     * HALF-TIME / FULL-TIME — both results must match, as one pick.
+     *
+     * Fails closed exactly as WIN_EITHER_HALF does: without a half-time score
+     * there is no way to resolve the first leg, and guessing it from the
+     * full-time score would invent a result. Returning null hands the row to a
+     * human instead.
+     *
+     * The full-time leg reads REGULATION time, so a tie settled in extra time
+     * or on penalties is a draw here — the same basis every other market in
+     * this file uses.
+     */
+    case "HT_FT": {
+      const sel = selection as HtFtSelection;
+      if (!halftime || !Number.isFinite(halftime.home) || !Number.isFinite(halftime.away)) return null;
+      // A half-time score above the full-time score would mean goals were
+      // un-scored; the data is wrong, so refuse rather than resolve from it.
+      if (halftime.home > homeScore || halftime.away > awayScore) return null;
+      const resultOf = (hs: number, as: number) => (hs > as ? "HOME" : as > hs ? "AWAY" : "DRAW");
+      const htActual = resultOf(halftime.home, halftime.away);
+      const ftActual = resultOf(homeScore, awayScore);
+      return sel.ht === htActual && sel.ft === ftActual ? "WON" : "LOST";
     }
     /**
      * WIN EITHER HALF — the backed side wins at least ONE half outright.
