@@ -43,7 +43,20 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
     where: {
       status: "PUBLISHED",
       kickoff: { gte: today.start, lt: today.end },
-      ...(cat === "TODAY" ? {} : { categories: { some: { category: cat } } }),
+      // TODAY ignores category tags and shows everything published for the
+      // day, so it is the one feed a doubles-intent job WOULD reach on its
+      // own — with two or three rows for a single fixture, which is exactly
+      // the shape the quota exists to avoid. Doubles and their legs are
+      // excluded here and appear on the Doubles feed instead.
+      ...(cat === "TODAY"
+        ? { categories: { none: { category: "SAME_GAME_DOUBLE" } } }
+        : { categories: { some: { category: cat } } }),
+      // The Doubles feed shows assembled DOUBLES, not the legs they are built
+      // from. A doubles-intent generation tags both of its rows SAME_GAME_DOUBLE
+      // so they stay out of every other feed, which would otherwise make them
+      // surface here as two loose single-market picks sitting beside the double
+      // that already quotes them both.
+      ...(cat === "SAME_GAME_DOUBLE" ? { marketType: "SAME_GAME_DOUBLE" } : {}),
     },
     // Deterministic, but not the order the page renders in — the ranking in
     // orderForDisplay decides that. This clause exists so the `take` below

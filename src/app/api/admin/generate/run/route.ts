@@ -5,6 +5,10 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { runGeneration } from "@/lib/generation/worker";
 import {
+  DOUBLES_DAILY_QUOTA,
+  doublesQuotaRemaining,
+} from "@/lib/doublesTargeting";
+import {
   selectBetOfTheDayTargets,
   betOfTheDayQuotaRemaining,
   BET_OF_DAY_DAILY_QUOTA,
@@ -25,7 +29,10 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /** Free-tier categories only — VIP/PREMIUM stay a deliberate manual action, as in the bulk route. */
-const FREE_CATEGORIES = ["FEATURED", "GENIUS", "BANKER", "BET_OF_THE_DAY"] as const;
+// SAME_GAME_DOUBLE is generation-targetable like the rest, but it is the only
+// one whose job asks the model for SEVERAL markets rather than one — see
+// marketBreadthForCategories. That is why it carries a quota of its own below.
+const FREE_CATEGORIES = ["FEATURED", "GENIUS", "BANKER", "BET_OF_THE_DAY", "SAME_GAME_DOUBLE"] as const;
 
 const Query = z.object({
   limit: z.coerce.number().min(1).max(25).default(12),
@@ -117,15 +124,44 @@ export async function GET(req: Request) {
     };
   }
 
+  /**
+   * Doubles get a small daily allowance of MULTI-MARKET generation.
+   *
+   * The quota is what keeps every other feed unchanged: multi-market rows all
+   * inherit their job's categories, so an unbounded doubles run would be the
+   * same thing as turning multi-market on globally. Capped here, before the
+   * worker claims anything, so an over-quota poke costs nothing rather than
+   * generating and discarding.
+   */
+  const wantsDoubles = valid.includes("SAME_GAME_DOUBLE");
+  let doublesTargeting: Record<string, unknown> | undefined;
+  let effectiveLimit = limit;
+
+  if (wantsDoubles) {
+    const remaining = await doublesQuotaRemaining();
+    if (remaining <= 0) {
+      return NextResponse.json({
+        ok: true,
+        skipped: "daily same-game double generation quota already spent",
+        quota: DOUBLES_DAILY_QUOTA,
+        generatedToday: DOUBLES_DAILY_QUOTA,
+        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+      });
+    }
+    effectiveLimit = Math.min(remaining, limit);
+    doublesTargeting = { quota: DOUBLES_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
+  }
+
   const report = await runGeneration({
     authorId,
     categories: valid.length ? valid : ["FEATURED"],
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     matchKeys,
-    limit,
+    limit: effectiveLimit,
   });
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
+  if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
 
   // A run that found the lock held is a normal outcome, not a failure — the
   // external scheduler must not treat overlapping pokes as errors and start

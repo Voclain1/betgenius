@@ -10,6 +10,7 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
+import { marketBreadthForCategories } from "@/lib/doublesTargeting";
 
 export type GenerateFixtureInput = {
   fixtureId?: string;
@@ -102,10 +103,16 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
 
   const startedAt = Date.now();
   const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId);
+  // A doubles-intent job asks for several markets so a same-game double can be
+  // assembled from two independently-reasoned rows; every other job asks for
+  // one, exactly as before. Derived from the categories rather than passed in,
+  // so the job's intent and its prompt cannot disagree.
+  const marketBreadth = marketBreadthForCategories(input.categories);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
+    marketBreadth,
   });
   const durationMs = Date.now() - startedAt;
 
