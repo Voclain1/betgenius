@@ -92,7 +92,10 @@ export async function GET(req: Request) {
         continue;
       }
 
-      const outcome = resolveMarket(p.marketType as MarketType, p.selection as Selection, lookup.homeScore, lookup.awayScore);
+      // Halftime is passed through for WIN_EITHER_HALF; every other market
+      // ignores it. A null here makes that market unresolvable rather than
+      // wrong — it falls into the `!outcome` branch below and is flagged.
+      const outcome = resolveMarket(p.marketType as MarketType, p.selection as Selection, lookup.homeScore, lookup.awayScore, lookup.halftime);
 
       if (!outcome) {
         // Score found, but the market couldn't be resolved from it (shouldn't

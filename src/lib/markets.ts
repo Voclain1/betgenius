@@ -6,7 +6,7 @@
 // makes auto-settlement (see resolveMarket) safe to run later. OTHER is the
 // escape hatch for exotic markets: free-text market/pick, always manual.
 
-export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "OTHER"] as const;
+export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "OTHER"] as const;
 export type MarketType = (typeof MARKET_TYPES)[number];
 
 // The structured (non-OTHER) types a caller — e.g. Gemini — should be
@@ -17,11 +17,14 @@ export const MATCH_WINNER_VALUES = ["HOME", "DRAW", "AWAY"] as const;
 export const DOUBLE_CHANCE_VALUES = ["HOME_OR_DRAW", "AWAY_OR_DRAW", "HOME_OR_AWAY"] as const;
 export const OU_DIRECTIONS = ["OVER", "UNDER"] as const;
 export const BTTS_VALUES = ["YES", "NO"] as const;
+/** Which side is backed to win at least one half outright. No DRAW option — a draw is not a side. */
+export const WIN_EITHER_HALF_VALUES = ["HOME", "AWAY"] as const;
 
 export type MatchWinnerSelection = { value: (typeof MATCH_WINNER_VALUES)[number] };
 export type DoubleChanceSelection = { value: (typeof DOUBLE_CHANCE_VALUES)[number] };
 export type OverUnderSelection = { line: number; direction: (typeof OU_DIRECTIONS)[number] };
 export type BttsSelection = { value: (typeof BTTS_VALUES)[number] };
+export type WinEitherHalfSelection = { value: (typeof WIN_EITHER_HALF_VALUES)[number] };
 export type CorrectScoreSelection = { home: number; away: number };
 
 export type Selection =
@@ -30,6 +33,7 @@ export type Selection =
   | OverUnderSelection
   | BttsSelection
   | CorrectScoreSelection
+  | WinEitherHalfSelection
   | null; // OTHER
 
 const MARKET_LABELS: Record<MarketType, string> = {
@@ -38,6 +42,7 @@ const MARKET_LABELS: Record<MarketType, string> = {
   OVER_UNDER: "Total Goals",
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
+  WIN_EITHER_HALF: "Win Either Half",
   OTHER: "Other",
 };
 
@@ -61,6 +66,8 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
       );
     case "BTTS":
       return isObj(selection) && (BTTS_VALUES as readonly unknown[]).includes(selection.value);
+    case "WIN_EITHER_HALF":
+      return isObj(selection) && (WIN_EITHER_HALF_VALUES as readonly unknown[]).includes(selection.value);
     case "CORRECT_SCORE":
       return (
         isObj(selection) &&
@@ -104,6 +111,10 @@ export function deriveMarketAndPick(
       const v = (selection as BttsSelection).value;
       return { market: MARKET_LABELS.BTTS, pick: v === "YES" ? "Yes" : "No" };
     }
+    case "WIN_EITHER_HALF": {
+      const v = (selection as WinEitherHalfSelection).value;
+      return { market: MARKET_LABELS.WIN_EITHER_HALF, pick: `${v === "HOME" ? h : a} to win either half` };
+    }
     case "CORRECT_SCORE": {
       const s = selection as CorrectScoreSelection;
       return { market: MARKET_LABELS.CORRECT_SCORE, pick: `${h} ${s.home}-${s.away} ${a}` };
@@ -126,8 +137,23 @@ export function deriveOverUnderText(line?: number | null, direction?: string | n
 
 export type SettlementOutcome = "WON" | "LOST" | "VOID" | null; // null = cannot auto-resolve (OTHER, or bad input)
 
+/**
+ * The half-time score, for markets that need to see the halves separately.
+ *
+ * Optional because every other market resolves from the full-time regulation
+ * score alone, and because a caller that cannot supply it must get a clean
+ * "cannot auto-resolve" (null) rather than a guess — see WIN_EITHER_HALF below.
+ */
+export type HalfTimeScore = { home: number; away: number };
+
 /** Scores passed here must be regulation-time scores; extra time and shootouts never count for these markets. */
-export function resolveMarket(marketType: MarketType, selection: Selection, regulationHomeScore: number, regulationAwayScore: number): SettlementOutcome {
+export function resolveMarket(
+  marketType: MarketType,
+  selection: Selection,
+  regulationHomeScore: number,
+  regulationAwayScore: number,
+  halftime?: HalfTimeScore | null,
+): SettlementOutcome {
   if (marketType === "OTHER" || !isValidSelection(marketType, selection)) return null;
 
   const homeScore = regulationHomeScore;
@@ -164,6 +190,42 @@ export function resolveMarket(marketType: MarketType, selection: Selection, regu
     case "CORRECT_SCORE": {
       const s = selection as CorrectScoreSelection;
       return s.home === homeScore && s.away === awayScore ? "WON" : "LOST";
+    }
+    /**
+     * WIN EITHER HALF — the backed side wins at least ONE half outright.
+     *
+     * The second half is DERIVED, not fetched: full-time regulation minus
+     * half-time. api-football returns both on the same /fixtures response the
+     * settlement lookup already makes, so this costs no extra call and invents
+     * no line value — the reason this market was picked ahead of Handicap and
+     * HT/FT, which need a line or a nine-way grid.
+     *
+     * Two invariants are checked rather than assumed, because a wrong
+     * settlement here is silent:
+     *
+     *   - halftime must be SUPPLIED. Without it there is no honest answer, so
+     *     this returns null ("cannot auto-resolve") and the settle route flags
+     *     the row for a human. It must never fall back to the full-time result:
+     *     a side can win the match while losing both halves individually is
+     *     impossible, but a side can win the match having won NEITHER half
+     *     (e.g. 1-0 HT, 0-1 2H is a 1-1 draw — and 2-1 FT from 1-0 HT / 1-1 2H
+     *     means the winner won only the first half). Full time does not answer
+     *     the question.
+     *   - the derived second half must be non-negative. Goals cannot be
+     *     un-scored, so a negative half means the two scores disagree and the
+     *     row is not safely resolvable.
+     */
+    case "WIN_EITHER_HALF": {
+      const v = (selection as WinEitherHalfSelection).value;
+      if (!halftime || !Number.isFinite(halftime.home) || !Number.isFinite(halftime.away)) return null;
+
+      const secondHalfHome = homeScore - halftime.home;
+      const secondHalfAway = awayScore - halftime.away;
+      if (secondHalfHome < 0 || secondHalfAway < 0) return null;
+
+      const wonFirst = v === "HOME" ? halftime.home > halftime.away : halftime.away > halftime.home;
+      const wonSecond = v === "HOME" ? secondHalfHome > secondHalfAway : secondHalfAway > secondHalfHome;
+      return wonFirst || wonSecond ? "WON" : "LOST";
     }
     default:
       return null;

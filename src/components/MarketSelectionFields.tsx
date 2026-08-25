@@ -5,6 +5,7 @@ import {
   DOUBLE_CHANCE_VALUES,
   OU_DIRECTIONS,
   BTTS_VALUES,
+  WIN_EITHER_HALF_VALUES,
   type MarketType,
   type Selection,
 } from "@/lib/markets";
@@ -15,6 +16,7 @@ const MARKET_TYPE_LABELS: Record<MarketType, string> = {
   OVER_UNDER: "Total Goals (Over/Under)",
   BTTS: "Both Teams to Score",
   CORRECT_SCORE: "Correct Score",
+  WIN_EITHER_HALF: "Win Either Half",
   OTHER: "Other (free text — always settled manually)",
 };
 
@@ -110,6 +112,18 @@ export function MarketSelectionFields({
             className={inputCls}>
             <option value="" disabled>Choose…</option>
             {BTTS_VALUES.map((v) => <option key={v} value={v}>{v === "YES" ? "Yes" : "No"}</option>)}
+          </select>
+        </label>
+      )}
+
+      {value.marketType === "WIN_EITHER_HALF" && (
+        <label className="text-sm">Selection
+          <select value={(value.selection as any)?.value ?? ""}
+            onChange={(e) => onChange({ ...value, selection: { value: e.target.value as any } })}
+            className={inputCls}>
+            <option value="" disabled>Choose…</option>
+            {/* No draw option: the bet is on a SIDE winning a half outright. */}
+            {WIN_EITHER_HALF_VALUES.map((v) => <option key={v} value={v}>{v === "HOME" ? h : a} to win either half</option>)}
           </select>
         </label>
       )}

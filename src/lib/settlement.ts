@@ -21,7 +21,10 @@ function namesLikelyMatch(a: string, b: string): boolean {
 }
 
 export type ScoreLookupResult =
-  | { status: "scored"; homeScore: number; awayScore: number }
+  // `halftime` is null only when the feed omits it — see lookupFinishedScore.
+  // Markets that need the halves (WIN_EITHER_HALF) resolve to null in that
+  // case and are flagged for manual settlement rather than guessed.
+  | { status: "scored"; homeScore: number; awayScore: number; halftime: { home: number; away: number } | null }
   | { status: "not_finished" }
   | { status: "manual_required"; reason: string }
   | { status: "not_found"; reason: string };
@@ -31,6 +34,10 @@ type FinishedScoreFixture = {
   fixture: { status: { short: string } };
   goals: ScorePair;
   score?: {
+    // Needed by WIN_EITHER_HALF, which derives the second half as fulltime
+    // minus halftime. Present on the same response as the rest of the
+    // breakdown, so reading it costs nothing.
+    halftime?: ScorePair | null;
     fulltime?: ScorePair | null;
     extratime?: ScorePair | null;
     penalty?: ScorePair | null;
@@ -54,7 +61,7 @@ function emptyPair(pair?: ScorePair | null): boolean {
  */
 export function regulationScoreOf(
   match: FinishedScoreFixture,
-): { ok: true; home: number; away: number } | { ok: false; reason: string } {
+): { ok: true; home: number; away: number; halftime: { home: number; away: number } | null } | { ok: false; reason: string } {
   const status = match.fixture.status.short;
   const fulltime = match.score?.fulltime;
   if (!validPair(fulltime) || !validPair(match.goals)) {
@@ -91,7 +98,8 @@ export function regulationScoreOf(
     };
   }
 
-  return { ok: true, home: fulltime.home, away: fulltime.away };
+  const ht = match.score?.halftime;
+  return { ok: true, home: fulltime.home, away: fulltime.away, halftime: validPair(ht) ? { home: ht.home, away: ht.away } : null };
 }
 
 /**
@@ -121,5 +129,10 @@ export async function lookupFinishedScore(input: { homeTeam: string; awayTeam: s
   const regulation = regulationScoreOf(match);
   if (!regulation.ok) return { status: "manual_required", reason: regulation.reason };
 
-  return { status: "scored", homeScore: regulation.home, awayScore: regulation.away };
+  // Halftime rides along on the SAME /fixtures response — no extra call. It is
+  // null only when the feed omits it, which the coverage check
+  // (scripts/research-halftime-coverage.ts) measured at 0 of 1,179 finished
+  // fixtures across all 34 competitions. Passed through rather than assumed so
+  // WIN_EITHER_HALF degrades to manual review if that ever changes.
+  return { status: "scored", homeScore: regulation.home, awayScore: regulation.away, halftime: regulation.halftime };
 }

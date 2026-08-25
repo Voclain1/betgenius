@@ -13,7 +13,7 @@ const faCupAet = regulationScoreOf({
     penalty: { home: null, away: null },
   },
 });
-assert.deepEqual(faCupAet, { ok: true, home: 2, away: 2 });
+assert.deepEqual(faCupAet, { ok: true, home: 2, away: 2, halftime: null });
 if (!faCupAet.ok) throw new Error("Expected valid AET fixture");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "DRAW" }, faCupAet.home, faCupAet.away), "WON");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "HOME" }, faCupAet.home, faCupAet.away), "LOST");
@@ -30,7 +30,7 @@ const eflPenalty = regulationScoreOf({
     penalty: { home: 2, away: 4 },
   },
 });
-assert.deepEqual(eflPenalty, { ok: true, home: 2, away: 2 });
+assert.deepEqual(eflPenalty, { ok: true, home: 2, away: 2, halftime: null });
 if (!eflPenalty.ok) throw new Error("Expected valid penalty fixture");
 assert.equal(resolveMarket("DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }, eflPenalty.home, eflPenalty.away), "WON");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "AWAY" }, eflPenalty.home, eflPenalty.away), "LOST");
@@ -46,7 +46,7 @@ const copaAet = regulationScoreOf({
     penalty: { home: null, away: null },
   },
 });
-assert.deepEqual(copaAet, { ok: true, home: 1, away: 1 });
+assert.deepEqual(copaAet, { ok: true, home: 1, away: 1, halftime: null });
 if (!copaAet.ok) throw new Error("Expected valid Copa del Rey AET fixture");
 assert.equal(resolveMarket("BTTS", { value: "YES" }, copaAet.home, copaAet.away), "WON");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "AWAY" }, copaAet.home, copaAet.away), "LOST");
@@ -61,7 +61,7 @@ const coppaPenalty = regulationScoreOf({
     penalty: { home: 3, away: 0 },
   },
 });
-assert.deepEqual(coppaPenalty, { ok: true, home: 1, away: 1 });
+assert.deepEqual(coppaPenalty, { ok: true, home: 1, away: 1, halftime: null });
 if (!coppaPenalty.ok) throw new Error("Expected valid Coppa Italia penalty fixture");
 assert.equal(resolveMarket("CORRECT_SCORE", { home: 1, away: 1 }, coppaPenalty.home, coppaPenalty.away), "WON");
 assert.equal(resolveMarket("MATCH_WINNER", { value: "HOME" }, coppaPenalty.home, coppaPenalty.away), "LOST");
@@ -82,6 +82,27 @@ assert.equal(coupePenalty.ok, false);
 
 // Real Copa del Rey response observed during research: contradictory aggregate
 // and component scores. This must be routed to manual settlement.
+// Half-time is part of the contract now: WIN_EITHER_HALF settles from it, so it
+// must survive the regulation-score extraction rather than being dropped with
+// extra time. An AET fixture keeps its REGULATION halves — extra-time goals
+// belong to neither half.
+const withHalftime = regulationScoreOf({
+  fixture: { status: { short: "FT" } },
+  goals: { home: 2, away: 1 },
+  score: { halftime: { home: 0, away: 1 }, fulltime: { home: 2, away: 1 } },
+} as any);
+assert.deepEqual(withHalftime, { ok: true, home: 2, away: 1, halftime: { home: 0, away: 1 } });
+
+// A finished fixture whose halftime the feed omits must still resolve its
+// full-time score — only the halves-dependent market degrades, not settlement
+// as a whole.
+const missingHalftime = regulationScoreOf({
+  fixture: { status: { short: "FT" } },
+  goals: { home: 1, away: 0 },
+  score: { fulltime: { home: 1, away: 0 } },
+} as any);
+assert.deepEqual(missingHalftime, { ok: true, home: 1, away: 0, halftime: null });
+
 const inconsistent = regulationScoreOf({
   fixture: { status: { short: "AET" } },
   goals: { home: 2, away: 0 },

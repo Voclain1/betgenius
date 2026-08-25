@@ -103,7 +103,15 @@ function buildMatchPreview(home: string, away: string, league: string, kickoff: 
 }
 
 // --- market/selection/score generation ---------------------------------
-const REAL_MARKET_TYPES = MARKET_TYPES.filter((m) => m !== "OTHER") as Exclude<MarketType, "OTHER">[];
+// WIN_EITHER_HALF is excluded alongside OTHER. The demo seeder invents a
+// full-time scoreline only, and that market settles from the HALVES — so a
+// seeded row would either be unsettleable or have a scoreline that contradicts
+// its own outcome. Seeding it would need the seeder to model half-time scores
+// too, which is more machinery than a demo fixture set warrants.
+const REAL_MARKET_TYPES = MARKET_TYPES.filter((m) => m !== "OTHER" && m !== "WIN_EITHER_HALF") as Exclude<
+  MarketType,
+  "OTHER" | "WIN_EITHER_HALF"
+>[];
 
 function randomSelection(marketType: MarketType): Selection {
   switch (marketType) {
@@ -124,7 +132,7 @@ function randomSelection(marketType: MarketType): Selection {
 }
 
 /** Random-search a plausible scoreline that actually resolves to `outcome` for this market/selection, so settled demo rows don't contradict their own pick. Falls back to a constructed score if search doesn't converge (OVER_UNDER on a .5 line can never VOID, so VOID is never requested here). */
-function scoreForOutcome(marketType: Exclude<MarketType, "OTHER">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
+function scoreForOutcome(marketType: Exclude<MarketType, "OTHER" | "WIN_EITHER_HALF">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
   for (let i = 0; i < 30; i++) {
     const hs = randInt(0, 4);
     const as = randInt(0, 4);
@@ -376,8 +384,13 @@ async function main() {
         let finalHomeScore: number | null = null;
         let finalAwayScore: number | null = null;
         if (spec.outcome === "WON" || spec.outcome === "LOST") {
+          // OTHER and WIN_EITHER_HALF both get an arbitrary scoreline: OTHER
+          // is free text with nothing to resolve against, and WIN_EITHER_HALF
+          // settles from the halves this seeder does not model (see
+          // REAL_MARKET_TYPES). Neither is produced by REAL_MARKET_TYPES, so
+          // this branch is belt-and-braces against a future widening.
           const s =
-            spec.marketType === "OTHER"
+            spec.marketType === "OTHER" || spec.marketType === "WIN_EITHER_HALF"
               ? { hs: randInt(0, 3), as: randInt(0, 3) }
               : scoreForOutcome(spec.marketType, selection, spec.outcome);
           finalHomeScore = s.hs;
