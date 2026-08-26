@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPaystackSignature } from "@/lib/paystack/verifySignature";
+import { verifyTransaction } from "@/lib/paystack/paystack";
+import { validateVerifiedEntitlement } from "@/lib/paystack/entitlement";
 
 /**
  * Paystack webhook.
@@ -17,47 +19,90 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Bad signature" }, { status: 401 });
   }
 
-  const event = JSON.parse(raw) as { event: string; data: any };
+  let event: { event: string; data: any };
+  try {
+    event = JSON.parse(raw) as { event: string; data: any };
+  } catch {
+    console.error("Paystack webhook rejected", { code: "INVALID_JSON" });
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
   const data = event.data ?? {};
-  const email = data?.customer?.email as string | undefined;
-  const meta = data?.metadata as { userId?: string; tier?: "VIP" | "PREMIUM" } | undefined;
-
-  const user = meta?.userId
-    ? await prisma.user.findUnique({ where: { id: meta.userId } })
-    : email
-    ? await prisma.user.findUnique({ where: { email } })
-    : null;
-  if (!user) return NextResponse.json({ ok: true });
-
-  const now = new Date();
-  const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30-day default
 
   if (event.event === "charge.success") {
-    await prisma.subscription.upsert({
-      where: { userId: user.id },
-      update: {
-        status: "ACTIVE",
-        tier: meta?.tier ?? "VIP",
-        currentPeriodEnd: periodEnd,
-        paystackRef: data.reference,
+    const webhookReference = typeof data.reference === "string" ? data.reference : null;
+    if (!webhookReference) {
+      console.error("Paystack entitlement rejected", { code: "MISSING_REFERENCE" });
+      return NextResponse.json({ error: "Invalid transaction reference" }, { status: 400 });
+    }
+
+    const pendingMatches = await prisma.subscription.findMany({
+      where: { paystackRef: webhookReference, status: "PENDING" },
+      include: { user: { select: { id: true, email: true } } },
+      take: 2,
+    });
+    if (pendingMatches.length !== 1) {
+      console.error("Paystack entitlement rejected", {
+        code: pendingMatches.length === 0 ? "PENDING_CHECKOUT_NOT_FOUND" : "AMBIGUOUS_PENDING_REFERENCE",
+        reference: webhookReference,
+      });
+      return NextResponse.json({ error: "Unique pending checkout not found" }, { status: 409 });
+    }
+    const pending = pendingMatches[0];
+
+    let verified;
+    try {
+      verified = await verifyTransaction(webhookReference);
+    } catch (error) {
+      console.error("Paystack transaction verification failed", {
+        reference: webhookReference,
+        error: error instanceof Error ? error.message : "Unknown verification error",
+      });
+      return NextResponse.json({ error: "Transaction verification failed" }, { status: 502 });
+    }
+
+    const mismatches = validateVerifiedEntitlement(
+      {
+        userId: pending.userId,
+        userEmail: pending.user.email,
+        tier: pending.tier,
+        paystackRef: pending.paystackRef,
+        status: pending.status,
       },
-      create: {
-        userId: user.id,
-        status: "ACTIVE",
-        tier: meta?.tier ?? "VIP",
-        currentPeriodEnd: periodEnd,
-        paystackRef: data.reference,
-      },
+      verified.data,
+    );
+    if (mismatches.length > 0) {
+      console.error("Paystack entitlement rejected", {
+        reference: webhookReference,
+        mismatches,
+      });
+      return NextResponse.json({ error: "Transaction does not match pending checkout" }, { status: 409 });
+    }
+
+    const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await prisma.subscription.update({
+      where: { userId: pending.userId },
+      data: { status: "ACTIVE", currentPeriodEnd: periodEnd },
     });
   } else if (event.event === "subscription.create") {
-    await prisma.subscription.update({
-      where: { userId: user.id },
-      data: { paystackSubCode: data.subscription_code, status: "ACTIVE" },
-    });
+    // A subscription lifecycle notification is not proof of payment. Access is
+    // granted only by the verified charge.success path above.
+    const customerEmail = data?.customer?.email as string | undefined;
+    if (customerEmail && data.subscription_code) {
+      await prisma.subscription.updateMany({
+        where: { user: { email: customerEmail } },
+        data: { paystackSubCode: data.subscription_code },
+      });
+    }
   } else if (event.event === "subscription.disable" || event.event === "subscription.not_renew") {
-    await prisma.subscription.update({ where: { userId: user.id }, data: { status: "CANCELED" } });
+    const customerEmail = data?.customer?.email as string | undefined;
+    if (customerEmail) {
+      await prisma.subscription.updateMany({ where: { user: { email: customerEmail } }, data: { status: "CANCELED" } });
+    }
   } else if (event.event === "invoice.payment_failed") {
-    await prisma.subscription.update({ where: { userId: user.id }, data: { status: "EXPIRED" } });
+    const customerEmail = data?.customer?.email as string | undefined;
+    if (customerEmail) {
+      await prisma.subscription.updateMany({ where: { user: { email: customerEmail } }, data: { status: "EXPIRED" } });
+    }
   }
 
   return NextResponse.json({ received: true });
