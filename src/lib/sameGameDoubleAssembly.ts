@@ -119,7 +119,7 @@ export function describeDoubleReasoning(a: CandidateLeg, b: CandidateLeg): strin
     `**${bText.pick}** — ${b.confidence}% confidence`,
     b.reasoning,
     ``,
-    `These two calls are about different parts of the match (${a.market.toLowerCase()} and ${b.market.toLowerCase()}), so neither one guarantees the other. Confidence shown is the lower of the two — a double can never be more likely than its weaker leg.`,
+    `These two calls are about different parts of the match (${a.market.toLowerCase()} and ${b.market.toLowerCase()}), so neither one determines the other. Confidence shown is the lower of the two — a double can never be more likely than its weaker leg.`,
   ].join("\n");
 }
 
@@ -139,6 +139,89 @@ function bestPair<T extends { a: CandidateLeg; b: CandidateLeg; ceiling: number 
     leaguePriorityRank(x.a.leagueApiId) - leaguePriorityRank(y.a.leagueApiId) ||
     `${x.a.id}${x.b.id}`.localeCompare(`${y.a.id}${y.b.id}`),
   )[0];
+}
+
+/**
+ * Assemble the compatible pair emitted by one multi-market generation job.
+ *
+ * Unlike the editorial backfill assembler below, these legs are deliberately
+ * still PENDING_REVIEW. The compound row is also PENDING_REVIEW, so nothing is
+ * published or approved by this operation. Source legs remain tagged only as
+ * SAME_GAME_DOUBLE internals; the compound row receives the normal generation
+ * categories and can later participate in ordinary GENIUS/VIP/PREMIUM
+ * curation after a reviewer publishes it.
+ */
+export async function assembleGeneratedSameGameDouble(
+  legIds: string[],
+  categories: string[],
+): Promise<AssembledDouble | null> {
+  const rows = (await prisma.prediction.findMany({
+    where: { id: { in: legIds }, status: "PENDING_REVIEW", marketType: { not: "SAME_GAME_DOUBLE" } },
+    select: {
+      id: true, marketType: true, selection: true, confidence: true, reasoning: true,
+      market: true, pick: true, homeTeam: true, awayTeam: true, homeTeamApiId: true,
+      awayTeamApiId: true, kickoff: true, leagueApiId: true, leagueName: true,
+      authorId: true, fixtureId: true,
+    },
+  })) as CandidateLeg[];
+  if (rows.length < 2) return null;
+
+  const fixtureKey = fixtureKeyOf(rows[0]);
+  if (!fixtureKey || rows.some((row) => fixtureKeyOf(row) !== fixtureKey)) return null;
+
+  const viable: Array<{ a: CandidateLeg; b: CandidateLeg; ceiling: number }> = [];
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = legOf(rows[i]);
+      const b = legOf(rows[j]);
+      if (!a || !b || !checkLegCompatibility(a, b).ok) continue;
+      viable.push({ a: rows[i], b: rows[j], ceiling: comboConfidenceCeiling(rows[i].confidence, rows[j].confidence) });
+    }
+  }
+  const winner = bestPair(viable);
+  if (!winner) return null;
+
+  const existing = await prisma.prediction.findFirst({
+    where: {
+      marketType: "SAME_GAME_DOUBLE",
+      homeTeamApiId: winner.a.homeTeamApiId,
+      awayTeamApiId: winner.a.awayTeamApiId,
+      kickoff: winner.a.kickoff,
+    },
+    select: { id: true },
+  });
+  if (existing) return null;
+
+  const { a, b } = winner;
+  const { market, pick } = describeDouble(a, b);
+  const pairIds: [string, string] = [a.id, b.id];
+  const normalCategories = categories.filter((category) => category !== "SAME_GAME_DOUBLE");
+  if (normalCategories.length === 0) normalCategories.push("FEATURED");
+  const row = await prisma.prediction.create({
+    data: {
+      fixtureId: a.fixtureId,
+      category: normalCategories[0],
+      leagueApiId: a.leagueApiId,
+      leagueName: a.leagueName,
+      homeTeam: a.homeTeam,
+      awayTeam: a.awayTeam,
+      homeTeamApiId: a.homeTeamApiId,
+      awayTeamApiId: a.awayTeamApiId,
+      kickoff: a.kickoff,
+      status: "PENDING_REVIEW",
+      marketType: "SAME_GAME_DOUBLE",
+      selection: { legIds: pairIds },
+      manualSettlementOnly: false,
+      market,
+      pick,
+      confidence: winner.ceiling,
+      reasoning: describeDoubleReasoning(a, b),
+      contextComplete: true,
+      authorId: a.authorId,
+    },
+  });
+  await setPredictionCategories(row.id, [...normalCategories, "SAME_GAME_DOUBLE"]);
+  return { predictionId: row.id, fixture: `${a.homeTeam} v ${a.awayTeam}`, pick, ceiling: winner.ceiling, legIds: pairIds };
 }
 
 /**
@@ -314,6 +397,22 @@ export async function loadDoubleLegs(selection: unknown) {
   const a = byId.get(legIds[0]);
   const b = byId.get(legIds[1]);
   return a && b ? ([a, b] as const) : null;
+}
+
+/**
+ * Internal single-market rows referenced by doubles a reviewer has published.
+ * They remain hidden from public feeds, but settlement must resolve them even
+ * when the reviewer publishes only the compound row.
+ */
+export async function publishedDoubleLegIds(): Promise<string[]> {
+  const doubles = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", outcome: "PENDING", marketType: "SAME_GAME_DOUBLE" },
+    select: { selection: true },
+  });
+  return [...new Set(doubles.flatMap((row) => {
+    if (!isValidSelection("SAME_GAME_DOUBLE", row.selection)) return [];
+    return (row.selection as { legIds: [string, string] }).legIds;
+  }))];
 }
 
 export type DoubleSettlementResult = {

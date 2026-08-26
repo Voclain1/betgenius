@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { lookupFinishedScore } from "@/lib/settlement";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
-import { settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
+import { publishedDoubleLegIds, settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
 
 // Bulk settlement runs sequentially through the throttled api-football queue
 // (up to 2 calls per prediction) — bound generously since Vercel Cron (and
@@ -40,9 +40,17 @@ export async function GET(req: Request) {
   // throttled calls, roughly 60-90s, well inside maxDuration=300.
   const limit = Math.min(60, Math.max(1, Number(url.searchParams.get("limit")) || 40));
 
+  const internalDoubleLegIds = await publishedDoubleLegIds();
   const candidates = await prisma.prediction.findMany({
     where: {
-      status: "PUBLISHED",
+      // Normal picks must be published. Internally hidden legs become
+      // settlement-eligible once their compound pick is published, so the
+      // reviewer does not have to publish three public-looking rows merely to
+      // make one reviewed double settle correctly.
+      OR: [
+        { status: "PUBLISHED" },
+        { id: { in: internalDoubleLegIds } },
+      ],
       outcome: "PENDING",
       manualSettlementOnly: false,
       leagueApiId: { not: null },

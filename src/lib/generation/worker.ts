@@ -237,7 +237,7 @@ export async function runGeneration(opts: {
 
       const label = `${c.homeTeam} vs ${c.awayTeam}`;
       try {
-        const { predictions, sources } = await generateAndPersistPrediction({
+        const { predictions, combo, sources } = await generateAndPersistPrediction({
           home: c.homeTeam,
           away: c.awayTeam,
           league: c.leagueName,
@@ -259,10 +259,11 @@ export async function runGeneration(opts: {
         }
         report.apiCallsSpent += sources.apiCalls;
         report.succeeded++;
-        report.predictionsCreated += predictions.length;
+        report.predictionsCreated += predictions.length + (combo ? 1 : 0);
 
-        await recordAttempt(c, { ok: true, predictionIds: predictions.map((p) => p.id) });
-        report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: true, predictions: predictions.length });
+        const predictionIds = [...predictions.map((p) => p.id), ...(combo ? [combo.predictionId] : [])];
+        await recordAttempt(c, { ok: true, predictionIds });
+        report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: true, predictions: predictionIds.length });
       } catch (err: any) {
         const message = err?.message ?? String(err);
         const { terminal } = await recordAttempt(c, { ok: false, error: message });

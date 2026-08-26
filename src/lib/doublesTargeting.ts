@@ -2,34 +2,23 @@ import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 
 /**
- * A small daily allowance of multi-market generation, reserved for the Doubles
- * pipeline.
+ * Multi-market generation inside the regular prediction mix.
  *
- * WHY A QUOTA RATHER THAN A SWITCH. Multi-market generation works — measured
- * at 2.17 market calls per fixture against 1.00 for the production prompt —
- * but every row one job creates inherits that job's categories (see
- * generate.ts). Turning it on globally would therefore put two or three rows
- * for the SAME fixture into FEATURED, GENIUS, TODAY and every other feed,
- * changing the shape of the whole site to serve one feature. A quota buys the
- * candidates the Doubles pipeline needs while leaving those feeds exactly as
- * they are: one row per fixture.
+ * The source legs are stored under SAME_GAME_DOUBLE only, keeping them out of
+ * public feeds. One compatible compound row is assembled immediately and gets
+ * the ordinary requested category (FEATURED by default), plus
+ * SAME_GAME_DOUBLE provenance. That row follows the same review and later
+ * automatic curation path as any other prediction.
  *
- * WHY THE ROWS DO NOT LEAK. A doubles-intent job is tagged SAME_GAME_DOUBLE
- * and nothing else, so its rows are absent from every other category by
- * construction rather than by filtering. The Doubles feed itself renders only
- * assembled doubles (see getCategoryPredictions), so the legs do not appear
- * there either — they are visible inside the double that quotes them.
- *
- * SIZE. Eight fixtures a day. At the measured assembly rate that is roughly
- * eight doubles a day, which reaches the 30-settled floor in about a week once
- * settlement lag is counted — fast enough to be worth doing, small enough that
- * a bad prompt cannot flood the review queue before anyone notices. Raising it
- * is a decision to take once the first 30 have settled and the strike rate is
- * known, not before.
+ * Measured production cap: 20 x $0.0087 = about $0.17/day of model spend.
+ * A fully cold digest is roughly 11 football calls, so the worst case is 220
+ * calls/day (2.9% of the 7,500-call allowance). At the conservative 50-75%
+ * compatibility yield this should create 10-15 reviewable doubles per day.
  */
-export const DOUBLES_DAILY_QUOTA = 8;
+export const DOUBLES_DAILY_QUOTA = 20;
 
 export const SAME_GAME_DOUBLE = "SAME_GAME_DOUBLE" as const;
+export const REGULAR_COMBO_INTENT = "REGULAR_COMBO" as const;
 
 /**
  * How many doubles-intent generations have run today.
@@ -49,7 +38,8 @@ export async function doublesGeneratedToday(now: Date = new Date()): Promise<num
   });
   return jobs.filter((j) => {
     try {
-      return (JSON.parse(j.prompt)?.categories ?? []).includes(SAME_GAME_DOUBLE);
+      const input = JSON.parse(j.prompt);
+      return (input?.categories ?? []).includes(SAME_GAME_DOUBLE) || input?.intent === REGULAR_COMBO_INTENT;
     } catch {
       // A job whose prompt is unparseable cannot be proven to be a doubles
       // job, and counting it would silently eat somebody else's slot.
@@ -78,6 +68,7 @@ export function marketBreadthForCategories(categories: readonly string[], intent
   // its rows are tagged VIP/PREMIUM only after they pass — so it is matched
   // here explicitly rather than through the category list.
   if (intent === "MARKET_CONFIRMED") return "multi";
+  if (intent === REGULAR_COMBO_INTENT) return "multi";
   return categories.includes(SAME_GAME_DOUBLE) ? "multi" : "single";
 }
 
@@ -139,5 +130,6 @@ export function startCutoffMsForCategories(
   // rather than the general 22s one, which would start a fixture with 8s of
   // client budget left and ~25s of work to do.
   if (intent === "MARKET_CONFIRMED") return DOUBLES_START_CUTOFF_MS;
+  if (intent === REGULAR_COMBO_INTENT) return DOUBLES_START_CUTOFF_MS;
   return categories.includes(SAME_GAME_DOUBLE) ? DOUBLES_START_CUTOFF_MS : defaultCutoffMs;
 }

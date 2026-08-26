@@ -10,7 +10,8 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
-import { marketBreadthForCategories } from "@/lib/doublesTargeting";
+import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
+import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
 import { normalizeLeagueName } from "@/lib/leagues";
 
@@ -133,10 +134,9 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
 
   const startedAt = Date.now();
   const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId);
-  // A doubles-intent job asks for several markets so a same-game double can be
-  // assembled from two independently-reasoned rows; every other job asks for
-  // one, exactly as before. Derived from the categories rather than passed in,
-  // so the job's intent and its prompt cannot disagree.
+  // A regular-combo or legacy doubles job asks for several markets so a
+  // same-game double can be assembled from independently-reasoned rows.
+  // Market-Confirmed also uses multi breadth for its separate odds gate.
   const marketBreadth = marketBreadthForCategories(input.categories, input.intent);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
@@ -208,10 +208,12 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       const ouLine = validOU ? p.overUnderLine : null;
       const ouDirection = validOU ? p.overUnderDirection : null;
 
+      const isolatesComboLegs = input.intent === REGULAR_COMBO_INTENT || input.categories.includes(SAME_GAME_DOUBLE);
+      const persistedCategories = isolatesComboLegs ? [SAME_GAME_DOUBLE] : input.categories;
       const pred = await prisma.prediction.create({
         data: {
           fixtureId: input.fixtureId,
-          category: input.categories[0],
+          category: persistedCategories[0],
           leagueApiId: input.leagueApiId,
           leagueName: input.league,
           homeTeam: homeTeamName,
@@ -241,10 +243,14 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           aiJobId: job.id,
         },
       });
-      await setPredictionCategories(pred.id, input.categories);
+      await setPredictionCategories(pred.id, persistedCategories);
       return pred;
     }),
   );
 
-  return { job, preview: output.matchPreview, predictions: created, sources, durationMs };
+  const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED"
+    ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.categories)
+    : null;
+
+  return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs };
 }

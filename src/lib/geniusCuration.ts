@@ -51,7 +51,17 @@ export function selectCuratedIds<T extends Rankable>(rows: readonly T[], floor: 
 async function curateCategory(category: AutoCategory, floor: number, now: Date) {
   const { start, end } = lagosTodayBounds(now);
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: start, lt: end } },
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: start, lt: end },
+      // Multi-market source legs are settlement inputs, not three separate
+      // editorial picks. The assembled double participates in curation; its
+      // internally tagged single-market legs do not.
+      NOT: {
+        marketType: { not: "SAME_GAME_DOUBLE" },
+        categories: { some: { category: "SAME_GAME_DOUBLE" } },
+      },
+    },
     select: { id: true, leagueApiId: true, confidence: true, provenance: true, categories: { select: { category: true } } },
   });
 

@@ -12,6 +12,7 @@ import {
 } from "@/lib/marketConfirmedPipeline";
 import {
   DOUBLES_DAILY_QUOTA,
+  REGULAR_COMBO_INTENT,
   doublesQuotaRemaining,
 } from "@/lib/doublesTargeting";
 import {
@@ -97,6 +98,7 @@ export async function GET(req: Request) {
    * same ledger; only the candidate set differs.
    */
   const wantsBetOfTheDay = valid.includes("BET_OF_THE_DAY");
+  const wantsMarketConfirmed = url.searchParams.get("marketConfirmed") === "1";
   let matchKeys: string[] | undefined;
   let targeting: Record<string, unknown> | undefined;
 
@@ -130,14 +132,9 @@ export async function GET(req: Request) {
     };
   }
 
-  /**
-   * Doubles get a small daily allowance of MULTI-MARKET generation.
-   *
-   * The quota is what keeps every other feed unchanged: multi-market rows all
-   * inherit their job's categories, so an unbounded doubles run would be the
-   * same thing as turning multi-market on globally. Capped here, before the
-   * worker claims anything, so an over-quota poke costs nothing rather than
-   * generating and discarding.
+  /** Legacy explicit doubles requests share the same measured daily cap as the
+   * regular combo mix. The source legs are isolated during persistence and the
+   * assembled output is routed to FEATURED when no normal category was supplied.
    */
   const wantsDoubles = valid.includes("SAME_GAME_DOUBLE");
   let doublesTargeting: Record<string, unknown> | undefined;
@@ -165,7 +162,6 @@ export async function GET(req: Request) {
    * are not VIP/PREMIUM picks until they pass the odds gate — tagging them up
    * front would put ungated picks straight into the paid feeds.
    */
-  const wantsMarketConfirmed = url.searchParams.get("marketConfirmed") === "1";
   let marketConfirmedTargeting: Record<string, unknown> | undefined;
 
   if (wantsMarketConfirmed) {
@@ -183,9 +179,36 @@ export async function GET(req: Request) {
     marketConfirmedTargeting = { quota: MARKET_CONFIRMED_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
   }
 
+  /**
+   * While the shared multi-market quota has room, ordinary scheduled
+   * generation produces an internally isolated set of legs and one compatible
+   * compound pick. Only the compound pick receives the requested normal-feed
+   * categories; the legs remain available for independent settlement without
+   * appearing as duplicate loose picks in FEATURED/TODAY.
+   *
+   * Once the quota is spent this falls through to the existing single-market
+   * path. It never suppresses ordinary generation.
+   */
+  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsMarketConfirmed;
+  let regularComboTargeting: Record<string, unknown> | undefined;
+  let generationIntent: string | undefined = wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : undefined;
+  if (wantsRegularCombo) {
+    const remaining = await doublesQuotaRemaining();
+    if (remaining > 0) {
+      generationIntent = REGULAR_COMBO_INTENT;
+      effectiveLimit = Math.min(remaining, effectiveLimit);
+      regularComboTargeting = {
+        quota: DOUBLES_DAILY_QUOTA,
+        remainingBeforeRun: remaining,
+        limitApplied: effectiveLimit,
+        destinationCategories: valid.length ? valid : ["FEATURED"],
+      };
+    }
+  }
+
   const report = await runGeneration({
     authorId,
-    intent: wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : undefined,
+    intent: generationIntent,
     categories: valid.length ? valid : ["FEATURED"],
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     matchKeys,
@@ -221,6 +244,7 @@ export async function GET(req: Request) {
     }, { status: 200 });
   }
   if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
+  if (regularComboTargeting) return NextResponse.json({ ...report, regularCombo: regularComboTargeting }, { status: 200 });
 
   // A run that found the lock held is a normal outcome, not a failure — the
   // external scheduler must not treat overlapping pokes as errors and start

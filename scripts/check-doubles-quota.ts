@@ -18,11 +18,13 @@ react.cache = (fn: any) => fn;
 async function main() {
   const { prisma } = await import("../src/lib/prisma");
   const {
-    DOUBLES_DAILY_QUOTA, doublesGeneratedToday, doublesQuotaRemaining, marketBreadthForCategories,
+    DOUBLES_DAILY_QUOTA, REGULAR_COMBO_INTENT, doublesGeneratedToday, doublesQuotaRemaining, marketBreadthForCategories,
     DOUBLES_CLIENT_BUDGET_MS, DOUBLES_FIXTURE_COST_MS, DOUBLES_START_CUTOFF_MS, startCutoffMsForCategories,
   } = await import("../src/lib/doublesTargeting");
   const { getCategoryPredictions } = await import("../src/lib/categoryPredictions");
   const { setPredictionCategories } = await import("../src/lib/predictions");
+  const { assembleGeneratedSameGameDouble, publishedDoubleLegIds } = await import("../src/lib/sameGameDoubleAssembly");
+  const { curateAutomaticTips } = await import("../src/lib/geniusCuration");
   const { lagosTodayBounds } = await import("../src/lib/lagosDate");
 
   let failures = 0;
@@ -33,6 +35,7 @@ async function main() {
 
   console.log("breadth routing:");
   check("a doubles job asks for several markets", marketBreadthForCategories(["SAME_GAME_DOUBLE"]) === "multi");
+  check("the regular combo intent asks for several markets", marketBreadthForCategories(["FEATURED"], REGULAR_COMBO_INTENT) === "multi");
   // The whole point of the quota: every other intent is untouched.
   for (const c of ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"]) {
     check(`${c} still asks for one market`, marketBreadthForCategories([c]) === "single");
@@ -41,7 +44,7 @@ async function main() {
   check("a mixed job containing doubles asks for several", marketBreadthForCategories(["FEATURED", "SAME_GAME_DOUBLE"]) === "multi");
 
   console.log("\nquota:");
-  check("quota is small and deliberate (5-10/day)", DOUBLES_DAILY_QUOTA >= 5 && DOUBLES_DAILY_QUOTA <= 10, `${DOUBLES_DAILY_QUOTA}`);
+  check("quota is substantially above eight but remains capped (15-25/day)", DOUBLES_DAILY_QUOTA >= 15 && DOUBLES_DAILY_QUOTA <= 25, `${DOUBLES_DAILY_QUOTA}`);
   const used = await doublesGeneratedToday();
   const left = await doublesQuotaRemaining();
   check("remaining = quota - used", left === Math.max(0, DOUBLES_DAILY_QUOTA - used), `used ${used}, remaining ${left}`);
@@ -52,6 +55,8 @@ async function main() {
   check("doubles get a tighter start cutoff than the general path",
     startCutoffMsForCategories(["SAME_GAME_DOUBLE"], GENERAL_CUTOFF) < GENERAL_CUTOFF,
     `${DOUBLES_START_CUTOFF_MS}ms vs ${GENERAL_CUTOFF}ms`);
+  check("regular combo generation gets the same measured cutoff",
+    startCutoffMsForCategories(["FEATURED"], GENERAL_CUTOFF, REGULAR_COMBO_INTENT) === DOUBLES_START_CUTOFF_MS);
   // The whole point: nothing else changes behaviour.
   for (const c of ["FEATURED", "GENIUS", "TODAY", "BANKER", "BET_OF_THE_DAY"]) {
     check(`${c} keeps the general cutoff`, startCutoffMsForCategories([c], GENERAL_CUTOFF) === GENERAL_CUTOFF);
@@ -76,7 +81,7 @@ async function main() {
     const kickoff = new Date(start.getTime() + 12 * 3_600_000);
     const base = {
       category: "SAME_GAME_DOUBLE",
-      status: "PUBLISHED",
+      status: "PENDING_REVIEW",
       kickoff,
       homeTeam: "ZZ Quota Check A",
       awayTeam: "ZZ Quota Check B",
@@ -96,11 +101,24 @@ async function main() {
       data: { ...base, marketType: "OVER_UNDER", selection: { line: 2.5, direction: "OVER" }, market: "Total Goals", pick: "Over 2.5 Goals" },
     });
     createdIds.push(leg2.id);
-    const dbl = await prisma.prediction.create({
-      data: { ...base, marketType: "SAME_GAME_DOUBLE", selection: { legIds: [leg.id, leg2.id] }, market: "Same-Game Double", pick: "Yes + Over 2.5 Goals" },
+    await setPredictionCategories(leg.id, ["SAME_GAME_DOUBLE"]);
+    await setPredictionCategories(leg2.id, ["SAME_GAME_DOUBLE"]);
+    const assembled = await assembleGeneratedSameGameDouble([leg.id, leg2.id], ["FEATURED"]);
+    check("compatible generated legs assemble immediately", !!assembled);
+    if (!assembled) throw new Error("generated double was not assembled");
+    createdIds.push(assembled.predictionId);
+    const dbl = await prisma.prediction.findUniqueOrThrow({
+      where: { id: assembled.predictionId }, include: { categories: true },
     });
-    createdIds.push(dbl.id);
-    for (const id of createdIds) await setPredictionCategories(id, ["SAME_GAME_DOUBLE"]);
+    check("assembled output remains PENDING_REVIEW", dbl.status === "PENDING_REVIEW", dbl.status);
+    check("display confidence is min(legs)", dbl.confidence === 60, String(dbl.confidence));
+    check("compound row receives FEATURED plus doubles provenance",
+      ["FEATURED", "SAME_GAME_DOUBLE"].every((category) => dbl.categories.some((link: any) => link.category === category)));
+    await prisma.prediction.update({ where: { id: dbl.id }, data: { status: "PUBLISHED" } });
+    const settlementLegIds = await publishedDoubleLegIds();
+    check("publishing only the compound row makes both hidden legs settlement-eligible",
+      [leg.id, leg2.id].every((id) => settlementLegIds.includes(id)));
+    await prisma.prediction.updateMany({ where: { id: { in: [leg.id, leg2.id] } }, data: { status: "PUBLISHED" } });
 
     console.log("\nfeed isolation (3 real published rows: 2 legs + 1 double):");
 
@@ -113,8 +131,12 @@ async function main() {
     check("everything shown on the Doubles feed is a double",
       doublesFeed.every((r: any) => r.marketType === "SAME_GAME_DOUBLE"));
 
-    // The requirement in one assertion: other feeds are untouched.
-    for (const cat of ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"] as const) {
+    const featured = await getCategoryPredictions("FEATURED");
+    check("the assembled double enters the FEATURED feed", featured.some((r: any) => r.id === dbl.id));
+    check("its internal legs do NOT enter FEATURED", !featured.some((r: any) => r.id === leg.id || r.id === leg2.id));
+
+    // Higher tiers remain owned by their normal curation flow.
+    for (const cat of ["GENIUS", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"] as const) {
       const feed = await getCategoryPredictions(cat);
       check(`${cat} feed contains none of the doubles rows`, !feed.some((r: any) => createdIds.includes(r.id)));
     }
@@ -123,9 +145,25 @@ async function main() {
     // exclusion a doubles job would put three rows for one fixture into it.
     const today = await getCategoryPredictions("TODAY");
     const inToday = today.filter((r: any) => createdIds.includes(r.id));
-    check("TODAY feed contains none of the doubles rows", inToday.length === 0, `${inToday.length} of 3 present`);
+    check("TODAY contains the assembled double but not its internal legs",
+      inToday.length === 1 && inToday[0].id === dbl.id, `${inToday.length} of 3 present`);
     // And TODAY still shows everything else, so the exclusion is narrow.
     check("TODAY still returns other published predictions", today.length >= 0, `${today.length} rows`);
+
+    // Exercise automatic tier curation on an otherwise empty future day so no
+    // real production tags are touched by this check.
+    const isolatedKickoff = new Date("2099-06-15T12:00:00.000Z");
+    await prisma.prediction.updateMany({ where: { id: { in: createdIds } }, data: { kickoff: isolatedKickoff } });
+    await curateAutomaticTips(new Date("2099-06-15T08:00:00.000Z"));
+    const curated = await prisma.prediction.findMany({
+      where: { id: { in: createdIds } },
+      select: { id: true, marketType: true, categories: { select: { category: true } } },
+    });
+    const curatedCategories = (id: string) => curated.find((row) => row.id === id)?.categories.map((link) => link.category) ?? [];
+    check("assembled double participates in GENIUS/VIP/PREMIUM curation",
+      ["GENIUS", "VIP", "PREMIUM"].every((category) => curatedCategories(dbl.id).includes(category)));
+    check("internal source legs are excluded from tier curation",
+      [leg.id, leg2.id].every((id) => !curatedCategories(id).some((category) => ["GENIUS", "VIP", "PREMIUM"].includes(category))));
   } finally {
     if (createdIds.length) {
       const del = await prisma.prediction.deleteMany({ where: { id: { in: createdIds } } });
