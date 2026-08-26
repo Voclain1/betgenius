@@ -109,10 +109,10 @@ function buildMatchPreview(home: string, away: string, league: string, kickoff: 
 // its own outcome. Seeding it would need the seeder to model half-time scores
 // too, which is more machinery than a demo fixture set warrants.
 const REAL_MARKET_TYPES = MARKET_TYPES.filter(
-  (m) => m !== "OTHER" && m !== "WIN_EITHER_HALF" && m !== "SAME_GAME_DOUBLE" && m !== "HT_FT" && m !== "DRAW_NO_BET",
+  (m) => m !== "OTHER" && m !== "WIN_EITHER_HALF" && m !== "SAME_GAME_DOUBLE" && m !== "HT_FT" && m !== "DRAW_NO_BET" && m !== "TEAM_TOTAL",
 ) as Exclude<
   MarketType,
-  "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET"
+  "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET" | "TEAM_TOTAL"
 >[];
 
 function randomSelection(marketType: MarketType): Selection {
@@ -134,7 +134,7 @@ function randomSelection(marketType: MarketType): Selection {
 }
 
 /** Random-search a plausible scoreline that actually resolves to `outcome` for this market/selection, so settled demo rows don't contradict their own pick. Falls back to a constructed score if search doesn't converge (OVER_UNDER on a .5 line can never VOID, so VOID is never requested here). */
-function scoreForOutcome(marketType: Exclude<MarketType, "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
+function scoreForOutcome(marketType: Exclude<MarketType, "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET" | "TEAM_TOTAL">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
   for (let i = 0; i < 30; i++) {
     const hs = randInt(0, 4);
     const as = randInt(0, 4);
@@ -397,7 +397,8 @@ async function main() {
             spec.marketType === "WIN_EITHER_HALF" ||
             spec.marketType === "SAME_GAME_DOUBLE" ||
             spec.marketType === "HT_FT" ||
-            spec.marketType === "DRAW_NO_BET"
+            spec.marketType === "DRAW_NO_BET" ||
+            spec.marketType === "TEAM_TOTAL"
               ? { hs: randInt(0, 3), as: randInt(0, 3) }
               : scoreForOutcome(spec.marketType, selection, spec.outcome);
           finalHomeScore = s.hs;

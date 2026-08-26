@@ -7,7 +7,7 @@ import { buildAnalysis } from "@/lib/predictionAnalysis";
 import { searchTeam } from "@/lib/football/api-football";
 import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { setPredictionCategories } from "@/lib/predictions";
-import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
+import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
 import { normalizeName } from "@/lib/slug";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
@@ -193,7 +193,12 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       // Defensive: even with a schema in the prompt, the model can still emit
       // a malformed marketType/selection. Fall back to OTHER (manual-only)
       // rather than persist a settlement field that doesn't match its shape.
-      const validStructured = isValidSelection(p.marketType, p.selection);
+      // A TEAM_TOTAL on a line generation may not use is treated as malformed,
+      // not silently accepted. The prompt states the rule; this is what makes
+      // it true. Same reasoning as the certainty scan above — a prompt alone
+      // has already proven insufficient once.
+      const generatableLine = p.marketType !== "TEAM_TOTAL" || isGeneratableTeamTotal(p.selection);
+      const validStructured = isValidSelection(p.marketType, p.selection) && generatableLine;
       const marketType: MarketType = validStructured ? p.marketType : "OTHER";
       const selection: Selection = validStructured ? p.selection : null;
       // Fallback only matters if Gemini emits something malformed despite the

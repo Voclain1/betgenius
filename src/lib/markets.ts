@@ -6,7 +6,7 @@
 // makes auto-settlement (see resolveMarket) safe to run later. OTHER is the
 // escape hatch for exotic markets: free-text market/pick, always manual.
 
-export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "DRAW_NO_BET", "HT_FT", "SAME_GAME_DOUBLE", "OTHER"] as const;
+export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "DRAW_NO_BET", "HT_FT", "TEAM_TOTAL", "SAME_GAME_DOUBLE", "OTHER"] as const;
 export type MarketType = (typeof MARKET_TYPES)[number];
 
 // The structured types a caller — e.g. Gemini — should be producing.
@@ -39,6 +39,7 @@ export const ADMIN_MARKET_TYPES = [
   "WIN_EITHER_HALF",
   "DRAW_NO_BET",
   "HT_FT",
+  "TEAM_TOTAL",
   "OTHER",
 ] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE">[];
 
@@ -60,6 +61,24 @@ export const BTTS_VALUES = ["YES", "NO"] as const;
 export const WIN_EITHER_HALF_VALUES = ["HOME", "AWAY"] as const;
 /** Draw No Bet backs a side with the draw refunded — so there is no DRAW option. */
 export const DRAW_NO_BET_VALUES = ["HOME", "AWAY"] as const;
+/** Which side's goals a team total counts. */
+export const TEAM_TOTAL_SIDES = ["HOME", "AWAY"] as const;
+
+/**
+ * Lines generation may use, and only these.
+ *
+ * Half-lines cannot push, which is why every OVER_UNDER we generate uses 2.5.
+ * Books DO quote whole-number team totals — "Over 2" was seen on every probed
+ * fixture — and a team scoring exactly 2 on that line is a refund, not a win.
+ * Settlement below handles the push correctly for a hand-entered admin row,
+ * but the model is never offered one.
+ *
+ * 3.5 is absent deliberately: 7.1% of real team-innings clear it, so the pick
+ * is effectively decided before kickoff. 2.5 is UNDER-only for the same reason
+ * from the other direction — only 16.0% go over it.
+ */
+export const TEAM_TOTAL_GENERATABLE_LINES = [0.5, 1.5, 2.5] as const;
+
 /** Each half of an HT/FT pick is an ordinary 1X2 result. */
 export const HT_FT_VALUES = ["HOME", "DRAW", "AWAY"] as const;
 
@@ -71,6 +90,12 @@ export type WinEitherHalfSelection = { value: (typeof WIN_EITHER_HALF_VALUES)[nu
 export type DrawNoBetSelection = { value: (typeof DRAW_NO_BET_VALUES)[number] };
 /** Half-time result and full-time result, both required — this is one pick, not two. */
 export type HtFtSelection = { ht: (typeof HT_FT_VALUES)[number]; ft: (typeof HT_FT_VALUES)[number] };
+/** One side's goal count against a line — the team-scoped counterpart of OVER_UNDER. */
+export type TeamTotalSelection = {
+  side: (typeof TEAM_TOTAL_SIDES)[number];
+  line: number;
+  direction: (typeof OU_DIRECTIONS)[number];
+};
 export type CorrectScoreSelection = { home: number; away: number };
 /**
  * A same-game double: the ids of the two Prediction rows it is composed of.
@@ -92,6 +117,7 @@ export type Selection =
   | WinEitherHalfSelection
   | DrawNoBetSelection
   | HtFtSelection
+  | TeamTotalSelection
   | SameGameDoubleSelection
   | null; // OTHER
 
@@ -104,6 +130,7 @@ const MARKET_LABELS: Record<MarketType, string> = {
   WIN_EITHER_HALF: "Win Either Half",
   DRAW_NO_BET: "Draw No Bet",
   HT_FT: "Half-Time / Full-Time",
+  TEAM_TOTAL: "Team Total Goals",
   SAME_GAME_DOUBLE: "Same-Game Double",
   OTHER: "Other",
 };
@@ -132,6 +159,17 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
       return isObj(selection) && (WIN_EITHER_HALF_VALUES as readonly unknown[]).includes(selection.value);
     case "DRAW_NO_BET":
       return isObj(selection) && (DRAW_NO_BET_VALUES as readonly unknown[]).includes(selection.value);
+    case "TEAM_TOTAL":
+      // Accepts WHOLE lines too. An admin may legitimately enter one, and
+      // settlement resolves it as a push; only generation is restricted, via
+      // isGeneratableTeamTotal below.
+      return (
+        isObj(selection) &&
+        (TEAM_TOTAL_SIDES as readonly unknown[]).includes(selection.side) &&
+        typeof selection.line === "number" &&
+        selection.line > 0 &&
+        (OU_DIRECTIONS as readonly unknown[]).includes(selection.direction)
+      );
     case "HT_FT":
       // BOTH halves required. A selection carrying only one is not a partially
       // specified HT/FT pick, it is a different market wearing this one's name.
@@ -165,6 +203,28 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
     default:
       return false;
   }
+}
+
+/**
+ * Whether a team total is one GENERATION may produce.
+ *
+ * Same enforcement shape as isProducibleSelection in src/lib/odds.ts: the
+ * prompt states the rule and this is what makes it true, because a prompt
+ * alone has already proven insufficient once this session.
+ *
+ * Two restrictions, both from measured data (scripts/research-team-totals.ts,
+ * 156 real team-innings):
+ *   - half-lines only, so a pick can never push;
+ *   - 2.5 is UNDER-only, since just 16.0% of team-innings go over it and 3.5
+ *     is excluded outright at 7.1% — a line the data barely crosses is decided
+ *     before kickoff.
+ */
+export function isGeneratableTeamTotal(selection: unknown): boolean {
+  if (!isValidSelection("TEAM_TOTAL", selection)) return false;
+  const s = selection as TeamTotalSelection;
+  if (!(TEAM_TOTAL_GENERATABLE_LINES as readonly number[]).includes(s.line)) return false;
+  if (s.line === 2.5 && s.direction === "OVER") return false;
+  return true;
 }
 
 /** Derives the display market/pick strings from structured fields. OTHER passes the free-text pair through untouched. */
@@ -206,6 +266,14 @@ export function deriveMarketAndPick(
     case "DRAW_NO_BET": {
       const v = (selection as DrawNoBetSelection).value;
       return { market: MARKET_LABELS.DRAW_NO_BET, pick: `${v === "HOME" ? h : a} (draw no bet)` };
+    }
+    case "TEAM_TOTAL": {
+      const s = selection as TeamTotalSelection;
+      const team = s.side === "HOME" ? h : a;
+      return {
+        market: MARKET_LABELS.TEAM_TOTAL,
+        pick: `${team} ${s.direction === "OVER" ? "Over" : "Under"} ${s.line} Goals`,
+      };
     }
     case "HT_FT": {
       const sel = selection as HtFtSelection;
@@ -303,6 +371,23 @@ export function resolveMarket(
      * VOIDs than every existing one combined — see scripts/check-void-handling.ts,
      * which exists to prove nothing downstream treats VOID as negligible.
      */
+    /**
+     * TEAM TOTAL — one side's goals against a line.
+     *
+     * Needs strictly LESS than OVER_UNDER, which sums both sides. Reads the
+     * backed team's goals directly, so there is nothing to derive and nothing
+     * to invent.
+     *
+     * A whole-number line pushes when the count lands exactly on it. Generation
+     * never produces one (see isGeneratableTeamTotal), but an admin-entered row
+     * must still resolve correctly rather than being scored as a loss.
+     */
+    case "TEAM_TOTAL": {
+      const s = selection as TeamTotalSelection;
+      const goals = s.side === "HOME" ? homeScore : awayScore;
+      if (goals === s.line) return "VOID";
+      return (s.direction === "OVER") === (goals > s.line) ? "WON" : "LOST";
+    }
     case "DRAW_NO_BET": {
       const v = (selection as DrawNoBetSelection).value;
       if (homeScore === awayScore) return "VOID";

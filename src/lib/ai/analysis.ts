@@ -124,6 +124,15 @@ Rules:
      loses. So this is the safer version of MATCH_WINNER: it removes the draw
      as a losing outcome without paying for the opponent's win as DOUBLE_CHANCE
      does. There is no draw option, because the draw is the refund.
+   - "TEAM_TOTAL"     -> selection: { "side": "HOME" | "AWAY", "line": 0.5 | 1.5 | 2.5, "direction": "OVER" | "UNDER" }
+     ONE side's goals, not the match total. Use ONLY the lines listed, and use
+     2.5 with "UNDER" only — the other lines are either unquoted or so
+     one-sided that the pick is decided before kickoff.
+     This requires TEAM-SPECIFIC evidence, and that is the whole difference
+     between it and OVER_UNDER: this side's own scoring rate, or the opponent's
+     clean-sheet and goals-conceded record. Match-level goal expectation is
+     evidence for OVER_UNDER, NOT for this. If the only thing the data supports
+     is "this looks like a high-scoring game", use OVER_UNDER.
    - "HT_FT"          -> selection: { "ht": "HOME" | "DRAW" | "AWAY", "ft": "HOME" | "DRAW" | "AWAY" }
      BOTH must be right: the result at half-time AND the result at full-time,
      as one pick. Nine combinations exist and most are unlikely, so this is a
@@ -142,7 +151,7 @@ Rules:
   "matchPreview": string,          // 2-4 short paragraphs in markdown
   "predictions": [
     {
-      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF" | "DRAW_NO_BET" | "HT_FT",
+      "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF" | "DRAW_NO_BET" | "HT_FT" | "TEAM_TOTAL",
       "selection": { ... shape per marketType, see rule 4 ... },
       "overUnderLine": number,
       "overUnderDirection": "OVER" | "UNDER",
@@ -251,7 +260,13 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
      * The stronger side scores in concentrated periods, starts or finishes
        fast, but often fails to control the full match -> WIN_EITHER_HALF.
      * The result edge is weak but the scoring pattern is coherent -> use the
-       supported OVER_UNDER or BTTS position instead of forcing a side hedge.
+       supported OVER_UNDER, BTTS or TEAM_TOTAL position instead of forcing a
+       side hedge. Choose between them by WHOSE evidence you actually have:
+       TEAM_TOTAL when it concerns one side (that attack's scoring rate, that
+       defence's clean sheets), OVER_UNDER when it concerns the match as a
+       whole, BTTS when it concerns both sides scoring at all. TEAM_TOTAL is
+       narrower than OVER_UNDER, so it needs the narrower evidence — do not
+       reach for it as a generically safer total.
 
      In the reasoning, name the evidence for the selected failure mode and say
      briefly why the two other side-hedge patterns do not fit. If you cannot do
