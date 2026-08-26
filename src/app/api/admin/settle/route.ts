@@ -7,6 +7,7 @@ import { lookupFinishedScore } from "@/lib/settlement";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
 import { publishedDoubleLegIds, settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
+import { resolveSettlementBatchLimit } from "@/lib/settlementBatch";
 
 // Bulk settlement runs sequentially through the throttled api-football queue
 // (up to 2 calls per prediction) — bound generously since Vercel Cron (and
@@ -30,15 +31,9 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const curation = await curateAutomaticTips();
-  // Raised from 15/30. Settlement has to keep pace with whatever publication
-  // rate the reviewer sustains, and at up to 100 predictions a day a daily run
-  // of 15 would fall permanently and increasingly behind.
-  //
-  // Sized for 8 runs a day (3-hourly, via cron-job.org — this plan's own crons
-  // are capped at once daily): 8 x 40 = 320/day against a 100/day ceiling, so a
-  // missed run self-heals rather than compounding. 40 predictions costs ~80
-  // throttled calls, roughly 60-90s, well inside maxDuration=300.
-  const limit = Math.min(60, Math.max(1, Number(url.searchParams.get("limit")) || 40));
+  // Eight three-hourly runs at the measured safe cap still provide 144/day
+  // capacity against the system's 100/day generation ceiling.
+  const limit = resolveSettlementBatchLimit(url.searchParams.get("limit"));
 
   const internalDoubleLegIds = await publishedDoubleLegIds();
   const candidates = await prisma.prediction.findMany({
