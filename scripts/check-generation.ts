@@ -103,6 +103,10 @@ eq("curation: PREMIUM applies its own 75% selection", [...premiumSet], [...vipSe
 check("prompt: tiered mode gives GENIUS safer-market calibration", buildSystemPrompt(["GENIUS"], "tiered").includes("GENIUS (safer)"));
 check("prompt: tiered mode gives VIP/PREMIUM the stricter calibration", buildSystemPrompt(["VIP"], "tiered").includes("VIP or PREMIUM (more safer)"));
 check("prompt: margin is the default calibration", buildSystemPrompt(["GENIUS"]).includes("MARKET RISK CALIBRATION BY MARGIN"));
+check("prompt: moderate band rejects Double Chance as a default", buildSystemPrompt(["GENIUS"]).includes("DOUBLE_CHANCE is NOT the default"));
+check("prompt: moderate hedge must identify its evidence failure mode", buildSystemPrompt(["GENIUS"]).includes("PRIMARY failure mode"));
+check("prompt: Draw No Bet is keyed to stalemate risk", buildSystemPrompt(["GENIUS"]).includes("DRAW / STALEMATE is the main risk"));
+check("prompt: Win Either Half is keyed to concentrated scoring", buildSystemPrompt(["GENIUS"]).includes("scores in concentrated periods"));
 check("prompt: legacy comparison omits calibration", !buildSystemPrompt(["PREMIUM"], false).includes("MARKET RISK CALIBRATION"));
 // Multi-market breadth is opt-in: production generation must be byte-identical
 // to what it was before the same-game-double research added the mode.

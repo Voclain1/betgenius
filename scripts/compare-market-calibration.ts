@@ -12,7 +12,7 @@
  * question is whether the prompt responds to how one-sided a fixture really is,
  * and grading it against the model's own opinion would beg that question.
  *
- * Run: npx tsx --env-file=.env scripts/compare-market-calibration.ts [perBand]
+ * Run: npx tsx --env-file=.env scripts/compare-market-calibration.ts [perBand] [band] [stored]
  */
 export {};
 
@@ -22,7 +22,7 @@ if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
 import { prisma } from "../src/lib/prisma";
 import { parseStoredContext } from "../src/lib/ai/context";
 import { generatePredictionForFixture } from "../src/lib/ai/analysis";
-import { deriveMarketAndPick } from "../src/lib/markets";
+import { deriveMarketAndPick, type MarketType } from "../src/lib/markets";
 import { resolveGenerationRisk } from "../src/lib/ai/generationRisk";
 import { matchKey } from "../src/lib/slug";
 import { impliedProbability, findSelection, type FixtureOdds } from "../src/lib/odds";
@@ -47,6 +47,7 @@ async function main() {
   // Optional band filter: the EXTREME band is the one where behaviour is
   // supposed to change, so it is worth sampling on its own and harder.
   const onlyBand = process.argv[3]?.toUpperCase();
+  const useStoredBaseline = process.argv[4]?.toLowerCase() === "stored";
 
   const rows = await prisma.prediction.findMany({
     where: { aiJob: { isNot: null } },
@@ -54,7 +55,8 @@ async function main() {
     take: 400,
     select: {
       id: true, homeTeam: true, awayTeam: true, leagueName: true, leagueApiId: true,
-      marketType: true, confidence: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true,
+      marketType: true, selection: true, reasoning: true, confidence: true,
+      homeTeamApiId: true, awayTeamApiId: true, kickoff: true,
       aiJob: { select: { context: true, prompt: true } },
     },
   });
@@ -108,11 +110,17 @@ async function main() {
       };
 
       try {
-        const before = render(await generatePredictionForFixture({ digest, tiers: route.promptTiers, riskCalibration: "tiered" }));
+        const before = useStoredBaseline
+          ? (() => {
+              const marketType = row.marketType as MarketType;
+              const d = deriveMarketAndPick(marketType, row.selection as any, row.homeTeam ?? "Home", row.awayTeam ?? "Away", { market: row.marketType, pick: "" });
+              return { marketType: row.marketType, pick: d.pick, confidence: Math.round(row.confidence), reasoning: String(row.reasoning ?? "").slice(0, 150) };
+            })()
+          : render(await generatePredictionForFixture({ digest, tiers: route.promptTiers, riskCalibration: "tiered" }));
         const after = render(await generatePredictionForFixture({ digest, tiers: route.promptTiers, riskCalibration: "margin" }));
 
         console.log(`\n  ${row.homeTeam} v ${row.awayTeam}  [${row.leagueName}]  tier=${route.promptTiers.join("+")}  market fav=${row.fav.toFixed(1)}%`);
-        console.log(`    BEFORE (tiered): ${before.marketType.padEnd(14)} ${before.pick} @ ${before.confidence}%`);
+        console.log(`    BEFORE (${useStoredBaseline ? "stored" : "tiered"}): ${before.marketType.padEnd(14)} ${before.pick} @ ${before.confidence}%`);
         console.log(`    AFTER  (margin): ${after.marketType.padEnd(14)} ${after.pick} @ ${after.confidence}%`);
         console.log(`    changed: ${before.marketType !== after.marketType ? `YES  ${before.marketType} -> ${after.marketType}` : "no"}`);
         console.log(`    after reasoning: ${after.reasoning}...`);

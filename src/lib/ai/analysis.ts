@@ -235,9 +235,27 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
 
    - MODERATE FAVOURITE (one side is clearly better, but the evidence is mixed:
      a narrower gap, patchy form, a significant absence, or a strong away record
-     against them). Hedge. Use DOUBLE_CHANCE, DRAW_NO_BET, WIN_EITHER_HALF, or
+     against them). Hedge. DOUBLE_CHANCE is NOT the default for this band. Choose
+     among DOUBLE_CHANCE, DRAW_NO_BET, WIN_EITHER_HALF, or
      a conservative OVER_UNDER or BTTS position where the goal-scoring evidence
      supports it better than the result does.
+
+     Make the hedge choice by identifying the PRIMARY failure mode in the
+     evidence, then use the market that removes or tolerates that failure mode:
+
+     * DRAW / STALEMATE is the main risk, while the favourite losing is a less
+       credible outcome -> DRAW_NO_BET on the favourite.
+     * A genuine opponent win remains credible, so the backed side needs
+       protection from defeat -> DOUBLE_CHANCE. Do not choose DOUBLE_CHANCE
+       merely because it is familiar, sounds safe, or the tier is cautious.
+     * The stronger side scores in concentrated periods, starts or finishes
+       fast, but often fails to control the full match -> WIN_EITHER_HALF.
+     * The result edge is weak but the scoring pattern is coherent -> use the
+       supported OVER_UNDER or BTTS position instead of forcing a side hedge.
+
+     In the reasoning, name the evidence for the selected failure mode and say
+     briefly why the two other side-hedge patterns do not fit. If you cannot do
+     that from the supplied evidence, do not use a side hedge.
 
      DRAW_NO_BET sits BETWEEN MATCH_WINNER and DOUBLE_CHANCE. It removes the
      draw from the losing outcomes without also paying for the opponent to win,
@@ -259,8 +277,10 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
      opponent within one of them.
 
    - CLOSE FIXTURE (the sides are comparable, or the evidence disagrees with
-     itself). Either hedge with DOUBLE_CHANCE or a conservative OVER_UNDER/BTTS
-     position, or take a narrower position with a CORRESPONDINGLY LOWER
+     itself). Prefer a conservative OVER_UNDER/BTTS position when the scoring
+     evidence is clearer than the result. Use DOUBLE_CHANCE only when the
+     evidence identifies a particular side whose defeat is genuinely unlikely;
+     otherwise take a narrower position with a CORRESPONDINGLY LOWER
      CONFIDENCE. Do not report high confidence on a fixture the evidence does not
      separate — a close game honestly marked at 55% is more useful than the same
      game dressed up at 75%.
