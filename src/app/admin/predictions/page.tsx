@@ -113,11 +113,32 @@ export default function AdminPredictions() {
     if (!confirm(`${action.toLowerCase()} ${selected.size} prediction(s)?`)) return;
     setBusy(true);
     try {
-      await fetch("/api/admin/predictions/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [...selected], action }),
-      });
+      const selectedIds = [...selected];
+      // The API deliberately caps one database batch at 100 rows. Large review
+      // selections are split here rather than rejected wholesale; each reply
+      // is checked before the next batch starts, so a partial failure is visible
+      // and the page reload shows exactly what changed.
+      for (let offset = 0; offset < selectedIds.length; offset += 100) {
+        const batch = selectedIds.slice(offset, offset + 100);
+        const res = await fetch("/api/admin/predictions/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: batch, action }),
+        });
+        const result = await res.json();
+        if (!res.ok || result.failed?.length || result.missing?.length) {
+          const message = result.error?.formErrors?.join(" ")
+            || result.failed?.[0]?.error
+            || (result.missing?.length ? `${result.missing.length} prediction(s) were not found` : null)
+            || `${action.toLowerCase()} failed`;
+          throw new Error(message);
+        }
+      }
+      await load();
+    } catch (error: any) {
+      alert(error?.message ?? `${action.toLowerCase()} failed`);
+      // Earlier batches may have completed before a later one failed. Reload
+      // rather than leaving stale statuses on screen.
       await load();
     } finally {
       setBusy(false);
