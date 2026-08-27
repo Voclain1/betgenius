@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { ChevronDown, Menu, X } from "lucide-react";
-import { BackButton } from "@/components/BackButton";
 import { SearchBox } from "@/components/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -170,18 +169,9 @@ export function Nav() {
     <>
       <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          {/* Back and wordmark travel together as one left-hand unit, so the
-              flex row's justify-between spaces the group against the nav
-              rather than pushing the logo away from the back button. The
-              button renders nothing on root pages and above md, so on every
-              page that had no back button this collapses to the bare logo it
-              was before. */}
-          <div className="flex items-center gap-1">
-            <BackButton />
-            <Link href="/" className="text-xl font-bold tracking-tight">
-              <span className="text-brand">Bet</span>Genius
-            </Link>
-          </div>
+          <Link href="/" className="text-xl font-bold tracking-tight">
+            <span className="text-brand">Bet</span>Genius
+          </Link>
           {/* No overflow-x-auto any more: four items fit, and a scroll
               container would clip the absolutely-positioned dropdowns. */}
           <nav className="hidden items-center gap-1 md:flex">

@@ -89,12 +89,17 @@ export function BackButton() {
       onClick={onClick}
       aria-label="Go back"
       // md:hidden — desktop already has the full nav bar visible and the
-      // browser chrome's own back button in easy reach; this is for the
-      // mobile bar. Sized to match the hamburger on the other end of the
-      // same row so the header stays visually balanced.
-      className="btn btn-ghost -ml-1 p-2 md:hidden"
+      // browser chrome's own back button in easy reach; this is for mobile.
+      //
+      // Compact by design: smaller text and tighter padding than .btn so it
+      // reads as a control above the heading rather than competing with it,
+      // but still a ~36px tall tap target. mb-3 lives here rather than on a
+      // wrapper in the layout so that when this returns null the gap
+      // disappears with it and the heading keeps its original position.
+      className="mb-3 inline-flex items-center gap-1 rounded-lg border border-brand-border py-1.5 pl-1.5 pr-3 text-sm text-gray-300 transition hover:bg-brand-card md:hidden"
     >
-      <ChevronLeft size={20} />
+      <ChevronLeft size={18} />
+      Back
     </button>
   );
 }
