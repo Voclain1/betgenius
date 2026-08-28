@@ -6,6 +6,7 @@ import { CATEGORY_NAMES } from "@/lib/categoryPredictions";
 import type { PredictionCategory } from "@/lib/enums";
 import { ComboCard, type ComboView } from "@/components/ComboCard";
 import { comboIsUpcoming } from "@/lib/combos";
+import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 
 export default async function CombosPage() {
   const session = await getServerSession(authOptions);
@@ -56,6 +57,8 @@ export default async function CombosPage() {
         <h1 className="text-2xl font-bold">Combos</h1>
         <p className="text-sm text-gray-400">Editorially curated accumulators built from our published tips.</p>
       </div>
+
+      {bookmakers.length > 0 && <AffiliateDisclosure compact />}
 
       {combos.length === 0 ? (
         <p className="text-sm text-gray-400">No combos published yet — check back soon.</p>

@@ -1,5 +1,6 @@
 import { BackButton } from "@/components/BackButton";
 import { Nav } from "@/components/Nav";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -18,9 +19,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         <BackButton />
         {children}
       </main>
-      <footer className="border-t border-brand-border py-8 text-center text-xs text-gray-500">
-        © {new Date().getFullYear()} BetGenius. 18+. Please bet responsibly.
-      </footer>
+      <SiteFooter />
     </>
   );
 }

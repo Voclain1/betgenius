@@ -27,6 +27,16 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/statspad", priority: 0.5 },
   { path: "/bet-builder", priority: 0.5 },
   { path: "/pricing", priority: 0.5 },
+  { path: "/about", priority: 0.6 },
+  { path: "/contact", priority: 0.5 },
+  { path: "/privacy-policy", priority: 0.4 },
+  { path: "/terms", priority: 0.4 },
+  { path: "/cookie-policy", priority: 0.4 },
+  { path: "/betting-disclaimer", priority: 0.6 },
+  { path: "/responsible-gambling", priority: 0.6 },
+  { path: "/affiliate-disclosure", priority: 0.4 },
+  { path: "/methodology", priority: 0.7 },
+  { path: "/editorial-policy", priority: 0.6 },
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
