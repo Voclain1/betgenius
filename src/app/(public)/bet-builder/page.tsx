@@ -7,6 +7,7 @@ import { CATEGORY_NAMES, getCategoryPredictions } from "@/lib/categoryPrediction
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { BetBuilderClient } from "@/components/BetBuilderClient";
 import type { TipCategory, TipOption } from "@/components/TipsPicker";
+import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 
 export default async function BetBuilderPage() {
   const session = await getServerSession(authOptions);
@@ -59,7 +60,10 @@ export default async function BetBuilderPage() {
 
   return (
     <Suspense fallback={null}>
-      <BetBuilderClient categories={categories} bookmakers={bookmakers} />
+      <div className="space-y-4">
+        <BetBuilderClient categories={categories} bookmakers={bookmakers} />
+        {bookmakers.length > 0 && <AffiliateDisclosure compact />}
+      </div>
     </Suspense>
   );
 }
