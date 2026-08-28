@@ -32,13 +32,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Checkout is unavailable for this tier" }, { status: 503 });
   }
 
-  const init = await initializeTransaction({
-    email: session.user.email!,
-    amountKobo: koboFor(tier),
-    plan,
-    callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
-    metadata: { userId: session.user.id, tier: parsed.data.tier },
-  });
+  // Paystack rejects checkouts for reasons the visitor can act on (an address
+  // it won't accept) and reasons they can't (an outage, a revoked key). An
+  // unhandled throw here surfaced as a blank 500 with no body: the visitor saw
+  // a dead button and the logs recorded nothing actionable. Name the failure.
+  let init: Awaited<ReturnType<typeof initializeTransaction>>;
+  try {
+    init = await initializeTransaction({
+      email: session.user.email!,
+      amountKobo: koboFor(tier),
+      plan,
+      callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
+      metadata: { userId: session.user.id, tier: parsed.data.tier },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Paystack error";
+    console.error("Paystack checkout failed", { code: "INITIALIZE_FAILED", tier, message });
+    return NextResponse.json(
+      { error: `Could not start checkout: ${message}` },
+      { status: 502 },
+    );
+  }
 
   await prisma.subscription.upsert({
     where: { userId: session.user.id },
