@@ -21,12 +21,21 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const tier = parsed.data.tier;
+  // A missing plan code used to fall through as `plan: undefined`, which
+  // Paystack happily accepts as a ONE-OFF charge. Checkout still looked
+  // successful, but it sold a single month instead of a subscription and
+  // nothing downstream could tell the two apart. Refuse the checkout instead
+  // of taking money for the wrong thing.
   const plan = tier === "VIP" ? PAYSTACK_PLANS.VIP : PAYSTACK_PLANS.PREMIUM;
+  if (!plan) {
+    console.error("Paystack checkout blocked", { code: "PLAN_CODE_NOT_CONFIGURED", tier });
+    return NextResponse.json({ error: "Checkout is unavailable for this tier" }, { status: 503 });
+  }
 
   const init = await initializeTransaction({
     email: session.user.email!,
     amountKobo: koboFor(tier),
-    plan: plan || undefined,
+    plan,
     callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
     metadata: { userId: session.user.id, tier: parsed.data.tier },
   });
