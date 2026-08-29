@@ -13,7 +13,8 @@
     "check:schema": "tsx scripts/check-schema-sync.ts",
     "check:paystack-entitlement": "tsx scripts/check-paystack-entitlement.ts",
     "check:combo-bet": "tsx scripts/check-combo-bet-copy.ts",
-    "preflight": "tsx scripts/check-schema-sync.ts && tsx scripts/check-paystack-entitlement.ts && tsx scripts/check-combo-bet-copy.ts && tsc --noEmit -p tsconfig.json"
+    "check:confidence": "tsx scripts/check-confidence-consistency.ts",
+    "preflight": "tsx scripts/check-schema-sync.ts && tsx scripts/check-paystack-entitlement.ts && tsx scripts/check-combo-bet-copy.ts && tsx scripts/check-confidence-consistency.ts && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

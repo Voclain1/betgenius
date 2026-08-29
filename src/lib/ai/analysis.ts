@@ -194,6 +194,58 @@ export type RiskCalibrationMode = "off" | "tiered" | "margin";
  * GENIUS-tier's 72.7% — a 37pp gap on fixtures of the same lopsidedness
  * (mean favourite 72.1% vs 73.2%).
  */
+/**
+ * The confidence at which a SIDE HEDGE has to be re-examined as a straight winner.
+ *
+ * Not a quota and not a conversion rule. It is a consistency check between two
+ * signals that were previously allowed to disagree silently: the fixture's
+ * lopsidedness (which the bands judge) and the model's own stated confidence
+ * (which nothing read back).
+ *
+ * 80 is taken from the model's own revealed behaviour, not picked for feel.
+ * Measured over 464 post-b55589f generations: MATCH_WINNER picks run min 76,
+ * p25 78, MEDIAN 80. So at 80 the model is already in straight-winner territory
+ * by its own standard — while 77 DOUBLE_CHANCE picks (25.8%) sat at or above
+ * that same number and still hedged. That overlap is the gap this closes.
+ */
+export const HEDGE_CONFIDENCE_REVIEW_THRESHOLD = 80;
+
+/**
+ * Appended to BOTH calibration modes. The bands gate MATCH_WINNER on market
+ * lopsidedness alone; this adds confidence as a second, independent route in.
+ */
+function confidenceConsistencyBlock(): string {
+  return `
+
+   CONFIDENCE IS A SECOND, INDEPENDENT TEST FOR THE STRAIGHT WINNER.
+   The band above judges the fixture's margin. Your own stated confidence is a
+   separate signal, and the two must agree before you finalise a pick.
+
+   Before reporting any side hedge (DOUBLE_CHANCE, DRAW_NO_BET,
+   WIN_EITHER_HALF), read back the number you are about to give it. A
+   DOUBLE_CHANCE at ${HEDGE_CONFIDENCE_REVIEW_THRESHOLD} claims the backed side
+   avoids defeat four times in five. If you believe that, you must then say what
+   you believe about the WIN ON ITS OWN, and pick one of these two:
+
+     * The win alone is the more accurate reading of the evidence -> switch to
+       MATCH_WINNER and report the confidence FOR THE WIN, which will be lower
+       than the hedge number was. Do this even when the fixture is NOT an
+       EXTREME MISMATCH by margin. A hedge you are this certain of is a straight
+       winner you have priced timidly.
+     * The win alone is genuinely not that likely, and the number came from the
+       draw being folded in -> KEEP the hedge and LOWER the confidence to what
+       the win-or-draw evidence actually supports.
+
+   Do not report ${HEDGE_CONFIDENCE_REVIEW_THRESHOLD} or above on a side hedge
+   without having made that choice deliberately.
+
+   Two things this rule is NOT. It is not a conversion: a DOUBLE_CHANCE at 84 is
+   not a MATCH_WINNER at 84, and you must re-derive the win probability on its
+   own rather than carrying the number across. And it is not a quota: if the
+   evidence genuinely supports the hedge at a lower number, lowering the number
+   is the correct outcome and MATCH_WINNER stays unused.`;
+}
+
 function tieredCalibrationBlock(tiers: GenerationTier[]): string {
   return `
 
@@ -417,7 +469,11 @@ export function buildSystemPrompt(
   const voiceBlock = internalTerminologyProhibitionBlock();
 
   if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}${certaintyBlock}${voiceBlock}`;
-  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}${certaintyBlock}${voiceBlock}`;
+  // Appended to both calibration modes, never to "off" — "off" deliberately
+  // carries no market-risk steering at all, and this rule is market-risk
+  // steering.
+  const consistencyBlock = confidenceConsistencyBlock();
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${consistencyBlock}${breadthBlock}${certaintyBlock}${voiceBlock}`;
 }
 
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
