@@ -240,6 +240,41 @@ body {
   @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
 }
 
+/* The nav's brand mark ships as two PNGs — a white+emerald one for dark
+   surfaces and a navy+emerald one for light — because a single image cannot be
+   legible on both. Which one is shown follows exactly the same three-state
+   logic as the colour tokens above: attribute selectors for an explicit
+   choice, a prefers-color-scheme block guarded against [data-theme] for
+   "system". Both are rendered into the document and one is hidden, rather than
+   swapping a src in JS, so the correct mark is in the server-rendered HTML and
+   there is no flash of the wrong logo before hydration.
+
+   DEFAULT-SWAP: the dark mark is the default, matching the dark default in the
+   :root block. */
+.brand-mark-light {
+  display: none;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .brand-mark-dark {
+    display: none;
+  }
+  :root:not([data-theme]) .brand-mark-light {
+    display: block;
+  }
+}
+:root[data-theme="light"] .brand-mark-dark {
+  display: none;
+}
+:root[data-theme="light"] .brand-mark-light {
+  display: block;
+}
+:root[data-theme="dark"] .brand-mark-dark {
+  display: block;
+}
+:root[data-theme="dark"] .brand-mark-light {
+  display: none;
+}
+
 /* The translucent sticky bar behind the nav — see --surface above. */
 .surface-blur {
   background: rgb(var(--surface) / var(--surface-alpha));

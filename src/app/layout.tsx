@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
+import { SOCIAL_CARD_IMAGE } from "@/lib/brandAssets";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
@@ -16,10 +17,42 @@ export const metadata: Metadata = {
   // explicitly is what puts the <link rel="manifest"> in the document head,
   // which is what makes the app installable at all.
   manifest: "/manifest.webmanifest",
+  // All supplied artwork from the brand pack, checked in verbatim.
+  //
+  // favicon.ico is listed first and is the only multi-size entry: it carries
+  // 16, 32 and 48 in one file, and it is what Windows/pinned-tab surfaces and
+  // older browsers pick up. The PNGs follow for everything that prefers them —
+  // a browser takes the best match for the size it needs, so listing 16/32/48
+  // separately is what stops a 48px tab bar downsampling the 32.
   icons: {
-    icon: [{ url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" }],
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32 48x48", type: "image/x-icon" },
+      { url: "/icons/icon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-48.png", sizes: "48x48", type: "image/png" },
+    ],
     // iOS reads only this one — it ignores the manifest's icon list entirely.
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  // The site-wide social card. Per-page metadata (see lib/trustMetadata.ts and
+  // the route-level exports) overrides title/description/url but inherits this
+  // image, so a page that sets no image of its own still previews as the brand
+  // rather than as a bare link.
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: SITE_URL,
+    title: `${SITE_NAME} — Football tips, predictions, livescores`,
+    description: "Football predictions, tips, livescores, fixtures and stats.",
+    images: [SOCIAL_CARD_IMAGE],
+  },
+  twitter: {
+    // `summary`, not `summary_large_image`: the pack's social artwork is a
+    // 1024x1024 square, which a large-image card would letterbox.
+    card: "summary",
+    title: `${SITE_NAME} — Football tips, predictions, livescores`,
+    description: "Football predictions, tips, livescores, fixtures and stats.",
+    images: [SOCIAL_CARD_IMAGE],
   },
   appleWebApp: {
     // iOS has no manifest support, so standalone display and the status-bar

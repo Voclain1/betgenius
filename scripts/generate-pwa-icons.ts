@@ -1,150 +1,135 @@
 /**
- * Generates the PWA icon set into public/icons/.
+ * Derives the maskable PWA icons in public/icons/ from the real brand mark.
  *
- * Written as a generator rather than checked-in binaries so the icons stay
- * derivable from the brand palette in tailwind.config.ts — changing the green
- * there and re-running this is the whole update path. It is committed output,
- * though: the build must not depend on running this.
+ * This script used to DRAW a placeholder — a programmatic rising chevron built
+ * from signed-distance functions — because there was no brand asset yet. There
+ * is one now: the BetGenius brand pack ships android-chrome-192/512,
+ * apple-touch-icon, the favicon PNGs and favicon.ico as finished artwork, and
+ * those are checked in verbatim. Nothing here regenerates them; overwriting
+ * supplied artwork with something approximated from it would be a downgrade.
  *
- * No image library is used. PNG is a small enough format to emit directly
- * (zlib is in Node's stdlib), and adding a native image dependency to a Next
- * app for six static files is a worse trade than fifty lines of encoder.
+ * What the pack does NOT ship is a maskable variant, and the manifest needs
+ * one: Android crops a maskable icon to its own shape (circle, squircle,
+ * teardrop) and only the centre 80% — the "safe zone" — is guaranteed to
+ * survive. Play Store packaging for the TWA reads the 512px maskable icon out
+ * of the manifest and refuses a manifest without it, so dropping it is not an
+ * option either.
  *
- * The mark is a rising chevron — the one shape that reads at 48px on a phone's
- * home screen, where a wordmark would not. Three variants are produced:
- *   - `any`      dark ground, green mark: matches the app's own dark UI.
- *   - `maskable` green ground, dark mark, drawn inside the 80% safe zone so
- *                Android can crop it to a circle/squircle without clipping.
- *   - `apple`    same as `any` but with no transparency anywhere, since iOS
- *                composites the touch icon onto white.
+ * The supplied 512px mark cannot be used as-is for that. Its artwork sits
+ * off-centre in the square — roughly x 35%-85%, y 15%-66% — so a circular crop
+ * would clip its right edge and leave it visibly high and to the right. So this
+ * script does one narrow job: read public/icons/icon-512.png, find the bounding
+ * box of the mark against its flat ground, and re-composite it centred and
+ * scaled to fit the safe zone on the same ground colour.
+ *
+ * That makes the maskable icons a pure function of the checked-in source
+ * artwork — re-running after the brand pack is updated is the whole update
+ * path. Like before, the output is committed: the build must not run this.
  *
  * Run: npx tsx scripts/generate-pwa-icons.ts
  */
 export {};
 
-import { deflateSync } from "zlib";
-import { writeFileSync, mkdirSync } from "fs";
+import { deflateSync, inflateSync } from "zlib";
+import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-
-// From tailwind.config.ts — keep in step with the brand palette.
-const GREEN: RGB = [0x00, 0xc8, 0x53];
-const DARK: RGB = [0x0a, 0x0f, 0x14];
 
 type RGB = [number, number, number];
 
-class Canvas {
-  readonly pixels: Uint8Array; // RGBA
+/** Fraction of the canvas the mark is allowed to occupy in a maskable icon. */
+const SAFE_ZONE = 0.8;
 
-  constructor(readonly size: number, background: RGB) {
-    this.pixels = new Uint8Array(size * size * 4);
-    for (let i = 0; i < size * size; i++) {
-      this.pixels[i * 4] = background[0];
-      this.pixels[i * 4 + 1] = background[1];
-      this.pixels[i * 4 + 2] = background[2];
-      this.pixels[i * 4 + 3] = 255;
-    }
+/** How far a pixel must differ from the corner colour to count as artwork. */
+const GROUND_TOLERANCE = 24;
+
+type Image = { width: number; height: number; pixels: Uint8Array /* RGBA */ };
+
+// ---------------------------------------------------------------------------
+// PNG decode
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal PNG reader — 8-bit, non-interlaced, truecolour with or without
+ * alpha, which is what the brand pack ships. Anything else throws rather than
+ * silently producing wrong pixels.
+ */
+function decodePng(buf: Buffer): Image {
+  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error("not a PNG");
+
+  let pos = 8;
+  let ihdr: Buffer | null = null;
+  const idat: Buffer[] = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString("ascii", pos + 4, pos + 8);
+    // A chunk claiming to run past the end means a truncated file. Say so:
+    // silently decoding the prefix is how half an image reaches production.
+    if (pos + 12 + len > buf.length) throw new Error(`truncated PNG: chunk ${type} runs past end of file`);
+    if (type === "IHDR") ihdr = buf.subarray(pos + 8, pos + 8 + len);
+    else if (type === "IDAT") idat.push(buf.subarray(pos + 8, pos + 8 + len));
+    pos += 12 + len;
+    if (type === "IEND") break;
+  }
+  if (!ihdr) throw new Error("PNG has no IHDR");
+
+  const width = ihdr.readUInt32BE(0);
+  const height = ihdr.readUInt32BE(4);
+  const depth = ihdr[8];
+  const colourType = ihdr[9];
+  const interlace = ihdr[12];
+  if (depth !== 8 || interlace !== 0 || (colourType !== 2 && colourType !== 6)) {
+    throw new Error(`unsupported PNG (depth ${depth}, colour type ${colourType}, interlace ${interlace})`);
   }
 
-  /** Alpha-blends one pixel — the only writer, so anti-aliasing is uniform. */
-  blend(x: number, y: number, color: RGB, alpha: number) {
-    if (alpha <= 0 || x < 0 || y < 0 || x >= this.size || y >= this.size) return;
-    const i = (y * this.size + x) * 4;
-    const a = Math.min(1, alpha);
-    for (let c = 0; c < 3; c++) this.pixels[i + c] = Math.round(this.pixels[i + c] * (1 - a) + color[c] * a);
-  }
+  const channels = colourType === 6 ? 4 : 3;
+  const stride = width * channels;
+  const raw = inflateSync(Buffer.concat(idat));
 
-  /**
-   * Fills wherever `sdf(x, y)` is negative, feathering across the ±0.5px band
-   * around the boundary. Every shape below is expressed as a signed-distance
-   * function so they all get the same edge quality for free.
-   */
-  fill(sdf: (x: number, y: number) => number, color: RGB) {
-    for (let y = 0; y < this.size; y++) {
-      for (let x = 0; x < this.size; x++) {
-        const d = sdf(x + 0.5, y + 0.5);
-        this.blend(x, y, color, Math.min(1, Math.max(0, 0.5 - d)));
+  // Undo the per-scanline filters. Each line's filter type byte precedes it,
+  // and filters 2-4 reference the line above, so this has to run in order.
+  const out = Buffer.alloc(height * stride);
+  let src = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[src++];
+    const line = out.subarray(y * stride, (y + 1) * stride);
+    raw.copy(line, 0, src, src + stride);
+    src += stride;
+    const prev = y > 0 ? out.subarray((y - 1) * stride, y * stride) : null;
+    for (let i = 0; i < stride; i++) {
+      const a = i >= channels ? line[i - channels] : 0;
+      const b = prev ? prev[i] : 0;
+      const c = prev && i >= channels ? prev[i - channels] : 0;
+      switch (filter) {
+        case 1: line[i] = (line[i] + a) & 0xff; break;
+        case 2: line[i] = (line[i] + b) & 0xff; break;
+        case 3: line[i] = (line[i] + ((a + b) >> 1)) & 0xff; break;
+        case 4: {
+          const p = a + b - c;
+          const pa = Math.abs(p - a);
+          const pb = Math.abs(p - b);
+          const pc = Math.abs(p - c);
+          line[i] = (line[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xff;
+          break;
+        }
+        default: break; // 0 = None
       }
     }
   }
-}
 
-/** Distance to a rounded rectangle centred at (cx, cy). */
-const roundedRect = (cx: number, cy: number, halfW: number, halfH: number, r: number) => (x: number, y: number) => {
-  const dx = Math.abs(x - cx) - (halfW - r);
-  const dy = Math.abs(y - cy) - (halfH - r);
-  const outside = Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
-  return outside + Math.min(Math.max(dx, dy), 0) - r;
-};
-
-/** Distance to a thick line segment — the chevron is two of these. */
-const segment = (ax: number, ay: number, bx: number, by: number, halfThickness: number) => (x: number, y: number) => {
-  const vx = bx - ax;
-  const vy = by - ay;
-  const wx = x - ax;
-  const wy = y - ay;
-  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / (vx * vx + vy * vy)));
-  return Math.hypot(wx - t * vx, wy - t * vy) - halfThickness;
-};
-
-const union = (...fns: Array<(x: number, y: number) => number>) => (x: number, y: number) => Math.min(...fns.map((f) => f(x, y)));
-
-/**
- * The rising chevron, drawn inside a square of side `inner` centred on the
- * canvas. `inner` is what implements the maskable safe zone: pass 80% of the
- * canvas and nothing important can be cropped.
- */
-function chevron(size: number, inner: number) {
-  const o = (size - inner) / 2;
-  const t = inner * 0.115; // stroke half-thickness
-  const px = (fx: number, fy: number): [number, number] => [o + fx * inner, o + fy * inner];
-  const [ax, ay] = px(0.06, 0.74);
-  const [bx, by] = px(0.38, 0.42);
-  const [cx, cy] = px(0.58, 0.62);
-  const [dx, dy] = px(0.94, 0.26);
-  // The arrowhead: a short flag closing the top-right end of the stroke, so
-  // the mark reads as direction rather than as an abstract zigzag.
-  const [ex, ey] = px(0.94, 0.52);
-  const [fx2, fy2] = px(0.68, 0.26);
-  return union(
-    segment(ax, ay, bx, by, t),
-    segment(bx, by, cx, cy, t),
-    segment(cx, cy, dx, dy, t),
-    segment(dx, dy, ex, ey, t),
-    segment(dx, dy, fx2, fy2, t),
-  );
-}
-
-function encodePng(canvas: Canvas): Buffer {
-  const { size, pixels } = canvas;
-  // Filter byte 0 (None) per scanline — the images are flat colour, so a
-  // smarter filter would buy nothing measurable.
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    Buffer.from(pixels.buffer, y * size * 4, size * 4).copy(raw, y * (size * 4 + 1) + 1);
+  // Normalise to RGBA so everything downstream has one shape to handle.
+  const pixels = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    pixels[i * 4] = out[i * channels];
+    pixels[i * 4 + 1] = out[i * channels + 1];
+    pixels[i * 4 + 2] = out[i * channels + 2];
+    pixels[i * 4 + 3] = channels === 4 ? out[i * channels + 3] : 255;
   }
-
-  const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body) >>> 0);
-    return Buffer.concat([len, body, crc]);
-  };
-
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // colour type: RGBA
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", ihdr),
-    chunk("IDAT", deflateSync(raw, { level: 9 })),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
+  return { width, height, pixels };
 }
+
+// ---------------------------------------------------------------------------
+// PNG encode
+// ---------------------------------------------------------------------------
 
 const CRC_TABLE = (() => {
   const table = new Int32Array(256);
@@ -162,31 +147,154 @@ function crc32(buf: Buffer): number {
   return c ^ -1;
 }
 
-function render(size: number, variant: "any" | "maskable"): Buffer {
-  const maskable = variant === "maskable";
-  const canvas = new Canvas(size, maskable ? GREEN : DARK);
-  if (!maskable) {
-    // A rounded plate keeps the dark icon from vanishing into a dark launcher
-    // wallpaper; the maskable variant needs no plate, the launcher supplies one.
-    canvas.fill(roundedRect(size / 2, size / 2, size * 0.46, size * 0.46, size * 0.22), DARK);
+function encodePng(image: Image): Buffer {
+  const { width, height, pixels } = image;
+  // Filter byte 0 (None) per scanline. These are flat-ground images with one
+  // mark on them; a smarter filter buys nothing measurable.
+  const raw = Buffer.alloc(height * (width * 4 + 1));
+  for (let y = 0; y < height; y++) {
+    raw[y * (width * 4 + 1)] = 0;
+    Buffer.from(pixels.buffer, pixels.byteOffset + y * width * 4, width * 4).copy(raw, y * (width * 4 + 1) + 1);
   }
-  canvas.fill(chevron(size, size * (maskable ? 0.58 : 0.72)), maskable ? DARK : GREEN);
-  return encodePng(canvas);
+
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body) >>> 0);
+    return Buffer.concat([len, body, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // colour type: RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
-const outDir = join(process.cwd(), "public", "icons");
-mkdirSync(outDir, { recursive: true });
+// ---------------------------------------------------------------------------
+// Compositing
+// ---------------------------------------------------------------------------
+
+type Bounds = { x: number; y: number; width: number; height: number };
+
+/**
+ * The tightest box containing everything that is not the flat ground colour.
+ *
+ * The ground is read from the top-left pixel rather than hardcoded, so a brand
+ * pack that changes its icon background keeps working. Transparent pixels count
+ * as ground too — the icon PNGs are opaque, but the standalone mark is not.
+ */
+function markBounds(image: Image, ground: RGB): Bounds {
+  const { width, height, pixels } = image;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      if (pixels[i + 3] < 16) continue;
+      const delta =
+        Math.abs(pixels[i] - ground[0]) + Math.abs(pixels[i + 1] - ground[1]) + Math.abs(pixels[i + 2] - ground[2]);
+      if (delta <= GROUND_TOLERANCE) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) throw new Error("no artwork found: the source icon is a flat colour");
+  return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+/**
+ * Renders the mark centred on a `size` square of `ground`, scaled so its longer
+ * side fills `SAFE_ZONE` of the canvas.
+ *
+ * Sampling is a box filter over the source rectangle each destination pixel
+ * maps to. That is the right filter for downscaling by a large factor (512 to
+ * 192 here), where a point sample would alias the mark's thin strokes into
+ * broken pixels. Source pixels are composited onto the ground first, so a
+ * partly-transparent source never darkens the result at the edges.
+ */
+function composite(source: Image, bounds: Bounds, size: number, ground: RGB): Image {
+  const target = Math.round(size * SAFE_ZONE);
+  const scale = target / Math.max(bounds.width, bounds.height);
+  const drawW = bounds.width * scale;
+  const drawH = bounds.height * scale;
+  const originX = (size - drawW) / 2;
+  const originY = (size - drawH) / 2;
+
+  const pixels = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i++) {
+    pixels[i * 4] = ground[0];
+    pixels[i * 4 + 1] = ground[1];
+    pixels[i * 4 + 2] = ground[2];
+    pixels[i * 4 + 3] = 255;
+  }
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // The source rectangle this destination pixel covers, in source space.
+      const sx0 = bounds.x + (x - originX) / scale;
+      const sy0 = bounds.y + (y - originY) / scale;
+      const x0 = Math.max(bounds.x, Math.floor(sx0));
+      const y0 = Math.max(bounds.y, Math.floor(sy0));
+      const x1 = Math.min(bounds.x + bounds.width, Math.ceil(sx0 + 1 / scale));
+      const y1 = Math.min(bounds.y + bounds.height, Math.ceil(sy0 + 1 / scale));
+      if (x1 <= x0 || y1 <= y0) continue;
+
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          const i = (sy * source.width + sx) * 4;
+          const a = source.pixels[i + 3] / 255;
+          r += source.pixels[i] * a + ground[0] * (1 - a);
+          g += source.pixels[i + 1] * a + ground[1] * (1 - a);
+          b += source.pixels[i + 2] * a + ground[2] * (1 - a);
+          n++;
+        }
+      }
+      const i = (y * size + x) * 4;
+      pixels[i] = Math.round(r / n);
+      pixels[i + 1] = Math.round(g / n);
+      pixels[i + 2] = Math.round(b / n);
+    }
+  }
+  return { width: size, height: size, pixels };
+}
+
+// ---------------------------------------------------------------------------
+
+const iconsDir = join(process.cwd(), "public", "icons");
+const source = decodePng(readFileSync(join(iconsDir, "icon-512.png")));
+if (source.width !== 512 || source.height !== 512) {
+  throw new Error(`expected a 512x512 source, got ${source.width}x${source.height}`);
+}
+
+// Ground colour taken from the source's own corner — the brand pack's dark
+// #07111f today, whatever it becomes tomorrow.
+const ground: RGB = [source.pixels[0], source.pixels[1], source.pixels[2]];
+const bounds = markBounds(source, ground);
 
 const written: string[] = [];
 for (const size of [192, 512]) {
-  writeFileSync(join(outDir, `icon-${size}.png`), render(size, "any"));
-  writeFileSync(join(outDir, `icon-maskable-${size}.png`), render(size, "maskable"));
-  written.push(`icon-${size}.png`, `icon-maskable-${size}.png`);
+  const name = `icon-maskable-${size}.png`;
+  writeFileSync(join(iconsDir, name), encodePng(composite(source, bounds, size, ground)));
+  written.push(name);
 }
-// iOS ignores the manifest's icons and reads apple-touch-icon at 180px.
-writeFileSync(join(outDir, "apple-touch-icon.png"), render(180, "any"));
-// The favicon: same mark, small enough that the plate is what carries it.
-writeFileSync(join(outDir, "icon-32.png"), render(32, "any"));
-written.push("apple-touch-icon.png", "icon-32.png");
 
-console.log(`Wrote ${written.length} icons to public/icons: ${written.join(", ")}`);
+const hex = `#${ground.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+console.log(`Source: icon-512.png, ground ${hex}, mark ${bounds.width}x${bounds.height} at (${bounds.x}, ${bounds.y})`);
+console.log(`Wrote ${written.length} maskable icons to public/icons: ${written.join(", ")}`);

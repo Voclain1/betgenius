@@ -4,6 +4,8 @@
 // programmatic pages (/predictions/[league], /teams/[team], /fixtures/[id])
 // rather than each route reinventing this.
 
+import { SOCIAL_CARD } from "@/lib/brandAssets";
+
 export const SITE_NAME = "BetGenius";
 export const SITE_URL = (process.env.NEXTAUTH_URL || "https://betgenius-iota.vercel.app").replace(/\/$/, "");
 
@@ -193,6 +195,9 @@ export function organizationJsonLd() {
     "@type": "Organization",
     name: SITE_NAME,
     url: SITE_URL,
+    // Absolute, because consumers of JSON-LD do not resolve against the
+    // document the way Next resolves openGraph paths against metadataBase.
+    logo: absoluteUrl(SOCIAL_CARD),
     description: "Football predictions grounded in verified match data, with a published settled-results record.",
   };
 }

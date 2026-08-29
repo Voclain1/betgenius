@@ -30,7 +30,11 @@
  * Bump CACHE_VERSION to evict everything on the next activation.
  */
 
-const CACHE_VERSION = "v1";
+// v2: the placeholder icon set under /icons was replaced with the brand pack's
+// artwork under the SAME filenames, and /icons/ is served cache-first as
+// immutable — without this bump every already-installed client would keep
+// showing the old mark on its home screen indefinitely.
+const CACHE_VERSION = "v2";
 const SHELL_CACHE = `betgenius-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `betgenius-runtime-${CACHE_VERSION}`;
 
