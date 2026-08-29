@@ -193,9 +193,14 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       <section className="space-y-6">
         {genius.length > 0 && (
           <div>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="text-xl font-semibold">Genius tips</h2>
-              <FeedDayTabs basePath="/" active={day} />
+              {/* self-start so the control keeps its natural width in the stacked
+                  mobile layout, matching Featured — which cannot stretch because
+                  it shares its row with "View all". */}
+              <div className="self-start">
+                <FeedDayTabs basePath="/" active={day} />
+              </div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-brand-border">
               <table className="w-full text-sm">
@@ -283,15 +288,19 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       )}
 
       <section>
-        <div className="mb-4 flex items-center justify-between">
+        {/* Stacks below sm. On one row at phone width the heading wrapped to two
+            lines and "View all" broke across three, with the pills squeezed
+            between them. The day control needs a full-width row of its own on a
+            narrow screen. */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold">Featured tips</h2>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-4 sm:justify-end">
             {/* The two excerpts share one ?date=, so both controls show the same
                 active day. Repeated rather than hoisted because the sections are
                 far apart on the page — a reader at Featured should not have to
                 scroll back to the Genius header to change day. */}
             <FeedDayTabs basePath="/" active={day} />
-            <Link href="/predictions/featured" className="text-sm text-brand hover:underline">View all →</Link>
+            <Link href="/predictions/featured" className="whitespace-nowrap text-sm text-brand hover:underline">View all →</Link>
           </div>
         </div>
         {featured.length === 0 ? (
