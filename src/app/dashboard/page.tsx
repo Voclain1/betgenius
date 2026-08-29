@@ -212,7 +212,7 @@ export default async function AccountDashboard({
     // tabs) doesn't fit the server-rendered section model the other items
     // use, and there's no reason to maintain two copies of the same page.
     { key: "bet-builder", href: "/bet-builder", label: "Bet Builder" },
-    { key: "combos", href: "/combos", label: "Combos" },
+    { key: "multi-bets", href: "/multi-bets", label: "Multi Bets" },
     { key: "account", href: "/dashboard?section=account", label: "Account" },
   ];
 

@@ -25,7 +25,7 @@ const ROOT_PATHS = new Set([
   "/predictions/vip",
   "/predictions/premium",
   "/bet-builder",
-  "/combos",
+  "/multi-bets",
   "/track-record",
   "/livescores",
   "/fixtures",

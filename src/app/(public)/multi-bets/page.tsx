@@ -8,7 +8,7 @@ import { ComboCard, type ComboView } from "@/components/ComboCard";
 import { comboIsUpcoming } from "@/lib/combos";
 import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 
-export default async function CombosPage() {
+export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);
 
   const allCombos = await prisma.combo.findMany({
@@ -54,14 +54,14 @@ export default async function CombosPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Combos</h1>
-        <p className="text-sm text-gray-400">Editorially curated accumulators built from our published tips.</p>
+        <h1 className="text-2xl font-bold">Multi Bets</h1>
+        <p className="text-sm text-gray-400">Multi bet accumulators spanning several fixtures, each leg taken from our published tips.</p>
       </div>
 
       {bookmakers.length > 0 && <AffiliateDisclosure compact />}
 
       {combos.length === 0 ? (
-        <p className="text-sm text-gray-400">No combos published yet — check back soon.</p>
+        <p className="text-sm text-gray-400">No multi bets published yet — check back soon.</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {combos.map((c) => {

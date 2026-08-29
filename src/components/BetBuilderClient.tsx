@@ -51,7 +51,9 @@ export function BetBuilderClient({
     legsRef.current = legs;
   }, [legs]);
 
-  // /combos "Add to slip" navigates here with ?combo=<id> — load its legs
+  // /multi-bets "Add to slip" navigates here with ?combo=<id> — load its legs.
+  // The query param and /api/combos stay on the internal name: they are the
+  // Combo model's contract, not display copy.
   // into the slip on arrival. If the visitor already has legs in progress,
   // confirm before replacing rather than silently discarding their work.
   useEffect(() => {

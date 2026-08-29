@@ -101,7 +101,7 @@ const CATEGORY_LINKS: { label: string; href: string }[] = [
   { label: "Today", href: "/predictions/today" },
   { label: "Premium", href: "/predictions/premium" },
   { label: "VIP", href: "/predictions/vip" },
-  { label: "Combos", href: "/combos" },
+  { label: "Multi Bets", href: "/multi-bets" },
 ];
 
 export default async function HomePage() {

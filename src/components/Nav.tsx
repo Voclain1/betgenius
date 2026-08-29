@@ -26,10 +26,10 @@ const TIP_LINKS: NavLink[] = [
   { href: "/predictions/genius", label: "Genius" },
   { href: "/predictions/featured", label: "Featured" },
   { href: "/predictions/banker", label: "Banker" },
-  // NOTE: this sits one word away from PRIMARY_LINKS' "Combos" (/combos), which
-  // is the multi-FIXTURE accumulator builder — a different product. They are in
-  // different nav groups, but the two labels are close enough to confuse; if it
-  // reads badly in practice, /combos is the one to relabel (Accumulators).
+  // "Combo Bets" = two picks on ONE match. "Multi Bets" (/multi-bets, in
+  // PRIMARY_LINKS) = one pick across SEVERAL matches. The two used to be
+  // "Doubles" and "Combos", which shared no wording but described each other's
+  // shape; the current pair splits on the word that actually differs.
   { href: "/predictions/combo-bets", label: "Combo Bets" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
@@ -37,7 +37,7 @@ const TIP_LINKS: NavLink[] = [
 
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/bet-builder", label: "Bet Builder" },
-  { href: "/combos", label: "Combos" },
+  { href: "/multi-bets", label: "Multi Bets" },
   { href: "/track-record", label: "Track Record" },
 ];
 
