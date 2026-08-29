@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
-import { lagosTodayBounds } from "@/lib/lagosDate";
+import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 
 // Shared between /predictions/[category] and the account dashboard so the
@@ -60,11 +60,44 @@ export const CATEGORY_TO_SLUG = Object.fromEntries(
   Object.entries(CATEGORY_SLUGS).map(([slug, cat]) => [cat, slug]),
 ) as Record<PredictionCategory, string>;
 
+/**
+ * The three days a category feed can be browsed on.
+ *
+ * Deliberately three fixed options rather than a calendar. Each is one scoped
+ * query against the same indexed kickoff range the page already ran, so the
+ * cost profile does not change. Open-ended history is a different feature —
+ * it needs paging and a story for old data — and is not bundled here.
+ */
+export const FEED_DAYS = ["yesterday", "today", "tomorrow"] as const;
+export type FeedDay = (typeof FEED_DAYS)[number];
+
+const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow: 1 };
+
+/** Anything unrecognised (or absent) resolves to today, so a junk param cannot 404. */
+export function parseFeedDay(value: string | string[] | undefined): FeedDay {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return (FEED_DAYS as readonly string[]).includes(raw ?? "") ? (raw as FeedDay) : "today";
+}
+
+/** Only yesterday is settled enough to carry outcomes; today matches its current behaviour. */
+export function dayShowsOutcomes(day: FeedDay): boolean {
+  return day === "yesterday";
+}
+
+/** The URL for a day, keeping "today" as the bare path so the default stays canonical. */
+export function feedDayHref(slug: string, day: FeedDay): string {
+  return day === "today" ? `/predictions/${slug}` : `/predictions/${slug}?date=${day}`;
+}
+
 // Shared between generateMetadata and the page body on /predictions/[category]
 // (and now the dashboard) so a given category's predictions are only fetched
 // once per request — React's cache() memoizes by arguments within a render pass.
-export const getCategoryPredictions = cache(async (cat: PredictionCategory) => {
-  const today = lagosTodayBounds();
+// The day argument is part of the cache key, so callers MUST pass the same
+// value the page resolved — generateMetadata and the body both pass it
+// explicitly. Calling this once with and once without the argument would be
+// two keys and therefore two queries for the same rows.
+export const getCategoryPredictions = cache(async (cat: PredictionCategory, day: FeedDay = "today") => {
+  const today = lagosDayBounds(DAY_OFFSETS[day]);
   const rows = await prisma.prediction.findMany({
     where: {
       status: "PUBLISHED",

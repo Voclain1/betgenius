@@ -5,13 +5,25 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
-import { CATEGORY_SLUGS as SLUGS, CATEGORY_NAMES as NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
+import {
+  CATEGORY_SLUGS as SLUGS,
+  CATEGORY_NAMES as NAMES,
+  getCategoryPredictions,
+  parseFeedDay,
+  dayShowsOutcomes,
+  feedDayHref,
+} from "@/lib/categoryPredictions";
+import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { matchSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
 
-export async function generateMetadata({ params }: { params: { category: string } }): Promise<Metadata> {
+export async function generateMetadata(
+  { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
+): Promise<Metadata> {
   const cat = SLUGS[params.category];
   if (!cat) return {};
+  // Same resolved day as the page body, so cache() serves ONE query for both.
+  const day = parseFeedDay(searchParams?.date);
   const name = NAMES[cat];
   const seoTitle = cat === "TODAY" ? "Today's Predictions"
     : cat === "VIP" ? "VIP Predictions"
@@ -26,7 +38,7 @@ export async function generateMetadata({ params }: { params: { category: string 
   const emptyDescription = cat === "TODAY"
     ? "Today's predictions are not published yet — check back soon for our latest football picks."
     : `No ${seoPhrase} published yet — check back soon for our latest football predictions.`;
-  const rows = await getCategoryPredictions(cat);
+  const rows = await getCategoryPredictions(cat, day);
 
   // Thin/empty content shouldn't claim a rich, specific title as if it had
   // real picks to show — and search engines shouldn't index a page with
@@ -36,7 +48,7 @@ export async function generateMetadata({ params }: { params: { category: string 
       title: seoTitle,
       description: emptyDescription,
       robots: { index: false, follow: true },
-      alternates: { canonical: `/predictions/${params.category}` },
+      alternates: { canonical: feedDayHref(params.category, day) },
     };
   }
 
@@ -48,19 +60,25 @@ export async function generateMetadata({ params }: { params: { category: string 
 
   return {
     title: seoTitle,
-    description: `${rows.length} ${cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
-    alternates: { canonical: `/predictions/${params.category}` },
+    description: `${rows.length} ${day === "yesterday" ? "settled " : day === "tomorrow" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    // Each day is self-canonical: yesterday's results and tomorrow's card are
+    // different content, and pointing them at today's URL would claim otherwise.
+    alternates: { canonical: feedDayHref(params.category, day) },
   };
 }
 
-export default async function CategoryPage({ params }: { params: { category: string } }) {
+export default async function CategoryPage(
+  { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
+) {
   const cat = SLUGS[params.category];
   if (!cat) return notFound();
+  const day = parseFeedDay(searchParams?.date);
+  const showOutcomes = dayShowsOutcomes(day);
 
   const session = await getServerSession(authOptions);
   const canView = canViewCategory(cat, session?.user.tier, session?.user.subStatus, session?.user.role);
 
-  const rows = await getCategoryPredictions(cat);
+  const rows = await getCategoryPredictions(cat, day);
 
   const needsRegistration = !canView && cat === "BANKER" && !session?.user;
   const lockReason = needsRegistration
@@ -71,10 +89,13 @@ export default async function CategoryPage({ params }: { params: { category: str
   // primary category — a tip can be cross-posted into multiple feeds.
   const shaped = rows.map((r) =>
     canView
-      ? { ...r, category: cat }
+      // showOutcomes is the ONLY day-dependent branch here. The gating below is
+      // identical on all three days by construction — there is no second path.
+      ? { ...r, category: cat, outcome: showOutcomes ? r.outcome : null }
       : {
           ...r,
           category: cat,
+          outcome: showOutcomes ? r.outcome : null,
           pick: "LOCKED",
           reasoning: lockReason,
           matchPreview: null,
@@ -119,7 +140,10 @@ export default async function CategoryPage({ params }: { params: { category: str
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold">{NAMES[cat]}</h1>
-          <p className="text-sm text-gray-400">{shaped.length} live picks</p>
+          <p className="text-sm text-gray-400">
+            {shaped.length}{" "}
+            {day === "yesterday" ? "settled picks" : day === "tomorrow" ? "picks for tomorrow" : "live picks"}
+          </p>
         </div>
         {!canView && (cat === "VIP" || cat === "PREMIUM") && (
           <Link href="/pricing" className="btn btn-primary">Unlock {cat === "VIP" ? "VIP" : "Premium"}</Link>
@@ -128,6 +152,8 @@ export default async function CategoryPage({ params }: { params: { category: str
           <Link href="/register" className="btn btn-primary">Sign up free</Link>
         )}
       </div>
+
+      <FeedDayTabs slug={slug} active={day} />
 
       <CategoryPredictionsList category={cat} rows={shaped as any} />
     </div>

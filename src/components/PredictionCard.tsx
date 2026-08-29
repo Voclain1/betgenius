@@ -7,6 +7,7 @@ import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
 import { Prose } from "@/components/Prose";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
+import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 
 export type PredictionRow = {
   id: string;
@@ -15,6 +16,12 @@ export type PredictionRow = {
   pick: string;
   /** Present so a same-game double can label its confidence honestly — see below. */
   marketType?: string | null;
+  /**
+   * Settled result, rendered as a chip beside the category. Populated only on
+   * the Yesterday view — today and tomorrow leave it null so those days render
+   * exactly as they did before this existed. Same chip pattern as Track Record.
+   */
+  outcome?: string | null;
   /** Set only on Market-Confirmed picks; renders the badge below the pick. */
   marketConfirmation?: MarketConfirmation | null;
   confidence: number | null;
@@ -57,7 +64,12 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
   return (
     <article className="card flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{categoryChipLabel(p.category)}</span>
+        <div className="flex items-center gap-2">
+          <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{categoryChipLabel(p.category)}</span>
+          {p.outcome && p.outcome !== "PENDING" && (
+            <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? "bg-brand-border"}`}>{p.outcome}</span>
+          )}
+        </div>
         {kickoff && !hideMatchHeader && (
           <span className="text-xs text-gray-400">
             {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
