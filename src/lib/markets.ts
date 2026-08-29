@@ -131,7 +131,10 @@ const MARKET_LABELS: Record<MarketType, string> = {
   DRAW_NO_BET: "Draw No Bet",
   HT_FT: "Half-Time / Full-Time",
   TEAM_TOTAL: "Team Total Goals",
-  SAME_GAME_DOUBLE: "Same-Game Double",
+  // Display label only. The enum value stays SAME_GAME_DOUBLE everywhere:
+  // it is written into Prediction.marketType and PredictionCategoryTag rows
+  // that already exist in production.
+  SAME_GAME_DOUBLE: "Combo Bet",
   OTHER: "Other",
 };
 

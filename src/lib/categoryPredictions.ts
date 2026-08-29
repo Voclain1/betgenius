@@ -16,7 +16,10 @@ export const CATEGORY_SLUGS: Record<string, PredictionCategory> = {
   vip: "VIP",
   premium: "PREMIUM",
   "bet-of-the-day": "BET_OF_THE_DAY",
-  "same-game-doubles": "SAME_GAME_DOUBLE",
+  // Display-layer rename only: the enum, the DB column values and every
+  // stored PredictionCategoryTag row still say SAME_GAME_DOUBLE. See
+  // next.config.mjs for the redirect from the old slug.
+  "combo-bets": "SAME_GAME_DOUBLE",
 };
 
 export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
@@ -27,8 +30,31 @@ export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
   VIP: "VIP tips",
   PREMIUM: "Premium tips",
   BET_OF_THE_DAY: "Bet of the Day",
-  SAME_GAME_DOUBLE: "Same-Game Doubles",
+  SAME_GAME_DOUBLE: "Combo Bets",
 };
+
+/**
+ * Short labels for the chip on a prediction card and the dashboard tiles.
+ *
+ * The card used to print the raw enum, so a combo card was badged
+ * "SAME_GAME_DOUBLE" and the daily pick "BET_OF_THE_DAY". CATEGORY_NAMES is
+ * too long for a chip ("Featured tips"), so these are the short forms.
+ */
+export const CATEGORY_CHIP_LABELS: Record<PredictionCategory, string> = {
+  FEATURED: "Featured",
+  GENIUS: "Genius",
+  TODAY: "Today",
+  BANKER: "Banker",
+  VIP: "VIP",
+  PREMIUM: "Premium",
+  BET_OF_THE_DAY: "Bet of the Day",
+  SAME_GAME_DOUBLE: "Combo Bet",
+};
+
+/** Chip text for a category string that came from the database. */
+export function categoryChipLabel(category: string): string {
+  return CATEGORY_CHIP_LABELS[category as PredictionCategory] ?? category;
+}
 
 export const CATEGORY_TO_SLUG = Object.fromEntries(
   Object.entries(CATEGORY_SLUGS).map(([slug, cat]) => [cat, slug]),

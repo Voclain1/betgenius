@@ -13,12 +13,28 @@ import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
+import { scanDraftForInternalTerminology, type InternalTerminologyViolation } from "@/lib/houseVoice";
 import { normalizeLeagueName } from "@/lib/leagues";
 
 /**
  * Thrown when a draft asserts certainty. Carries the violations so the failure
  * is actionable — which phrase, in which field — rather than a bare rejection.
  */
+/**
+ * Thrown when a draft narrates our own machinery at the reader — a tier name,
+ * a calibration, a guideline. Same reject-don't-edit stance as the certainty
+ * scan: the sentence was built around the house concept, so removing the words
+ * leaves prose arguing from a rule the reader still cannot see.
+ */
+export class HouseVoiceError extends Error {
+  readonly violations: InternalTerminologyViolation[];
+  constructor(violations: InternalTerminologyViolation[]) {
+    super(`Draft rejected — internal terminology leaked to the reader: ${violations.map((v) => `${v.field}:"${v.match}"`).join(", ")}`);
+    this.name = "HouseVoiceError";
+    this.violations = violations;
+  }
+}
+
 export class CertaintyLanguageError extends Error {
   readonly violations: CertaintyViolation[];
   constructor(violations: CertaintyViolation[]) {
@@ -186,6 +202,19 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   });
   if (certaintyViolations.length > 0) {
     throw new CertaintyLanguageError(certaintyViolations);
+  }
+
+  // Same gate, different failure: reasoning that explains our pipeline instead
+  // of the football. Real published output said "In line with the Genius tier
+  // risk calibration..." — a sentence about us, printed where the analysis
+  // should be.
+  const voiceViolations = scanDraftForInternalTerminology({
+    matchPreview: output.matchPreview,
+    keyFactors: output.keyFactors,
+    reasoning: output.predictions.map((p) => p.reasoning).join("\n\n"),
+  });
+  if (voiceViolations.length > 0) {
+    throw new HouseVoiceError(voiceViolations);
   }
 
   const created = await Promise.all(

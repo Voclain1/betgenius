@@ -21,7 +21,7 @@ const MARKET_TYPE_LABELS: Record<MarketType, string> = {
   HT_FT: "Half-Time / Full-Time",
   TEAM_TOTAL: "Team Total Goals",
   // Present for exhaustiveness only — doubles are assembled, never picked here.
-  SAME_GAME_DOUBLE: "Same-Game Double",
+  SAME_GAME_DOUBLE: "Combo Bet",
   OTHER: "Other (free text — always settled manually)",
 };
 

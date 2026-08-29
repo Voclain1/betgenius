@@ -5,6 +5,8 @@ import { MatchLink } from "@/components/MatchLink";
 import { leagueSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
+import { Prose } from "@/components/Prose";
+import { categoryChipLabel } from "@/lib/categoryPredictions";
 
 export type PredictionRow = {
   id: string;
@@ -55,7 +57,7 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
   return (
     <article className="card flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{p.category}</span>
+        <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{categoryChipLabel(p.category)}</span>
         {kickoff && !hideMatchHeader && (
           <span className="text-xs text-gray-400">
             {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
@@ -115,9 +117,15 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
           </div>
         </div>
       )}
-      <p className="text-sm text-gray-300 whitespace-pre-wrap">
-        {p.reasoning}
-      </p>
+      {/*
+        Prose, not a raw <p>. Prose splits blank-line paragraphs and strips
+        any markdown markers in the stored text. Without it a combo's leg
+        heading printed literally as **Under 2.5 Goals** on the live card:
+        every published combo carried them. Routing through Prose fixes the
+        already-stored rows too, so no backfill is needed. Nothing in this
+        app renders markdown by design - see src/components/Prose.tsx.
+      */}
+      <Prose text={p.reasoning} />
       {p.locked && (
         <Link href="/pricing" className="btn btn-primary justify-center text-sm">
           Upgrade to unlock

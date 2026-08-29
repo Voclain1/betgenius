@@ -4,6 +4,7 @@ import { absoluteUrl } from "@/lib/seo";
 import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
+import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
 import { isLagosToday } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 
@@ -76,8 +77,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       cat === "TODAY" || r.categories.some((c) => c.category === cat)
     ));
     if (catRows.length === 0) continue;
+    // CATEGORY_TO_SLUG, not cat.toLowerCase(). The enum and the route slug are
+    // not the same string: SAME_GAME_DOUBLE lives at /predictions/combo-bets
+    // and BET_OF_THE_DAY at /predictions/bet-of-the-day, so lowercasing the
+    // enum produced /predictions/same_game_double and /predictions/bet_of_the_day
+    // — two sitemap entries that 404. Derive from the routing table instead.
     entries.push({
-      url: absoluteUrl(`/predictions/${cat.toLowerCase()}`),
+      url: absoluteUrl(`/predictions/${CATEGORY_TO_SLUG[cat]}`),
       lastModified: maxDate(catRows.map((r) => r.publishedAt)),
       changeFrequency: "daily",
       priority: 0.8,

@@ -96,7 +96,9 @@ export function describeDouble(a: CandidateLeg, b: CandidateLeg): { market: stri
       market: r.market,
       pick: r.pick,
     }).pick;
-  return { market: "Same-Game Double", pick: `${pickOf(a)} + ${pickOf(b)}` };
+  // Stored display string. Matches MARKET_LABELS.SAME_GAME_DOUBLE — the two
+  // must agree, since cards render whichever one the row happens to carry.
+  return { market: "Combo Bet", pick: `${pickOf(a)} + ${pickOf(b)}` };
 }
 
 /**
@@ -106,20 +108,34 @@ export function describeDouble(a: CandidateLeg, b: CandidateLeg): { market: stri
  * the two are compatible. Deliberately NOT a newly written summary: a summary
  * would be unattributable prose about a match that no model actually produced,
  * and it could drift from what the leg rows say.
+ *
+ * PLAIN TEXT, deliberately. This function used to wrap the leg headings in
+ * double asterisks, which is where every literal asterisk on the live page came
+ * from - the model was never the source. Nothing in the app renders markdown
+ * (see src/components/Prose.tsx), so the markers were printed to the reader.
+ *
+ * It also used to open with "Both parts must land for this to win." on every
+ * single card. The card already states that structurally, as the label above
+ * the confidence bar, so the sentence was filler competing with the analysis
+ * for the reader's attention. The UI owns that statement now.
  */
 export function describeDoubleReasoning(a: CandidateLeg, b: CandidateLeg): string {
   const aText = deriveMarketAndPick(a.marketType as MarketType, a.selection as Selection, a.homeTeam, a.awayTeam, { market: a.market, pick: a.pick });
   const bText = deriveMarketAndPick(b.marketType as MarketType, b.selection as Selection, b.homeTeam, b.awayTeam, { market: b.market, pick: b.pick });
+  // BLANK line after each heading, not a single newline. Prose treats a lone
+  // newline as a soft wrap and joins the lines, which ran the heading into its
+  // own body text: "Dinamo Zagreb or Draw - 82% confidence Dinamo Zagreb have
+  // started the HNL campaign...". Only a blank line starts a new paragraph.
   return [
-    `**Both parts must land for this to win.**`,
+    `${aText.pick} — ${a.confidence}% confidence`,
     ``,
-    `**${aText.pick}** — ${a.confidence}% confidence`,
     a.reasoning,
     ``,
-    `**${bText.pick}** — ${b.confidence}% confidence`,
+    `${bText.pick} — ${b.confidence}% confidence`,
+    ``,
     b.reasoning,
     ``,
-    `These two calls are about different parts of the match (${a.market.toLowerCase()} and ${b.market.toLowerCase()}), so neither one determines the other. Confidence shown is the lower of the two — a double can never be more likely than its weaker leg.`,
+    `These two calls are about different parts of the match (${a.market.toLowerCase()} and ${b.market.toLowerCase()}), so neither one determines the other. The figure shown is the lower of the two — a combo can never be more likely than its weaker leg.`,
   ].join("\n");
 }
 

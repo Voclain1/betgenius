@@ -13,8 +13,16 @@ export async function generateMetadata({ params }: { params: { category: string 
   const cat = SLUGS[params.category];
   if (!cat) return {};
   const name = NAMES[cat];
-  const seoTitle = cat === "TODAY" ? "Today's Predictions" : cat === "VIP" ? "VIP Predictions" : name;
-  const seoPhrase = cat === "TODAY" ? "today's predictions" : cat === "VIP" ? "VIP predictions" : name.toLowerCase();
+  const seoTitle = cat === "TODAY" ? "Today's Predictions"
+    : cat === "VIP" ? "VIP Predictions"
+    // Grounded in the term readers actually search, same approach as the
+    // homepage hero: "Combo Bet Predictions", not the bare category name.
+    : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
+    : name;
+  const seoPhrase = cat === "TODAY" ? "today's predictions"
+    : cat === "VIP" ? "VIP predictions"
+    : cat === "SAME_GAME_DOUBLE" ? "combo bet predictions — two picks on the same match"
+    : name.toLowerCase();
   const emptyDescription = cat === "TODAY"
     ? "Today's predictions are not published yet — check back soon for our latest football picks."
     : `No ${seoPhrase} published yet — check back soon for our latest football predictions.`;

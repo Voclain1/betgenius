@@ -11,6 +11,7 @@
  */
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
+import { internalTerminologyProhibitionBlock } from "@/lib/houseVoice";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
@@ -53,14 +54,14 @@ export function shouldFailOver(err: unknown): boolean {
 }
 
 export type AIPredictionOutput = {
-  matchPreview: string; // markdown
+  matchPreview: string; // plain text; paragraphs separated by a blank line
   predictions: Array<{
     marketType: MarketType;
     selection: Selection;
     overUnderLine: number;
     overUnderDirection: "OVER" | "UNDER";
     confidence: number; // 0-100
-    reasoning: string; // markdown
+    reasoning: string; // plain text
   }>;
   keyFactors: string[];
 };
@@ -145,10 +146,14 @@ Rules:
 5. Every prediction ALSO has a separate, always-present total-goals over/under call —
    "overUnderLine" (a number, e.g. 2.5) and "overUnderDirection" ("OVER" | "UNDER") —
    independent of whatever the primary marketType/selection is about.
-6. Output STRICT JSON matching this TypeScript type — no markdown fences, no commentary:
+6. Write PLAIN TEXT. No markdown anywhere in any string: no **bold**, no *italics*,
+   no # headings, no bullet characters, no backticks. Separate paragraphs with a
+   blank line. The site renders these strings as prose and does not interpret
+   markdown, so a ** you emit is printed to the reader as two asterisks.
+7. Output STRICT JSON matching this TypeScript type — no markdown fences, no commentary:
 
 {
-  "matchPreview": string,          // 2-4 short paragraphs in markdown
+  "matchPreview": string,          // 2-4 short PLAIN-TEXT paragraphs, separated by a blank line
   "predictions": [
     {
       "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF" | "DRAW_NO_BET" | "HT_FT" | "TEAM_TOTAL",
@@ -156,7 +161,7 @@ Rules:
       "overUnderLine": number,
       "overUnderDirection": "OVER" | "UNDER",
       "confidence": number,
-      "reasoning": string
+      "reasoning": string        // plain text, no markdown, no bold, no headings
     }
   ],
   "keyFactors": string[]           // 3-6 bullet points
@@ -192,7 +197,7 @@ export type RiskCalibrationMode = "off" | "tiered" | "margin";
 function tieredCalibrationBlock(tiers: GenerationTier[]): string {
   return `
 
-7. TIER-AWARE MARKET RISK CALIBRATION. The active tier context for this draft is:
+8. TIER-AWARE MARKET RISK CALIBRATION. The active tier context for this draft is:
    ${tiers.length ? tiers.join(", ") : "UNSPECIFIED"}.
    Apply the strictest applicable rule when more than one tier is active:
    - GENIUS (safer): prefer a supported hedged market such as DOUBLE_CHANCE or a
@@ -227,7 +232,7 @@ function marginCalibrationBlock(tiers: GenerationTier[]): string {
   const cautious = tiers.some((t) => t === "GENIUS" || t === "VIP" || t === "PREMIUM");
   return `
 
-7. MARKET RISK CALIBRATION BY MARGIN. The active tier context for this draft is:
+8. MARKET RISK CALIBRATION BY MARGIN. The active tier context for this draft is:
    ${tiers.length ? tiers.join(", ") : "UNSPECIFIED"}.
 
    First judge HOW LOPSIDED this fixture is from the supplied evidence — league
@@ -404,9 +409,15 @@ export function buildSystemPrompt(
   // certainty — and generation now rejects a draft that breaks it, so the
   // prompt and the scan have to agree in all modes.
   const certaintyBlock = certaintyProhibitionBlock();
+  // The calibration blocks above are the single biggest source of leaked house
+  // terminology: they name tiers and rules, and the model echoes those names
+  // back into the reasoning as though they were facts about the football. This
+  // block is appended in EVERY mode, including "off", for the same reason the
+  // certainty block is — the rule is about the reader, not about a pipeline.
+  const voiceBlock = internalTerminologyProhibitionBlock();
 
-  if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}${certaintyBlock}`;
-  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}${certaintyBlock}`;
+  if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}${certaintyBlock}${voiceBlock}`;
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${breadthBlock}${certaintyBlock}${voiceBlock}`;
 }
 
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */

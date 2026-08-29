@@ -4,6 +4,7 @@ import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { matchSlug } from "@/lib/slug";
 import { quoteAge } from "@/lib/odds";
 import type { BetOfTheDayView } from "@/lib/betOfTheDay";
+import { Prose } from "@/components/Prose";
 
 /**
  * The Bet of the Day pick, with its bookmaker price.
@@ -78,7 +79,7 @@ export function BetOfTheDayCard({ data, variant = "page" }: { data: BetOfTheDayV
         )}
       </div>
 
-      {variant === "page" && row.reasoning && <p className="text-sm leading-relaxed text-gray-300">{row.reasoning}</p>}
+      {variant === "page" && <Prose text={row.reasoning} />}
     </div>
   );
 

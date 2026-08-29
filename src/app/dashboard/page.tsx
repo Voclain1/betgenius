@@ -11,7 +11,7 @@ import { DashboardShell, type DashboardNavItem } from "@/components/DashboardShe
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { catStyles } from "@/components/PredictionCard";
-import { CATEGORY_NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
+import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES, type PredictionCategory, type SubscriptionStatus, type SubscriptionTier } from "@/lib/enums";
 
@@ -27,16 +27,7 @@ function categoryKey(cat: PredictionCategory) {
 // Short form for the compact tile chips specifically — CATEGORY_NAMES's full
 // names ("Today's predictions") wrap inside a two-column mobile tile. Same
 // shorthand the main Nav already uses for its links.
-const TILE_LABELS: Record<PredictionCategory, string> = {
-  FEATURED: "Featured",
-  GENIUS: "Genius",
-  BET_OF_THE_DAY: "Bet of the Day",
-  SAME_GAME_DOUBLE: "Doubles",
-  TODAY: "Today",
-  BANKER: "Banker",
-  VIP: "VIP",
-  PREMIUM: "Premium",
-};
+const TILE_LABELS = CATEGORY_CHIP_LABELS;
 
 function AccountSection({
   email,

@@ -26,9 +26,11 @@ const TIP_LINKS: NavLink[] = [
   { href: "/predictions/genius", label: "Genius" },
   { href: "/predictions/featured", label: "Featured" },
   { href: "/predictions/banker", label: "Banker" },
-  // "Doubles", not "Combos" — /combos is the multi-FIXTURE accumulator builder,
-  // and two links a word apart would be indistinguishable in the nav.
-  { href: "/predictions/same-game-doubles", label: "Doubles" },
+  // NOTE: this sits one word away from PRIMARY_LINKS' "Combos" (/combos), which
+  // is the multi-FIXTURE accumulator builder — a different product. They are in
+  // different nav groups, but the two labels are close enough to confuse; if it
+  // reads badly in practice, /combos is the one to relabel (Accumulators).
+  { href: "/predictions/combo-bets", label: "Combo Bets" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
 ];
