@@ -1,10 +1,12 @@
 import { BackButton } from "@/components/BackButton";
+import { PreviewDataBanner } from "@/components/PreviewDataBanner";
 import { Nav } from "@/components/Nav";
 import { SiteFooter } from "@/components/SiteFooter";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      <PreviewDataBanner />
       <Nav />
       {/* Top-left of the content column rather than in the nav bar: the back
           button belongs to the page you are on, not to the site chrome, and
