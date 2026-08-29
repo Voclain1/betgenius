@@ -153,7 +153,7 @@ export default async function CategoryPage(
         )}
       </div>
 
-      <FeedDayTabs slug={slug} active={day} />
+      <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
 
       <CategoryPredictionsList category={cat} rows={shaped as any} />
     </div>

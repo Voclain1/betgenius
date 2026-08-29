@@ -84,9 +84,18 @@ export function dayShowsOutcomes(day: FeedDay): boolean {
   return day === "yesterday";
 }
 
-/** The URL for a day, keeping "today" as the bare path so the default stays canonical. */
+/**
+ * The URL for a day on any surface that supports the switch, keeping "today" as
+ * the bare path so the default view has one canonical URL rather than two that
+ * render identically.
+ */
+export function dayHref(basePath: string, day: FeedDay): string {
+  return day === "today" ? basePath : `${basePath}?date=${day}`;
+}
+
+/** Category-feed convenience wrapper over dayHref. */
 export function feedDayHref(slug: string, day: FeedDay): string {
-  return day === "today" ? `/predictions/${slug}` : `/predictions/${slug}?date=${day}`;
+  return dayHref(`/predictions/${slug}`, day);
 }
 
 // Shared between generateMetadata and the page body on /predictions/[category]

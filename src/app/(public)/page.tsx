@@ -9,6 +9,8 @@ import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
+import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
 import { MatchLink } from "@/components/MatchLink";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
@@ -19,15 +21,28 @@ import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import type { PredictionCategory } from "@/lib/enums";
-import { lagosTodayBounds } from "@/lib/lagosDate";
+import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay, comparePredictionsForDisplay } from "@/lib/predictionOrdering";
 
 export const revalidate = 60;
 
-export const metadata: Metadata = {
+const BASE_METADATA: Metadata = {
   title: { absolute: `${SITE_NAME} — Football tips, predictions, livescores` },
   description: "Football predictions today across every major league — featured tips, livescores, fixtures, standings, a bet builder and StatsPad, all in one place.",
 };
+
+/**
+ * A dated homepage is a browsing convenience, not a second landing page, so
+ * ?date=yesterday|tomorrow is canonicalised back to "/" and left out of the
+ * index. The per-day surfaces meant to be indexed are the category feeds,
+ * which are self-canonical. Without this, two near-duplicate homepages would
+ * compete with the real one.
+ */
+export function generateMetadata({ searchParams }: { searchParams?: { date?: string } }): Metadata {
+  const day = parseFeedDay(searchParams?.date);
+  if (day === "today") return { ...BASE_METADATA, alternates: { canonical: "/" } };
+  return { ...BASE_METADATA, alternates: { canonical: "/" }, robots: { index: false, follow: true } };
+}
 
 /**
  * The day's picks in one category, strongest first.
@@ -38,8 +53,8 @@ export const metadata: Metadata = {
  * picks in a nicer order rather than the six best picks — which is the whole
  * point of the ordering.
  */
-async function fetchTopOfCategory(category: string, limit: number) {
-  const today = lagosTodayBounds();
+async function fetchTopOfCategory(category: string, limit: number, day: FeedDay = "today") {
+  const today = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category } } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
@@ -48,8 +63,10 @@ async function fetchTopOfCategory(category: string, limit: number) {
   return orderForDisplay(rows).slice(0, limit);
 }
 
-const fetchFeatured = () => fetchTopOfCategory("FEATURED", 6);
-const fetchGeniusPreview = () => fetchTopOfCategory("GENIUS", 3);
+// Same caps as before — 6 featured, 3 genius — so every day renders the same
+// shape of excerpt the homepage already had.
+const fetchFeatured = (day: FeedDay) => fetchTopOfCategory("FEATURED", 6, day);
+const fetchGeniusPreview = (day: FeedDay) => fetchTopOfCategory("GENIUS", 3, day);
 
 /**
  * The pick shown beside the hero headline.
@@ -71,7 +88,9 @@ const fetchGeniusPreview = () => fetchTopOfCategory("GENIUS", 3);
  * public picks — the hero then renders its original single-column form.
  */
 async function fetchHeroPick(): Promise<HeroPickData | null> {
-  const today = lagosTodayBounds();
+  // Deliberately today, whatever day the excerpts below are showing. The hero
+  // is the argument for the product, not part of the browsing surface.
+  const today = lagosDayBounds(0);
   const base = {
     status: "PUBLISHED" as const,
     homeTeam: { not: null },
@@ -104,10 +123,16 @@ const CATEGORY_LINKS: { label: string; href: string }[] = [
   { label: "Multi Bets", href: "/multi-bets" },
 ];
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }: { searchParams?: { date?: string } }) {
+  // Reading searchParams does NOT change this page's render mode: it already
+  // renders dynamically on every request because getServerSession below reads
+  // cookies, which is why the `revalidate = 60` above never took effect.
+  // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
+  const day = parseFeedDay(searchParams?.date);
+  const showOutcomes = dayShowsOutcomes(day);
   const [featured, geniusPreview, session, leagues, matchIndex, heroPick, trackRecord, betOfTheDay] = await Promise.all([
-    fetchFeatured(),
-    fetchGeniusPreview(),
+    fetchFeatured(day),
+    fetchGeniusPreview(day),
     getServerSession(authOptions),
     getLeaguesWithPublishedPredictions(),
     getPublishedMatchIndex(),
@@ -129,6 +154,11 @@ export default async function HomePage() {
   // per row on its own primary category (same as B1's league/team pages),
   // not on GENIUS itself (which is always publicly viewable), so a locked
   // VIP/PREMIUM pick never leaks through this homepage teaser.
+  // The Featured excerpt renders through PredictionsTable, whose Result column
+  // appears only when a row carries a settled outcome. Gate it by day so the
+  // default homepage keeps precisely the columns it has today.
+  const featuredRows = featured.map((r) => ({ ...r, outcome: showOutcomes ? r.outcome : null }));
+
   const genius = geniusPreview.map((r) => {
     const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
     return canView ? { ...r, locked: false } : { ...r, pick: "LOCKED", confidence: null, locked: true };
@@ -165,6 +195,7 @@ export default async function HomePage() {
           <div>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">Genius tips</h2>
+              <FeedDayTabs basePath="/" active={day} />
             </div>
             <div className="overflow-x-auto rounded-xl border border-brand-border">
               <table className="w-full text-sm">
@@ -254,7 +285,14 @@ export default async function HomePage() {
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Featured tips</h2>
-          <Link href="/predictions/featured" className="text-sm text-brand hover:underline">View all →</Link>
+          <div className="flex items-center gap-4">
+            {/* The two excerpts share one ?date=, so both controls show the same
+                active day. Repeated rather than hoisted because the sections are
+                far apart on the page — a reader at Featured should not have to
+                scroll back to the Genius header to change day. */}
+            <FeedDayTabs basePath="/" active={day} />
+            <Link href="/predictions/featured" className="text-sm text-brand hover:underline">View all →</Link>
+          </div>
         </div>
         {featured.length === 0 ? (
           <p className="text-gray-400">
@@ -262,7 +300,7 @@ export default async function HomePage() {
             <Link href="/admin" className="underline">the dashboard</Link>.
           </p>
         ) : (
-          <PredictionsTable rows={featured} />
+          <PredictionsTable rows={featuredRows} />
         )}
       </section>
 

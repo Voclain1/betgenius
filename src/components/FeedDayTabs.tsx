@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FEED_DAYS, feedDayHref, type FeedDay } from "@/lib/categoryPredictions";
+import { FEED_DAYS, dayHref, type FeedDay } from "@/lib/categoryPredictions";
 
 const LABELS: Record<FeedDay, string> = {
   yesterday: "Yesterday",
@@ -20,7 +20,8 @@ const LABELS: Record<FeedDay, string> = {
  * "Today" is the bare path rather than ?date=today, so the default view keeps
  * one canonical URL instead of two that render identically.
  */
-export function FeedDayTabs({ slug, active }: { slug: string; active: FeedDay }) {
+/** basePath is the surface the switch belongs to: a category feed, or "/" for the homepage. */
+export function FeedDayTabs({ basePath, active }: { basePath: string; active: FeedDay }) {
   return (
     <nav aria-label="Select day" className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
       {FEED_DAYS.map((day) => {
@@ -28,7 +29,7 @@ export function FeedDayTabs({ slug, active }: { slug: string; active: FeedDay })
         return (
           <Link
             key={day}
-            href={feedDayHref(slug, day)}
+            href={dayHref(basePath, day)}
             aria-current={isActive ? "page" : undefined}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
               isActive ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
