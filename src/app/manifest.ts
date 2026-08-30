@@ -38,6 +38,13 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["sports", "news"],
     lang: "en",
     dir: "ltr",
+    // The `any` pair is the brand pack's android-chrome artwork, checked in
+    // unmodified. The `maskable` pair is derived from it by
+    // scripts/generate-pwa-icons.ts, which recentres the mark into the 80%
+    // safe zone: the supplied artwork sits high and right in its square, so
+    // Android's circular crop would clip it. Filenames are unchanged from the
+    // placeholder set they replace, so public/sw.js gets a CACHE_VERSION bump
+    // to evict the old bytes from installed clients.
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

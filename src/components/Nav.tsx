@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { SearchBox } from "@/components/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandAssets";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -47,6 +49,54 @@ const SECONDARY_LINKS: NavLink[] = [
   { href: "/standings", label: "Standings" },
   { href: "/statspad", label: "StatsPad" },
 ];
+
+/**
+ * The brand lockup: the pack's icon mark beside the wordmark.
+ *
+ * The mark is an <Image> and the wordmark is still live text. The pack does
+ * ship a single-image lockup with both, but the two-part build is better here
+ * regardless: the name stays selectable, searchable and readable to a screen
+ * reader (so the <Image> takes alt="", it would otherwise be announced twice),
+ * it stays crisp at any weight, and the row costs ~28px more than the mark
+ * alone at the one breakpoint where the nav is tight.
+ *
+ * Height, not width, is what is fixed — `h-7 w-auto` with the intrinsic
+ * dimensions passed through. The mark is very nearly square (520x530), so the
+ * rendered width lands at 27px and the whole lockup at 137px, against 111px for
+ * the wordmark alone. See scripts/check-nav-width.ts for the measurement.
+ *
+ * `priority` because this is in the sticky header on every route: the mark is
+ * inside the LCP viewport, and a lazily-loaded nav logo pops in after paint.
+ * `sizes` is what keeps that cheap. Without it next/image sees a 520px-wide
+ * source and preloads the 640px variant of BOTH colourways — a quarter of a
+ * megabyte, most of it for the mark that is currently display:none. Declaring
+ * the real rendered width pulls the srcset down to the 32/64px entries.
+ */
+function BrandLockup({ className }: { className: string }) {
+  return (
+    <>
+      <Image
+        src={BRAND_ICON_DARK}
+        alt=""
+        {...BRAND_ICON_SIZE}
+        sizes="28px"
+        priority
+        className="brand-mark-dark h-7 w-auto shrink-0"
+      />
+      <Image
+        src={BRAND_ICON_LIGHT}
+        alt=""
+        {...BRAND_ICON_SIZE}
+        sizes="28px"
+        priority
+        className="brand-mark-light h-7 w-auto shrink-0"
+      />
+      <span className={className}>
+        <span className="text-brand">Bet</span>Genius
+      </span>
+    </>
+  );
+}
 
 function NavPill({ pill }: { pill?: string }) {
   if (pill === "vip") return <span className="ml-1 text-vip">★</span>;
@@ -171,8 +221,8 @@ export function Nav() {
     <>
       <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link href="/" className="text-xl font-bold tracking-tight">
-            <span className="text-brand">Bet</span>Genius
+          <Link href="/" aria-label="BetGenius home" className="flex shrink-0 items-center gap-2">
+            <BrandLockup className="text-xl font-bold tracking-tight" />
           </Link>
           {/* No overflow-x-auto any more: four items fit, and a scroll
               container would clip the absolutely-positioned dropdowns. */}
@@ -228,8 +278,8 @@ export function Nav() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} aria-hidden="true" />
           <div id="mobile-nav-drawer" className="absolute right-0 top-0 flex h-full w-72 max-w-[85vw] flex-col overflow-y-auto border-l border-brand-border bg-brand-bg p-4 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-lg font-bold">
-                <span className="text-brand">Bet</span>Genius
+              <span className="flex items-center gap-2">
+                <BrandLockup className="text-lg font-bold" />
               </span>
               <button type="button" aria-label="Close menu" onClick={() => setOpen(false)} className="btn btn-ghost p-2">
                 <X size={20} />
