@@ -365,7 +365,16 @@ async function main() {
     await Promise.all(
       chunk.map(async (spec) => {
         const [home, away] = pickTwoDistinctTeams(spec.league.teams);
-        const kickoff = new Date(now + spec.kickoffOffsetDays * DAY + randInt(-4, 4) * 60 * 60 * 1000);
+        // A SETTLED row must never land in the future. Settled specs use an
+        // offset of -randInt(0, 25), which includes 0 (today), and the jitter
+        // below used to be +/-4h — so seeding late in the evening pushed those
+        // rows past midnight and produced "tomorrow, already won". The
+        // homepage Genius table renders any outcome that is not PENDING, so
+        // that showed up as a decided result on a match yet to kick off.
+        // Settled rows therefore jitter backwards only.
+        const settledSpec = spec.outcome !== "PENDING";
+        const jitterHours = settledSpec ? randInt(-8, -1) : randInt(-4, 4);
+        const kickoff = new Date(now + spec.kickoffOffsetDays * DAY + jitterHours * 60 * 60 * 1000);
 
         const selection = spec.marketType === "OTHER" ? null : randomSelection(spec.marketType);
         if (spec.marketType !== "OTHER" && !isValidSelection(spec.marketType, selection)) {
