@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         away: f.teams.away.name,
         league: leagueNameById.get(f.league.id) ?? f.league.name,
         leagueApiId: f.league.id,
+        fixtureApiId: f.fixture.id,
         kickoff: f.fixture.date,
         round: f.league.round ?? null,
         categories: [...categories],

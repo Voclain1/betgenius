@@ -14,6 +14,10 @@ export const maxDuration = 60;
 
 const Body = z.object({
   fixtureId: z.string().optional(),
+  // Optional: the admin UI supplies it when the fixture came from a provider
+  // slate, and omits it for a hand-typed match. Absent means the row keeps the
+  // date+name settlement fallback.
+  fixtureApiId: z.number().int().positive().optional(),
   home: z.string().min(1),
   away: z.string().min(1),
   league: z.string().min(1),
@@ -34,6 +38,7 @@ export async function POST(req: Request) {
   try {
     const result = await generateAndPersistPrediction({
       fixtureId: input.fixtureId,
+      fixtureApiId: input.fixtureApiId,
       home: input.home,
       away: input.away,
       league: input.league,

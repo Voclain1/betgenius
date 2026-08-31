@@ -140,6 +140,40 @@ export function getFixturesByDate(date: string) {
   return apiFetch<FixtureRow[]>("/fixtures", { date });
 }
 
+/**
+ * Fixtures by provider id — the exact-identity lookup.
+ *
+ * Preferred over getFixturesByDate for settlement: it is immune to both a
+ * rescheduled kickoff (the id does not change when the date does) and to team
+ * name spelling, and it returns a handful of rows instead of the 700-1,400 the
+ * date query returns for a busy day.
+ *
+ * The provider accepts up to 20 dash-joined ids per call, so a settlement batch
+ * of 40 costs 2 calls instead of 40. Verified against the live plan: `?ids=` is
+ * NOT subject to the season restriction that blocks team-scoped queries (see
+ * lookupFinishedScore's note).
+ */
+export const FIXTURES_BY_ID_BATCH = 20;
+
+export async function getFixturesByIds(ids: number[]): Promise<FixtureRow[] | null> {
+  const unique = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
+  if (unique.length === 0) return [];
+  const out: FixtureRow[] = [];
+  for (let i = 0; i < unique.length; i += FIXTURES_BY_ID_BATCH) {
+    const chunk = unique.slice(i, i + FIXTURES_BY_ID_BATCH);
+    // Single id uses `id`; the plural `ids` param requires 2+ and errors on one.
+    const rows = chunk.length === 1
+      ? await apiFetch<FixtureRow[]>("/fixtures", { id: chunk[0] })
+      : await apiFetch<FixtureRow[]>("/fixtures", { ids: chunk.join("-") });
+    // A null chunk is a failed call, not an empty result — surface it rather
+    // than silently returning a partial slate the caller would read as
+    // "these fixtures do not exist".
+    if (rows === null) return null;
+    out.push(...rows);
+  }
+  return out;
+}
+
 export function getLiveFixtures() {
   return apiFetch<FixtureRow[]>("/fixtures", { live: "all" });
 }

@@ -122,20 +122,46 @@ export async function selectCandidates(opts: {
   // Exclude anything already generated. Deliberately matched on ANY status,
   // including PENDING_REVIEW and ARCHIVED: a fixture awaiting review is not a
   // gap to fill, and one an admin archived should not silently come back.
+  //
+  // TWO identities, because matchKey alone is not stable. matchKey embeds the
+  // UTC day, so when a fixture is rescheduled to another day its key changes
+  // and the fixture reads as brand new — which is exactly how six fixtures
+  // ended up with two complete sets of published predictions, the stale set
+  // stuck PENDING forever because settlement could not find it on its old
+  // date. fixtureApiId does not change when a fixture moves, so it is checked
+  // first and matchKey remains only as the fallback for rows generated before
+  // the id was captured.
   const existing = await prisma.prediction.findMany({
-    where: { homeTeamApiId: { not: null }, awayTeamApiId: { not: null }, kickoff: { not: null } },
-    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+    where: {
+      OR: [
+        { fixtureApiId: { not: null } },
+        { homeTeamApiId: { not: null }, awayTeamApiId: { not: null }, kickoff: { not: null } },
+      ],
+    },
+    select: { fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });
   const generated = new Set(existing.map((p) => matchKey(p)).filter((k): k is string => k !== null));
+  const generatedFixtureIds = new Set(
+    existing.map((p) => p.fixtureApiId).filter((id): id is number => id != null),
+  );
 
-  const ledger = await prisma.generationAttempt.findMany({ where: { matchKey: { in: keys } } });
+  const fixtureIds = keyed.map((k) => k.f.fixture.id).filter((id): id is number => id != null);
+  // Ledger read by BOTH identities for the same reason: a fixture abandoned
+  // under its old matchKey must stay abandoned after it is rescheduled.
+  const ledger = await prisma.generationAttempt.findMany({
+    where: { OR: [{ matchKey: { in: keys } }, { fixtureApiId: { in: fixtureIds } }] },
+  });
   const ledgerByKey = new Map(ledger.map((a) => [a.matchKey, a]));
+  const ledgerByFixtureId = new Map(
+    ledger.filter((a) => a.fixtureApiId != null).map((a) => [a.fixtureApiId as number, a]),
+  );
 
   const candidates: Candidate[] = [];
   for (const { key, f } of keyed) {
     if (generated.has(key)) continue;
+    if (f.fixture.id != null && generatedFixtureIds.has(f.fixture.id)) continue;
 
-    const attempt = ledgerByKey.get(key);
+    const attempt = ledgerByKey.get(key) ?? (f.fixture.id != null ? ledgerByFixtureId.get(f.fixture.id) : undefined);
     if (attempt) {
       // SUCCEEDED without predictions shouldn't happen, but treat both terminal
       // states as final either way — ABANDONED is the dead letter.

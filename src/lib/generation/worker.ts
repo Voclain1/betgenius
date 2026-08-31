@@ -251,6 +251,10 @@ export async function runGeneration(opts: {
           // what removes the two searchTeam calls per fixture.
           homeTeamApiId: c.homeTeamApiId,
           awayTeamApiId: c.awayTeamApiId,
+          // Same discovery row that fills GenerationAttempt.fixtureApiId. This
+          // is what lets settlement resolve by id and stops a rescheduled
+          // fixture from being re-generated under a new matchKey.
+          fixtureApiId: c.fixtureApiId,
         });
 
         for (const s of [sources.homeTeam, sources.awayTeam, sources.standings, sources.h2h]) {

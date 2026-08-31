@@ -46,6 +46,13 @@ export class CertaintyLanguageError extends Error {
 
 export type GenerateFixtureInput = {
   fixtureId?: string;
+  /**
+   * Provider fixture id. Supplied by the scheduled worker, which already has it
+   * on the discovery row; absent when an admin types a fixture in by hand.
+   * Persisted so settlement can resolve by id and so generation dedupe survives
+   * a reschedule (see Prediction.fixtureApiId in schema.prisma).
+   */
+  fixtureApiId?: number;
   home: string;
   away: string;
   league: string;
@@ -247,6 +254,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       const pred = await prisma.prediction.create({
         data: {
           fixtureId: input.fixtureId,
+          fixtureApiId: input.fixtureApiId,
           category: persistedCategories[0],
           leagueApiId: input.leagueApiId,
           leagueName: input.league,

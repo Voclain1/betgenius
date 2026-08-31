@@ -65,6 +65,7 @@ type CandidateLeg = {
   leagueName: string | null;
   authorId: string;
   fixtureId: string | null;
+  fixtureApiId: number | null;
 };
 
 /**
@@ -177,7 +178,7 @@ export async function assembleGeneratedSameGameDouble(
       id: true, marketType: true, selection: true, confidence: true, reasoning: true,
       market: true, pick: true, homeTeam: true, awayTeam: true, homeTeamApiId: true,
       awayTeamApiId: true, kickoff: true, leagueApiId: true, leagueName: true,
-      authorId: true, fixtureId: true,
+      authorId: true, fixtureId: true, fixtureApiId: true,
     },
   })) as CandidateLeg[];
   if (rows.length < 2) return null;
@@ -216,6 +217,7 @@ export async function assembleGeneratedSameGameDouble(
   const row = await prisma.prediction.create({
     data: {
       fixtureId: a.fixtureId,
+      fixtureApiId: a.fixtureApiId,
       category: normalCategories[0],
       leagueApiId: a.leagueApiId,
       leagueName: a.leagueName,
@@ -274,7 +276,7 @@ export async function assembleSameGameDoubles(
       id: true, marketType: true, selection: true, confidence: true, reasoning: true,
       market: true, pick: true, homeTeam: true, awayTeam: true, homeTeamApiId: true,
       awayTeamApiId: true, kickoff: true, leagueApiId: true, leagueName: true,
-      authorId: true, fixtureId: true,
+      authorId: true, fixtureId: true, fixtureApiId: true,
     },
   })) as CandidateLeg[];
 
@@ -286,7 +288,7 @@ export async function assembleSameGameDoubles(
       id: true, marketType: true, selection: true, confidence: true, reasoning: true,
       market: true, pick: true, homeTeam: true, awayTeam: true, homeTeamApiId: true,
       awayTeamApiId: true, kickoff: true, leagueApiId: true, leagueName: true,
-      authorId: true, fixtureId: true,
+      authorId: true, fixtureId: true, fixtureApiId: true,
     },
   })) as CandidateLeg[];
   const alreadyDoubled = new Set(existing.map(fixtureKeyOf).filter((k): k is string => k !== null));
@@ -356,6 +358,7 @@ export async function assembleSameGameDoubles(
     const row = await prisma.prediction.create({
       data: {
         fixtureId: a.fixtureId,
+        fixtureApiId: a.fixtureApiId,
         category: "SAME_GAME_DOUBLE",
         leagueApiId: a.leagueApiId,
         leagueName: a.leagueName,

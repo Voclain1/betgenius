@@ -420,6 +420,19 @@ model Prediction {
   // dead-letter idea as GenerationAttempt.ABANDONED, which exists for exactly
   // this failure mode on the generation side.
   settlementAttempts   Int                      @default(0)
+  // Provider fixture id, captured at generation from the same discovery row
+  // that fills GenerationAttempt.fixtureApiId.
+  //
+  // This is the STABLE identity of a fixture. homeTeamApiId+awayTeamApiId+day
+  // (slug.ts matchKey) is not: when a fixture is rescheduled to another day its
+  // matchKey changes, which is how one rescheduled match came to have two full
+  // sets of published predictions (see selector.ts). It also lets settlement
+  // resolve a fixture by id instead of scanning a whole day's fixture list and
+  // matching on team-name spelling.
+  //
+  // Null on the 977 rows that predate it and on hand-entered admin rows, both
+  // of which keep the date+name fallback path.
+  fixtureApiId         Int?
   authorId             String
   author               User                     @relation("PredictionAuthor", fields: [authorId], references: [id])
   approvedById         String?
@@ -488,6 +501,7 @@ model Prediction {
 
   @@index([category, status])
   @@index([publishedAt])
+  @@index([fixtureApiId])
 }
 
 // A prediction can be cross-posted into multiple category feeds at once
@@ -588,6 +602,9 @@ model GenerationAttempt {
 
   @@index([status, nextAttemptAt])
   @@index([kickoff])
+  // Terminal-state lookup by fixture identity, so a rescheduled fixture (new
+  // matchKey, same fixture id) does not escape an ABANDONED verdict.
+  @@index([fixtureApiId])
 }
 
 model AppLock {

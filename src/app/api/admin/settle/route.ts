@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { lookupFinishedScore } from "@/lib/settlement";
+import { lookupFinishedScore, prefetchFixturesById } from "@/lib/settlement";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
 import { publishedDoubleLegIds, settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
@@ -95,7 +95,15 @@ export async function GET(req: Request) {
     take: limit,
   });
 
+  // ONE batched call set for the whole run, instead of one full-day fixture
+  // list per prediction. 40 candidates with ids cost ceil(40/20)=2 calls; the
+  // date fallback below still costs one call per legacy row.
+  const prefetched = await prefetchFixturesById(
+    candidates.map((c) => c.fixtureApiId).filter((id): id is number => id != null),
+  );
+
   const results: Array<{ id: string; match: string; result: string; detail?: string }> = [];
+  let kickoffsReconciled = 0;
 
   for (const p of candidates) {
     const match = `${p.homeTeam} vs ${p.awayTeam}`;
@@ -104,7 +112,24 @@ export async function GET(req: Request) {
         homeTeam: p.homeTeam!,
         awayTeam: p.awayTeam!,
         kickoff: p.kickoff!,
+        fixtureApiId: p.fixtureApiId,
+        homeTeamApiId: p.homeTeamApiId,
+        awayTeamApiId: p.awayTeamApiId,
+        prefetched,
       });
+
+      // Reconcile a stale stored kickoff against the provider's current one.
+      //
+      // Predictions are generated ~42h ahead and the kickoff was previously
+      // written once and never revisited, so a rescheduled fixture kept a wrong
+      // time on a published pick indefinitely. Only ever done off an id match:
+      // the date path found the row BY its stored date, so it can never
+      // disagree, while an id match is authoritative about identity.
+      if (lookup.matchedBy === "id" && lookup.actualKickoff && p.kickoff
+          && Math.abs(lookup.actualKickoff.getTime() - p.kickoff.getTime()) > 60_000) {
+        await prisma.prediction.update({ where: { id: p.id }, data: { kickoff: lookup.actualKickoff } });
+        kickoffsReconciled++;
+      }
 
       if (lookup.status === "not_finished") {
         const attempts = p.settlementAttempts + 1;
@@ -200,6 +225,8 @@ export async function GET(req: Request) {
     checked: candidates.length,
     settled: results.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
     abandoned: results.filter((r) => r.result === "abandoned").length,
+    kickoffsReconciled,
+    fixtureIdsPrefetched: prefetched.size,
     results,
     doublesChecked: doubleResults.length,
     doublesSettled: doubleResults.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,

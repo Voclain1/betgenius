@@ -32,6 +32,7 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   // published combos, because the page itself stays indexable when empty.
   { path: "/multi-bets", priority: 0.6 },
   { path: "/pricing", priority: 0.5 },
+  { path: "/bookmakers", priority: 0.6 },
   { path: "/about", priority: 0.6 },
   { path: "/contact", priority: 0.5 },
   { path: "/privacy-policy", priority: 0.4 },
