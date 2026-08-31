@@ -117,6 +117,26 @@ export async function selectCandidates(opts: {
 
   if (keyed.length === 0) return { candidates: [], scanned: 0, discoveryCalls };
 
+  // Collapse the slate to ONE entry per provider fixture before anything else.
+  //
+  // The exclusion sets below are computed once per run, so a fixture appearing
+  // twice in the same slate passes the "already generated" check twice and
+  // produces two independent generation calls — which is how three fixtures
+  // ended up with two sets of published rows timed an hour apart, created in
+  // the same minute. Cross-run duplicates are handled by generatedFixtureIds;
+  // this handles the within-run case that no persisted state can catch.
+  const byFixtureId = new Map<number, { key: string; f: FixtureRow }>();
+  const deduped: { key: string; f: FixtureRow }[] = [];
+  for (const entry of keyed) {
+    const id = entry.f.fixture.id;
+    if (id == null) { deduped.push(entry); continue; }
+    if (byFixtureId.has(id)) continue;
+    byFixtureId.set(id, entry);
+    deduped.push(entry);
+  }
+  keyed.length = 0;
+  keyed.push(...deduped);
+
   const keys = keyed.map((k) => k.key);
 
   // Exclude anything already generated. Deliberately matched on ANY status,
