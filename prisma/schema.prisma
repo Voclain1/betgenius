@@ -412,6 +412,14 @@ model Prediction {
   settledBy            User?                    @relation("PredictionSettler", fields: [settledById], references: [id])
   settledAt            DateTime?
   settlementNote       String?
+  // Failed auto-settlement lookups since the last successful resolve. Exists to
+  // stop a fixture the provider will never return from being re-fetched on every
+  // 3-hourly run forever: getFixturesByDate is uncached, so each retry is a live
+  // API call. Past SETTLEMENT_MAX_ATTEMPTS (or 72h after kickoff) the row is
+  // flipped to manualSettlementOnly and leaves the candidate pool — the same
+  // dead-letter idea as GenerationAttempt.ABANDONED, which exists for exactly
+  // this failure mode on the generation side.
+  settlementAttempts   Int                      @default(0)
   authorId             String
   author               User                     @relation("PredictionAuthor", fields: [authorId], references: [id])
   approvedById         String?

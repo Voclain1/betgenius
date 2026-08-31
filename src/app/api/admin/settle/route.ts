@@ -18,6 +18,34 @@ export const dynamic = "force-dynamic";
 // bother checking — mostly moot on the daily cron cadence, but cheap insurance.
 const SETTLEMENT_BUFFER_MS = 2.5 * 60 * 60 * 1000;
 
+// Age-out for fixtures auto-settlement can never resolve.
+//
+// The `not_found` and `not_finished` branches below are both retry-forever
+// paths: they leave the row PENDING with manualSettlementOnly still false, so
+// it is re-selected on the next run, and lookupFinishedScore ->
+// getFixturesByDate is uncached, meaning every retry is a live API call. A row
+// the provider simply never returns (a lower-division fixture whose team names
+// the feed spells differently) therefore burns one call per row per run,
+// indefinitely, while permanently occupying part of the `limit` batch.
+//
+// Two independent conditions, because they catch different failures:
+//   - attempts: the ordinary case. At 3-hourly runs, 3 attempts is ~9h of
+//     retrying, well past when a finished result should have appeared.
+//   - kickoff age: a backstop for rows that dodge the counter (settled by an
+//     admin then reopened, or predating this field and starting at 0).
+const SETTLEMENT_MAX_ATTEMPTS = 3;
+const SETTLEMENT_ABANDON_AFTER_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * Whether an unresolvable row has exhausted auto-settlement. Flipping
+ * manualSettlementOnly is what removes it from the candidate query above; the
+ * note tells the admin why it is sitting in their queue.
+ */
+function shouldAbandon(attempts: number, kickoff: Date | null): boolean {
+  if (attempts >= SETTLEMENT_MAX_ATTEMPTS) return true;
+  return !!kickoff && Date.now() - kickoff.getTime() > SETTLEMENT_ABANDON_AFTER_MS;
+}
+
 async function isAuthorized(req: Request): Promise<boolean> {
   const auth = req.headers.get("authorization");
   if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
@@ -79,19 +107,42 @@ export async function GET(req: Request) {
       });
 
       if (lookup.status === "not_finished") {
+        const attempts = p.settlementAttempts + 1;
+        // Only the kickoff backstop applies here, not the attempt count: a
+        // fixture legitimately in progress or awaiting confirmation should keep
+        // being retried. 72h past kickoff it is postponed/abandoned, not slow.
+        const abandon = !!p.kickoff && Date.now() - p.kickoff.getTime() > SETTLEMENT_ABANDON_AFTER_MS;
         await prisma.prediction.update({
           where: { id: p.id },
-          data: { settlementNote: "Not yet confirmed finished — will retry automatically." },
+          data: {
+            settlementAttempts: attempts,
+            ...(abandon
+              ? {
+                  manualSettlementOnly: true,
+                  settlementNote: `Manual settlement required — still not confirmed finished ${SETTLEMENT_ABANDON_AFTER_MS / 3600000}h after kickoff (postponed or abandoned?). Auto-settlement gave up after ${attempts} checks.`,
+                }
+              : { settlementNote: "Not yet confirmed finished — will retry automatically." }),
+          },
         });
-        results.push({ id: p.id, match, result: "not_finished" });
+        results.push({ id: p.id, match, result: abandon ? "abandoned" : "not_finished" });
         continue;
       }
       if (lookup.status === "not_found") {
+        const attempts = p.settlementAttempts + 1;
+        const abandon = shouldAbandon(attempts, p.kickoff);
         await prisma.prediction.update({
           where: { id: p.id },
-          data: { settlementNote: `Auto-settlement failed — ${lookup.reason}` },
+          data: {
+            settlementAttempts: attempts,
+            ...(abandon
+              ? {
+                  manualSettlementOnly: true,
+                  settlementNote: `Manual settlement required — auto-settlement gave up after ${attempts} attempts: ${lookup.reason}`,
+                }
+              : { settlementNote: `Auto-settlement failed — ${lookup.reason}` }),
+          },
         });
-        results.push({ id: p.id, match, result: "not_found", detail: lookup.reason });
+        results.push({ id: p.id, match, result: abandon ? "abandoned" : "not_found", detail: lookup.reason });
         continue;
       }
       if (lookup.status === "manual_required") {
@@ -128,7 +179,7 @@ export async function GET(req: Request) {
 
       await prisma.prediction.update({
         where: { id: p.id },
-        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt: new Date(), settlementNote: null },
+        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt: new Date(), settlementNote: null, settlementAttempts: 0 },
       });
 
       results.push({ id: p.id, match, result: outcome, detail: `${lookup.homeScore}-${lookup.awayScore}` });
@@ -148,6 +199,7 @@ export async function GET(req: Request) {
     curation,
     checked: candidates.length,
     settled: results.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
+    abandoned: results.filter((r) => r.result === "abandoned").length,
     results,
     doublesChecked: doubleResults.length,
     doublesSettled: doubleResults.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,

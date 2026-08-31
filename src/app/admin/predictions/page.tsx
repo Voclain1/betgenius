@@ -350,7 +350,7 @@ export default function AdminPredictions() {
                         <AlertTriangle
                           size={13}
                           className={`shrink-0 ${r.manualSettlementOnly ? "text-purple-400" : "text-amber-400"}`}
-                          aria-label={r.manualSettlementOnly ? "Manual settlement required (Other market)" : (r.settlementNote ?? undefined)}
+                          aria-label={r.settlementNote ?? (r.manualSettlementOnly ? "Manual settlement required (Other market)" : undefined)}
                         />
                       )}
                       <div className="flex gap-1">

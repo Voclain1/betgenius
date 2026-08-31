@@ -351,10 +351,15 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           <div className="flex items-start gap-3 rounded-md border border-brand-border bg-brand-bg p-3 text-sm text-gray-300">
             <AlertTriangle size={16} className="mt-0.5 shrink-0 text-gray-400" />
             <span>
-              {p.manualSettlementOnly
-                ? 'Manual settlement required — "Other" market tips are never auto-resolved.'
-                : p.settlementNote
-                  ? p.settlementNote
+              {/* settlementNote first: manualSettlementOnly no longer implies an
+                  "Other" market — the settle route now also sets it when
+                  auto-settlement gives up, and that note carries the real
+                  reason. Fall back to the Other-market wording only when no
+                  note was written. */}
+              {p.settlementNote
+                ? p.settlementNote
+                : p.manualSettlementOnly
+                  ? 'Manual settlement required — "Other" market tips are never auto-resolved.'
                   : "Awaiting auto-settlement — checked daily once kickoff is a few hours past."}
             </span>
           </div>
