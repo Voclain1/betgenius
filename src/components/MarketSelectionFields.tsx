@@ -20,6 +20,10 @@ const MARKET_TYPE_LABELS: Record<MarketType, string> = {
   DRAW_NO_BET: "Draw No Bet",
   HT_FT: "Half-Time / Full-Time",
   TEAM_TOTAL: "Team Total Goals",
+  // Present only to satisfy the exhaustive Record. EUROPEAN_HANDICAP is not in
+  // ADMIN_MARKET_TYPES, so this editor never offers it: the line must come from
+  // a live quote, not a form field.
+  EUROPEAN_HANDICAP: "Handicap",
   // Present for exhaustiveness only — doubles are assembled, never picked here.
   SAME_GAME_DOUBLE: "Combo Bet",
   OTHER: "Other (free text — always settled manually)",

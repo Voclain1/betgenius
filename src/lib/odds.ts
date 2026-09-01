@@ -34,6 +34,27 @@ export const HEADLINE_MARKETS = ["Match Winner", "Double Chance", "Goals Over/Un
 export type HeadlineMarket = (typeof HEADLINE_MARKETS)[number];
 
 /**
+ * European Handicap, as api-football names it.
+ *
+ * Kept OUT of HEADLINE_MARKETS deliberately. That list is the display and
+ * selection vocabulary — four markets a reader recognises, each with plain
+ * selections ("Home", "Over 2.5"). Handicap selections carry a line inside the
+ * label ("Home -1"), and the market is not offered in the model's general
+ * vocabulary at all, so folding it in there would widen a list whose narrowness
+ * is the point. It is trimmed and stored so the line can be READ, nothing more.
+ *
+ * Three-way, unlike Asian Handicap: every line quotes Home, Draw and Away. See
+ * EUROPEAN_HANDICAP_VALUES in src/lib/markets.ts for why that matters at
+ * settlement.
+ */
+export const HANDICAP_MARKET = "Handicap Result" as const;
+export type HandicapMarket = typeof HANDICAP_MARKET;
+
+/** Everything trimOdds retains: the display four, plus handicap for its line. */
+export const TRIMMED_MARKETS = [...HEADLINE_MARKETS, HANDICAP_MARKET] as const;
+export type TrimmedMarket = (typeof TRIMMED_MARKETS)[number];
+
+/**
  * Bet of the Day price band.
  *
  * Measured 1X2 distribution across 47 sampled fixtures (141 prices): p25 2.26,
@@ -92,7 +113,7 @@ export type OddsSelection = {
   bestBookmaker: string;
 };
 
-export type OddsMarket = { market: HeadlineMarket; selections: OddsSelection[] };
+export type OddsMarket = { market: TrimmedMarket; selections: OddsSelection[] };
 
 export type FixtureOdds = {
   /** Distinct bookmakers on the fixture, across all markets. */
@@ -125,7 +146,7 @@ export function trimOdds(response: OddsResponse | null | undefined): FixtureOdds
 
   const markets: OddsMarket[] = [];
 
-  for (const marketName of HEADLINE_MARKETS) {
+  for (const marketName of TRIMMED_MARKETS) {
     // selection label -> every price quoted for it, with its book
     const bySelection = new Map<string, Array<{ odd: number; bookmaker: string }>>();
 
@@ -202,7 +223,7 @@ export function impliedProbability(odds: number): number {
 export function toBookmakerSelection(
   marketType: MarketType | string,
   selection: Selection | unknown,
-): { market: HeadlineMarket; value: string } | null {
+): { market: TrimmedMarket; value: string } | null {
   switch (marketType) {
     case "MATCH_WINNER": {
       const v = (selection as MatchWinnerSelection)?.value;
@@ -210,6 +231,16 @@ export function toBookmakerSelection(
       if (v === "DRAW") return { market: "Match Winner", value: "Draw" };
       if (v === "AWAY") return { market: "Match Winner", value: "Away" };
       return null;
+    }
+    case "EUROPEAN_HANDICAP": {
+      // Rebuilds the feed's own label: side plus the signed HOME line, e.g.
+      // {value:"AWAY", line:-1} -> "Away -1". The line is always stated from
+      // the home team's side in the feed, so it is NOT flipped for an away
+      // selection — "Away -1" means "away wins after home is docked a goal".
+      const sel = selection as { value?: string; line?: number } | undefined;
+      const side = sel?.value === "HOME" ? "Home" : sel?.value === "AWAY" ? "Away" : sel?.value === "DRAW" ? "Draw" : null;
+      if (!side || typeof sel?.line !== "number" || !Number.isInteger(sel.line) || sel.line === 0) return null;
+      return { market: HANDICAP_MARKET, value: `${side} ${sel.line > 0 ? "+" : ""}${sel.line}` };
     }
     case "DOUBLE_CHANCE": {
       const v = (selection as DoubleChanceSelection)?.value;
@@ -388,18 +419,24 @@ export function quoteAge(fetchedAt: Date | string | null | undefined, now: Date 
  * deriveMarketAndPick emits (every OVER_UNDER prediction in the database uses
  * 2.5); the whole and quarter lines belong to a market we do not play in.
  */
-function isProducibleSelection(market: HeadlineMarket, value: string): boolean {
+function isProducibleSelection(market: TrimmedMarket, value: string): boolean {
   const v = value.trim();
+  // Handicap is trimmed and stored so its LINE can be read at generation time,
+  // not so it can be tipped as Bet of the Day. Excluded explicitly rather than
+  // left to fall through the Over/Under regex below, which rejects "Home -1"
+  // only by accident — an accident that would silently stop protecting this
+  // the moment that regex is touched.
+  if (market === HANDICAP_MARKET) return false;
   if (market === "Match Winner") return ["Home", "Draw", "Away"].includes(v);
   if (market === "Double Chance") return ["Home/Draw", "Draw/Away", "Home/Away"].includes(v);
   if (market === "Both Teams Score") return ["Yes", "No"].includes(v);
   return /^(Over|Under)\s+\d+\.5$/.test(v);
 }
 
-export function affordsBetOfDayPrice(odds: FixtureOdds | null): { affords: boolean; best: OddsSelection | null; market: HeadlineMarket | null } {
+export function affordsBetOfDayPrice(odds: FixtureOdds | null): { affords: boolean; best: OddsSelection | null; market: TrimmedMarket | null } {
   if (!odds) return { affords: false, best: null, market: null };
   let best: OddsSelection | null = null;
-  let market: HeadlineMarket | null = null;
+  let market: TrimmedMarket | null = null;
   for (const m of odds.markets) {
     for (const sel of m.selections) {
       if (!isProducibleSelection(m.market, sel.value)) continue;

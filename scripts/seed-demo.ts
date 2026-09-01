@@ -134,7 +134,7 @@ function randomSelection(marketType: MarketType): Selection {
 }
 
 /** Random-search a plausible scoreline that actually resolves to `outcome` for this market/selection, so settled demo rows don't contradict their own pick. Falls back to a constructed score if search doesn't converge (OVER_UNDER on a .5 line can never VOID, so VOID is never requested here). */
-function scoreForOutcome(marketType: Exclude<MarketType, "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET" | "TEAM_TOTAL">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
+function scoreForOutcome(marketType: Exclude<MarketType, "OTHER" | "WIN_EITHER_HALF" | "SAME_GAME_DOUBLE" | "HT_FT" | "DRAW_NO_BET" | "TEAM_TOTAL" | "EUROPEAN_HANDICAP">, selection: Selection, outcome: "WON" | "LOST"): { hs: number; as: number } {
   for (let i = 0; i < 30; i++) {
     const hs = randInt(0, 4);
     const as = randInt(0, 4);
@@ -407,7 +407,10 @@ async function main() {
             spec.marketType === "SAME_GAME_DOUBLE" ||
             spec.marketType === "HT_FT" ||
             spec.marketType === "DRAW_NO_BET" ||
-            spec.marketType === "TEAM_TOTAL"
+            spec.marketType === "TEAM_TOTAL" ||
+            // Demo seeding never emits handicap specs — the market only exists
+            // for rows whose line came from a live quote.
+            spec.marketType === "EUROPEAN_HANDICAP"
               ? { hs: randInt(0, 3), as: randInt(0, 3) }
               : scoreForOutcome(spec.marketType, selection, spec.outcome);
           finalHomeScore = s.hs;

@@ -53,6 +53,12 @@ export type GenerateFixtureInput = {
    * a reschedule (see Prediction.fixtureApiId in schema.prisma).
    */
   fixtureApiId?: number;
+  /**
+   * A real, quoted European Handicap line for this fixture. Supplied only by a
+   * caller that sourced it from live odds (src/lib/handicapLine.ts). Its
+   * presence is what switches generation to the handicap market at all.
+   */
+  handicapLine?: { line: number; quotes: { value: string; label: string; median: number; impliedPercent: number; bookmakers: number }[] };
   home: string;
   away: string;
   league: string;
@@ -166,6 +172,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
     marketBreadth,
+    handicapLine: input.handicapLine,
   });
   const durationMs = Date.now() - startedAt;
 
@@ -234,6 +241,24 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       // it true. Same reasoning as the certainty scan above — a prompt alone
       // has already proven insufficient once.
       const generatableLine = p.marketType !== "TEAM_TOTAL" || isGeneratableTeamTotal(p.selection);
+
+      // FORCE the sourced handicap line back onto the selection.
+      //
+      // The prompt tells the model the line is fixed, but a prompt alone has
+      // already proven insufficient twice in this file (the certainty scan and
+      // the TEAM_TOTAL line check exist for the same reason). Re-applying the
+      // number we read from live prices makes an invented line structurally
+      // impossible rather than merely discouraged: whatever the model echoes,
+      // what gets persisted is what a bookmaker actually quoted.
+      //
+      // A handicap marketType with no sourced line cannot occur through
+      // generation — EUROPEAN_HANDICAP is absent from AUTO_MARKET_TYPES — but
+      // if it ever did it falls through to OTHER below rather than being
+      // persisted on a line from nowhere.
+      if (input.handicapLine && p.marketType === "EUROPEAN_HANDICAP" && p.selection && typeof p.selection === "object") {
+        (p.selection as { line?: number }).line = input.handicapLine.line;
+      }
+
       const validStructured = isValidSelection(p.marketType, p.selection) && generatableLine;
       const marketType: MarketType = validStructured ? p.marketType : "OTHER";
       const selection: Selection = validStructured ? p.selection : null;

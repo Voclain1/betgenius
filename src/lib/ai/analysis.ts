@@ -500,6 +500,17 @@ export async function generatePredictionForFixture(input: {
    * (scripts/measure-market-breadth.ts) passes "multi" — see MarketBreadth.
    */
   marketBreadth?: MarketBreadth;
+  /**
+   * A real, quoted European Handicap line. When present the market is FIXED to
+   * EUROPEAN_HANDICAP on that line and the model's only job is to choose which
+   * of the three outcomes it backs. Structural, not advisory: the line is also
+   * re-applied server-side after parsing (src/lib/ai/generate.ts), so a model
+   * that echoes a different number cannot get one persisted.
+   */
+  handicapLine?: {
+    line: number;
+    quotes: { value: string; label: string; median: number; impliedPercent: number; bookmakers: number }[];
+  };
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -550,6 +561,39 @@ facts not present in the data.
   // Compact, NOT pretty-printed. Indentation alone roughly doubled the payload
   // (a live mid-season fixture measured 253KB pretty vs 155KB compact before
   // trimming), and buys the model nothing — it is not reading it as a document.
+  // Handicap is offered ONLY with a sourced line, and the line is stated as a
+  // fact about the market rather than a choice. AUTO_MARKET_TYPES deliberately
+  // excludes EUROPEAN_HANDICAP so the model can never reach for it unprompted;
+  // this block is the only route to it.
+  const hc = input.handicapLine;
+  const signedLine = hc ? `${hc.line > 0 ? "+" : ""}${hc.line}` : "";
+  const handicapBlock = hc
+    ? `
+HANDICAP CONSTRAINT — READ BEFORE CHOOSING.
+
+This fixture is being analysed for the European Handicap market on ONE fixed
+line: ${signedLine} goals applied to ${d.fixture.home} (the home team). That line is not
+yours to choose. It was read from live bookmaker prices before you were called,
+and it is the only line quoted deeply enough to be usable. Do not propose a
+different line, do not adjust it, and do not mention choosing it.
+
+Settlement applies the line to the home score and then reads the result as a
+normal 1X2: ${d.fixture.home}'s goals ${signedLine}, compared against ${d.fixture.away}'s goals.
+A level adjusted score is a DRAW — it is one of the three outcomes you may
+back, not a refund.
+
+The market currently prices the three outcomes (median across bookmakers):
+${hc.quotes.map((q) => `  - ${q.value} ("${q.label}"): ${q.median} — implied ${q.impliedPercent}%, ${q.bookmakers} bookmakers`).join("\n")}
+
+Your job is to decide which of HOME, DRAW or AWAY the evidence supports on this
+line, and to justify it from the evidence rather than from the prices above.
+Return selection as {"value": "HOME" | "DRAW" | "AWAY", "line": ${hc.line}}.
+`
+    : "";
+  const marketInstruction = hc
+    ? `Return JSON only. marketType must be exactly "EUROPEAN_HANDICAP", with the selection shape given in the handicap constraint above.`
+    : `Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
+
   const userPrompt = `Analyse this fixture and return JSON only.
 
 Fixture:
@@ -560,7 +604,8 @@ Fixture:
 Evidence digest (JSON):
 ${JSON.stringify(d)}
 ${revisionBlock}${directionBlock}
-Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
+${handicapBlock}
+${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
   const request = {

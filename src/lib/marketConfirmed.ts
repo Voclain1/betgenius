@@ -1,5 +1,5 @@
 import type { MarketType, Selection } from "@/lib/markets";
-import { toBookmakerSelection, type FixtureOdds, type HeadlineMarket, type OddsSelection } from "@/lib/odds";
+import { toBookmakerSelection, type FixtureOdds, type TrimmedMarket, type OddsSelection } from "@/lib/odds";
 
 /**
  * Market-Confirmed picks: model conviction that the betting market independently agrees with.
@@ -76,7 +76,7 @@ export type MarketConfirmedVerdict = {
   /** Absolute distance in percentage points, or null when the market side is missing. */
   gapPP: number | null;
   bookmakers: number | null;
-  market: HeadlineMarket | null;
+  market: TrimmedMarket | null;
   value: string | null;
   quoteAgeMs: number | null;
 };
@@ -109,7 +109,7 @@ function devig(selections: OddsSelection[], required: string[]): Map<string, num
   return new Map(legs.map((l) => [l.key, l.raw / total]));
 }
 
-function marketOf(odds: FixtureOdds, market: HeadlineMarket): OddsSelection[] | null {
+function marketOf(odds: FixtureOdds, market: TrimmedMarket): OddsSelection[] | null {
   return odds.markets.find((m) => m.market === market)?.selections ?? null;
 }
 
@@ -136,7 +136,7 @@ function parseOverUnder(label: string): { direction: string; line: number } | nu
  */
 export function devigProbability(
   odds: FixtureOdds,
-  market: HeadlineMarket,
+  market: TrimmedMarket,
   value: string,
 ): { probability: number; bookmakers: number } | null {
   const wanted = value.trim().toLowerCase();

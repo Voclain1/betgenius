@@ -6,7 +6,7 @@
 // makes auto-settlement (see resolveMarket) safe to run later. OTHER is the
 // escape hatch for exotic markets: free-text market/pick, always manual.
 
-export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "DRAW_NO_BET", "HT_FT", "TEAM_TOTAL", "SAME_GAME_DOUBLE", "OTHER"] as const;
+export const MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "CORRECT_SCORE", "WIN_EITHER_HALF", "DRAW_NO_BET", "HT_FT", "TEAM_TOTAL", "EUROPEAN_HANDICAP", "SAME_GAME_DOUBLE", "OTHER"] as const;
 export type MarketType = (typeof MARKET_TYPES)[number];
 
 // The structured types a caller — e.g. Gemini — should be producing.
@@ -17,8 +17,17 @@ export type MarketType = (typeof MARKET_TYPES)[number];
 // model's instructions (see analysis.ts), so leaving it in would invite the
 // model to emit a double whose legIds point at nothing.
 export const AUTO_MARKET_TYPES = MARKET_TYPES.filter(
-  (m) => m !== "OTHER" && m !== "SAME_GAME_DOUBLE",
-) as Exclude<MarketType, "OTHER" | "SAME_GAME_DOUBLE">[];
+  (m) => m !== "OTHER" && m !== "SAME_GAME_DOUBLE" && m !== "EUROPEAN_HANDICAP",
+) as Exclude<MarketType, "OTHER" | "SAME_GAME_DOUBLE" | "EUROPEAN_HANDICAP">[];
+
+// EUROPEAN_HANDICAP is excluded from the list above for the same reason
+// SAME_GAME_DOUBLE is, though the failure it prevents is different. A handicap
+// is meaningless without a LINE, and a line is only real if a bookmaker is
+// quoting it. Offering the market in the model's general vocabulary would
+// invite it to pick a number that reads plausibly and was never priced —
+// exactly the fabricated-line mistake that made 39 of 41 Asian-line candidates
+// look affordable on lines nobody quotes. The line is sourced from live odds
+// and handed to the model as a fixed constraint; see src/lib/handicapLine.ts.
 
 // What the generic admin prediction editor may set. A double's selection is a
 // pair of references to other rows, not something meaningful to type into a
@@ -41,12 +50,16 @@ export const ADMIN_MARKET_TYPES = [
   "HT_FT",
   "TEAM_TOTAL",
   "OTHER",
-] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE">[];
+] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE" | "EUROPEAN_HANDICAP">[];
 
 // Every admin-editable type is a real market type, and every market type
 // except SAME_GAME_DOUBLE is admin-editable. Adding a market type without
 // deciding which side it belongs on is a compile error, not an oversight.
-type _AdminCoversAllButDouble = Exclude<MarketType, "SAME_GAME_DOUBLE"> extends
+// EUROPEAN_HANDICAP joins SAME_GAME_DOUBLE on the excluded side: its line has
+// to come from a real quoted price, and an admin typing one into a form is the
+// same fabricated number as a model inventing one, just with a person's name
+// on it. Sourced rows only.
+type _AdminCoversAllButDouble = Exclude<MarketType, "SAME_GAME_DOUBLE" | "EUROPEAN_HANDICAP"> extends
   (typeof ADMIN_MARKET_TYPES)[number]
   ? true
   : never;
@@ -54,6 +67,18 @@ const _adminMarketTypesAreComplete: _AdminCoversAllButDouble = true;
 void _adminMarketTypesAreComplete;
 
 export const MATCH_WINNER_VALUES = ["HOME", "DRAW", "AWAY"] as const;
+
+/**
+ * European Handicap is a THREE-way market, and that is the whole difference
+ * between it and Asian Handicap.
+ *
+ * Every line the feed quotes carries Home, Draw AND Away — verified against a
+ * live /odds response ("Home -1" 4.00, "Draw -1" 3.80, "Away -1" 1.65). So an
+ * adjusted scoreline that ends level is not a push to be refunded: it is the
+ * Draw selection winning and the other two losing. There is no VOID on this
+ * market, which is why it needs no new SettlementOutcome state.
+ */
+export const EUROPEAN_HANDICAP_VALUES = ["HOME", "DRAW", "AWAY"] as const;
 export const DOUBLE_CHANCE_VALUES = ["HOME_OR_DRAW", "AWAY_OR_DRAW", "HOME_OR_AWAY"] as const;
 export const OU_DIRECTIONS = ["OVER", "UNDER"] as const;
 export const BTTS_VALUES = ["YES", "NO"] as const;
@@ -108,8 +133,17 @@ export type CorrectScoreSelection = { home: number; away: number };
  */
 export type SameGameDoubleSelection = { legIds: [string, string] };
 
+/**
+ * `line` is the goal handicap applied to the HOME team, matching how the feed
+ * labels it: "Home -1" / "Draw -1" / "Away -1" all describe the same line, a
+ * one-goal deduction from the home side. Whole numbers only — European
+ * Handicap never quotes the quarter and half lines Asian Handicap does.
+ */
+export type EuropeanHandicapSelection = { value: (typeof EUROPEAN_HANDICAP_VALUES)[number]; line: number };
+
 export type Selection =
   | MatchWinnerSelection
+  | EuropeanHandicapSelection
   | DoubleChanceSelection
   | OverUnderSelection
   | BttsSelection
@@ -131,6 +165,7 @@ const MARKET_LABELS: Record<MarketType, string> = {
   DRAW_NO_BET: "Draw No Bet",
   HT_FT: "Half-Time / Full-Time",
   TEAM_TOTAL: "Team Total Goals",
+  EUROPEAN_HANDICAP: "Handicap",
   // Display label only. The enum value stays SAME_GAME_DOUBLE everywhere:
   // it is written into Prediction.marketType and PredictionCategoryTag rows
   // that already exist in production.
@@ -147,6 +182,20 @@ export function isValidSelection(marketType: MarketType, selection: unknown): se
   switch (marketType) {
     case "MATCH_WINNER":
       return isObj(selection) && (MATCH_WINNER_VALUES as readonly unknown[]).includes(selection.value);
+    case "EUROPEAN_HANDICAP":
+      return (
+        isObj(selection) &&
+        (EUROPEAN_HANDICAP_VALUES as readonly unknown[]).includes(selection.value) &&
+        typeof selection.line === "number" &&
+        // Whole numbers only. A fractional line here means the value came from
+        // an Asian Handicap quote, which settles half-win/half-loss and cannot
+        // be expressed by SettlementOutcome — rejecting it is what stops that
+        // market leaking in through this one.
+        Number.isInteger(selection.line) &&
+        // A zero line is a plain Match Winner wearing a handicap label; the
+        // feed does quote "Home +0" on ASIAN handicap, never on this market.
+        selection.line !== 0
+      );
     case "DOUBLE_CHANCE":
       return isObj(selection) && (DOUBLE_CHANCE_VALUES as readonly unknown[]).includes(selection.value);
     case "OVER_UNDER":
@@ -262,6 +311,18 @@ export function deriveMarketAndPick(
       const v = (selection as WinEitherHalfSelection).value;
       return { market: MARKET_LABELS.WIN_EITHER_HALF, pick: `${v === "HOME" ? h : a} to win either half` };
     }
+    case "EUROPEAN_HANDICAP": {
+      const s = selection as EuropeanHandicapSelection;
+      // Signed, always — "+1" and "-1" are different bets and a bare "1" is
+      // ambiguous. The line is stated against the team it applies to so the
+      // pick reads the way a bettor would say it out loud.
+      const signed = `${s.line > 0 ? "+" : ""}${s.line}`;
+      const side = s.value === "HOME" ? h : s.value === "AWAY" ? a : "Draw";
+      const pick = s.value === "DRAW"
+        ? `Draw (${h} ${signed})`
+        : `${side} (${h} ${signed})`;
+      return { market: MARKET_LABELS.EUROPEAN_HANDICAP, pick };
+    }
     case "CORRECT_SCORE": {
       const s = selection as CorrectScoreSelection;
       return { market: MARKET_LABELS.CORRECT_SCORE, pick: `${h} ${s.home}-${s.away} ${a}` };
@@ -339,6 +400,21 @@ export function resolveMarket(
       const v = (selection as MatchWinnerSelection).value;
       const actual = homeScore > awayScore ? "HOME" : awayScore > homeScore ? "AWAY" : "DRAW";
       return v === actual ? "WON" : "LOST";
+    }
+    case "EUROPEAN_HANDICAP": {
+      // Composes from the two regulation-time integers and nothing else — no
+      // new lookup, no new column, which is what made this market cheap to add.
+      //
+      // NO VOID. On a two-way (Asian) handicap an adjusted tie refunds the
+      // stake, and treating this market the same way would settle every
+      // adjusted-draw pick wrongly: here DRAW is one of the three things you
+      // can back, so a level adjusted score means the Draw selection WON and
+      // the other two LOST. Verified against a live quote carrying
+      // "Home -1", "Draw -1" and "Away -1" side by side.
+      const s = selection as EuropeanHandicapSelection;
+      const adjustedHome = homeScore + s.line;
+      const actual = adjustedHome > awayScore ? "HOME" : adjustedHome < awayScore ? "AWAY" : "DRAW";
+      return s.value === actual ? "WON" : "LOST";
     }
     case "DOUBLE_CHANCE": {
       const v = (selection as DoubleChanceSelection).value;
