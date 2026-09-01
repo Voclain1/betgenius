@@ -1,6 +1,6 @@
 import { getOdds } from "@/lib/football/api-football";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
-import { HANDICAP_MARKET, MIN_BOOKMAKERS, impliedProbability } from "@/lib/odds";
+import { HANDICAP_MARKET, MIN_BOOKMAKERS, MIN_VALUE_EDGE_PP, impliedProbability } from "@/lib/odds";
 import { EUROPEAN_HANDICAP_VALUES } from "@/lib/markets";
 
 /**
@@ -185,4 +185,59 @@ export async function sourceHandicapLine(fixtureApiId: number): Promise<Handicap
     };
   }
   return { ok: true, line: bestLine };
+}
+
+export type HandicapEdgeResult = {
+  passes: boolean;
+  price: number | null;
+  median: number | null;
+  bookmakers: number | null;
+  impliedProbability: number | null;
+  edgePP: number | null;
+  reason: string | null;
+};
+
+/**
+ * The value gate, applied to a handicap pick after the model has chosen a side.
+ *
+ * It cannot run any earlier. Sourcing fixes the LINE, but the edge is a
+ * statement about one SELECTION on that line, and which selection is being
+ * backed is not known until the model has reasoned. So this is a
+ * post-generation rejection: the model call is spent either way, and a failure
+ * means the fixture simply produces no pick — the same outcome as a thin book,
+ * reached one step later.
+ *
+ * Deliberately the same arithmetic as qualifiesForBetOfDay: MIN_VALUE_EDGE_PP
+ * against the implied probability of the BEST quoted price, so "edge" means one
+ * thing across the app rather than two things that drift apart. No new constant
+ * is introduced here for the same reason MIN_BOOKMAKERS was not.
+ *
+ * The price band (MIN_ODDS/MAX_ODDS) is NOT applied. That band exists to keep
+ * Bet of the Day's single daily slot in a readable range; it is not a statement
+ * about value, and imposing it here would reject a defensible handicap call
+ * purely for being priced at 1.9.
+ */
+export function evaluateHandicapEdge(
+  line: SourcedHandicapLine,
+  value: string,
+  confidence: number,
+): HandicapEdgeResult {
+  const quote = line.quotes.find((q) => q.value === value);
+  if (!quote) {
+    return { passes: false, price: null, median: null, bookmakers: null, impliedProbability: null, edgePP: null, reason: `no quote for selection ${value} on line ${line.line}` };
+  }
+  const implied = impliedProbability(quote.best);
+  const edge = confidence - implied;
+  const passes = edge >= MIN_VALUE_EDGE_PP;
+  return {
+    passes,
+    price: quote.best,
+    median: quote.median,
+    bookmakers: quote.bookmakers,
+    impliedProbability: Number(implied.toFixed(1)),
+    edgePP: Number(edge.toFixed(1)),
+    reason: passes
+      ? null
+      : `confidence ${confidence}% is only ${edge.toFixed(1)}pp above the implied ${implied.toFixed(1)}% (best ${quote.best}), need ${MIN_VALUE_EDGE_PP}pp`,
+  };
 }

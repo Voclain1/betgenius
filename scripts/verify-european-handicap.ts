@@ -21,7 +21,7 @@ async function main() {
   const { getFixturesByLeague, resolveSeason } = await import("../src/lib/football/api-football");
   const { LEAGUE_CATALOGUE } = await import("../src/lib/leagues");
   const { MIN_BOOKMAKERS } = await import("../src/lib/odds");
-  const { sourceHandicapLine, isHandicapEligibleLeague } = await import("../src/lib/handicapLine");
+  const { sourceHandicapLine, isHandicapEligibleLeague, evaluateHandicapEdge } = await import("../src/lib/handicapLine");
   const { buildGenerationDigest } = await import("../src/lib/ai/generationContext");
   const { generatePredictionForFixture } = await import("../src/lib/ai/analysis");
   const { isValidSelection, deriveMarketAndPick, resolveMarket } = await import("../src/lib/markets");
@@ -106,6 +106,10 @@ async function main() {
   const wanted: Tier[] = ["top", "mid", "minor"];
   let attempts = 0;
   let honoured = 0;
+  let gatePass = 0;
+  let gateReject = 0;
+  const sides: Record<string, number> = {};
+  const sidesKept: Record<string, number> = {};
   for (const tier of wanted) {
     const picks = passing.filter((p) => p.tier === tier).slice(0, genPerTier);
     for (const p of picks) {
@@ -139,18 +143,30 @@ async function main() {
           const modelLine = (pred.selection as any)?.line;
           const lineHonoured = modelLine === p.line.line;
           if (okMarket && valid) honoured++;
+          const confidence = Math.min(90, Math.max(0, Math.round(pred.confidence)));
+          const edge = evaluateHandicapEdge(p.line, (forced as any)?.value ?? "", confidence);
+          sides[(forced as any)?.value ?? "?"] = (sides[(forced as any)?.value ?? "?"] ?? 0) + 1;
+          if (edge.passes) { gatePass++; sidesKept[(forced as any)?.value ?? "?"] = (sidesKept[(forced as any)?.value ?? "?"] ?? 0) + 1; }
+          else gateReject++;
           console.log(`   marketType=${pred.marketType} ${okMarket ? "OK" : "<= WRONG MARKET"}`);
           console.log(`   model line=${modelLine} vs sourced=${p.line.line} ${lineHonoured ? "(honoured)" : "(OVERRIDDEN server-side)"}`);
           console.log(`   selection=${JSON.stringify(forced)} valid=${valid}`);
-          console.log(`   -> ${market}: "${pick}" @ ${pred.confidence}%`);
-          console.log(`   reasoning: ${String(pred.reasoning).slice(0, 180)}...`);
+          console.log(`   -> ${market}: "${pick}" @ ${confidence}%`);
+          console.log(`   VALUE GATE: ${edge.passes ? "PASS" : "REJECT"} — best ${edge.price}, implied ${edge.impliedProbability}%, edge ${edge.edgePP}pp`);
+          if (!edge.passes) console.log(`               ${edge.reason}`);
+          console.log(`   ${edge.passes ? "PERSISTED" : "NOT A CANDIDATE — no pick for this fixture"}`);
         }
       } catch (err: any) {
         console.log(`   GENERATION FAILED: ${err?.message ?? err}`);
       }
     }
   }
-  console.log(`\ngeneration attempts: ${attempts}, produced a valid EUROPEAN_HANDICAP pick: ${honoured}`);
+  console.log(`\ngeneration attempts: ${attempts}`);
+  console.log(`  produced a valid EUROPEAN_HANDICAP pick : ${honoured}`);
+  console.log(`  cleared the value gate (would persist)  : ${gatePass}`);
+  console.log(`  rejected by the value gate (no pick)    : ${gateReject}`);
+  console.log(`  sides the model chose     : ${JSON.stringify(sides)}`);
+  console.log(`  sides surviving the gate  : ${JSON.stringify(sidesKept)}`);
 
   console.log("\n" + "=".repeat(72));
   console.log("PART 4 — SETTLEMENT (deterministic; three-way, no VOID)");

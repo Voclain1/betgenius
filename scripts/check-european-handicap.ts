@@ -16,8 +16,8 @@
 export {};
 
 import { isValidSelection, deriveMarketAndPick, resolveMarket, AUTO_MARKET_TYPES, ADMIN_MARKET_TYPES } from "../src/lib/markets";
-import { isHandicapEligibleLeague, HANDICAP_ELIGIBLE_TIERS, parseHandicapLabel } from "../src/lib/handicapLine";
-import { toBookmakerSelection, HANDICAP_MARKET, TRIMMED_MARKETS, HEADLINE_MARKETS } from "../src/lib/odds";
+import { isHandicapEligibleLeague, HANDICAP_ELIGIBLE_TIERS, parseHandicapLabel, evaluateHandicapEdge } from "../src/lib/handicapLine";
+import { toBookmakerSelection, HANDICAP_MARKET, TRIMMED_MARKETS, HEADLINE_MARKETS, MIN_VALUE_EDGE_PP } from "../src/lib/odds";
 import { LEAGUE_CATALOGUE } from "../src/lib/leagues";
 
 let failures = 0;
@@ -115,6 +115,22 @@ for (let hs = 0; hs <= 5; hs++) {
 }
 check(`no VOID across 648 combinations`, voidSeen === 0, `${voidSeen} VOID results`);
 check(`every adjusted tie resolves as DRAW (${tiesChecked} tie combinations)`, tiesChecked > 0);
+
+console.log("\nvalue gate — a sourced line does not make a short favourite a value pick:");
+const q = (value: string, best: number) => ({ value: value as never, label: `${value} -1`, best, median: best, bookmakers: 5, impliedPercent: 0 });
+// The real Ipswich vs Liverpool shape: AWAY quoted 1.15 on the -1 line while
+// the model returned 84% confidence. Implied ~87%, so the edge is NEGATIVE.
+// This exact case is why the gate exists and it must never survive.
+const ipswich = { line: -1, depth: 5, bookmakerCount: 12, quotes: [q("HOME", 10.5), q("DRAW", 6.5), q("AWAY", 1.15)] };
+const away84 = evaluateHandicapEdge(ipswich as never, "AWAY", 84);
+check("Ipswich/Liverpool AWAY @1.15 at 84% confidence is REJECTED", !away84.passes, `edge ${away84.edgePP}pp vs implied ${away84.impliedProbability}%`);
+check("the rejection names the shortfall", (away84.reason ?? "").includes(`need ${MIN_VALUE_EDGE_PP}pp`));
+check("a fairly-priced side on the SAME line passes", evaluateHandicapEdge(ipswich as never, "HOME", 84).passes);
+
+const even = { line: -1, depth: 5, bookmakerCount: 9, quotes: [q("HOME", 2.0), q("DRAW", 3.5), q("AWAY", 3.5)] };
+check("exactly at the threshold passes", evaluateHandicapEdge(even as never, "HOME", 60).passes, "50% implied, 60% confidence = 10pp");
+check("one point under the threshold fails", !evaluateHandicapEdge(even as never, "HOME", 59).passes);
+check("a selection absent from the line is rejected, not assumed", !evaluateHandicapEdge(ipswich as never, "NOPE", 90).passes);
 
 console.log(`\n${failures === 0 ? "PASS" : "FAIL"} — ${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

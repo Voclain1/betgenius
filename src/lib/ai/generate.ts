@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { evaluateHandicapEdge, type SourcedHandicapLine } from "@/lib/handicapLine";
 import { Prisma } from "@prisma/client";
 import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { buildStoredContext } from "@/lib/ai/context";
@@ -58,7 +59,7 @@ export type GenerateFixtureInput = {
    * caller that sourced it from live odds (src/lib/handicapLine.ts). Its
    * presence is what switches generation to the handicap market at all.
    */
-  handicapLine?: { line: number; quotes: { value: string; label: string; median: number; impliedPercent: number; bookmakers: number }[] };
+  handicapLine?: SourcedHandicapLine;
   home: string;
   away: string;
   league: string;
@@ -231,7 +232,12 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     throw new HouseVoiceError(voiceViolations);
   }
 
-  const created = await Promise.all(
+  // Handicap picks the value gate turned away. Surfaced rather than silently
+  // dropped: "no pick today" and "a pick we rejected" look identical from the
+  // outside, and only one of them means the market is working.
+  const handicapRejections: Array<{ selection: string; line: number; confidence: number; reason: string }> = [];
+
+  const created = (await Promise.all(
     output.predictions.map(async (p) => {
       // Defensive: even with a schema in the prompt, the model can still emit
       // a malformed marketType/selection. Fall back to OTHER (manual-only)
@@ -257,6 +263,25 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       // persisted on a line from nowhere.
       if (input.handicapLine && p.marketType === "EUROPEAN_HANDICAP" && p.selection && typeof p.selection === "object") {
         (p.selection as { line?: number }).line = input.handicapLine.line;
+      }
+
+      // VALUE GATE for handicap, applied here because it needs the model's
+      // confidence for the side it actually chose — sourcing fixes the line,
+      // not the selection. A failure is not an error: the fixture produces no
+      // pick, exactly as a thin book does, just one step later.
+      //
+      // Real case this exists for: Ipswich vs Liverpool priced AWAY at 1.15 on
+      // the -1 line (implied ~87%) while the model returned 84% confidence — a
+      // NEGATIVE edge, published as an 84% call. Sourcing a genuine line does
+      // not make backing a short-priced favourite a value selection.
+      if (input.handicapLine && p.marketType === "EUROPEAN_HANDICAP") {
+        const value = (p.selection as { value?: string } | null)?.value ?? "";
+        const confidence = Math.min(90, Math.max(0, Math.round(p.confidence)));
+        const edge = evaluateHandicapEdge(input.handicapLine, value, confidence);
+        if (!edge.passes) {
+          handicapRejections.push({ selection: value, line: input.handicapLine.line, confidence, reason: edge.reason ?? "failed the value gate" });
+          return null;
+        }
       }
 
       const validStructured = isValidSelection(p.marketType, p.selection) && generatableLine;
@@ -313,11 +338,11 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       await setPredictionCategories(pred.id, persistedCategories);
       return pred;
     }),
-  );
+  )).filter((p): p is NonNullable<typeof p> => p !== null);
 
   const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED"
     ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.categories)
     : null;
 
-  return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs };
+  return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs, handicapRejections };
 }
