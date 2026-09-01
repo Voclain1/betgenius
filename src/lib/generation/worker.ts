@@ -22,6 +22,7 @@ import { startCutoffMsForCategories } from "@/lib/doublesTargeting";
 
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
+import { findKickoffMismatches, formatKickoffMismatches, type KickoffMismatch } from "@/lib/generation/kickoffAssert";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import {
   nextAttemptAt,
@@ -97,6 +98,13 @@ export type RunReport = {
   quotaRemaining: number;
   elapsedMs: number;
   results: Array<{ fixture: string; kickoff: string; ok: boolean; predictions?: number; error?: string; terminal?: boolean }>;
+  /**
+   * Rows written with a kickoff that disagrees with the candidate they came
+   * from. Expected to be empty on every run — a non-empty array means the
+   * historical 60-120min divergence has recurred, and the run log carries the
+   * per-row detail. See src/lib/generation/kickoffAssert.ts.
+   */
+  kickoffMismatches: KickoffMismatch[];
 };
 
 /**
@@ -203,7 +211,7 @@ export async function runGeneration(opts: {
   const empty = (reason: string, quotaRemaining = 0): RunReport => ({
     ok: false, reason, claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
     cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0, quotaRemaining,
-    elapsedMs: Date.now() - startedAt, results: [],
+    elapsedMs: Date.now() - startedAt, results: [], kickoffMismatches: [],
   });
 
   const holder = await acquireLock(opts.now ?? new Date());
@@ -220,7 +228,7 @@ export async function runGeneration(opts: {
     const report: RunReport = {
       ok: true, claimed: candidates.length, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
       cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0,
-      quotaRemaining: usage.remaining, elapsedMs: 0, results: [],
+      quotaRemaining: usage.remaining, elapsedMs: 0, results: [], kickoffMismatches: [],
     };
 
     // Doubles cost about twice a normal fixture, so they get a tighter cutoff
@@ -266,6 +274,24 @@ export async function runGeneration(opts: {
         report.predictionsCreated += predictions.length + (combo ? 1 : 0);
 
         const predictionIds = [...predictions.map((p) => p.id), ...(combo ? [combo.predictionId] : [])];
+
+        // Assert the rows we just wrote actually carry the candidate's kickoff.
+        // recordAttempt below stores c.kickoff, and historically those two
+        // disagreed by 60-120min in the same run without anything noticing —
+        // see src/lib/generation/kickoffAssert.ts. Read back rather than trust
+        // the in-memory value, because the point is to verify what LANDED.
+        const written = await prisma.prediction.findMany({
+          where: { id: { in: predictionIds } },
+          select: { id: true, kickoff: true },
+        });
+        const mismatches = findKickoffMismatches(c.kickoff, written);
+        if (mismatches.length) {
+          report.kickoffMismatches.push(...mismatches);
+          // Loud, and never fatal: the prediction itself is fine, its timestamp
+          // is not, and failing the run would throw away good work.
+          console.error(formatKickoffMismatches(label, mismatches));
+        }
+
         await recordAttempt(c, { ok: true, predictionIds });
         report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: true, predictions: predictionIds.length });
       } catch (err: any) {

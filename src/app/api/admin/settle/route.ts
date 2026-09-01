@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { lookupFinishedScore, prefetchFixturesById } from "@/lib/settlement";
+import { reconcileUpcomingKickoffs } from "@/lib/kickoffReconcile";
 import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
 import { publishedDoubleLegIds, settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
@@ -215,6 +216,12 @@ export async function GET(req: Request) {
     }
   }
 
+  // UPCOMING-KICKOFF PASS. Settlement's own reconciliation only fires when a
+  // finished fixture resolves, i.e. after the match — too late for anyone
+  // reading the pick beforehand. This corrects rows that are still ahead of us,
+  // riding the same 3-hourly schedule so it needs no cron of its own.
+  const upcoming = await reconcileUpcomingKickoffs();
+
   // SECOND PASS — same-game doubles, settled from their legs rather than from
   // a scoreline. Runs after the loop above because those legs may have been
   // settled seconds ago in this very request. See settleSameGameDoubles.
@@ -227,6 +234,12 @@ export async function GET(req: Request) {
     abandoned: results.filter((r) => r.result === "abandoned").length,
     kickoffsReconciled,
     fixtureIdsPrefetched: prefetched.size,
+    upcomingKickoffs: {
+      checked: upcoming.checked,
+      fixturesFetched: upcoming.fixturesFetched,
+      updated: upcoming.updated,
+      changes: upcoming.changes,
+    },
     results,
     doublesChecked: doubleResults.length,
     doublesSettled: doubleResults.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
