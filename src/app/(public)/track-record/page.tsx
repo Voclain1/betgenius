@@ -11,6 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
     return {
       title: "Track Record",
       description: "Our real settled prediction results, published transparently once there's a fair sample size to judge.",
+      alternates: { canonical: "/track-record" },
       robots: { index: false, follow: true },
     };
   }
@@ -20,6 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Track Record",
     description: `${rateText}${data.totalSettledAllTime} settled tips all-time — every result, win or lose, published transparently.`,
+    alternates: { canonical: "/track-record" },
   };
 }
 

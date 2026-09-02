@@ -5,6 +5,8 @@ import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 export const metadata: Metadata = {
   title: "Football Predictions & Betting Tips",
   description: "Browse football predictions by category — Featured, Genius, Today's picks, Banker, VIP and Premium tips.",
+  // Self-canonical, like the category feeds this page links to.
+  alternates: { canonical: "/predictions" },
 };
 
 const cats = [
