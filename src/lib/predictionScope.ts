@@ -7,6 +7,7 @@ import { getLeagueVisual, leagueLogoUrl, isMajorLeague, MAJOR_LEAGUES } from "@/
 import type { TeamDigest } from "@/lib/ai/digest";
 import type { LeagueStandingRow } from "@/lib/enrichment";
 import { orderForDisplay } from "@/lib/predictionOrdering";
+import { assessMatchEvidence } from "@/lib/matchEvidence";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
 // has no leagueName/homeTeam/awayTeam index and no slug column (see
@@ -531,4 +532,113 @@ export const getH2HMeetings = cache(async (teamAApiId: number | null, teamBApiId
   const row = await prisma.h2HCache.findUnique({ where: { pairKey: key } });
   if (!row?.fetchedAt) return [];
   return (row.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
+});
+
+/**
+ * Every match slug whose page would ask to be indexed.
+ *
+ * The match page is `noindex, follow` until it clears the evidence bar (see
+ * src/lib/matchEvidence.ts and the robots gate in
+ * /predictions/match/[slug]/page.tsx). The sitemap has to gate on the SAME
+ * condition: listing a noindexed URL asks Google to crawl a page that then
+ * tells it not to index — the parity error a site audit reports, and a waste
+ * of crawl budget on exactly the thin pages the noindex exists to keep out.
+ *
+ * Batched rather than per-slug on purpose. The page reaches its evidence
+ * through getPublishedByMatchSlug + getMatchTeamDigests + getH2HMeetings, each
+ * of which scans or round-trips per fixture; running that once per match would
+ * make the sitemap O(fixtures x scan). This reads the same four tables once
+ * each and scores every fixture in memory, off the same rows and the same
+ * fetchedAt semantics the page getters apply.
+ *
+ * Rank/points are NOT merged into the digests here, unlike getMatchTeamDigests:
+ * no evidence signal reads them (standings are scored from the league table
+ * directly), so merging would cost a copy per team and change nothing.
+ */
+export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+    orderBy: { publishedAt: "desc" },
+    select: SCOPED_SELECT,
+  });
+
+  // Grouped and ordered exactly as getPublishedByMatchSlug does, so the
+  // preview/analysis this scores are the ones that page would surface.
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const slug = matchSlug(r);
+    if (!slug) continue;
+    const group = groups.get(slug);
+    if (group) group.push(r);
+    else groups.set(slug, [r]);
+  }
+
+  const teamIds = new Set<number>();
+  const leagueIds = new Set<number>();
+  const pairKeys = new Set<string>();
+  const shaped = new Map<string, { rows: typeof rows; homeTeamApiId: number | null; awayTeamApiId: number | null; leagueApiId: number | null }>();
+
+  for (const [slug, unordered] of groups) {
+    const ordered = orderForDisplay(unordered);
+    const withIds = ordered.find((r) => r.homeTeamApiId != null && r.awayTeamApiId != null) ?? ordered[0];
+    const leagueApiId = ordered.find((r) => r.leagueApiId != null)?.leagueApiId ?? null;
+    shaped.set(slug, { rows: ordered, homeTeamApiId: withIds.homeTeamApiId, awayTeamApiId: withIds.awayTeamApiId, leagueApiId });
+
+    for (const id of [withIds.homeTeamApiId, withIds.awayTeamApiId]) if (id != null) teamIds.add(id);
+    if (leagueApiId != null) leagueIds.add(leagueApiId);
+    const pairKey = h2hPairKey(withIds.homeTeamApiId, withIds.awayTeamApiId);
+    if (pairKey) pairKeys.add(pairKey);
+  }
+
+  const [teamCaches, leagueCaches, h2hCaches] = await Promise.all([
+    teamIds.size
+      ? prisma.teamEnrichmentCache.findMany({
+          where: { teamApiId: { in: [...teamIds] } },
+          select: { teamApiId: true, fetchedAt: true, teamDigestJson: true },
+        })
+      : [],
+    leagueIds.size
+      ? prisma.leagueEnrichmentCache.findMany({
+          where: { leagueApiId: { in: [...leagueIds] } },
+          select: { leagueApiId: true, fetchedAt: true, standingsJson: true },
+        })
+      : [],
+    pairKeys.size
+      ? prisma.h2HCache.findMany({
+          where: { pairKey: { in: [...pairKeys] } },
+          select: { pairKey: true, fetchedAt: true, meetingsJson: true },
+        })
+      : [],
+  ]);
+
+  // `fetchedAt` null means "never landed" for all three caches — the same rule
+  // getTeamEnrichment/getLeagueEnrichment/getH2HMeetings apply before handing
+  // anything to the page.
+  const digestByTeam = new Map<number, TeamDigest | null>(
+    teamCaches.map((c) => [c.teamApiId, c.fetchedAt && c.teamDigestJson ? (c.teamDigestJson as unknown as TeamDigest) : null]),
+  );
+  const standingsByLeague = new Map<number, LeagueStandingRow[] | null>(
+    leagueCaches.map((c) => [c.leagueApiId, c.fetchedAt ? ((c.standingsJson as unknown as LeagueStandingRow[] | null) ?? null) : null]),
+  );
+  const meetingsByPair = new Map<string, H2HMeeting[]>(
+    h2hCaches.map((c) => [c.pairKey, c.fetchedAt ? ((c.meetingsJson as unknown as H2HMeeting[] | null) ?? []) : []]),
+  );
+
+  const substantive = new Set<string>();
+  for (const [slug, m] of shaped) {
+    const pairKey = h2hPairKey(m.homeTeamApiId, m.awayTeamApiId);
+    const evidence = assessMatchEvidence({
+      homeDigest: m.homeTeamApiId != null ? digestByTeam.get(m.homeTeamApiId) ?? null : null,
+      awayDigest: m.awayTeamApiId != null ? digestByTeam.get(m.awayTeamApiId) ?? null : null,
+      standings: m.leagueApiId != null ? standingsByLeague.get(m.leagueApiId) ?? null : null,
+      homeTeamApiId: m.homeTeamApiId,
+      awayTeamApiId: m.awayTeamApiId,
+      h2hMeetings: pairKey ? meetingsByPair.get(pairKey) ?? [] : [],
+      matchPreview: m.rows.find((r) => r.matchPreview)?.matchPreview ?? null,
+      analysisJson: m.rows.find((r) => r.analysisJson)?.analysisJson ?? null,
+    });
+    if (evidence.substantive) substantive.add(slug);
+  }
+
+  return substantive;
 });

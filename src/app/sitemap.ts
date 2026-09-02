@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/seo";
 import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
+import { getSubstantiveMatchSlugs } from "@/lib/predictionScope";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
 import { isLagosToday } from "@/lib/lagosDate";
@@ -139,10 +140,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // resolves against (rows with no kickoff produce no slug and no entry, the
   // same exclusion the match page itself applies). Priority above league/team
   // because this is the page a "<team> vs <team> prediction" search wants.
+  //
+  // Gated on the SAME evidence assessment that drives the page's robots tag
+  // (src/lib/matchEvidence.ts), so a thin-evidence fixture is absent here for
+  // exactly as long as its page says noindex, and reappears the moment its
+  // caches warm enough to clear the bar. Listing a URL that then refuses
+  // indexing is the parity error this closes.
+  const indexableSlugs = await getSubstantiveMatchSlugs();
   const matchGroups = new Map<string, Date | null>();
   for (const r of rows) {
     const slug = matchSlug(r);
-    if (!slug) continue;
+    if (!slug || !indexableSlugs.has(slug)) continue;
     const prev = matchGroups.get(slug);
     matchGroups.set(slug, maxDate([prev ?? null, r.publishedAt]) ?? null);
   }
