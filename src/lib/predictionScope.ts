@@ -234,7 +234,79 @@ export const getSearchIndex = cache(async (): Promise<SearchIndex> => {
   };
 });
 
-export type LeagueClub = { teamId: number; teamName: string; crest: string | null };
+export type PublishedTeamIndex = {
+  /**
+   * teamApiId → the slug that team's OWN published rows resolve to.
+   *
+   * Keyed by id, resolved to a name-derived slug, because the two sides of the
+   * link disagree: a club grid knows the provider's team id and the provider's
+   * spelling, while /predictions/team/[slug] resolves rows by slugging the
+   * stored prediction names. "Manchester Utd" in a standings row and
+   * "Manchester United" on the pick slug differently, so a grid that linked its
+   * own spelling would miss a page that exists. This carries the slug the
+   * content is actually under.
+   */
+  byApiId: Record<number, string>;
+  /** Every team slug with at least one published prediction — the name-only fallback. */
+  slugs: string[];
+};
+
+/**
+ * Which teams have a team page worth linking to.
+ *
+ * /predictions/team/[slug] is noindex, follow when no published prediction
+ * slugs to it (see its generateMetadata), and standings-derived link lists —
+ * the league/cup club grids, the match page's "teams around them in the table"
+ * — knew nothing about that. They linked every club in the table, so most of
+ * those links landed on an empty, noindexed page: crawl noise, and a reader
+ * following one gets nothing.
+ *
+ * This is the same gate the team page applies to itself, hoisted to one query
+ * so a caller can ask about a whole table at once.
+ */
+export const getPublishedTeamIndex = cache(async (): Promise<PublishedTeamIndex> => {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }] },
+    orderBy: { publishedAt: "desc" },
+    select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true },
+  });
+
+  const byApiId: Record<number, string> = {};
+  const slugs = new Set<string>();
+  for (const r of rows) {
+    for (const [name, apiId] of [
+      [r.homeTeam, r.homeTeamApiId],
+      [r.awayTeam, r.awayTeamApiId],
+    ] as const) {
+      if (!name) continue;
+      const slug = teamSlug(name);
+      if (!slug) continue;
+      slugs.add(slug);
+      // Rows arrive newest-first, so the first spelling seen for an id is the
+      // most recently published one — the same "most recent row wins" rule the
+      // team page uses to resolve its own display name.
+      if (apiId != null && !(apiId in byApiId)) byApiId[apiId] = slug;
+    }
+  }
+
+  return { byApiId, slugs: [...slugs] };
+});
+
+/**
+ * The slug a standings/fixture-derived club should link to, or null when that
+ * club has no published prediction and therefore no page worth linking.
+ *
+ * Id first, spelling second: the id is exact, the name is the fallback for rows
+ * published without a team id.
+ */
+export function publishedTeamHref(index: PublishedTeamIndex, teamId: number | null, teamName: string): string | null {
+  const byId = teamId != null ? index.byApiId[teamId] : undefined;
+  if (byId) return byId;
+  const bySlug = teamSlug(teamName);
+  return bySlug && index.slugs.includes(bySlug) ? bySlug : null;
+}
+
+export type LeagueClub = { teamId: number; teamName: string; crest: string | null; /** Team-page slug, or null when nothing is published for this club yet. */ slug: string | null };
 
 /**
  * The clubs in a league, with a crest each where one can be resolved — backs
@@ -248,19 +320,26 @@ export type LeagueClub = { teamId: number; teamName: string; crest: string | nul
  */
 export const getLeagueClubs = cache(async (standings: { teamId: number; teamName: string; teamLogo: string | null }[]): Promise<LeagueClub[]> => {
   const needsCrest = standings.filter((s) => !s.teamLogo).map((s) => s.teamId);
-  const cached =
+  const [cached, publishedTeams] = await Promise.all([
     needsCrest.length > 0
-      ? await prisma.teamEnrichmentCache.findMany({
+      ? prisma.teamEnrichmentCache.findMany({
           where: { teamApiId: { in: needsCrest }, fetchedAt: { not: null }, crestUrl: { not: null } },
           select: { teamApiId: true, crestUrl: true },
         })
-      : [];
+      : [],
+    getPublishedTeamIndex(),
+  ]);
   const crestById = new Map(cached.map((c) => [c.teamApiId, c.crestUrl!]));
 
+  // Every club in the table stays in the grid — it describes the league, and
+  // dropping half of it would misrepresent the competition. Only the LINK is
+  // conditional: a club with nothing published renders as a plain tile rather
+  // than as a link into an empty, noindexed team page.
   return standings.map((s) => ({
     teamId: s.teamId,
     teamName: s.teamName,
     crest: s.teamLogo ?? crestById.get(s.teamId) ?? null,
+    slug: publishedTeamHref(publishedTeams, s.teamId, s.teamName),
   }));
 });
 

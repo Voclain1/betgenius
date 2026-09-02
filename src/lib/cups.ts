@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import type { LeaguePlayerStat, LeagueStandingRow } from "@/lib/enrichment";
-import type { LeagueClub } from "@/lib/predictionScope";
+import { getPublishedTeamIndex, publishedTeamHref, type LeagueClub } from "@/lib/predictionScope";
 import { cupBySlug, fixtureIsInCupScope, type CupConfig } from "@/lib/cupConfig";
 import { prisma } from "@/lib/prisma";
 export { cupBySlug } from "@/lib/cupConfig";
@@ -53,10 +53,19 @@ export const getCupPageData = cache(async (slug: string, requestedSeason?: numbe
   );
   const rounds = roundOrder.filter((round) => observedRounds.includes(round));
 
+  // Same rule as the league grid: every participating club is listed, but only
+  // the ones with a published prediction carry a link — the rest have no team
+  // page worth sending a reader or a crawler to.
+  const publishedTeams = await getPublishedTeamIndex();
   const clubMap = new Map<number, LeagueClub>();
   for (const fixture of fixtures) {
     for (const team of [fixture.teams.home, fixture.teams.away]) {
-      clubMap.set(team.id, { teamId: team.id, teamName: team.name, crest: team.logo ?? null });
+      clubMap.set(team.id, {
+        teamId: team.id,
+        teamName: team.name,
+        crest: team.logo ?? null,
+        slug: publishedTeamHref(publishedTeams, team.id, team.name),
+      });
     }
   }
   const clubs = [...clubMap.values()].sort((a, b) => a.teamName.localeCompare(b.teamName));

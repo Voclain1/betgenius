@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPublishedMatchIndex, getLeagueEnrichment } from "@/lib/predictionScope";
+import { getPublishedMatchIndex, getLeagueEnrichment, getPublishedTeamIndex, publishedTeamHref } from "@/lib/predictionScope";
 import { matchKey, teamSlug, leagueSlug } from "@/lib/slug";
 import type { LeagueUpcomingFixture, LeagueStandingRow } from "@/lib/enrichment";
 import type { H2HMeeting } from "@/lib/h2h";
@@ -10,10 +10,11 @@ import type { H2HMeeting } from "@/lib/h2h";
  * Every link here is verified to land somewhere with content before it is
  * rendered. getPublishedMatchIndex is the existing matchKey → slug map of
  * fixtures that actually have a published page (it already backs the same
- * decision in the livescores and fixtures feeds), and team links are only
- * offered for teams that appear in the standings we hold. A link into an empty
- * page is worse than no link — for the reader first, and for crawl budget
- * second.
+ * decision in the livescores and fixtures feeds), and team links are offered
+ * only for teams that getPublishedTeamIndex says have a published prediction —
+ * appearing in the standings was never enough, since a team page with no picks
+ * renders empty and noindex. A link into an empty page is worse than no link —
+ * for the reader first, and for crawl budget second.
  *
  * This is not a link farm bolted on for SEO. Each block answers a question a
  * reader on this page plausibly has next: how did the last meeting go, what
@@ -50,7 +51,11 @@ export async function MatchPageFooterLinks({
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
 }) {
-  const [index, league] = await Promise.all([getPublishedMatchIndex(), getLeagueEnrichment(leagueApiId)]);
+  const [index, league, publishedTeams] = await Promise.all([
+    getPublishedMatchIndex(),
+    getLeagueEnrichment(leagueApiId),
+    getPublishedTeamIndex(),
+  ]);
 
   // Past meetings that have a published page of their own. The h2h list is
   // already on the page above; this turns the ones we wrote about into links.
@@ -75,9 +80,16 @@ export async function MatchPageFooterLinks({
     .slice(0, MAX_SAME_LEAGUE);
 
   // Teams from the table around this fixture, excluding the two playing (they
-  // are already linked from the H1).
+  // are already linked from the H1) and any club we have not published a pick
+  // on — the slug comes from that club's own published rows, not from the
+  // table's spelling, so a name variant can't send the reader to an empty page.
   const nearby = (standings ?? [])
     .filter((r) => r.teamId !== homeTeamApiId && r.teamId !== awayTeamApiId && r.played > 0)
+    .map((r) => {
+      const slug = publishedTeamHref(publishedTeams, r.teamId, r.teamName);
+      return slug ? { ...r, slug } : null;
+    })
+    .filter((r): r is LeagueStandingRow & { slug: string } => r !== null)
     .slice(0, 6);
 
   if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0) return null;
@@ -119,7 +131,7 @@ export async function MatchPageFooterLinks({
         <Section title="Teams around them in the table">
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             {nearby.map((r) => (
-              <Link key={r.teamId} href={`/predictions/team/${teamSlug(r.teamName)}`} className="text-sm text-gray-400 hover:text-brand hover:underline">
+              <Link key={r.teamId} href={`/predictions/team/${r.slug}`} className="text-sm text-gray-400 hover:text-brand hover:underline">
                 {r.teamName}
               </Link>
             ))}
