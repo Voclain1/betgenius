@@ -14,8 +14,7 @@ import {
   feedDayHref,
 } from "@/lib/categoryPredictions";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
-import { matchSlug } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
@@ -106,24 +105,24 @@ export default async function CategoryPage(
   );
 
   const slug = params.category;
-  const events = rows
-    .map((r) => {
-      const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
-      const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
-      if (!home || !away) return null;
-      const kickoff = r.kickoff ?? r.fixture?.kickoff ?? null;
-      // url points at the match page, so the SportsEvent resolves to the one
-      // page that collects every market for the fixture rather than to a feed.
-      const slug = matchSlug({ homeTeam: home, awayTeam: away, kickoff });
-      return sportsEventJsonLd({
-        homeTeam: home,
-        awayTeam: away,
-        kickoff,
-        league: r.leagueName ?? r.fixture?.league?.name,
-        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
-      });
-    })
-    .filter((e): e is NonNullable<typeof e> => e !== null);
+  // url points at the match page, so the SportsEvent resolves to the one page
+  // that collects every market for the fixture rather than to a feed — and one
+  // event per fixture, since this feed lists a row per market.
+  const events = sportsEventsForFixtures(
+    rows
+      .map((r) => {
+        const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
+        const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
+        if (!home || !away) return null;
+        return {
+          homeTeam: home,
+          awayTeam: away,
+          kickoff: r.kickoff ?? r.fixture?.kickoff ?? null,
+          league: r.leagueName ?? r.fixture?.league?.name,
+        };
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null),
+  );
 
   return (
     <div className="space-y-6">

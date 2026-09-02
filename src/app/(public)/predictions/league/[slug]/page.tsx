@@ -17,8 +17,7 @@ import {
   getPublishedMatchIndex,
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
-import { matchSlug } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -88,19 +87,14 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
   });
 
-  const events = rows
-    .filter((r) => r.homeTeam && r.awayTeam)
-    .map((r) => {
-      // url points at the match page — see the same note on the category page.
-      const slug = matchSlug(r);
-      return sportsEventJsonLd({
-        homeTeam: r.homeTeam!,
-        awayTeam: r.awayTeam!,
-        kickoff: r.kickoff,
-        league: r.leagueName,
-        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
-      });
-    });
+  // One event per fixture, not per row — a fixture with several published
+  // markets is still one match. url points at the match page; see the note on
+  // sportsEventsForFixtures.
+  const events = sportsEventsForFixtures(
+    rows
+      .filter((r) => r.homeTeam && r.awayTeam)
+      .map((r) => ({ homeTeam: r.homeTeam!, awayTeam: r.awayTeam!, kickoff: r.kickoff, league: r.leagueName })),
+  );
 
   return (
     <div className="space-y-6">

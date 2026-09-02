@@ -9,8 +9,8 @@ import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
 import { TeamSquad } from "@/components/TeamSquad";
 import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment } from "@/lib/predictionScope";
 import type { SquadPlayer } from "@/lib/enrichment";
-import { teamSlug, matchSlug } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
+import { teamSlug } from "@/lib/slug";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 import type { PredictionCategory } from "@/lib/enums";
 
 /** The row set can mix two spellings that happen to slug the same, or (rarely) one team's home games and another same-slugged team's away games; picks whichever stored name actually matches `slug` for display. */
@@ -83,19 +83,13 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
   });
 
-  const events = rows
-    .filter((r) => r.homeTeam && r.awayTeam)
-    .map((r) => {
-      // url points at the match page — see the same note on the category page.
-      const slug = matchSlug(r);
-      return sportsEventJsonLd({
-        homeTeam: r.homeTeam!,
-        awayTeam: r.awayTeam!,
-        kickoff: r.kickoff,
-        league: r.leagueName,
-        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
-      });
-    });
+  // One event per fixture, not per row — the same fixture listed under two
+  // markets is one match. See the note on sportsEventsForFixtures.
+  const events = sportsEventsForFixtures(
+    rows
+      .filter((r) => r.homeTeam && r.awayTeam)
+      .map((r) => ({ homeTeam: r.homeTeam!, awayTeam: r.awayTeam!, kickoff: r.kickoff, league: r.leagueName })),
+  );
 
   return (
     <div className="space-y-6">

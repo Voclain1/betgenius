@@ -5,6 +5,7 @@
 // rather than each route reinventing this.
 
 import { SOCIAL_CARD } from "@/lib/brandAssets";
+import { matchSlug, teamSlug } from "@/lib/slug";
 
 export const SITE_NAME = "BetGenius";
 export const SITE_URL = (process.env.NEXTAUTH_URL || "https://betgenius-iota.vercel.app").replace(/\/$/, "");
@@ -182,6 +183,54 @@ export function sportsEventJsonLd(input: {
     ...(published ? { datePublished: published } : {}),
     ...(modified ? { dateModified: modified } : {}),
   };
+}
+
+/**
+ * One SportsEvent per FIXTURE for a feed page, from rows that are per MARKET.
+ *
+ * The feeds (category, league, team) list a row per published market, so a
+ * fixture with Match Winner, Over/Under and BTTS published used to emit three
+ * SportsEvent objects with the same name, the same startDate and the same
+ * `url` — three claims that the same event is three events. Aston Villa vs
+ * Arsenal, carrying several markets, was the case that surfaced it.
+ *
+ * Keyed by matchSlug, which is the fixture identity the match page itself
+ * resolves against (day-grained, so the same pairing in a later round is
+ * correctly a different event). Rows with no kickoff produce no slug and so no
+ * URL; they still dedupe, on the team pair alone, because two markets on an
+ * undated fixture are still one fixture.
+ *
+ * First row wins. Callers pass rows in display order, so the surviving event
+ * is the one whose fixture leads the page.
+ */
+export function sportsEventsForFixtures(
+  fixtures: {
+    homeTeam: string;
+    awayTeam: string;
+    kickoff: Date | string | null;
+    league?: string | null;
+  }[],
+) {
+  const seen = new Set<string>();
+  const events: ReturnType<typeof sportsEventJsonLd>[] = [];
+
+  for (const f of fixtures) {
+    const slug = matchSlug(f);
+    const key = slug ?? `${teamSlug(f.homeTeam)}-vs-${teamSlug(f.awayTeam)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    events.push(
+      sportsEventJsonLd({
+        homeTeam: f.homeTeam,
+        awayTeam: f.awayTeam,
+        kickoff: f.kickoff,
+        league: f.league,
+        ...(slug ? { url: `/predictions/match/${slug}` } : {}),
+      }),
+    );
+  }
+
+  return events;
 }
 
 /**
