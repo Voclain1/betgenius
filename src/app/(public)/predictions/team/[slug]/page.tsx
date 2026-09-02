@@ -11,6 +11,8 @@ import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment } fr
 import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { AnswerSummary } from "@/components/AnswerSummary";
+import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 
 /** The row set can mix two spellings that happen to slug the same, or (rarely) one team's home games and another same-slugged team's away games; picks whichever stored name actually matches `slug` for display. */
@@ -103,9 +105,11 @@ export default async function TeamPage({ params }: { params: { slug: string } })
           ...events,
         ]}
       />
-      <div>
+      <div className="space-y-2">
         <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-sm text-gray-400">{rows.length} published picks</p>
+        {/* Answers "what is this site's record on this team" in one line,
+            above the form panel and the RateCard that break it down. */}
+        <AnswerSummary text={teamSummary({ name, pickCount: rows.length, stat })} />
       </div>
 
       <TeamEnrichmentPanel teamApiId={teamApiId} />

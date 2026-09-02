@@ -13,12 +13,15 @@ import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
 import { MatchLink } from "@/components/MatchLink";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
+import { AnswerSummary } from "@/components/AnswerSummary";
+import { homeSummary } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
+import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay, comparePredictionsForDisplay } from "@/lib/predictionOrdering";
@@ -114,6 +117,43 @@ async function fetchHeroPick(): Promise<HeroPickData | null> {
   return row ? ({ ...row, homeTeam: row.homeTeam!, awayTeam: row.awayTeam! } as HeroPickData) : null;
 }
 
+/**
+ * The day's slate as counts — what the answer paragraph under the H1 states.
+ *
+ * Its own query rather than a derivation from the Featured/Genius excerpts
+ * above: those are capped at six and three, so counting them would describe
+ * the excerpt instead of the day. This counts every published pick whose
+ * kickoff falls in the day being browsed, which is the same window the feeds
+ * themselves use.
+ *
+ * Only headline competitions are named. leaguePriorityRank returns the length
+ * of the priority list for anything unranked, so filtering on that keeps the
+ * "led by" clause to leagues a reader recognises rather than whichever obscure
+ * fixture happened to sort first.
+ */
+async function fetchDaySlate(day: FeedDay) {
+  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
+    select: { leagueName: true, leagueApiId: true },
+  });
+
+  const leagues = new Map<string, { name: string; leagueApiId: number | null }>();
+  for (const r of rows) {
+    if (!r.leagueName) continue;
+    const key = leagueSlug(r.leagueName, r.leagueApiId);
+    if (!leagues.has(key)) leagues.set(key, { name: r.leagueName, leagueApiId: r.leagueApiId });
+  }
+
+  const topLeagues = [...leagues.values()]
+    .filter((l) => leaguePriorityRank(l.leagueApiId) < LEAGUE_PRIORITY_ORDER.length)
+    .sort((a, b) => leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId))
+    .slice(0, 3)
+    .map((l) => l.name);
+
+  return { pickCount: rows.length, leagueCount: leagues.size, topLeagues };
+}
+
 const CATEGORY_LINKS: { label: string; href: string }[] = [
   { label: "Banker", href: "/predictions/banker" },
   { label: "Today", href: "/predictions/today" },
@@ -129,7 +169,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
-  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay, slate] = await Promise.all([
     fetchFeatured(day),
     fetchGeniusPreview(day),
     getServerSession(authOptions),
@@ -137,6 +177,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getPublishedMatchIndex(),
     fetchHeroPick(),
     getBetOfTheDay(),
+    fetchDaySlate(day),
   ]);
   const popular = popularLeagues(leagues);
 
@@ -166,6 +207,13 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             <h1 className="text-[26px] font-bold leading-[1.15] sm:text-3xl md:text-5xl">
               Football Predictions Today — Including Today&apos;s Banker
             </h1>
+            {/* Directly under the H1, before the pick card and everything
+                below it: what is actually published right now, in counts and
+                competitions. No percentage — /track-record owns the rate, and
+                a second copy of it here would be free to drift. */}
+            <div className="mt-3">
+              <AnswerSummary text={homeSummary({ day, ...slate })} />
+            </div>
             <p className="mt-3 max-w-2xl text-gray-300 md:text-lg">
               Data-driven picks across every major league, each with a confidence rating and the reasoning behind it.
             </p>

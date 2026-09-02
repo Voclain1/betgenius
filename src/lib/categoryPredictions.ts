@@ -34,6 +34,25 @@ export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
 };
 
 /**
+ * One line saying what each feed IS, in the reader's terms.
+ *
+ * Lifted verbatim from the /predictions index, which is where this copy has
+ * always lived, so the index card and the feed's own answer paragraph (see
+ * src/lib/answerSummary.ts) describe a category identically instead of in two
+ * separately-invented voices. Editing one place changes both.
+ */
+export const CATEGORY_BLURBS: Record<PredictionCategory, string> = {
+  FEATURED: "Editor-picked, highest-conviction plays.",
+  GENIUS: "Our highest-scoring picks of the day, ranked by confidence.",
+  TODAY: "Every match happening today.",
+  BANKER: "Our single most-confident pick.",
+  VIP: "Subscriber-only edge plays.",
+  PREMIUM: "Top-tier tips + accumulators.",
+  BET_OF_THE_DAY: "A single pick each day, taken from everything published that morning.",
+  SAME_GAME_DOUBLE: "Two picks on the same match, combined into one selection.",
+};
+
+/**
  * Short labels for the chip on a prediction card and the dashboard tiles.
  *
  * The card used to print the raw enum, so a combo card was badged

@@ -92,6 +92,9 @@ const COPY_FILES = [
   "src/components/PredictionCard.tsx",
   "src/app/(public)/pricing/page.tsx",
   "src/app/(public)/page.tsx",
+  // The answer paragraphs under each H1 — the most quotable copy on the site,
+  // and the copy an answer engine is most likely to repeat verbatim.
+  "src/lib/answerSummary.ts",
   "src/lib/marketConfirmed.ts",
 ];
 for (const rel of COPY_FILES) {

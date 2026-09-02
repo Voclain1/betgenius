@@ -18,6 +18,8 @@ import {
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { AnswerSummary } from "@/components/AnswerSummary";
+import { leagueSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -108,9 +110,12 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           ...events,
         ]}
       />
-      <div>
+      <div className="space-y-2">
         <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-sm text-gray-400">{rows.length} published picks</p>
+        {/* The scoped record as a sentence, above standings and fixtures. The
+            RateCard below shows the same stat broken out; this is the version
+            a reader (or an answer engine) can quote without assembling it. */}
+        <AnswerSummary text={leagueSummary({ name, pickCount: rows.length, stat })} />
       </div>
 
       <div className="max-w-xs">

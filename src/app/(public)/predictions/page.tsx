@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 
 export const metadata: Metadata = {
   title: "Football Predictions & Betting Tips",
@@ -9,13 +10,16 @@ export const metadata: Metadata = {
   alternates: { canonical: "/predictions" },
 };
 
+// Descriptions come from CATEGORY_BLURBS, the single copy of this copy — the
+// feeds' own answer paragraphs quote the same strings, so a card here and the
+// page it links to can't describe the category differently.
 const cats = [
-  { slug: "featured", name: "Featured tips", desc: "Editor-picked, highest-conviction plays." },
-  { slug: "genius", name: "Genius tips", desc: "Our highest-scoring picks of the day, ranked by confidence." },
-  { slug: "today", name: "Today's predictions", desc: "Every match happening today." },
-  { slug: "banker", name: "Banker", desc: "Our single most-confident pick." },
-  { slug: "vip", name: "VIP", desc: "Subscriber-only edge plays." },
-  { slug: "premium", name: "Premium", desc: "Top-tier tips + accumulators." },
+  { slug: "featured", name: "Featured tips", desc: CATEGORY_BLURBS.FEATURED },
+  { slug: "genius", name: "Genius tips", desc: CATEGORY_BLURBS.GENIUS },
+  { slug: "today", name: "Today's predictions", desc: CATEGORY_BLURBS.TODAY },
+  { slug: "banker", name: "Banker", desc: CATEGORY_BLURBS.BANKER },
+  { slug: "vip", name: "VIP", desc: CATEGORY_BLURBS.VIP },
+  { slug: "premium", name: "Premium", desc: CATEGORY_BLURBS.PREMIUM },
 ];
 
 export default function PredictionsIndex() {

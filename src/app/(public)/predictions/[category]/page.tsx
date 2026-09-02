@@ -8,12 +8,15 @@ import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import {
   CATEGORY_SLUGS as SLUGS,
   CATEGORY_NAMES as NAMES,
+  CATEGORY_BLURBS as BLURBS,
   getCategoryPredictions,
   parseFeedDay,
   dayShowsOutcomes,
   feedDayHref,
 } from "@/lib/categoryPredictions";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { AnswerSummary } from "@/components/AnswerSummary";
+import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 
 export async function generateMetadata(
@@ -139,10 +142,6 @@ export default async function CategoryPage(
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold">{NAMES[cat]}</h1>
-          <p className="text-sm text-gray-400">
-            {shaped.length}{" "}
-            {day === "yesterday" ? "settled picks" : day === "tomorrow" ? "picks for tomorrow" : "live picks"}
-          </p>
         </div>
         {!canView && (cat === "VIP" || cat === "PREMIUM") && (
           <Link href="/pricing" className="btn btn-primary">Unlock {cat === "VIP" ? "VIP" : "Premium"}</Link>
@@ -151,6 +150,21 @@ export default async function CategoryPage(
           <Link href="/register" className="btn btn-primary">Sign up free</Link>
         )}
       </div>
+
+      {/* Above the day filter and the grid: the count the header used to carry,
+          as a sentence that says what this feed is and how many picks are in
+          it for the day being browsed. */}
+      <AnswerSummary
+        text={categorySummary({
+          name: NAMES[cat],
+          // TODAY's shared blurb says "every match happening today", which is
+          // the one line that stops being true on the yesterday/tomorrow tabs.
+          // Every other category describes what it selects, not when.
+          blurb: cat === "TODAY" && day !== "today" ? "Every match on that day's card." : BLURBS[cat],
+          pickCount: shaped.length,
+          day,
+        })}
+      />
 
       <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
 
