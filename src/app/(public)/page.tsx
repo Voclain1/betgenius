@@ -16,7 +16,6 @@ import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
-import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
@@ -130,25 +129,16 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
-  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, trackRecord, betOfTheDay] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay] = await Promise.all([
     fetchFeatured(day),
     fetchGeniusPreview(day),
     getServerSession(authOptions),
     getLeaguesWithPublishedPredictions(),
     getPublishedMatchIndex(),
     fetchHeroPick(),
-    getTrackRecordData(),
     getBetOfTheDay(),
   ]);
   const popular = popularLeagues(leagues);
-
-  // Same all-time sample gate the track-record page applies to itself — below
-  // it, no rate is shown rather than one built on too few settled tips.
-  const headline = trackRecord.windows[90].headline;
-  const heroStat =
-    trackRecord.totalSettledAllTime >= MIN_SETTLED_SAMPLE_SIZE && headline.rate != null
-      ? { rate: Math.round(headline.rate * 100), settled: headline.decided }
-      : null;
 
   // A row can be cross-posted from a paywalled category into GENIUS — gate
   // per row on its own primary category (same as B1's league/team pages),
@@ -184,7 +174,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
             </div>
           </div>
-          {heroPick && <HeroPick pick={heroPick} trackRecord={heroStat} />}
+          {heroPick && <HeroPick pick={heroPick} />}
         </div>
       </section>
 
