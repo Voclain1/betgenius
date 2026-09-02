@@ -94,7 +94,9 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
       <div className="grid grid-cols-2 gap-2 text-center">
         <div className="rounded-md bg-brand-bg p-2">
           <div className="text-[10px] uppercase text-gray-500">Market</div>
-          <div className="text-sm font-medium">{p.market}</div>
+          <div className={p.locked ? "flex items-center justify-center gap-1 text-sm font-semibold text-brand" : "text-sm font-medium"}>
+            {p.locked ? <><Lock size={14} /> Locked</> : p.market}
+          </div>
         </div>
         <div className="rounded-md bg-brand-bg p-2">
           <div className="text-[10px] uppercase text-gray-500">Pick</div>
