@@ -687,6 +687,12 @@ model Combo {
   description String?
   category    String // PredictionCategory — gates the whole combo
   published   Boolean    @default(false)
+  // Odds-tier accumulators only: the target multiple (3, 5, 10, 15, 20, 50).
+  // NULL for every hand-built Multi Bet, which is what separates the curated
+  // ladder from the manual combos that have always lived in this table — the
+  // /multi-bets page groups on exactly this. Nullable and additive, so existing
+  // rows and older builds are unaffected. See src/lib/accumulatorTiers.ts.
+  oddsTier    Int?
   legs        ComboLeg[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
