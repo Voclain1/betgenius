@@ -156,10 +156,35 @@ eq("labels", APP_TABS.map((t) => t.label).join(","), "Tips,Live,Fixtures,Builder
   }
 }
 
+console.log("\ntips tab destination — the section index, not a category inside it:");
+eq("Tips points at the /predictions index", APP_TABS.find((t) => t.label === "Tips")?.href, "/predictions");
+// The destination must be a page the tab also LIGHTS UP for. A tab whose own
+// target does not activate it would render un-highlighted the instant it was
+// tapped, which is the specific bug this pairing guards against.
+eq("tapping Tips lands on a page that lights Tips", activeTab(APP_TABS.find((t) => t.label === "Tips")!.href)?.label, "Tips");
+// BackButton.ts treats tab destinations as roots — a back button on the page a
+// tab just landed you on would either no-op or leave the site.
+{
+  const back = readFileSync(join(__dirname, "..", "src", "components", "BackButton.tsx"), "utf8");
+  const roots = back.slice(back.indexOf("ROOT_PATHS"), back.indexOf("function normalize"));
+  for (const tab of APP_TABS) {
+    check(`${tab.label} destination ${tab.href} is a BackButton ROOT_PATH`, roots.includes(`"${tab.href}"`));
+  }
+}
+
 console.log("\nactive tab — longest prefix wins, and no tab claims a page it does not own:");
+eq("the predictions index", activeTab("/predictions")?.label, "Tips");
 eq("tips feed", activeTab("/predictions/today")?.label, "Tips");
+// Every category sub-page keeps Tips lit — the tab is the SECTION, so browsing
+// from the index into any one category must not drop the highlight.
+for (const c of ["today", "genius", "featured", "banker", "combo-bets", "vip", "premium", "bet-of-the-day"]) {
+  eq(`/predictions/${c} lights Tips`, activeTab(`/predictions/${c}`)?.label, "Tips");
+}
 eq("a match page lights Tips", activeTab("/predictions/match/arsenal-vs-chelsea-2026-01-01")?.label, "Tips");
 eq("a league page lights Tips", activeTab("/predictions/league/la-liga-140")?.label, "Tips");
+eq("a team page lights Tips", activeTab("/predictions/team/arsenal")?.label, "Tips");
+eq("an h2h page lights Tips", activeTab("/predictions/h2h/arsenal-vs-chelsea")?.label, "Tips");
+eq("the predictions index with a trailing slash", activeTab("/predictions/")?.label, "Tips");
 eq("livescores", activeTab("/livescores")?.label, "Live");
 eq("fixtures", activeTab("/fixtures")?.label, "Fixtures");
 eq("bet builder", activeTab("/bet-builder")?.label, "Builder");

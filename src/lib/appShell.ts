@@ -86,11 +86,17 @@ export type AppTab = {
  * The five tabs, chosen from what the codebase already says is primary rather
  * than from a general sense of what betting apps have:
  *
- *   TIPS, LIVE, FIXTURES — these are exactly the three `shortcuts` already
+ *   TIPS, LIVE, FIXTURES — the same three subjects as the `shortcuts` already
  *   declared in src/app/manifest.ts. That list was written for precisely this
  *   context (long-press the installed icon) and is the closest thing the
  *   project has to a stated app-context priority, so the tab bar agrees with it
  *   instead of inventing a competing ranking.
+ *
+ *   The SUBJECTS match; one destination deliberately does not. The manifest's
+ *   "Today's tips" shortcut points at /predictions/today, and this tab points
+ *   at the /predictions index. That is not drift: a shortcut is a jump to one
+ *   specific thing, whereas a tab is a section the reader lives in and returns
+ *   to. See the note on the Tips entry below.
  *
  *   BUILDER — from PRIMARY_LINKS in Nav.tsx, and the only interactive tool on
  *   the site. A tool is app-shaped in a way a list of articles is not.
@@ -108,7 +114,13 @@ export type AppTab = {
  * tap target drops under the 44px minimum.
  */
 export const APP_TABS: AppTab[] = [
-  { href: "/predictions/today", label: "Tips", icon: "sparkles", match: ["/predictions"] },
+  // The SECTION index, not a category within it. This tab stays lit across the
+  // whole /predictions subtree (see `match`), so landing it on one category
+  // would light "Tips" while the reader browses VIP or Genius having never been
+  // offered the choice — the destination and the highlight would describe
+  // different things. /predictions lists every category, so the tap and the
+  // highlight agree.
+  { href: "/predictions", label: "Tips", icon: "sparkles", match: ["/predictions"] },
   { href: "/livescores", label: "Live", icon: "radio", match: ["/livescores"] },
   { href: "/fixtures", label: "Fixtures", icon: "calendar", match: ["/fixtures"] },
   { href: "/bet-builder", label: "Builder", icon: "layers", match: ["/bet-builder"] },
