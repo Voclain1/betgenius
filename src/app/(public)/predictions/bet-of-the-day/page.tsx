@@ -2,8 +2,10 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getBetOfTheDay } from "@/lib/betOfTheDay";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
-import { matchSlug } from "@/lib/slug";
+import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchDescription } from "@/lib/seo";
+import { matchSlug, matchKey } from "@/lib/slug";
+import { getFixtureEventContext } from "@/lib/predictionScope";
+import { canViewCategory } from "@/lib/access";
 
 /**
  * The dedicated Bet of the Day page.
@@ -58,6 +60,18 @@ export default async function BetOfTheDayPage() {
   const { row } = data;
   const slug = matchSlug({ homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoff: row.kickoff });
 
+  // Venue, crests, competition badge and fixture status for the markup.
+  const key = matchKey(row);
+  const context = (await getFixtureEventContext([row])).get(key ?? "");
+
+  // BET_OF_THE_DAY is ungated by design (see canViewCategory), but the check is
+  // made rather than assumed: if the category is ever moved behind a
+  // subscription, the description falls back to the pickless variant instead of
+  // continuing to print the call into crawlable markup.
+  const publicPick = canViewCategory("BET_OF_THE_DAY")
+    ? { market: row.market, pick: row.pick, confidence: row.confidence }
+    : null;
+
   return (
     <div className="space-y-6">
       <JsonLd
@@ -74,6 +88,18 @@ export default async function BetOfTheDayPage() {
                   awayTeam: row.awayTeam,
                   kickoff: row.kickoff,
                   league: row.leagueName,
+                  leagueApiId: row.leagueApiId,
+                  homeTeamApiId: row.homeTeamApiId,
+                  awayTeamApiId: row.awayTeamApiId,
+                  ...context,
+                  description: matchDescription({
+                    homeTeam: row.homeTeam,
+                    awayTeam: row.awayTeam,
+                    leagueName: row.leagueName,
+                    kickoff: row.kickoff,
+                    topPick: publicPick,
+                    marketCount: 1,
+                  }),
                   ...(slug ? { url: `/predictions/match/${slug}` } : {}),
                 }),
               ]

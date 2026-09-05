@@ -17,7 +17,7 @@ import { MatchKeyPlayers } from "@/components/MatchKeyPlayers";
 import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
-import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail } from "@/lib/predictionScope";
+import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext } from "@/lib/predictionScope";
 import { teamSlug, h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
@@ -101,7 +101,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 }
 
 export default async function MatchPage({ params }: { params: { slug: string } }) {
-  const { rows, match, digests, h2hMeetings } = await loadMatch(params.slug);
+  const { rows, match, digests, h2hMeetings, publicTopPick } = await loadMatch(params.slug);
 
   if (!match) {
     return (
@@ -150,6 +150,16 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const fixtureDetail = await getFixtureDetail(match.matchKey);
   const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null } | null) ?? null;
 
+  // Crests, competition badge and ingested fixture status for the structured
+  // data. Venue is NOT taken from here — `detail` above is already the correct,
+  // fixture-specific source on this page, and this read only fills the fields
+  // the match page never had.
+  const eventContext = (
+    await getFixtureEventContext([
+      { homeTeamApiId: match.homeTeamApiId, awayTeamApiId: match.awayTeamApiId, kickoff: match.kickoff, leagueApiId: match.leagueApiId },
+    ])
+  ).get(match.matchKey ?? "");
+
   // Page-level freshness only. Per-section cache stamps were deliberately
   // removed from this app; this is the editorial published/updated line, which
   // is a different thing and is what dateModified below reports.
@@ -169,6 +179,27 @@ export default async function MatchPage({ params }: { params: { slug: string } }
             awayTeam: match.awayTeam,
             kickoff: match.kickoff,
             league: match.leagueName,
+            leagueApiId: match.leagueApiId,
+            leagueLogo: eventContext?.leagueLogo ?? null,
+            homeTeamApiId: match.homeTeamApiId,
+            awayTeamApiId: match.awayTeamApiId,
+            homeTeamLogo: eventContext?.homeTeamLogo ?? null,
+            awayTeamLogo: eventContext?.awayTeamLogo ?? null,
+            statusShort: eventContext?.statusShort ?? null,
+            // The SAME string the meta description carries, built from the
+            // SAME anonymously-resolved publicTopPick that loadMatch computes
+            // for generateMetadata. JSON-LD is served to crawlers and
+            // signed-out readers alike, so it must never see a pick the meta
+            // tag would refuse to print — reusing publicTopPick rather than
+            // re-deriving one is what guarantees that.
+            description: matchDescription({
+              homeTeam: match.homeTeam,
+              awayTeam: match.awayTeam,
+              leagueName: match.leagueName,
+              kickoff: match.kickoff,
+              topPick: publicTopPick,
+              marketCount: rows.length,
+            }),
             url: `/predictions/match/${params.slug}`,
             venue: detail?.venue ?? null,
             city: detail?.city ?? null,

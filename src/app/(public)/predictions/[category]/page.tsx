@@ -17,7 +17,9 @@ import {
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
+import { getFixtureEventContext } from "@/lib/predictionScope";
+import { matchKey } from "@/lib/slug";
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
@@ -27,14 +29,20 @@ export async function generateMetadata(
   // Same resolved day as the page body, so cache() serves ONE query for both.
   const day = parseFeedDay(searchParams?.date);
   const name = NAMES[cat];
+  // Only categories with a term behind them get one. VIP has measured demand
+  // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
+  // Featured, Genius and Premium showed near-zero volume, so they keep their
+  // plain product names rather than being bent around a keyword nobody types.
   const seoTitle = cat === "TODAY" ? "Today's Predictions"
     : cat === "VIP" ? "VIP Predictions"
+    : cat === "BANKER" ? "Banker Predictions"
     // Grounded in the term readers actually search, same approach as the
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
     : name;
   const seoPhrase = cat === "TODAY" ? "today's predictions"
     : cat === "VIP" ? "VIP predictions"
+    : cat === "BANKER" ? "banker predictions"
     : cat === "SAME_GAME_DOUBLE" ? "combo bet predictions — two picks on the same match"
     : name.toLowerCase();
   const emptyDescription = cat === "TODAY"
@@ -54,11 +62,12 @@ export async function generateMetadata(
     };
   }
 
-  const sample = rows
-    .slice(0, 3)
-    .map((r) => (r.homeTeam ? `${r.homeTeam} vs ${r.awayTeam}` : r.fixture ? `${r.fixture.homeTeam?.name} vs ${r.fixture.awayTeam?.name}` : null))
-    .filter(Boolean)
-    .join(", ");
+  const sample = fixtureSample(
+    rows.map((r) => ({
+      homeTeam: r.homeTeam ?? r.fixture?.homeTeam?.name,
+      awayTeam: r.awayTeam ?? r.fixture?.awayTeam?.name,
+    })),
+  );
 
   return {
     title: seoTitle,
@@ -111,20 +120,42 @@ export default async function CategoryPage(
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
+  const eventRows = rows
+    .map((r) => {
+      const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
+      const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
+      if (!home || !away) return null;
+      return {
+        homeTeam: home,
+        awayTeam: away,
+        kickoff: r.kickoff ?? r.fixture?.kickoff ?? null,
+        league: r.leagueName ?? r.fixture?.league?.name,
+        leagueApiId: r.leagueApiId,
+        homeTeamApiId: r.homeTeamApiId,
+        awayTeamApiId: r.awayTeamApiId,
+        market: r.market,
+        pick: r.pick,
+        confidence: r.confidence,
+      };
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null);
+
+  // Venue, crests, competition badge and fixture status for the markup — the
+  // fields the feeds have never carried. One batched read for the whole page.
+  const eventContext = await getFixtureEventContext(eventRows);
+
+  // Gated as an ANONYMOUS visitor, not as the current session. This markup is
+  // rendered into a page that is cached and crawled, so it must describe what a
+  // signed-out reader sees; resolving it against `canView` would put a VIP pick
+  // into the HTML of a page a subscriber happened to warm the cache for.
+  const publiclyReadable = canViewCategory(cat, undefined, undefined, undefined);
+
   const events = sportsEventsForFixtures(
-    rows
-      .map((r) => {
-        const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
-        const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
-        if (!home || !away) return null;
-        return {
-          homeTeam: home,
-          awayTeam: away,
-          kickoff: r.kickoff ?? r.fixture?.kickoff ?? null,
-          league: r.leagueName ?? r.fixture?.league?.name,
-        };
-      })
-      .filter((f): f is NonNullable<typeof f> => f !== null),
+    eventRows.map((f) => ({
+      ...f,
+      ...(eventContext.get(matchKey(f) ?? "") ?? {}),
+      publicPick: publiclyReadable ? { market: f.market, pick: f.pick, confidence: f.confidence } : null,
+    })),
   );
 
   return (

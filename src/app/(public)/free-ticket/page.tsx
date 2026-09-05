@@ -6,8 +6,9 @@ import { PredictionCard, type PredictionRow } from "@/components/PredictionCard"
 import type { MarketConfirmation } from "@/components/MarketConfirmedBadge";
 import { canViewCategory } from "@/lib/access";
 import { trustMetadata } from "@/lib/trustMetadata";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd } from "@/lib/seo";
-import { matchSlug } from "@/lib/slug";
+import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchDescription } from "@/lib/seo";
+import { matchSlug, matchKey } from "@/lib/slug";
+import { getFixtureEventContext } from "@/lib/predictionScope";
 
 // Funnel landing page: one free pick, one upgrade CTA, nothing else. Linked
 // from the WhatsApp Channel and social bios, deliberately absent from Nav.
@@ -115,6 +116,14 @@ export default async function FreeTicketPage() {
   const kickoff = row.kickoff ?? row.fixture?.kickoff ?? null;
   const slug = matchSlug({ homeTeam: home, awayTeam: away, kickoff });
 
+  // Venue, crests, competition badge and fixture status for the markup.
+  const eventKey = matchKey({ homeTeamApiId: row.homeTeamApiId, awayTeamApiId: row.awayTeamApiId, kickoff });
+  const context = (
+    await getFixtureEventContext([
+      { homeTeamApiId: row.homeTeamApiId, awayTeamApiId: row.awayTeamApiId, kickoff, leagueApiId: row.leagueApiId },
+    ])
+  ).get(eventKey ?? "");
+
   // Badge the card GENIUS — the feed this pick is being shown from — the same
   // way /predictions/[category] overrides `category` to the feed being browsed.
   //
@@ -137,7 +146,31 @@ export default async function FreeTicketPage() {
             { name: "Free tip", path: "/free-ticket" },
           ]),
           ...(home && away
-            ? [sportsEventJsonLd({ homeTeam: home, awayTeam: away, kickoff, league: row.leagueName, ...(slug ? { url: `/predictions/match/${slug}` } : {}) })]
+            ? [
+                sportsEventJsonLd({
+                  homeTeam: home,
+                  awayTeam: away,
+                  kickoff,
+                  league: row.leagueName,
+                  leagueApiId: row.leagueApiId,
+                  homeTeamApiId: row.homeTeamApiId,
+                  awayTeamApiId: row.awayTeamApiId,
+                  ...context,
+                  // `isPublic` above is the SAME canViewCategory("GENIUS")
+                  // check that lets this page print the pick unlocked, so the
+                  // markup and the visible page can never disagree about
+                  // whether the call is readable.
+                  description: matchDescription({
+                    homeTeam: home,
+                    awayTeam: away,
+                    leagueName: row.leagueName,
+                    kickoff,
+                    topPick: isPublic ? { market: row.market, pick: row.pick, confidence: row.confidence } : null,
+                    marketCount: 1,
+                  }),
+                  ...(slug ? { url: `/predictions/match/${slug}` } : {}),
+                }),
+              ]
             : []),
         ]}
       />

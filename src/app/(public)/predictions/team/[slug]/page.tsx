@@ -7,9 +7,9 @@ import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
 import { TeamSquad } from "@/components/TeamSquad";
-import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment } from "@/lib/predictionScope";
+import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment, getFixtureEventContext } from "@/lib/predictionScope";
 import type { SquadPlayer } from "@/lib/enrichment";
-import { teamSlug } from "@/lib/slug";
+import { teamSlug, matchKey } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { teamSummary } from "@/lib/answerSummary";
@@ -87,10 +87,37 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
   // One event per fixture, not per row — the same fixture listed under two
   // markets is one match. See the note on sportsEventsForFixtures.
+  const eventRows = rows
+    .filter((r) => r.homeTeam && r.awayTeam)
+    .map((r) => ({
+      homeTeam: r.homeTeam!,
+      awayTeam: r.awayTeam!,
+      kickoff: r.kickoff,
+      league: r.leagueName,
+      leagueApiId: r.leagueApiId,
+      homeTeamApiId: r.homeTeamApiId,
+      awayTeamApiId: r.awayTeamApiId,
+      category: r.category,
+      market: r.market,
+      pick: r.pick,
+      confidence: r.confidence,
+    }));
+
+  // Venue, crests, competition badge and fixture status — one batched read for
+  // every fixture on the page.
+  const eventContext = await getFixtureEventContext(eventRows);
+
   const events = sportsEventsForFixtures(
-    rows
-      .filter((r) => r.homeTeam && r.awayTeam)
-      .map((r) => ({ homeTeam: r.homeTeam!, awayTeam: r.awayTeam!, kickoff: r.kickoff, league: r.leagueName })),
+    eventRows.map((f) => ({
+      ...f,
+      ...(eventContext.get(matchKey(f) ?? "") ?? {}),
+      // Gated as an ANONYMOUS visitor, per row's own category — not against
+      // `session`. The markup is cached and crawled, so it must describe what a
+      // signed-out reader sees rather than whoever warmed the cache.
+      publicPick: canViewCategory(f.category as PredictionCategory, undefined, undefined, undefined)
+        ? { market: f.market, pick: f.pick, confidence: f.confidence }
+        : null,
+    })),
   );
 
   return (

@@ -15,22 +15,29 @@ import {
   getLeagueEnrichment,
   getLeagueClubs,
   getPublishedMatchIndex,
+  getFixtureEventContext,
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { matchKey } from "@/lib/slug";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fixtureSample } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const { rows } = await getPublishedByLeagueSlug(params.slug);
-  const isEnglishPremierLeague = params.slug === "premier-league-39" || rows[0]?.leagueApiId === 39;
 
   if (rows.length === 0) {
+    // No row to read leagueApiId off, so the id comes from the slug instead —
+    // an empty Ligue 1 page still knows it is Ligue 1 and still titles itself
+    // with the researched term rather than falling back to "League
+    // predictions". Noindexed either way; the title is for the reader who
+    // arrives on it from a link.
+    const seo = researchedLeagueSeo(leagueIdFromSlug(params.slug));
     return {
-      title: isEnglishPremierLeague ? "EPL Predictions — Premier League" : "League predictions",
-      description: isEnglishPremierLeague
-        ? "No EPL predictions are published today — check back soon for the latest Premier League picks."
+      title: seo?.title || "League predictions",
+      description: seo
+        ? `No ${seo.phrase} are published today — check back soon for the next card in this competition.`
         : "No predictions published yet for this league — check back soon for our latest football predictions.",
       robots: { index: false, follow: true },
       alternates: { canonical: `/predictions/league/${params.slug}` },
@@ -38,17 +45,15 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   }
 
   const name = leagueDisplayName(rows[0].leagueName!, rows[0].leagueApiId);
-  const sample = rows
-    .slice(0, 3)
-    .map((r) => (r.homeTeam ? `${r.homeTeam} vs ${r.awayTeam}` : null))
-    .filter(Boolean)
-    .join(", ");
+  const seo = leagueSeo(rows[0].leagueApiId, name);
+  const sample = fixtureSample(rows);
 
   return {
-    title: isEnglishPremierLeague ? "EPL Predictions — Premier League" : name,
-    description: isEnglishPremierLeague
-      ? `${rows.length} EPL predictions${sample ? ` — including ${sample}` : ""}. Premier League picks with confidence ratings, updated daily.`
-      : `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    title: seo.title,
+    // The count is the page's own row count and the sample is its own leading
+    // fixtures, so the description cannot claim more than the page shows. Only
+    // the phrase and the closing sentence are per-league.
+    description: `${rows.length} ${seo.phrase}${sample ? ` — including ${sample}` : ""}. ${seo.blurb}`,
     alternates: { canonical: `/predictions/league/${params.slug}` },
   };
 }
@@ -92,10 +97,37 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   // One event per fixture, not per row — a fixture with several published
   // markets is still one match. url points at the match page; see the note on
   // sportsEventsForFixtures.
+  const eventRows = rows
+    .filter((r) => r.homeTeam && r.awayTeam)
+    .map((r) => ({
+      homeTeam: r.homeTeam!,
+      awayTeam: r.awayTeam!,
+      kickoff: r.kickoff,
+      league: r.leagueName,
+      leagueApiId: r.leagueApiId,
+      homeTeamApiId: r.homeTeamApiId,
+      awayTeamApiId: r.awayTeamApiId,
+      category: r.category,
+      market: r.market,
+      pick: r.pick,
+      confidence: r.confidence,
+    }));
+
+  // Venue, crests, competition badge and fixture status — one batched read for
+  // every fixture on the page.
+  const eventContext = await getFixtureEventContext(eventRows);
+
   const events = sportsEventsForFixtures(
-    rows
-      .filter((r) => r.homeTeam && r.awayTeam)
-      .map((r) => ({ homeTeam: r.homeTeam!, awayTeam: r.awayTeam!, kickoff: r.kickoff, league: r.leagueName })),
+    eventRows.map((f) => ({
+      ...f,
+      ...(eventContext.get(matchKey(f) ?? "") ?? {}),
+      // Gated as an ANONYMOUS visitor, per row's own category — not against
+      // `session`. The markup is cached and crawled, so it must describe what a
+      // signed-out reader sees rather than whoever warmed the cache.
+      publicPick: canViewCategory(f.category as PredictionCategory, undefined, undefined, undefined)
+        ? { market: f.market, pick: f.pick, confidence: f.confidence }
+        : null,
+    })),
   );
 
   return (

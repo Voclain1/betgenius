@@ -430,6 +430,134 @@ export const getFixtureDetail = cache(async (key: string | null) => {
   return row?.fetchedAt ? row : null;
 });
 
+/**
+ * The real venue, crests, competition badge and fixture status behind one
+ * fixture's structured data, keyed by matchKey.
+ *
+ * Exists because the SportsEvent markup on the FEEDS was, until now, four
+ * fields wide: the feed pages hold per-market Prediction rows and nothing
+ * else, so every event they emitted had no location, no image and no
+ * organizer, while the exact same fixture's match page had all three. That
+ * asymmetry is what Search Console was reporting — the match pages were fine
+ * and the feeds, which outnumber them, were not.
+ *
+ * Batched deliberately. A feed renders up to 60 rows, so this reads four
+ * tables once each and resolves every fixture in memory rather than issuing a
+ * lookup per row. Everything degrades to null: a fixture with nothing cached
+ * yet produces an event with fewer fields, never an event with invented ones.
+ */
+export type FixtureEventContext = {
+  venue: string | null;
+  city: string | null;
+  /** Only ever set when `venue` came from the home team's record, which is the only source carrying one. */
+  address: string | null;
+  homeTeamLogo: string | null;
+  awayTeamLogo: string | null;
+  leagueLogo: string | null;
+  /** API-Football status short code, when the fixture exists in the ingestion table. */
+  statusShort: string | null;
+};
+
+const EMPTY_EVENT_CONTEXT: FixtureEventContext = {
+  venue: null,
+  city: null,
+  address: null,
+  homeTeamLogo: null,
+  awayTeamLogo: null,
+  leagueLogo: null,
+  statusShort: null,
+};
+
+/** The context for a fixture that resolved to nothing — shared, so callers can spread it without allocating. */
+export function emptyFixtureEventContext(): FixtureEventContext {
+  return EMPTY_EVENT_CONTEXT;
+}
+
+// Not cache()d, deliberately: React's cache() keys on argument identity, and
+// every caller builds a fresh array, so wrapping this would advertise a
+// memoization that could never hit. Each page calls it once, from its body.
+export async function getFixtureEventContext(
+  fixtures: { homeTeamApiId: number | null; awayTeamApiId: number | null; kickoff: Date | string | null; leagueApiId: number | null }[],
+): Promise<Map<string, FixtureEventContext>> {
+    const out = new Map<string, FixtureEventContext>();
+
+    const keyed = fixtures
+      .map((f) => ({ ...f, key: matchKey(f) }))
+      .filter((f): f is typeof f & { key: string } => f.key !== null);
+    if (keyed.length === 0) return out;
+
+    const keys = [...new Set(keyed.map((f) => f.key))];
+    const teamIds = [...new Set(keyed.flatMap((f) => [f.homeTeamApiId, f.awayTeamApiId]).filter((id): id is number => id != null))];
+    const leagueIds = [...new Set(keyed.map((f) => f.leagueApiId).filter((id): id is number => id != null))];
+
+    // Bounded to the days actually asked about. Fixture is the ingestion table
+    // and spans every season we've ever pulled, so an unbounded scan of it to
+    // answer "what is the status of these 60 fixtures" would be the one
+    // expensive query on the page.
+    const times = keyed.map((f) => new Date(f.kickoff!).getTime()).filter((t) => !isNaN(t));
+    const DAY = 24 * 60 * 60_000;
+    const window =
+      times.length > 0 ? { gte: new Date(Math.min(...times) - DAY), lte: new Date(Math.max(...times) + DAY) } : undefined;
+
+    const [details, teams, leagues, ingested] = await Promise.all([
+      prisma.fixtureDetailCache.findMany({
+        where: { matchKey: { in: keys }, fetchedAt: { not: null } },
+        select: { matchKey: true, detailJson: true },
+      }),
+      teamIds.length > 0
+        ? prisma.teamEnrichmentCache.findMany({
+            where: { teamApiId: { in: teamIds }, fetchedAt: { not: null } },
+            select: { teamApiId: true, crestUrl: true, venueName: true, venueCity: true, venueAddress: true },
+          })
+        : [],
+      leagueIds.length > 0
+        ? prisma.league.findMany({ where: { apiId: { in: leagueIds } }, select: { apiId: true, logo: true } })
+        : [],
+      teamIds.length > 0 && window
+        ? prisma.fixture.findMany({
+            where: { kickoff: window, homeTeam: { apiId: { in: teamIds } }, awayTeam: { apiId: { in: teamIds } } },
+            select: { status: true, kickoff: true, homeTeam: { select: { apiId: true } }, awayTeam: { select: { apiId: true } } },
+          })
+        : [],
+    ]);
+
+    const detailByKey = new Map(details.map((d) => [d.matchKey, d.detailJson as { venue?: string | null; city?: string | null } | null]));
+    const teamById = new Map(teams.map((t) => [t.teamApiId, t]));
+    const leagueLogoById = new Map(leagues.map((l) => [l.apiId, l.logo]));
+    // Re-keyed through matchKey so a fixture is matched on the same identity
+    // every other cache here uses, rather than on a looser team-pair guess.
+    const statusByKey = new Map(
+      ingested
+        .map((f) => [matchKey({ homeTeamApiId: f.homeTeam.apiId, awayTeamApiId: f.awayTeam.apiId, kickoff: f.kickoff }), f.status] as const)
+        .filter((entry): entry is [string, string] => entry[0] !== null),
+    );
+
+    for (const f of keyed) {
+      if (out.has(f.key)) continue;
+      const detail = detailByKey.get(f.key);
+      const home = f.homeTeamApiId != null ? teamById.get(f.homeTeamApiId) : undefined;
+      const away = f.awayTeamApiId != null ? teamById.get(f.awayTeamApiId) : undefined;
+
+      // Fixture-specific venue wins outright. The home team's ground is a
+      // FALLBACK, taken whole or not at all: mixing a cached fixture venue with
+      // the club's street address would describe two different places as one.
+      const fixtureVenue = detail?.venue ?? null;
+      const useHomeGround = !fixtureVenue && Boolean(home?.venueName);
+
+      out.set(f.key, {
+        venue: fixtureVenue ?? (useHomeGround ? home!.venueName : null),
+        city: fixtureVenue ? (detail?.city ?? null) : useHomeGround ? home!.venueCity : null,
+        address: useHomeGround ? home!.venueAddress : null,
+        homeTeamLogo: home?.crestUrl ?? null,
+        awayTeamLogo: away?.crestUrl ?? null,
+        leagueLogo: f.leagueApiId != null ? (leagueLogoById.get(f.leagueApiId) ?? null) : null,
+        statusShort: statusByKey.get(f.key) ?? null,
+      });
+    }
+
+    return out;
+}
+
 export type LeagueNavItem = {
   slug: string;
   name: string;

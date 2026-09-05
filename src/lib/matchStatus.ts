@@ -58,3 +58,27 @@ const STATUS_LABELS: Record<string, string> = {
 export function statusLabel(short: string): string {
   return STATUS_LABELS[short] ?? short;
 }
+
+/**
+ * An API-Football status short-code as a schema.org eventStatus IRI.
+ *
+ * Only two codes have an honest counterpart in schema.org's EventStatusType
+ * vocabulary — PST is EventPostponed and CANC is EventCancelled — so those are
+ * the only two that move off the default.
+ *
+ * Everything else, INCLUDING a finished match, stays EventScheduled. That is
+ * not a shortcut: the vocabulary has no "completed" value (only Scheduled /
+ * Cancelled / Postponed / Rescheduled / MovedOnline), so a played fixture has
+ * no truer value available and EventScheduled remains accurate — the event was
+ * scheduled, and it happened. See the note on sportsEventJsonLd.
+ *
+ * The other irregular codes isIrregular() knows about (ABD, AWD, WO) are
+ * deliberately NOT mapped onto EventCancelled. An abandoned or forfeited match
+ * is not a cancelled one — it took place — and asserting otherwise would be a
+ * worse claim than the neutral default.
+ */
+export function schemaEventStatus(short?: string | null): string {
+  if (short === "PST") return "https://schema.org/EventPostponed";
+  if (short === "CANC") return "https://schema.org/EventCancelled";
+  return "https://schema.org/EventScheduled";
+}
