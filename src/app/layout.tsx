@@ -5,6 +5,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
 import { SOCIAL_CARD_IMAGE } from "@/lib/brandAssets";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { APP_SHELL_INIT_SCRIPT } from "@/lib/appShell";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -96,6 +97,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Runs before first paint to prevent a flash of the wrong theme —
             see THEME_INIT_SCRIPT for why React cannot do this job. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* Same pre-paint reasoning, for the other thing the document has to
+            know before it renders: whether this is a browser tab or the
+            installed app. Marks <html> so the chrome in globals.css resolves on
+            the first paint instead of swapping after hydration. Detection is
+            not restated here — the script embeds the tested functions from
+            src/lib/installPrompt.ts. See APP_SHELL_INIT_SCRIPT. */}
+        <script dangerouslySetInnerHTML={{ __html: APP_SHELL_INIT_SCRIPT }} />
       </head>
       <body>
         {/* Emitted once site-wide so BetGenius is understood as an entity

@@ -2,6 +2,8 @@ import { BackButton } from "@/components/BackButton";
 import { PreviewDataBanner } from "@/components/PreviewDataBanner";
 import { Nav } from "@/components/Nav";
 import { SiteFooter } from "@/components/SiteFooter";
+import { InstallPrompt } from "@/components/InstallPrompt";
+import { AppTabBar } from "@/components/AppTabBar";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -22,6 +24,17 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
       <SiteFooter />
+      {/* Bottom-anchored and fixed, so it overlays rather than displacing the
+          footer. Mounted on the PUBLIC layout only — /admin and /dashboard are
+          separate trees, and prompting a signed-in admin to install the tipping
+          app is not the audience this is for. */}
+      <InstallPrompt />
+      {/* The installed app's primary navigation. Rendered unconditionally and
+          hidden in a browser tab by CSS — see the note in the component and the
+          app-shell section of globals.css. Mounted beside InstallPrompt on the
+          PUBLIC layout only, matching it: /admin and /dashboard are separate
+          trees with their own chrome. */}
+      <AppTabBar />
     </>
   );
 }

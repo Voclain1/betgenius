@@ -279,3 +279,59 @@ body {
 .surface-blur {
   background: rgb(var(--surface) / var(--surface-alpha));
 }
+
+/* ---------------------------------------------------------------------------
+   App shell — browser tab vs installed app (TWA / PWA)
+
+   ONE attribute on <html>, set before first paint by APP_SHELL_INIT_SCRIPT
+   (src/lib/appShell.ts), decides which chrome is on screen. Doing the switch
+   in CSS rather than in React is what makes it flash-free: the alternative,
+   a useEffect that flips state after hydration, paints the website's nav for
+   a frame every single time the app is opened.
+
+   Two markers, and every rule below is one of them:
+
+     [data-web-only]  visible in a browser tab, hidden in the installed app.
+     [data-app-only]  the reverse.
+
+   Neither marker does anything on its own. An element without an attribute is
+   untouched here, which is why a normal browser tab renders byte-identically
+   to before this file grew this section: the default state of the document has
+   no data-standalone, so only the [data-app-only] rule applies, and the only
+   elements carrying that marker are ones that did not exist before.
+
+   `display: none` rather than visibility/opacity throughout, deliberately: it
+   removes the element from the accessibility tree and from tab order too, so a
+   browser reader never reaches the app tab bar and an app user never reaches
+   the web nav's link row. Anything less would leave invisible focus stops.
+   --------------------------------------------------------------------------- */
+
+/* App-context chrome is absent from a browser tab. */
+html:not([data-standalone="true"]) [data-app-only] {
+  display: none !important;
+}
+
+/* Web-context chrome is absent from the installed app. */
+html[data-standalone="true"] [data-web-only] {
+  display: none !important;
+}
+
+/* Clearance for the fixed tab bar, so the footer and the last of the page
+   content are not sitting underneath it. Matches the bar's h-14 plus the same
+   safe-area inset the bar itself pads with — the two must stay in step, and
+   scripts/check-app-shell.ts asserts they do. */
+html[data-standalone="true"] body {
+  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
+}
+
+/* The nav's menu button is md:hidden in a browser tab, because the desktop
+   link row covers the same destinations there. In the installed app that row
+   is hidden at every width, so the drawer becomes the ONLY route to Standings,
+   StatsPad, Multi Bets, pricing and the legal pages — this puts the button
+   back at desktop widths, which an installed app genuinely reaches on a tablet
+   or a desktop PWA window. Tailwind's md: breakpoint is 768px. */
+@media (min-width: 768px) {
+  html[data-standalone="true"] .app-shell-menu {
+    display: inline-flex !important;
+  }
+}

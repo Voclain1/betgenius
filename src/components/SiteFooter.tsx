@@ -13,7 +13,15 @@ export function SiteFooter() {
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.3fr,1fr,1fr,1fr]">
           <div>
             <Link href="/" className="text-xl font-bold tracking-tight"><span className="text-brand">Bet</span>Genius</Link>
-            <p className="mt-3 max-w-xs text-sm leading-6 text-gray-400">Football predictions, match analysis and statistics designed to help readers assess the evidence—not promise an outcome.</p>
+            {/* Positioning copy, addressed to a first-time visitor deciding
+                whether this site is worth reading. Someone who installed the
+                app has already made that decision, so in app context this is
+                the one piece of footer chrome that is purely web-oriented.
+                The link columns and the 18+ line below are NOT marked: the
+                legal, responsible-gambling and affiliate links are compliance
+                surface, and hiding those in a betting app is not a
+                presentation decision to make quietly. */}
+            <p data-web-only className="mt-3 max-w-xs text-sm leading-6 text-gray-400">Football predictions, match analysis and statistics designed to help readers assess the evidence—not promise an outcome.</p>
           </div>
           {groups.map((group) => (
             <nav key={group.title} aria-label={group.title}>

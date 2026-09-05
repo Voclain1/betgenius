@@ -161,9 +161,9 @@ function NavDropdown({ label, items }: { label: string; items: NavLink[] }) {
 
 // Shared between the desktop top-bar and the mobile drawer so the two never
 // drift out of sync. `onNavigate` closes the drawer on click; undefined on desktop.
-function AuthActions({ isAdmin, user, onNavigate, className }: { isAdmin: boolean; user: unknown; onNavigate?: () => void; className: string }) {
+function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmin: boolean; user: unknown; onNavigate?: () => void; className: string } & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={className}>
+    <div className={className} {...rest}>
       {user ? (
         <>
           {isAdmin && (
@@ -226,7 +226,13 @@ export function Nav() {
           </Link>
           {/* No overflow-x-auto any more: four items fit, and a scroll
               container would clip the absolutely-positioned dropdowns. */}
-          <nav className="hidden items-center gap-1 md:flex">
+          {/* The desktop link row. Hidden in the installed app: the bottom tab
+              bar is the primary navigation there, and a second full set of
+              links above it would be the same destinations twice. Everything
+              this row reaches that the tab bar does not (Standings, StatsPad,
+              Multi Bets, the VIP/Premium tiers) stays reachable through the
+              drawer, which is why the drawer is NOT marked web-only. */}
+          <nav data-web-only className="hidden items-center gap-1 md:flex">
             <NavDropdown label="Tips" items={TIP_LINKS} />
             {PRIMARY_LINKS.map((l) => (
               <Link key={l.href} href={l.href} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
@@ -253,7 +259,10 @@ export function Nav() {
               and does not need to hide in the drawer to fit. */}
           <ThemeToggle />
 
-          <AuthActions isAdmin={isAdmin} user={user} className="hidden items-center gap-2 md:flex" />
+          {/* The Account tab owns sign-in/out and the dashboard in the app, so
+              the inline pair would be a duplicate control in the one place a
+              phone has least room for one. Still present in the drawer. */}
+          <AuthActions isAdmin={isAdmin} user={user} data-web-only className="hidden items-center gap-2 md:flex" />
 
           <button
             type="button"
@@ -261,7 +270,12 @@ export function Nav() {
             aria-expanded={open}
             aria-controls="mobile-nav-drawer"
             onClick={() => setOpen((v) => !v)}
-            className="btn btn-ghost p-2 md:hidden"
+            // md:hidden in a browser tab, where the desktop link row above
+            // covers the same ground. In the installed app that row is gone at
+            // every width, so the drawer is the only way to reach Standings,
+            // StatsPad, Multi Bets, pricing and the legal pages — hence the
+            // app-shell override, which re-shows it above md.
+            className="btn btn-ghost p-2 md:hidden app-shell-menu"
           >
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
