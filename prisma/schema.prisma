@@ -5,6 +5,17 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Each Vercel environment points at its own Neon database, and the two URLs are
+// NOT interchangeable: `url` must be the POOLED endpoint (host contains
+// "-pooler") and `directUrl` the direct one. Prisma runs schema operations
+// through directUrl, and those fail through a pooler — so swapping them
+// produces a confusing failure at db push / migrate rather than at connect.
+//
+// Preview runs against a CHILD BRANCH of the production project, so it starts
+// from production's schema and can be reset from its parent whenever it drifts.
+// It previously pointed at a separate, manually-maintained Neon project, which
+// silently fell four schema objects behind and failed every preview build on
+// scripts/check-schema-sync.ts — a branch is what stops that recurring.
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
