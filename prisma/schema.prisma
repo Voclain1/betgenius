@@ -16,6 +16,13 @@ generator client {
 // It previously pointed at a separate, manually-maintained Neon project, which
 // silently fell four schema objects behind and failed every preview build on
 // scripts/check-schema-sync.ts — a branch is what stops that recurring.
+//
+// The branch must be a CHILD of main, not a root branch. Neon lets you create
+// either, and they are indistinguishable from the connection string; the
+// difference only shows up when you try to recover from drift and get "you
+// can't reset a root branch, it has no parent". A root branch is the same
+// manually-maintained island as the separate project was, just inside the right
+// Neon project. If preview ever needs recreating, check the parent.
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
