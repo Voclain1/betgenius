@@ -19,6 +19,7 @@ import { prisma } from "@/lib/prisma";
 
 /** Job identifiers. A constant so a typo cannot silently split one job's history in two. */
 export const JOB_CURATE_ACCUMULATORS = "curate-accumulators" as const;
+export const JOB_SETTLE = "settle" as const;
 
 export type JobRunInput = {
   job: string;
