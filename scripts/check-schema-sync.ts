@@ -76,7 +76,38 @@ function runDiff(): { ok: true; sql: string } | { ok: false; reason: string } {
   }
 }
 
+/**
+ * The database endpoint this check just compared against, credentials stripped.
+ *
+ * Printed on every run because "which database did this build actually use?"
+ * has now been unanswerable three separate times — once while preview was
+ * silently pointing at a different Neon project, and twice while confirming a
+ * repoint. Vercel marks DATABASE_URL as `sensitive`, so it cannot be read back
+ * from the dashboard or the API, and the only place the answer exists is the
+ * process that connected. That is here.
+ *
+ * HOST ONLY, never the credentials. A Neon hostname identifies which branch is
+ * in use and is useless without the password; the password must never reach a
+ * build log. Anything that does not parse as a URL prints nothing rather than
+ * risk echoing a malformed secret.
+ */
+function endpointLabel(): string | null {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return null;
+  try {
+    const host = new URL(raw).hostname;
+    // ep-cool-name-123456-pooler.region.aws.neon.tech -> ep-cool-name-123456
+    const endpoint = /^(ep-[a-z0-9-]+?)(-pooler)?\./.exec(host);
+    return endpoint ? `${endpoint[1]} (${host})` : host;
+  } catch {
+    return null;
+  }
+}
+
 function main() {
+  const endpoint = endpointLabel();
+  if (endpoint) console.log(`schema-sync — comparing against ${endpoint}`);
+
   // DATABASE_URL is deliberately NOT read from process.env here. tsx does not
   // load .env, but the Prisma CLI does — so checking the variable directly
   // would report "not configured" on a machine where it plainly is. Let the
