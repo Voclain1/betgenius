@@ -22,6 +22,7 @@ import { matchKey } from "@/lib/slug";
 import { setComboLegs } from "@/lib/combos";
 import { findSelection, toBookmakerSelection, MIN_BOOKMAKERS, type FixtureOdds } from "@/lib/odds";
 import { LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
+import { JOB_CURATE_ACCUMULATORS, withJobRun } from "@/lib/jobRuns";
 import {
   ACCUMULATOR_TIERS,
   MIN_POOL_LEGS,
@@ -190,6 +191,30 @@ export async function accumulatorsToday(now: Date = new Date()): Promise<Map<num
  * accumulator that the day's actual prices did not support.
  */
 export async function curateAccumulators(
+  options: { now?: Date; dryRun?: boolean } = {},
+): Promise<AccumulatorRunResult> {
+  // A dry run is not an execution. Recording it would put rows in the history
+  // that never published anything, and the whole point of that history is to
+  // answer "did the scheduled pass actually run" — an inspection must not be
+  // able to forge a yes.
+  if (options.dryRun) return runAccumulatorPass(options);
+  return withJobRun(JOB_CURATE_ACCUMULATORS, () => runAccumulatorPass(options), summariseRun);
+}
+
+/**
+ * One line describing a run, readable in a list without opening `detail`.
+ *
+ * States the pool size even when nothing was published, because "stood down on
+ * 4 legs" and "stood down on 19 legs" are different stories — the first is a
+ * quiet morning, the second is a gate that may be set too high.
+ */
+function summariseRun(r: AccumulatorRunResult): string {
+  if (!r.attempted) return `stood down — pool of ${r.poolSize} legs below the ${MIN_POOL_LEGS}-leg gate`;
+  const n = (s: TierOutcome["status"]) => r.tiers.filter((t) => t.status === s).length;
+  return `pool ${r.poolSize} legs — ${n("created")} created, ${n("exists")} already present, ${n("empty")} empty`;
+}
+
+async function runAccumulatorPass(
   options: { now?: Date; dryRun?: boolean } = {},
 ): Promise<AccumulatorRunResult> {
   const now = options.now ?? new Date();

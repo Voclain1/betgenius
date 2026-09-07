@@ -618,6 +618,42 @@ model GenerationAttempt {
   @@index([fixtureApiId])
 }
 
+/// One execution of a scheduled job, kept so a run can be PROVEN to have
+/// happened after the fact.
+///
+/// Exists because Vercel's Hobby plan retains runtime logs for minutes, not
+/// days: verifying that the 10:30 accumulator cron had fired was only possible
+/// because that particular job happens to write Combo rows as its output. A job
+/// that decided to do nothing — the correct outcome on a thin day — would have
+/// left no trace at all, and "the cron did not fire" and "the cron fired and
+/// correctly stood down" would be indistinguishable.
+///
+/// Deliberately GENERIC rather than accumulator-specific. `job` names the
+/// caller, so settlement, curation and any future scheduled pass can record
+/// here instead of each inventing its own table. `detail` holds whatever that
+/// job considers its result — for the accumulator pass, the pool funnel and the
+/// per-tier outcome.
+///
+/// Growth is negligible: one row per job per run, so a daily job is 365 rows a
+/// year and a 3-hourly one under 3,000. No pruning is worth the complexity yet.
+model JobRun {
+  id      String   @id @default(cuid())
+  job     String // e.g. "curate-accumulators"
+  ranAt   DateTime @default(now())
+  /// False when the job threw. A job that ran and deliberately did nothing is
+  /// still ok=true — "did not fire" and "fired and stood down" is exactly the
+  /// distinction this table exists to make.
+  ok      Boolean  @default(true)
+  /// One line, readable without parsing `detail`.
+  summary String?
+  /// Job-shaped result payload. See AccumulatorRunResult in src/lib/accumulatorPipeline.ts.
+  detail  Json?
+  /// Wall-clock duration, for spotting a job that is slowing down.
+  ms      Int?
+
+  @@index([job, ranAt])
+}
+
 model AppLock {
   // Cooperative lease, not a Postgres advisory lock.
   //
