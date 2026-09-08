@@ -96,16 +96,25 @@ export const AD_UNITS = {
     // 300 is a placeholder chosen to be roughly right for the two widths this
     // unit is placed at (a ~768px content column, and a phone). It has been
     // verified only in the sense that the slot reserves the space and does not
-    // shift the page; it has NOT been checked against an actual filled unit,
-    // because the network returns no ad off the live domain — see the note in
-    // src/app/ads/frame/route.ts about what does and does not load locally.
+    // shift the page. It has NOT been checked against a filled native unit.
     //
-    // TO CORRECT IT: with the site live on www.betgenius.ng, load a page
-    // carrying the native band and wait for the fill. The measurement has to
-    // be taken INSIDE the frame — the sandbox puts it on an opaque origin, so
-    // reaching in from the page with .contentDocument returns null. In
-    // DevTools, switch the console's context dropdown to the
-    // "/ads/frame?unit=native" frame and run:
+    // WHY IT IS STILL UNMEASURED NOW THAT WE ARE LIVE. The integration itself
+    // is confirmed working: on the first cold load after deploy, the 728x90 in
+    // this exact sandbox filled with a real creative — 42KB of ad DOM, two
+    // images and 32 links inside the frame. But an ad network fills a fraction
+    // of requests and frequency-caps a client that asks repeatedly, so every
+    // automated run after that first one came back empty, and the native unit
+    // never happened to fill during a run that could measure it. Hammering it
+    // to force a fill is what gets a publisher flagged for invalid traffic,
+    // which is not a trade worth making for one number.
+    //
+    // TO CORRECT IT: open a page carrying the native band in a NORMAL browser
+    // (not an automated one, and ideally not one that has just loaded the site
+    // repeatedly) and wait for the fill. The measurement has to be taken
+    // INSIDE the frame — the sandbox puts it on an opaque origin, so reaching
+    // in from the page with .contentDocument returns null. In DevTools, switch
+    // the console's context dropdown to the "/ads/frame?unit=native" frame and
+    // run:
     //
     //   document.getElementById(
     //     "container-2463c1f140540acd180dc7d9d58170a0",
