@@ -22,6 +22,7 @@ import { matchKey } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fixtureSample } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
+import { AdLeaderboard, WithAdRail } from "@/components/ads/AdPlacements";
 import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -131,6 +132,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   );
 
   return (
+    // Rail carries the 160x300 rather than the 600 — see AdRail on why one
+    // unit per rail and why the tall one went to the match page.
+    <WithAdRail unit="railHalf">
     <div className="space-y-6">
       <JsonLd
         data={[
@@ -175,6 +179,11 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
       </div>
 
+      {/* Between two reference sections — settled results above, player
+          leaderboards below. The league's published picks are the last block
+          on the page, well clear of this. */}
+      <AdLeaderboard />
+
       {/* Rendered once player stats have been fetched at all. Individual
           boards can still be empty (season not started, cards lagging) and say
           so themselves; before the first fetch there is nothing to caveat. */}
@@ -207,5 +216,6 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         </div>
       </div>
     </div>
+    </WithAdRail>
   );
 }

@@ -22,6 +22,7 @@ import { teamSlug, h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
+import { AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
 
 /**
  * Everything both generateMetadata and the page body need, assembled once.
@@ -166,6 +167,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const publishedAt = rows.reduce<Date | null>((a, r) => (r.publishedAt && (!a || r.publishedAt > a) ? r.publishedAt : a), null);
 
   return (
+    // The one page on the site deep enough to carry a rail. See AdRail for the
+    // width arithmetic and for why it only exists at xl and above.
+    <WithAdRail unit="skyscraper">
     <div className="space-y-6">
       <JsonLd
         data={[
@@ -278,6 +282,13 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayDigest={awayDigest}
       />
 
+      {/* Mid-content, and deliberately here rather than a section earlier or
+          later. The verdict and the key factors are three sections up, the
+          published-markets grid is at the foot, and both of this band's
+          neighbours — the stats comparison above, key players below — are
+          reference data rather than a call of ours. */}
+      <AdRectangle />
+
       <MatchKeyPlayers
         leagueApiId={match.leagueApiId}
         homeTeam={match.homeTeam}
@@ -343,6 +354,12 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           Form, team news and table context refresh automatically.
         </p>
       )}
+
+      {/* Foot of the page, below the footer links. Same reasoning as the
+          homepage: the Native Banner only ever goes where the surrounding
+          content is chrome. */}
+      <AdNativeBand />
     </div>
+    </WithAdRail>
   );
 }

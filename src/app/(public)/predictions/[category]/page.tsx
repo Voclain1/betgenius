@@ -20,6 +20,7 @@ import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { matchKey } from "@/lib/slug";
+import { AdLeaderboard } from "@/components/ads/AdPlacements";
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
@@ -200,6 +201,13 @@ export default async function CategoryPage(
       <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
 
       <CategoryPredictionsList category={cat} rows={shaped as any} />
+
+      {/* At the foot, after the grid ends, and this is the only honest place
+          for it on a category feed. These pages ARE the picks from the H1
+          down — there is no non-pick section to sit between, and a band above
+          the grid or spliced into it would be a paid unit inside our own
+          published calls. So it goes after them. */}
+      <AdLeaderboard />
     </div>
   );
 }

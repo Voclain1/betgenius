@@ -25,6 +25,7 @@ import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay, comparePredictionsForDisplay } from "@/lib/predictionOrdering";
+import { AdLeaderboard, AdNativeBand } from "@/components/ads/AdPlacements";
 
 export const revalidate = 60;
 
@@ -363,6 +364,15 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         />
       </section>
 
+      {/* The homepage's one in-content ad, and it is here rather than under
+          the hero on purpose. Everything above this point is a pick or an
+          argument for one — the hero pick, Genius, Bet of the Day, Featured —
+          and a leaderboard among those would sit close enough to our own calls
+          to read as part of them. "Popular leagues" and "Recent results" are
+          navigation and settled scores, so a band between them is unambiguous
+          chrome. See the placement rule in AdPlacements.tsx. */}
+      <AdLeaderboard />
+
       <section>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Recent results</h2>
@@ -396,6 +406,12 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           <p className="text-sm text-gray-400">Team form, xG, over/under trends, head-to-head.</p>
         </Link>
       </section>
+
+      {/* Last thing on the page, below every pick, every league list and the
+          product cards. The Native Banner is the one unit whose whole design
+          is to look like the content around it, so it is only ever given a
+          position where the content around it is the footer. */}
+      <AdNativeBand />
     </div>
   );
 }
