@@ -25,15 +25,51 @@ import { AdFrame } from "@/components/ads/AdUnit";
  * their band at the foot rather than above the grid: the feeds ARE the picks,
  * top to bottom, so there is no honest in-content position on them.
  *
- * Every slot is also labelled "Advertisement" in text, not only by shape.
- * `<aside>` gives it a complementary landmark with that accessible name, so
- * the separation holds for a screen reader as well as for an eye.
+ * Every slot also carries a visible "Ad" tag, not only a shape — see AdLabel
+ * for why it is a corner tag and why its colour is the measured one rather
+ * than the most muted one. `<aside>` additionally gives each slot a
+ * complementary landmark named "Advertisement", so the separation holds for a
+ * screen reader as well as for an eye.
  */
 
+/**
+ * The disclosure tag, on every slot without exception.
+ *
+ * A CORNER TAG, NOT A HEADER. This used to be a centred, letter-spaced
+ * "ADVERTISEMENT" running the full width of the band, which read as a section
+ * heading — it was the most prominent piece of typography in the block and
+ * competed with the real headings around it. It is now a small "Ad" pinned to
+ * the top-left corner: still on every slot, still legible, but chrome rather
+ * than an announcement.
+ *
+ * IT IS ABSOLUTE, AND ITS CONTAINER'S TOP PADDING IS WHAT KEEPS IT CLEAR of
+ * the creative. It sits inside that padding band above the unit, so it costs
+ * no layout height and can never overlap an ad. Every container that renders
+ * one must therefore be a positioned element with enough `pt-` to hold it —
+ * see AdBand and AdRail, and note that `sticky` already positions the rail's
+ * container, which is why nothing there adds `relative`.
+ *
+ * NOT `aria-hidden`. The landmark's own label already says "Advertisement",
+ * so this is redundant for a screen reader — but a disclosure that exists only
+ * as a container attribute is one refactor away from disappearing silently,
+ * and a redundant one costs a reader nothing.
+ *
+ * THE COLOUR IS `text-gray-400`, AND IT IS NOT FREE TO GO FAINTER. The
+ * obvious choice was gray-500, the site's most muted step, which is what the
+ * old header used. Sampling the pixels actually painted behind the tag on
+ * every slot in both themes says gray-500 gives 3.92:1 in dark and 4.07:1 in
+ * light — under the 4.5:1 floor for text this size, so the disclosure was
+ * failing that bar before this change too, at a larger size. gray-400
+ * measures 7.47:1 dark and 5.62:1 light on the same probe.
+ *
+ * At 10px the tag still reads as chrome; contrast is what keeps it a
+ * disclosure rather than decoration, and an opacity modifier or gray-500
+ * would put it back under. Re-measure if the band's background changes.
+ */
 function AdLabel() {
   return (
-    <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-      Advertisement
+    <span className="pointer-events-none absolute left-3 top-1.5 select-none text-[10px] font-medium leading-none text-gray-400">
+      Ad
     </span>
   );
 }
@@ -48,9 +84,12 @@ function AdLabel() {
  */
 function AdBand({ children }: { children: React.ReactNode }) {
   return (
+    // `relative` is what the corner tag positions against, and `pt-5` is the
+    // room it sits in. The gap that used to separate a stacked label from the
+    // unit is gone with it — the label no longer occupies a row.
     <aside
       aria-label="Advertisement"
-      className="flex flex-col items-center gap-2 border-y border-brand-border bg-brand-card/25 py-5"
+      className="relative flex flex-col items-center border-y border-brand-border bg-brand-card/25 pb-5 pt-5"
     >
       <AdLabel />
       {children}
@@ -161,7 +200,11 @@ export function AdRail({ unit }: { unit: RailUnit }) {
   return (
     <aside aria-label="Advertisement" className="hidden xl:block">
       {/* top-24 clears the sticky nav. */}
-      <div className="sticky top-24 flex flex-col items-center gap-2 rounded-lg bg-brand-card/25 py-4">
+      {/* No `relative` here on purpose: `sticky` is already a positioned
+          element, so it is the corner tag's containing block, and adding
+          `relative` would break the pinning. pt-5 rather than py-4 to give the
+          tag the same clearance it has in the band. */}
+      <div className="sticky top-24 flex flex-col items-center rounded-lg bg-brand-card/25 pb-4 pt-5">
         <AdLabel />
         <AdFrame id={unit} />
       </div>
