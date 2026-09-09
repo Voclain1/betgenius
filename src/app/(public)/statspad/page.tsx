@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { cupSupports } from "@/lib/cupConfig";
+import { AdLeaderboard } from "@/components/ads/AdPlacements";
 
 const STANDINGS_COMPETITIONS = LEAGUE_CATALOGUE.filter((league) => cupSupports(league.id, "standings"));
 const LEAGUE_TIERS = Array.from(new Set(STANDINGS_COMPETITIONS.map((l) => l.tier))).map((tier) => ({
@@ -40,6 +41,10 @@ export default function StatsPad() {
           <button className="btn btn-primary" onClick={load}>Load stats</button>
         </div>
       </div>
+
+      {/* After the first main content section — the heading and the league
+          picker — rather than under the boards at the foot. */}
+      <AdLeaderboard />
 
       {loading && <div className="card text-gray-400">Loading…</div>}
 

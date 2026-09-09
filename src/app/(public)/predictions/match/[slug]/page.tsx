@@ -243,6 +243,12 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         leagueApiId={match.leagueApiId}
       />
 
+      {/* Directly after the first main content section — the fixture info
+          panel — rather than two thirds of the way down the page. It is its
+          own full-width block between two panels; nothing here sits inside a
+          prediction card. */}
+      <AdRectangle />
+
       <MatchFormComparison
         homeTeamApiId={match.homeTeamApiId}
         awayTeamApiId={match.awayTeamApiId}
@@ -281,13 +287,6 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         homeDigest={homeDigest}
         awayDigest={awayDigest}
       />
-
-      {/* Mid-content, and deliberately here rather than a section earlier or
-          later. The verdict and the key factors are three sections up, the
-          published-markets grid is at the foot, and both of this band's
-          neighbours — the stats comparison above, key players below — are
-          reference data rather than a call of ours. */}
-      <AdRectangle />
 
       <MatchKeyPlayers
         leagueApiId={match.leagueApiId}

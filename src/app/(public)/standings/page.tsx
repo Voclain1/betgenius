@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { cupSupports } from "@/lib/cupConfig";
+import { AdHalfBanner } from "@/components/ads/AdPlacements";
 
 const STANDINGS_COMPETITIONS = LEAGUE_CATALOGUE.filter((league) => cupSupports(league.id, "standings"));
 const LEAGUE_TIERS = Array.from(new Set(STANDINGS_COMPETITIONS.map((l) => l.tier))).map((tier) => ({
@@ -108,6 +109,10 @@ export default function StandingsPage() {
           />
         </label>
       </div>
+
+      {/* After the first main content section — the heading and the league
+          picker — rather than under the table at the foot of the page. */}
+      <AdHalfBanner />
 
       {loading && <div className="card text-gray-400">Loading…</div>}
 

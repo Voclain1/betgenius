@@ -24,16 +24,25 @@
  *     the box and the `atOptions` size ever come from different numbers, the
  *     unit starts shifting the page and no test would notice.
  *
- * WHAT IT DOES NOT CHECK. The central editorial rule — an ad never appears
- * above the first pick on a page and never inside a list of picks — is a
- * judgement about what a section contains, not something derivable from the
- * source. It is stated in AdPlacements.tsx and enforced in review.
+ *  4. ADS REACHING AN AD-FREE ROUTE THROUGH A SHARED COMPONENT. Feeds now
+ *     carry ads BETWEEN groups of picks, which means the ad import lives in
+ *     CategoryPredictionsList — a component the ad-free account dashboard
+ *     also renders. Checking each route's own files would see nothing wrong.
+ *     So the import graph is walked, and a component that can render ads is
+ *     only allowed to reach an ad-free route if the ads are opt-in and that
+ *     route does not opt in.
+ *
+ * WHAT IT DOES NOT CHECK. The editorial rule — an ad is always its own full
+ * block, never inside or overlapping a single prediction card — is a
+ * judgement about what a block contains, not something derivable from the
+ * source. It is stated in AdPlacements.tsx and enforced in review, and the
+ * rendered result is checked in a browser.
  *
  * Run: npx tsx scripts/check-ad-placement.ts
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
-import { AD_UNITS, AD_FREE_ROUTES, invokeUrl } from "../src/lib/ads";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { AD_UNITS, AD_FREE_ROUTES, invokeUrl, feedAdPositions, FEED_AD_INTERVAL, FEED_AD_MAX, FEED_AD_MIN_TAIL } from "../src/lib/ads";
 
 const ROOT = join(__dirname, "..");
 const APP = join(ROOT, "src", "app");
@@ -166,6 +175,53 @@ function stripComments(source: string): string {
 
 const src = sources(join(ROOT, "src"));
 const rel = (f: string) => relative(ROOT, f).split(sep).join("/");
+
+/**
+ * Components that can render ads but only when a caller asks, keyed by the
+ * prop that asks. A shared component is allowed to reach an ad-free route ONLY
+ * through one of these, and only if that route never passes the prop.
+ */
+const OPT_IN: Record<string, string> = {
+  "src/components/CategoryPredictionsList.tsx": "withAds",
+};
+
+/** Resolved local imports of a file — "@/..." and relative alike. */
+function importsOf(file: string): string[] {
+  const out: string[] = [];
+  for (const m of code(file).matchAll(/from "(@\/[^"]+|\.\.?\/[^"]+)"/g)) {
+    const spec = m[1];
+    const base = spec.startsWith("@/") ? join(ROOT, "src", spec.slice(2)) : resolve(dirname(file), spec);
+    for (const candidate of [`${base}.tsx`, `${base}.ts`, join(base, "index.tsx"), join(base, "index.ts")]) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        out.push(candidate);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Every import chain from `entries` that ends in an ad component, as file
+ * paths. Depth-first with a shared visited set: this answers "can ads be
+ * reached from here", not "how many ways", which is all the rule needs.
+ */
+function adReachingPaths(entries: string[]): string[][] {
+  const seen = new Set<string>();
+  const hits: string[][] = [];
+  const stack: { file: string; path: string[] }[] = entries.map((f) => ({ file: f, path: [f] }));
+  while (stack.length) {
+    const { file, path } = stack.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    if (file.startsWith(ADS_DIR)) {
+      hits.push(path);
+      continue;
+    }
+    for (const dep of importsOf(file)) stack.push({ file: dep, path: [...path, dep] });
+  }
+  return hits;
+}
 const code = (file: string) => stripComments(readFileSync(file, "utf8"));
 const frameSource = code(join(ADS_DIR, "AdUnit.tsx"));
 const routeSource = code(join(APP, "ads", "frame", "route.ts"));
@@ -189,10 +245,31 @@ for (const prefix of [...AD_FREE_ROUTES, ...AD_FREE_TREES]) {
   }
   const dirty = matched.filter((r) => r.files.some(importsAds));
   check(
-    `${prefix} is ad-free`,
+    `${prefix} imports no ads directly`,
     dirty.length === 0,
     dirty.length ? dirty.map((d) => d.route).join(", ") : `${matched.length} route(s)`,
   );
+
+  // And the same question asked of everything those routes pull in.
+  for (const route of matched) {
+    const paths = adReachingPaths(route.files);
+    if (paths.length === 0) continue;
+    for (const path of paths) {
+      const gate = path.map(rel).find((f) => f in OPT_IN);
+      if (!gate) {
+        check(`${route.route} reaches ads only via an opt-in`, false, path.map(rel).join(" -> "));
+        continue;
+      }
+      // The gate exists; the route must not be pulling the trigger.
+      const prop = OPT_IN[gate];
+      const opted = route.files.filter((f) => new RegExp(`\\b${prop}\\b`).test(code(f)));
+      check(
+        `${route.route} does not pass ${prop}`,
+        opted.length === 0,
+        opted.length ? opted.map(rel).join(", ") : `gated behind ${gate.split("/").pop()}`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -268,12 +345,41 @@ for (const unit of units) {
   check(`${unit.id} is placed somewhere`, placed);
 }
 
+// ---------------------------------------------------------------------------
+// 4. In-feed insertion points
+// ---------------------------------------------------------------------------
+
+console.log("\nIn-feed positions");
+
+const eq = (label: string, actual: unknown, expected: unknown) =>
+  check(label, JSON.stringify(actual) === JSON.stringify(expected), `got ${JSON.stringify(actual)}, want ${JSON.stringify(expected)}`);
+
+// The three rules from feedAdPositions, each pinned by the case that would
+// break if it were dropped.
+eq("a feed too short to interrupt gets nothing", feedAdPositions(5), []);
+eq("no insertion that strands fewer than three picks", feedAdPositions(8), []);
+eq("the first insertion lands at the interval", feedAdPositions(9), [FEED_AD_INTERVAL]);
+eq("a mid-length feed gets two", feedAdPositions(20), [6, 12]);
+eq("a long feed is capped, not filled", feedAdPositions(95), [6, 12, 18]);
+check("the cap is what bounds a long feed", feedAdPositions(95).length === FEED_AD_MAX);
+check("positions are strictly increasing", feedAdPositions(95).every((p, i, a) => i === 0 || p > a[i - 1]));
+check(
+  "every position leaves the required tail",
+  [9, 20, 32, 58, 95].every((n) => feedAdPositions(n).every((p) => n - p >= FEED_AD_MIN_TAIL)),
+);
+
 // And every placement should be rendered by a page — a band nobody uses is
 // dead code that still reads as coverage.
 console.log("\nPlacements in use");
 for (const placement of ["AdLeaderboard", "AdHalfBanner", "AdRectangle", "AdNativeBand", "WithAdRail"]) {
   const users = src.filter((f) => f.startsWith(APP)).filter((f) => new RegExp(`\\b${placement}\\b`).test(code(f)));
   check(`${placement} is used`, users.length > 0, `${users.length} page(s)`);
+}
+// Rendered by the feed component rather than by a page, so it is looked for
+// across all of src rather than under app/.
+{
+  const users = src.filter((f) => !f.startsWith(ADS_DIR)).filter((f) => /\bAdInFeed\b/.test(code(f)));
+  check("AdInFeed is used", users.length > 0, users.map(rel).join(", "));
 }
 
 console.log(`\n${failures === 0 ? "OK" : `${failures} FAILURE(S)`}`);

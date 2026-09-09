@@ -8,7 +8,20 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIndex }) {
+/**
+ * `adSlot` is rendered directly under the header controls. It arrives as a
+ * node from the server page rather than being imported here on purpose: the
+ * import then lives in the route's own page.tsx, which is where
+ * scripts/check-ad-placement.ts looks, and this component keeps no dependency
+ * on the ad stack at all.
+ */
+export default function LivescoresClient({
+  linkIndex,
+  adSlot,
+}: {
+  linkIndex: MatchLinkIndex;
+  adSlot?: React.ReactNode;
+}) {
   const [dateRows, setDateRows] = useState<FixtureRow[]>([]);
   const [liveRows, setLiveRows] = useState<FixtureRow[]>([]);
   // Tracked as two independent flags rather than one shared `loading` flag
@@ -84,6 +97,8 @@ export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIn
         <h1 className="text-2xl font-bold">Livescores</h1>
         <StatusTabs active={tab} onChange={setTab} counts={counts} />
       </div>
+
+      {adSlot}
 
       {loading && <EmptyState>Loading fixtures…</EmptyState>}
       {!loading && groups.length === 0 && (

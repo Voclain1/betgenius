@@ -16,14 +16,25 @@ import { AdFrame } from "@/components/ads/AdUnit";
  * The structural half is where these are allowed to go, which is a rule the
  * components cannot enforce and the call sites have to keep:
  *
- *   An ad never appears above the first pick on a page, and never inside a
- *   list or grid of picks. It sits between two non-pick sections, or after
- *   the pick content has ended.
+ *   An ad is always its own full-width block, between complete blocks of
+ *   content. It is never inserted inside a prediction card, never overlaps
+ *   one, and never splits one.
  *
- * That is why the homepage leaderboard is down beside "Popular leagues" rather
- * than in the usual spot under the hero, and why the category feeds carry
- * their band at the foot rather than above the grid: the feeds ARE the picks,
- * top to bottom, so there is no honest in-content position on them.
+ * THIS REPLACED AN EARLIER, STRICTER RULE — that an ad could never appear
+ * above the first pick and never inside a list of picks, which is why the
+ * feeds originally carried a single band at their foot and the match page put
+ * its rectangle two thirds of the way down. That rule was retired
+ * deliberately: it is the SPLITTING of a pick that misleads a reader, not the
+ * proximity of a clearly-labelled block to one. Ads now sit high on a page and
+ * between groups of picks, and the one line above is what holds.
+ *
+ * The homepage is the exception, and keeps the placement it already had.
+ *
+ * Where "between complete blocks" is decided per surface:
+ *   - Feed pages break the list into groups and put a band between them, at
+ *     the counts feedAdPositions() returns. See src/lib/ads.ts for why 6/3/3.
+ *   - Non-feed pages put their band directly after the first main content
+ *     section — the header, summary or info panel — rather than at the foot.
  *
  * Every slot also carries a visible "Ad" tag, not only a shape — see AdLabel
  * for why it is a corner tag and why its colour is the measured one rather
@@ -171,6 +182,32 @@ export function AdNativeBand() {
       <AdFrame id="native" />
     </AdBand>
   );
+}
+
+/**
+ * The placements an in-feed slot cycles through, in order.
+ *
+ * ROTATED RATHER THAN REPEATED, because a feed can carry three of these and
+ * repeating one unit key three times in a single document is the thing this
+ * whole integration is built to avoid — see the `atOptions` note in
+ * src/lib/ads.ts. Rotating gives three distinct keys on a desktop feed
+ * (728x90, then 300x250, then 468x60).
+ *
+ * On a phone the rotation collapses further than that: positions two and three
+ * both resolve to the 300x250, because that is the only rectangle in the
+ * inventory and the half banner has no phone-width counterpart of its own.
+ * Two instances of one unit on a long feed is a smaller compromise than three,
+ * and it only happens on feeds long enough to earn a third insertion.
+ */
+const IN_FEED_ROTATION = [AdLeaderboard, AdRectangle, AdHalfBanner] as const;
+
+/**
+ * One in-feed band. `index` is the insertion's ordinal in the feed (0, 1, 2),
+ * not a row number — it selects which placement of the rotation to show.
+ */
+export function AdInFeed({ index }: { index: number }) {
+  const Placement = IN_FEED_ROTATION[index % IN_FEED_ROTATION.length];
+  return <Placement />;
 }
 
 /** The two units the rail is allowed to carry. */

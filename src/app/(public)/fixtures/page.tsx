@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import FixturesClient from "./FixturesClient";
 import { getPublishedMatchIndex } from "@/lib/predictionScope";
+import { AdHalfBanner } from "@/components/ads/AdPlacements";
 
 // Server shell over the client page, for one reason: the match-page link
 // index is a DB read, and the fixture list itself stays client-side because
@@ -18,7 +19,9 @@ export default async function FixturesPage() {
   // useSearchParams, which opts its subtree into client-side rendering.
   return (
     <Suspense fallback={null}>
-      <FixturesClient linkIndex={linkIndex} />
+      {/* Directly under the heading and the filter row — the first main
+          content section — rather than beneath the whole fixture list. */}
+      <FixturesClient linkIndex={linkIndex} adSlot={<AdHalfBanner />} />
     </Suspense>
   );
 }

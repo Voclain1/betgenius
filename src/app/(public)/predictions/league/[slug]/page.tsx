@@ -158,6 +158,10 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <RateCard stat={stat} label={`All-time in ${name}`} big />
       </div>
 
+      {/* After the first main content section — the summary line and the
+          all-time rate card — and before standings. */}
+      <AdLeaderboard />
+
       {standings && standings.length > 0 && (
         <div className="card space-y-3">
           <h2 className="text-xl font-semibold">Standings</h2>
@@ -178,11 +182,6 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <h2 className="mb-3 text-xl font-semibold">Recent results</h2>
         <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
       </div>
-
-      {/* Between two reference sections — settled results above, player
-          leaderboards below. The league's published picks are the last block
-          on the page, well clear of this. */}
-      <AdLeaderboard />
 
       {/* Rendered once player stats have been fetched at all. Individual
           boards can still be empty (season not started, cards lagging) and say

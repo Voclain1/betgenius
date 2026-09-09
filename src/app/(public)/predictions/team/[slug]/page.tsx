@@ -12,6 +12,7 @@ import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug, matchKey } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
+import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 
@@ -144,6 +145,10 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time for ${name}`} big />
       </div>
+
+      {/* After the first main content section — the summary line, the form
+          panel and the all-time rate card — and before the squad. */}
+      <AdLeaderboard />
 
       {squad.length > 0 && (
         <div>

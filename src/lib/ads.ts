@@ -130,6 +130,50 @@ export const AD_UNITS = {
 export type AdUnitId = keyof typeof AD_UNITS;
 
 /**
+ * Where an in-feed ad goes in a list of picks.
+ *
+ * THE NUMBERS ARE CHOSEN FROM THE REAL FEEDS, not from a round figure. Counting
+ * three consecutive days of published cards, a category feed holds anywhere
+ * from 2 rows to 95:
+ *
+ *   BANKER 2-9    VIP 0-10    PREMIUM 0-10
+ *   GENIUS 18-32  FEATURED 28-58  COMBO BETS 42-95
+ *
+ * So a fixed "one ad in the middle" is wrong at both ends, and a literal ad
+ * every six rows would put nineteen of them on a 95-row feed. Three rules
+ * between them cover the whole range:
+ *
+ *   INTERVAL 6 — the top of the agreed 4-6 band, so the feed is interrupted as
+ *     rarely as the rule allows. On a desktop three-column grid six cards is
+ *     two full rows, which is the smallest gap that still reads as a break
+ *     between groups rather than as a divider inside one.
+ *   AT MOST 3 — the cap is what keeps a 95-row feed from turning into an ad
+ *     rail. It does mean the ads on a very long feed all sit in its first 18
+ *     rows; that is deliberate, since that is the part of a long feed anyone
+ *     actually reads.
+ *   LEAVE 3 BEHIND — no insertion that would strand fewer than three picks
+ *     after it. Without this an 8-row feed gets an ad after row 6 with two
+ *     cards trailing under it, which reads as the page having ended.
+ *
+ * Returns the row counts AFTER which an ad belongs, e.g. [6, 12, 18]. An empty
+ * array means the feed is too short to interrupt at all — every feed under 9
+ * rows, which on a normal day is BANKER, VIP and PREMIUM.
+ */
+export const FEED_AD_INTERVAL = 6;
+export const FEED_AD_MAX = 3;
+export const FEED_AD_MIN_TAIL = 3;
+
+export function feedAdPositions(rowCount: number): number[] {
+  const positions: number[] = [];
+  for (let after = FEED_AD_INTERVAL; positions.length < FEED_AD_MAX; after += FEED_AD_INTERVAL) {
+    if (rowCount - after < FEED_AD_MIN_TAIL) break;
+    positions.push(after);
+  }
+  return positions;
+}
+
+
+/**
  * Routes that must never carry an ad, as path prefixes.
  *
  * These are not a performance or taste judgement. Three separate reasons are
