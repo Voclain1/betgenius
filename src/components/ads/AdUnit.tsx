@@ -1,23 +1,37 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AD_UNITS, type AdUnitId } from "@/lib/ads";
+import { AD_UNITS, adFrameSrc, adsAreCrossOrigin, type AdUnitId } from "@/lib/ads";
 
 /**
  * The low-level ad slot. Everything on the site goes through this file, and
  * three decisions are baked in here rather than left to each call site.
  *
- * 1. EACH UNIT GETS ITS OWN WINDOW, ON ITS OWN ORIGIN. The network configures
- *    a banner by assigning to a bare `atOptions` global, so two units in one
- *    document overwrite each other (see the header of src/lib/ads.ts). Loading
- *    each unit in a frame makes `atOptions` a global of that frame and of
- *    nothing else. The frame is sandboxed WITHOUT `allow-same-origin`, so the
- *    ad script also runs on an opaque origin and cannot reach our cookies, our
- *    storage or our DOM; `allow-popups` and `allow-popups-to-escape-sandbox`
- *    are the two capabilities a creative genuinely needs — a click has to be
- *    able to open the advertiser's page — and nothing else is granted.
+ * 1. EACH UNIT GETS ITS OWN WINDOW, ON ITS OWN HOSTNAME. The network
+ *    configures a banner by assigning to a bare `atOptions` global, so two
+ *    units in one document overwrite each other (see the header of
+ *    src/lib/ads.ts). Loading each unit in a frame makes `atOptions` a global
+ *    of that frame and of nothing else.
  *
- *    The frame's document is served by /ads/frame rather than carried in a
+ *    ISOLATION COMES FROM THE HOSTNAME, NOT FROM THE SANDBOX. The frame is
+ *    served from ADS_ORIGIN — a different host from the site — so the Same
+ *    Origin Policy is what stops the ad script reaching our cookies, storage
+ *    or DOM. `allow-same-origin` is granted on top of that, and on a
+ *    cross-origin frame it means "keep your own real origin", not "share the
+ *    embedder's": the frame stays ads.betgenius.ng and stays walled off. The
+ *    flag is what an opaque origin denies the script, and denying it is what
+ *    made every slot serve nothing.
+ *
+ *    It is granted ONLY when a separate origin is actually configured. Same
+ *    origin plus `allow-same-origin` plus `allow-scripts` is the dangerous
+ *    combination, so a missing NEXT_PUBLIC_ADS_ORIGIN degrades to no fill
+ *    rather than to an ad script running on www.
+ *
+ *    `allow-popups` and `allow-popups-to-escape-sandbox` are the two other
+ *    capabilities a creative genuinely needs — a click has to be able to open
+ *    the advertiser's page — and nothing else is granted.
+ *
+ *    The frame's document is served by a route rather than carried in a
  *    `srcdoc` attribute. That is not a style preference: a `srcdoc` document
  *    on an opaque origin never issues the script request at all, so that
  *    combination serves zero ads. The measurements are in the route file.
@@ -69,8 +83,15 @@ function useNearViewport<T extends HTMLElement>(rootMargin = "300px") {
   return { ref, near };
 }
 
-/** See note 1. Deliberately does not include allow-same-origin. */
-const SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
+/**
+ * See note 1. `allow-same-origin` is appended ONLY when the frame is served
+ * from another hostname, where it grants the frame its own origin rather than
+ * ours. On a same-origin frame it would hand the ad script the run of the
+ * site, so the two must never be decoupled.
+ */
+const BASE_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
+const sandboxFor = (crossOrigin: boolean) =>
+  crossOrigin ? `${BASE_SANDBOX} allow-same-origin` : BASE_SANDBOX;
 
 /**
  * One unit, in its reserved box.
@@ -101,11 +122,11 @@ export function AdFrame({ id }: { id: AdUnitId }) {
       {near && (
         <iframe
           title="Advertisement"
-          src={`/ads/frame?unit=${unit.id}`}
+          src={adFrameSrc(unit.id)}
           width={width}
           height={height}
           scrolling="no"
-          sandbox={SANDBOX}
+          sandbox={sandboxFor(adsAreCrossOrigin())}
           // Belt and braces with the lazy mount above: if the observer ever
           // fires early, the browser still defers the load itself.
           loading="lazy"

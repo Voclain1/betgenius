@@ -225,6 +225,8 @@ function adReachingPaths(entries: string[]): string[][] {
 const code = (file: string) => stripComments(readFileSync(file, "utf8"));
 const frameSource = code(join(ADS_DIR, "AdUnit.tsx"));
 const routeSource = code(join(APP, "ads", "frame", "route.ts"));
+const libSource = code(join(ROOT, "src", "lib", "ads.ts"));
+const middlewareSource = code(join(ROOT, "src", "middleware.ts"));
 
 // ---------------------------------------------------------------------------
 // 1. Ad-free routes
@@ -285,11 +287,49 @@ check(
   withAtOptions.map(rel).join(", ") || "nowhere — the frame document lost its config",
 );
 
+// THE INVARIANT INVERTED HERE ON PURPOSE, AND THE REASON MATTERS.
+//
+// This used to assert that the frame is sandboxed WITHOUT allow-same-origin.
+// That was measured against the live site and found to serve zero ads: on an
+// opaque origin invoke.js loads, returns 200 and then makes no request to the
+// ad server at all. Every slot was an empty box for as long as it shipped.
+//
+// The fix is not to grant the flag on our own origin — that hands the ad
+// script our cookies and DOM — but to serve the frame from another hostname,
+// where allow-same-origin means "keep your own origin" and the Same Origin
+// Policy does the isolating. So what has to be guarded now is the COUPLING:
+// the flag may only ever appear together with a configured separate origin.
 check(
-  "frames are sandboxed without allow-same-origin",
-  frameSource.includes('const SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox"') &&
-    !frameSource.includes("allow-same-origin"),
-  "a frame sharing our origin can read our cookies and our DOM",
+  "the base sandbox grants no origin of its own",
+  frameSource.includes('const BASE_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox"'),
+);
+check(
+  "allow-same-origin is granted only when the frame is cross-origin",
+  frameSource.includes("crossOrigin ? `${BASE_SANDBOX} allow-same-origin` : BASE_SANDBOX") &&
+    frameSource.includes("sandboxFor(adsAreCrossOrigin())"),
+  "same origin + allow-same-origin + allow-scripts is the combination to avoid",
+);
+check(
+  "a missing ads origin fails safe",
+  libSource.includes("adsAreCrossOrigin = () => ADS_ORIGIN.length > 0"),
+  "an unset NEXT_PUBLIC_ADS_ORIGIN must degrade to no fill, never to same-origin ads",
+);
+check(
+  "the frame src is built from the ads origin",
+  frameSource.includes("src={adFrameSrc(unit.id)}") && libSource.includes("`${ADS_ORIGIN}/ads/frame?unit="),
+);
+check(
+  "the ads hostname serves only /ads/",
+  middlewareSource.includes("ADS_HOST") &&
+    middlewareSource.includes('req.nextUrl.pathname.startsWith("/ads/")') &&
+    middlewareSource.includes("status: 404"),
+  "without this the whole site answers on the ads hostname too",
+);
+check(
+  "widening the matcher did not put the site behind a login",
+  middlewareSource.includes("PROTECTED.test(req.nextUrl.pathname)") &&
+    middlewareSource.includes("/^\\/(admin|dashboard)(\\/|$)/"),
+  "auth must be invoked for those two trees only, not for every matched path",
 );
 
 // The frame loads from OUR route, never straight from the network: the
@@ -297,7 +337,7 @@ check(
 // be a src rather than a srcdoc — a srcdoc document on an opaque origin
 // never issues the script request at all, which is the silent zero-fill
 // this design exists to avoid. The measurements are in the route file.
-check("frames load from the /ads/frame route", frameSource.includes("/ads/frame?unit="));
+check("frames load from the /ads/frame route", libSource.includes("/ads/frame?unit="));
 check("no frame uses srcDoc", !frameSource.includes("srcDoc"));
 
 // Pages go through the placements, so the label, the band chrome and the
