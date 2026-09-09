@@ -5,12 +5,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import type { Role, SubscriptionStatus, SubscriptionTier } from "@/lib/enums";
-
-/**
- * Secure cookies follow the deployment URL, exactly as NextAuth's own default
- * does — https means production means secure cookies.
- */
-const useSecureCookies = (process.env.NEXTAUTH_URL ?? "").startsWith("https://");
+import { SESSION_COOKIE_NAME, useSecureAuthCookies } from "@/lib/authCookies";
 
 /**
  * The session cookie is pinned to the `__Host-` prefix in production.
@@ -47,10 +42,12 @@ const useSecureCookies = (process.env.NEXTAUTH_URL ?? "").startsWith("https://")
  * RENAMING THE COOKIE ENDS EVERY EXISTING SESSION once, on deploy: the old
  * `__Secure-` cookie is simply no longer the one being read. Signed-in users
  * are signed out and log in again; nothing is lost beyond that.
+ *
+ * THE NAME ITSELF LIVES IN src/lib/authCookies.ts, not here, because the
+ * middleware has to read the same cookie and cannot import this file. Setting
+ * it here while the middleware guessed the default is what broke every
+ * protected route for signed-in users the first time this shipped.
  */
-const sessionCookieName = useSecureCookies
-  ? "__Host-next-auth.session-token"
-  : "next-auth.session-token";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
@@ -62,14 +59,14 @@ export const authOptions: NextAuthOptions = {
   // trip, so they do not carry the standing risk this addresses.
   cookies: {
     sessionToken: {
-      name: sessionCookieName,
+      name: SESSION_COOKIE_NAME,
       options: {
         httpOnly: true,
         sameSite: "lax",
         // Both required by the `__Host-` prefix, and both what NextAuth would
         // have used anyway.
         path: "/",
-        secure: useSecureCookies,
+        secure: useSecureAuthCookies,
       },
     },
   },
