@@ -41,10 +41,14 @@ async function loadAuthOptions(nextAuthUrl: string) {
   process.env.NEXTAUTH_URL = nextAuthUrl;
   // A fresh module registry per load; tsx/CJS interop means delete-from-cache
   // is the portable way to do this.
+  //
+  // BOTH modules must go, not just auth.ts: the name now lives in
+  // authCookies.ts, and leaving that one cached meant the second load kept the
+  // first load's environment and the http case reported the https name.
+  const { sep } = require("node:path") as typeof import("node:path");
+  const prefix = `${sep}src${sep}lib${sep}auth`;
   for (const key of Object.keys(require.cache)) {
-    if (key.includes(`${require("node:path").sep}src${require("node:path").sep}lib${require("node:path").sep}auth.`)) {
-      delete require.cache[key];
-    }
+    if (key.includes(prefix)) delete require.cache[key];
   }
   const mod = require("../src/lib/auth");
   process.env.NEXTAUTH_URL = previous;
@@ -89,6 +93,40 @@ async function main() {
     devSession?.name,
   );
   check("not Secure over http", devOpts?.secure === false, `secure=${String(devOpts?.secure)}`);
+
+  // -------------------------------------------------------------------------
+  // The middleware must look for the SAME cookie it is named with.
+  //
+  // This is the assertion that would have caught the real bug. NextAuth SETS
+  // the cookie from authOptions; `withAuth` READS it with getToken(), which
+  // runs in the Edge runtime, cannot import authOptions, and falls back to
+  // NextAuth's default name unless told otherwise. Renaming the cookie in
+  // authOptions alone therefore produced a sign-in that issued a perfectly
+  // correct __Host- cookie and a middleware that could not see it, so every
+  // signed-in visit to /admin or /dashboard bounced back to the login page.
+  //
+  // Checked as source text rather than by importing the module: middleware.ts
+  // pulls in next-auth's Edge entry point, which will not load under tsx.
+  // -------------------------------------------------------------------------
+  console.log("\nMiddleware reads the same cookie");
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const middleware = readFileSync(join(__dirname, "..", "src", "middleware.ts"), "utf8");
+
+  check(
+    "middleware imports the shared cookie name",
+    /import \{[^}]*SESSION_COOKIE_NAME[^}]*\} from "@\/lib\/authCookies"/.test(middleware),
+    "it must not re-derive the name — that is how the two drifted apart",
+  );
+  check(
+    "middleware passes it to withAuth",
+    /cookies:\s*\{\s*sessionToken:\s*\{\s*name:\s*SESSION_COOKIE_NAME\s*\}\s*\}/.test(middleware),
+    "without this getToken() looks for NextAuth's default cookie name",
+  );
+  check(
+    "auth.ts uses the shared name too",
+    readFileSync(join(__dirname, "..", "src", "lib", "auth.ts"), "utf8").includes("name: SESSION_COOKIE_NAME"),
+  );
 
   console.log(`\n${failures === 0 ? "OK" : `${failures} FAILURE(S)`}`);
   process.exit(failures === 0 ? 0 : 1);

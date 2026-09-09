@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import withAuth from "next-auth/middleware";
+import { SESSION_COOKIE_NAME } from "@/lib/authCookies";
 
 /**
  * Two unrelated jobs, kept apart deliberately.
@@ -48,8 +49,21 @@ const ADS_HOST = (() => {
   }
 })();
 
-// next-auth's middleware, called only for the two protected trees.
-const requireSession = withAuth as unknown as (req: NextRequest) => Promise<NextResponse> | NextResponse;
+/**
+ * next-auth's middleware, called only for the two protected trees.
+ *
+ * THE COOKIE NAME MUST BE PASSED IN. `withAuth` reads the session with
+ * getToken(), which runs in the Edge runtime, never sees authOptions, and
+ * otherwise falls back to NextAuth's DEFAULT cookie name. The session cookie
+ * is named `__Host-next-auth.session-token`, so without this the middleware
+ * looks for a cookie that is never set: sign-in works, the cookie is issued,
+ * and then every /admin and /dashboard request redirects the signed-in user
+ * straight back to the login page. Verified in production — that is exactly
+ * what happened before this argument was added.
+ */
+const requireSession = withAuth({
+  cookies: { sessionToken: { name: SESSION_COOKIE_NAME } },
+}) as unknown as (req: NextRequest) => Promise<NextResponse> | NextResponse;
 
 export default function middleware(req: NextRequest) {
   // `host` carries the port in dev; compare against the configured host as-is.
