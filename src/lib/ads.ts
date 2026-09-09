@@ -64,6 +64,43 @@ export type NativeAdUnit = {
 
 export type AdUnitSpec = IframeAdUnit | NativeAdUnit;
 
+/**
+ * The origin that serves the ad frame, e.g. "https://ads.betgenius.ng".
+ *
+ * WHY THE FRAME LIVES ON ITS OWN HOSTNAME.
+ *
+ * The frame exists to give each unit its own `atOptions` global and to keep
+ * third-party ad code away from ours. The first version did that by sandboxing
+ * the frame WITHOUT `allow-same-origin`, which puts it on an opaque origin —
+ * and that turned out to serve zero ads. Measured against the live site:
+ * invoke.js is fetched and returns 200, then makes no further request at all,
+ * because on an opaque origin it cannot reach the storage it needs before
+ * calling the ad server. The slot renders as an empty reserved box forever.
+ *
+ * The obvious repair — adding `allow-same-origin` to a frame served from our
+ * OWN origin — is the thing to avoid: combined with `allow-scripts` it lets
+ * the ad script out of the sandbox and into www.betgenius.ng's cookies,
+ * storage and DOM. That is no better than pasting the network's tag inline.
+ *
+ * So the frame is served from a DIFFERENT HOSTNAME instead. On a cross-origin
+ * frame `allow-same-origin` does not mean "share the embedder's origin" — it
+ * means "keep your own real origin", here ads.betgenius.ng. The ad script gets
+ * the ordinary same-origin context it needs, and the Same-Origin Policy — not
+ * a sandbox flag — is what keeps it away from the main site.
+ *
+ * Empty means "no separate origin configured". That is a SAFE default, not a
+ * broken one: adsAreCrossOrigin() below is what gates `allow-same-origin`, so
+ * a missing env var degrades to the old no-fill behaviour rather than to an ad
+ * script running on our own origin. Never grant the flag unconditionally.
+ */
+export const ADS_ORIGIN = (process.env.NEXT_PUBLIC_ADS_ORIGIN ?? "").replace(/\/$/, "");
+
+/** True only when the frame really is served from another hostname. */
+export const adsAreCrossOrigin = () => ADS_ORIGIN.length > 0;
+
+/** The frame URL for a unit — absolute when a separate origin is configured. */
+export const adFrameSrc = (id: string) => `${ADS_ORIGIN}/ads/frame?unit=${id}`;
+
 /** Where invoke.js lives for a banner unit. The key is both config and path. */
 export const invokeUrl = (key: string) => `https://www.highrevenueformat.com/${key}/invoke.js`;
 
