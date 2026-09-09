@@ -73,11 +73,17 @@ export default function middleware(req: NextRequest) {
 
 export const config = {
   /**
-   * Everything except Next's own assets and the static files in /public. The
-   * host gate has to see every request; the auth branch above is what keeps
-   * the widened matcher from changing who can read the public site.
+   * Everything except Next's own assets and images. The host gate has to see
+   * every request; the auth branch above is what keeps the widened matcher
+   * from changing who can read the public site.
+   *
+   * robots.txt and sitemap.xml are deliberately NOT excluded. They are the two
+   * files whose whole purpose is to tell a crawler what to index, and leaving
+   * them ungated served a robots.txt reading "Allow: /" on the ads hostname.
+   * Running middleware over them costs a pass-through on www and 404s them on
+   * the ads host, which is what should happen there.
    */
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons/|images/|.*\\.(?:png|jpg|jpeg|svg|ico|webp|txt|xml|webmanifest)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icons/|images/|.*\\.(?:png|jpg|jpeg|svg|ico|webp|webmanifest)$).*)",
   ],
 };
