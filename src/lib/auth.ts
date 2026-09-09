@@ -6,10 +6,73 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import type { Role, SubscriptionStatus, SubscriptionTier } from "@/lib/enums";
 
+/**
+ * Secure cookies follow the deployment URL, exactly as NextAuth's own default
+ * does — https means production means secure cookies.
+ */
+const useSecureCookies = (process.env.NEXTAUTH_URL ?? "").startsWith("https://");
+
+/**
+ * The session cookie is pinned to the `__Host-` prefix in production.
+ *
+ * WHY, AND WHAT IT ACTUALLY PREVENTS. The ad frame is served from
+ * ads.betgenius.ng so that third-party ad code sits on its own origin (see
+ * src/lib/ads.ts). It cannot read anything of ours — that is enforced by the
+ * Same Origin Policy and was measured — but any subdomain of betgenius.ng can
+ * still SET a cookie scoped to `.betgenius.ng`, and such a cookie is sent to
+ * www too. The ad network already does exactly that with its own tracking id.
+ *
+ * NextAuth's default name is `__Secure-next-auth.session-token`. The
+ * `__Secure-` prefix only requires the Secure flag; it says nothing about
+ * Domain. So a subdomain could set a `.betgenius.ng` cookie of that same
+ * name, and www would then receive two cookies called the same thing with no
+ * way to tell which is ours — cookie shadowing.
+ *
+ * `__Host-` closes that. A browser accepts a `__Host-` cookie ONLY when it
+ * is Secure, has Path=/, and carries NO Domain attribute — which makes it
+ * host-only by definition and unsettable by any subdomain. There is no way
+ * for ads.betgenius.ng to write a `__Host-` cookie that www will read.
+ *
+ * THE PREFIX IS CONDITIONAL, AND MUST STAY THAT WAY. `__Host-` requires
+ * Secure, and a Secure cookie is not stored over plain http — so hard-coding
+ * the prefix would break sign-in on http://localhost with no error beyond a
+ * login that silently never completes. The name therefore tracks
+ * useSecureCookies, the same signal that decides the Secure flag itself.
+ *
+ * DO NOT ADD A `domain` OPTION HERE. A `__Host-` cookie carrying Domain is
+ * rejected outright by the browser, so it would not weaken sign-in, it would
+ * break it completely for every user. scripts/check-auth-cookies.ts asserts
+ * that, along with Secure and Path.
+ *
+ * RENAMING THE COOKIE ENDS EVERY EXISTING SESSION once, on deploy: the old
+ * `__Secure-` cookie is simply no longer the one being read. Signed-in users
+ * are signed out and log in again; nothing is lost beyond that.
+ */
+const sessionCookieName = useSecureCookies
+  ? "__Host-next-auth.session-token"
+  : "next-auth.session-token";
+
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  // Only the session cookie is named here. Every other NextAuth cookie keeps
+  // its default: the CSRF token is already `__Host-` by default, and the
+  // OAuth state/PKCE cookies are short-lived and scoped to the sign-in round
+  // trip, so they do not carry the standing risk this addresses.
+  cookies: {
+    sessionToken: {
+      name: sessionCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        // Both required by the `__Host-` prefix, and both what NextAuth would
+        // have used anyway.
+        path: "/",
+        secure: useSecureCookies,
+      },
+    },
+  },
   providers: [
     CredentialsProvider({
       name: "Credentials",
