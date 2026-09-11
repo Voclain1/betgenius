@@ -517,6 +517,38 @@ model Prediction {
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
 
+  // ---- Denormalised slug keys -------------------------------------------
+  // Derived, never authored. The public scope pages (/predictions/league,
+  // /team, /match, /h2h) used to resolve a slug by reading EVERY published
+  // row and comparing a computed slug in JavaScript, because leagueName /
+  // homeTeam / awayTeam are free text with no index. That made each of those
+  // page renders a full-table scan of 2,278 rows carrying reasoning,
+  // matchPreview and analysisJson with them — 4.09 MiB out of Neon per
+  // request. These columns exist so the same lookup is a WHERE on an index.
+  //
+  // They are maintained in ONE place: the Prisma client extension in
+  // src/lib/prisma.ts, which recomputes them from src/lib/slug.ts on every
+  // create/update/upsert. They are deliberately NOT Postgres generated
+  // columns: slugify() strips diacritics via NFD decomposition, and
+  // Postgres unaccent() disagrees with it on exactly the names that matter
+  // here (unaccent folds "Bodø" to "Bodo"; NFD leaves the stroke alone, so
+  // JS yields "bod-glimt"). Two implementations would drift into 404s.
+  //
+  // updateMany() cannot see which rows it touched, so a bulk write to a
+  // source field bypasses the extension. scripts/check-prediction-slugs.ts
+  // (in preflight) recomputes every published row and fails on drift;
+  // scripts/backfill-prediction-slugs.ts repairs it.
+  leagueSlugKey        String?
+  homeSlugKey          String?
+  awaySlugKey          String?
+  matchSlugKey         String?
+  h2hSlugKey           String?
+
+  @@index([status, leagueSlugKey])
+  @@index([status, homeSlugKey])
+  @@index([status, awaySlugKey])
+  @@index([status, matchSlugKey])
+  @@index([status, h2hSlugKey])
   @@index([category, status])
   @@index([publishedAt])
   @@index([fixtureApiId])

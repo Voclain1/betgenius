@@ -10,12 +10,23 @@ import { orderForDisplay } from "@/lib/predictionOrdering";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import { isSubstantiveH2H } from "@/lib/h2hEvidence";
 
-// Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
-// has no leagueName/homeTeam/awayTeam index and no slug column (see
-// src/lib/slug.ts) — with today's row counts a full scan of PUBLISHED rows
-// filtered in JS is the same posture trackRecord.ts already uses. Revisit
-// (add an index, or persist a slug column) if published volume grows enough
-// to make this scan expensive.
+// Backs the four public scope pages: /predictions/league, /team, /match and
+// /h2h. Each one resolves its slug with a WHERE on an indexed, denormalised
+// slug column (Prediction.leagueSlugKey and friends, maintained by the client
+// extension in src/lib/prisma.ts — see the block comment on those columns in
+// prisma/schema.prisma).
+//
+// It used to read EVERY published row and compare a slug computed in JS,
+// because leagueName/homeTeam/awayTeam are free text with no index. At 2,278
+// published rows that was 4.09 MiB out of Neon PER PAGE RENDER — 91.7% of it
+// reasoning/matchPreview/analysisJson for rows that were then discarded — and
+// these pages are dynamic (getServerSession opts them out of the route cache),
+// so it ran on every request including every crawler hit. Measured with
+// pg_stat_statements: 2,278 rows per call, plus 3,710 PredictionCategoryLink
+// rows from the categories relation, at ~83 ms.
+//
+// The fat columns are still selected, but now only for rows the WHERE already
+// matched — a handful per page instead of the whole table.
 
 const SCOPED_SELECT = {
   id: true,
@@ -38,6 +49,32 @@ const SCOPED_SELECT = {
   analysisJson: true,
   outcome: true,
   publishedAt: true,
+} as const;
+
+/**
+ * The subset of SCOPED_SELECT that evidence scoring actually reads.
+ *
+ * getSubstantiveMatchSlugs is the one caller here that still has to look at
+ * every published row — it gates the sitemap, so it scores every fixture, not
+ * one. That makes WHAT it selects matter as much as the WHERE does everywhere
+ * else. assessMatchEvidence reads matchPreview and analysisJson and nothing
+ * else off the row; orderForDisplay needs id/confidence/outcome/kickoff/
+ * publishedAt; grouping needs the ids. `reasoning` (1,079 KiB across the
+ * table) is read by neither, and the `categories` relation was costing 3,710
+ * extra rows per call for a field nothing downstream touches.
+ */
+const EVIDENCE_SELECT = {
+  id: true,
+  confidence: true,
+  outcome: true,
+  kickoff: true,
+  publishedAt: true,
+  homeTeamApiId: true,
+  awayTeamApiId: true,
+  leagueApiId: true,
+  matchSlugKey: true,
+  matchPreview: true,
+  analysisJson: true,
 } as const;
 
 export type ScopedResult = {
@@ -72,25 +109,23 @@ export type ScopedResult = {
  * src/lib/predictionOrdering.ts for why history is not re-ranked.
  */
 export const getPublishedByLeagueSlug = cache(async (slug: string): Promise<ScopedResult> => {
-  const candidates = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", leagueName: { not: null } },
+  const matched = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", leagueSlugKey: slug },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = orderForDisplay(candidates.filter((r) => leagueSlug(r.leagueName!, r.leagueApiId) === slug));
+  const rows = orderForDisplay(matched);
   return { rows, stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)) };
 });
 
 /** All published predictions where homeTeam or awayTeam slugs to `slug`, in the same display order as the league scope above. */
 export const getPublishedByTeamSlug = cache(async (slug: string): Promise<ScopedResult> => {
-  const candidates = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }] },
+  const matched = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", OR: [{ homeSlugKey: slug }, { awaySlugKey: slug }] },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = orderForDisplay(
-    candidates.filter((r) => (r.homeTeam && teamSlug(r.homeTeam) === slug) || (r.awayTeam && teamSlug(r.awayTeam) === slug)),
-  );
+  const rows = orderForDisplay(matched);
   return { rows, stat: computeStat(rows.filter((r) => r.outcome !== "PENDING").map((r) => r.outcome)) };
 });
 
@@ -129,12 +164,12 @@ export type MatchScopedResult = ScopedResult & {
  * row sorted first decide.
  */
 export const getPublishedByMatchSlug = cache(async (slug: string): Promise<MatchScopedResult> => {
-  const candidates = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+  const matched = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", matchSlugKey: slug },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = orderForDisplay(candidates.filter((r) => matchSlug(r) === slug));
+  const rows = orderForDisplay(matched);
 
   if (rows.length === 0) return { rows, stat: computeStat([]), match: null };
 
@@ -375,12 +410,12 @@ export type H2HPageData = {
  * so the page's split columns line up with its URL and title.
  */
 export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => {
-  const candidates = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
+  const matched = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", h2hSlugKey: slug },
     orderBy: { kickoff: "desc" },
     select: SCOPED_SELECT,
   });
-  const rows = orderForDisplay(candidates.filter((r) => h2hSlug(r.homeTeam, r.awayTeam) === slug));
+  const rows = orderForDisplay(matched);
   const withIds = rows.find((r) => r.homeTeamApiId != null && r.awayTeamApiId != null);
 
   if (rows.length === 0 || !withIds) return { pair: null, meetings: [], stats: null, fetchedAt: null, rows };
@@ -814,16 +849,16 @@ export const getH2HMeetings = cache(async (teamAApiId: number | null, teamBApiId
  */
 export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+    where: { status: "PUBLISHED", matchSlugKey: { not: null } },
     orderBy: { publishedAt: "desc" },
-    select: SCOPED_SELECT,
+    select: EVIDENCE_SELECT,
   });
 
   // Grouped and ordered exactly as getPublishedByMatchSlug does, so the
   // preview/analysis this scores are the ones that page would surface.
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
-    const slug = matchSlug(r);
+    const slug = r.matchSlugKey;
     if (!slug) continue;
     const group = groups.get(slug);
     if (group) group.push(r);
