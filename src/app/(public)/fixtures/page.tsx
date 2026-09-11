@@ -18,10 +18,18 @@ export default async function FixturesPage() {
   // Suspense boundary because FixturesClient reads the filter state from
   // useSearchParams, which opts its subtree into client-side rendering.
   return (
-    <Suspense fallback={null}>
-      {/* Directly under the heading and the filter row — the first main
-          content section — rather than beneath the whole fixture list. */}
-      <FixturesClient linkIndex={linkIndex} adSlot={<AdHalfBanner />} />
-    </Suspense>
+    <div className="space-y-5">
+      <header>
+        <h1 className="text-2xl font-bold md:text-3xl">Football fixtures</h1>
+        <p className="mt-2 max-w-3xl text-sm text-gray-400">
+          Browse today&apos;s matches, upcoming kickoffs and recent results across every competition we cover.
+        </p>
+      </header>
+      <Suspense fallback={null}>
+        {/* Directly under the heading and the filter row — the first main
+            content section — rather than beneath the whole fixture list. */}
+        <FixturesClient linkIndex={linkIndex} adSlot={<AdHalfBanner />} />
+      </Suspense>
+    </div>
   );
 }

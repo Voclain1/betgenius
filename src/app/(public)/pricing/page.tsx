@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { PLAN_PRICING, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
@@ -54,8 +55,10 @@ export default function Pricing() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Pricing</h1>
-      <p className="text-gray-400">Payments handled by Paystack. Cancel anytime.</p>
+      <div>
+        <h1 className="text-2xl font-bold">BetGenius VIP and Premium pricing</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a monthly plan for access to additional prediction categories and analysis tools. Prices shown in naira are the amounts charged through Paystack; the dollar figures are references only.</p>
+      </div>
       {err && <div className="card text-red-400">{err}</div>}
       <div className="grid gap-4 md:grid-cols-2">
         {tiers.map((t) => {
@@ -89,6 +92,12 @@ export default function Pricing() {
           );
         })}
       </div>
+      <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">Before choosing a plan</h2>
+        <p className="text-sm leading-6 text-gray-300">VIP adds the VIP prediction category plus Bet Builder and StatsPad. Premium includes the VIP features, Premium-category selections, deeper match previews and priority support. A subscription provides access to analysis; it does not guarantee that any prediction will win.</p>
+        <p className="text-sm leading-6 text-gray-300">Review the public <Link href="/track-record" className="text-brand hover:underline">prediction track record</Link> and <Link href="/methodology" className="text-brand hover:underline">methodology</Link> before subscribing. You can cancel the recurring plan, and access remains subject to the current subscription terms.</p>
+        <p className="text-xs leading-5 text-gray-500">Only bet with money you can afford to lose. See our <Link href="/responsible-gambling" className="text-brand hover:underline">responsible gambling guidance</Link>.</p>
+      </section>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { getCupPageData, cupBySlug } from "@/lib/cups";
 import { getPublishedMatchIndex } from "@/lib/predictionScope";
 import { leagueLogoUrl } from "@/lib/leagues";
+import { fitMetadataTitleWithSuffix, fitMetaDescription } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const cup = cupBySlug(params.slug);
   if (!cup) return { title: "Cup competition", robots: { index: false, follow: false } };
   return {
-    title: `${cup.name} fixtures, results and top scorers`,
-    description: `${cup.name} knockout rounds, participating clubs, results, fixtures and top scorers.`,
+    title: fitMetadataTitleWithSuffix(cup.name, "fixtures and results"),
+    description: fitMetaDescription(`${cup.name} knockout rounds, participating clubs, results, fixtures and top scorers.`),
     alternates: { canonical: `/predictions/cup/${cup.slug}` },
   };
 }

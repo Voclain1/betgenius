@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { StatusTabs, LeagueGroup, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
 import { tabOfStatus, type MatchStatusGroup } from "@/lib/matchStatus";
@@ -94,9 +95,12 @@ export default function LivescoresClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Livescores</h1>
+        <h1 className="text-2xl font-bold">Live football scores today</h1>
         <StatusTabs active={tab} onChange={setTab} counts={counts} />
       </div>
+      <p className="max-w-3xl text-sm leading-6 text-gray-300">
+        Follow in-play football scores, match minutes and goal updates by competition. Switch between live, upcoming and finished fixtures to see today&apos;s schedule and results in one place.
+      </p>
 
       {adSlot}
 
@@ -115,6 +119,12 @@ export default function LivescoresClient({
           <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
         ))}
       </div>
+
+      <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">How the live score page updates</h2>
+        <p className="text-sm leading-6 text-gray-300">Live matches refresh approximately every 20 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
+        <p className="text-sm leading-6 text-gray-300">Where BetGenius has published match analysis, the fixture links to its preview. You can also browse the full <Link href="/fixtures" className="text-brand hover:underline">football fixtures calendar</Link> or review <Link href="/predictions/today" className="text-brand hover:underline">today&apos;s football predictions</Link> before kick-off.</p>
+      </section>
     </div>
   );
 }

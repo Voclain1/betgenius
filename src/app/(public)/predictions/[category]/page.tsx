@@ -72,8 +72,11 @@ export async function generateMetadata(
   return {
     title: seoTitle,
     description: `${rows.length} ${day === "yesterday" ? "settled " : day === "tomorrow" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
-    // Each day is self-canonical: yesterday's results and tomorrow's card are
-    // different content, and pointing them at today's URL would claim otherwise.
+    // Relative query states change meaning every day: yesterday's URL becomes a
+    // different slate after midnight. Keep them available for users and links,
+    // but do not let search engines retain them as unstable landing pages.
+    // The clean/default feed remains the indexable search destination.
+    robots: day === "today" ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref(params.category, day) },
   };
 }

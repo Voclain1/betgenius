@@ -3,15 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/seo";
 import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
-import { getSubstantiveMatchSlugs } from "@/lib/predictionScope";
+import { getSubstantiveH2HSlugs, getSubstantiveMatchSlugs } from "@/lib/predictionScope";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
 import { isLagosToday } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
-
-// Regenerated hourly rather than on every request — a sitemap doesn't need
-// to reflect the last few minutes of publishing activity.
-export const revalidate = 3600;
 
 function maxDate(dates: (Date | null)[]): Date | undefined {
   const valid = dates.filter((d): d is Date => d != null);
@@ -45,7 +41,7 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/editorial-policy", priority: 0.6 },
 ];
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED" },
     select: {
@@ -161,11 +157,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Head-to-head pairings — one entry per team pair with published picks,
   // keyed by the same h2hSlug the route resolves against. Fewer than the match
   // entries, since repeated fixtures between the same two teams collapse into
-  // a single pairing.
+  // a single pairing. The same minimum-history rule drives both this inclusion
+  // and the H2H page's robots directive, keeping sitemap/index parity intact.
+  const indexableH2HSlugs = await getSubstantiveH2HSlugs();
   const h2hGroups = new Map<string, Date | null>();
   for (const r of rows) {
     const slug = h2hSlug(r.homeTeam, r.awayTeam);
-    if (!slug) continue;
+    if (!slug || !indexableH2HSlugs.has(slug)) continue;
     const prev = h2hGroups.get(slug);
     h2hGroups.set(slug, maxDate([prev ?? null, r.publishedAt]) ?? null);
   }

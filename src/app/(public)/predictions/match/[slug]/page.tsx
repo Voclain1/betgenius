@@ -288,6 +288,13 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayDigest={awayDigest}
       />
 
+      {/* Mid-content, and deliberately here rather than a section earlier or
+          later. The verdict and the key factors are three sections up, the
+          published-markets grid is at the foot, and both of this band's
+          neighbours — the stats comparison above, key players below — are
+          reference data rather than a call of ours. */}
+      <AdRectangle />
+
       <MatchKeyPlayers
         leagueApiId={match.leagueApiId}
         homeTeam={match.homeTeam}

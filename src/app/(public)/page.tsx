@@ -14,12 +14,12 @@ import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPred
 import { MatchLink } from "@/components/MatchLink";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { AnswerSummary } from "@/components/AnswerSummary";
-import { homeSummary } from "@/lib/answerSummary";
+import { homeSummary, homeHeadline } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
-import { SITE_NAME } from "@/lib/seo";
+import { SITE_NAME, JsonLd, websiteJsonLd } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import type { PredictionCategory } from "@/lib/enums";
@@ -152,7 +152,18 @@ async function fetchDaySlate(day: FeedDay) {
     .slice(0, 3)
     .map((l) => l.name);
 
-  return { pickCount: rows.length, leagueCount: leagues.size, topLeagues };
+  // Counted rather than assumed. The answer paragraph names the banker only on
+  // days one is actually tagged, and days with none are common enough that a
+  // standing claim would be wrong regularly rather than rarely.
+  const bankerCount = await prisma.prediction.count({
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: bounds.start, lt: bounds.end },
+      categories: { some: { category: "BANKER" } },
+    },
+  });
+
+  return { pickCount: rows.length, leagueCount: leagues.size, topLeagues, bankerCount };
 }
 
 const CATEGORY_LINKS: { label: string; href: string }[] = [
@@ -198,6 +209,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
 
   return (
     <div className="space-y-10">
+      <JsonLd data={websiteJsonLd()} />
       {/* Two columns once there's a pick to show: the claim on the left, a
           real published pick as its evidence on the right. Collapses to the
           original single column when nothing public is available, so the hero
@@ -205,8 +217,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-6 md:p-10">
         <div className={`grid items-center gap-8 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
           <div>
+            {/* Built rather than written inline: the banker half of this
+                headline is a claim about the day's card, and it is gated on
+                the same count the paragraph below it uses. See homeHeadline. */}
             <h1 className="text-[26px] font-bold leading-[1.15] sm:text-3xl md:text-5xl">
-              Football Predictions Today — Including Today&apos;s Banker
+              {homeHeadline({ day, bankerCount: slate.bankerCount })}
             </h1>
             {/* Directly under the H1, before the pick card and everything
                 below it: what is actually published right now, in counts and
@@ -216,7 +231,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <AnswerSummary text={homeSummary({ day, ...slate })} />
             </div>
             <p className="mt-3 max-w-2xl text-gray-300 md:text-lg">
-              Data-driven picks across every major league, each with a confidence rating and the reasoning behind it.
+              {/* The markets named here are the ones actually published — see
+                  the marketType mix in the corpus — so the line reinforces
+                  what a reader searches for without promising a market this
+                  site has never produced. */}
+              Data-driven football predictions across every major league — banker picks, match winner, double chance, over/under and combo bets — each with a confidence rating and the reasoning behind it.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>

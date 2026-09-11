@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import {
   MIN_SETTLED_SAMPLE_SIZE,
@@ -19,6 +20,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   BANKER: "Banker",
   VIP: "VIP",
   PREMIUM: "Premium",
+  BET_OF_THE_DAY: "Bet of the Day",
 };
 
 const MARKET_LABELS: Record<string, string> = {
@@ -60,17 +62,34 @@ export function RateCard({ stat, label, big }: { stat: WinRateStat; label: strin
 export function TrackRecordView({ data }: { data: TrackRecordData }) {
   const [windowDays, setWindowDays] = useState<WindowDays>(30);
   const stats = data.windows[windowDays];
+  const formatDate = (value: string | null) => value
+    ? new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" }).format(new Date(value))
+    : "Not available";
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Track record</h1>
-        <p className="text-sm text-gray-400">
-          Every settled tip counts here, win or lose — {data.totalSettledAllTime} settled all-time. Void pushes are excluded from win rate.
+        <h1 className="text-2xl font-bold">Football prediction track record</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">
+          This is the public record of BetGenius predictions after the matches have finished. Wins and losses remain visible, and void selections stay in the sample even though they are excluded from the win-rate calculation.
+        </p>
+        <p className="mt-2 text-xs text-gray-400">
+          {data.firstPublishedAt ? <>Record begins {formatDate(data.firstPublishedAt)}. </> : null}
+          Last settlement update: <time dateTime={data.lastSettledAt ?? undefined}>{formatDate(data.lastSettledAt)}</time>.
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <section aria-labelledby="all-time-heading">
+        <h2 id="all-time-heading" className="mb-3 text-lg font-semibold">All-time published record</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <RateCard stat={data.allTime} label="All-time win rate" big />
+          <div className="card"><div className="text-xs uppercase text-gray-400">Settled tips</div><div className="mt-1 text-3xl font-bold">{data.allTime.total}</div><div className="mt-1 text-xs text-gray-400">Wins, losses and voids</div></div>
+          <div className="card"><div className="text-xs uppercase text-gray-400">Won</div><div className="mt-1 text-3xl font-bold text-emerald-400">{data.allTime.won}</div><div className="mt-1 text-xs text-gray-400">Decided as successful</div></div>
+          <div className="card"><div className="text-xs uppercase text-gray-400">Lost / void</div><div className="mt-1 text-3xl font-bold">{data.allTime.lost} / {data.allTime.void}</div><div className="mt-1 text-xs text-gray-400">Void is not a loss</div></div>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap gap-2" aria-label="Track-record period">
         {WINDOW_OPTIONS.map((d) => (
           <button
             key={d}
@@ -83,7 +102,8 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
       </div>
 
       <section>
-        <h2 className="mb-3 text-lg font-semibold">Overall</h2>
+        <h2 className="mb-1 text-lg font-semibold">Performance by publication window</h2>
+        <p className="mb-3 max-w-3xl text-sm text-gray-400">Each window groups predictions by the date they were published, then counts only those that have since been settled. Using publication date prevents a late-settled match from being presented as a newly issued tip.</p>
         <div className="max-w-xs">
           <RateCard stat={stats.headline} label={`Last ${windowDays} days`} big />
         </div>
@@ -117,6 +137,7 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
                 <th className="px-3 py-2">Category</th>
                 <th className="px-3 py-2">Pick</th>
                 <th className="px-3 py-2">Result</th>
+                <th className="px-3 py-2">Settled</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-brand-border">
@@ -133,16 +154,30 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
                   <td className="px-3 py-2">
                     <span className={`chip ${OUTCOME_STYLES[t.outcome] ?? "bg-brand-border"}`}>{t.outcome}</span>
                   </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-gray-400">{formatDate(t.settledAt)}</td>
                 </tr>
               ))}
               {data.recentTips.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-gray-400">No settled tips yet</td>
+                  <td colSpan={5} className="px-3 py-6 text-center text-gray-400">No settled tips yet</td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="card" aria-labelledby="calculation-heading">
+        <h2 id="calculation-heading" className="text-lg font-semibold">How these figures are calculated</h2>
+        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-gray-300">
+          <li>Only predictions that were published and later settled are included.</li>
+          <li>Win rate is wins divided by wins plus losses. Void outcomes are shown but excluded from that denominator.</li>
+          <li>A percentage is hidden until its category, market or period has at least {MIN_SETTLED_SAMPLE_SIZE} decided results.</li>
+          <li>Past results describe historical performance; they do not guarantee the outcome of a future match.</li>
+        </ul>
+        <p className="mt-4 text-sm text-gray-400">
+          Read the <Link href="/methodology" className="text-brand hover:underline">prediction methodology</Link> for the evidence used before publication, or browse <Link href="/predictions" className="text-brand hover:underline">today&apos;s football predictions</Link>.
+        </p>
       </section>
     </div>
   );

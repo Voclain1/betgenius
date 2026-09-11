@@ -19,7 +19,7 @@ import {
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fixtureSample } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fitMetadataTitle, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
 import { AdLeaderboard, WithAdRail } from "@/components/ads/AdPlacements";
@@ -47,14 +47,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
   const name = leagueDisplayName(rows[0].leagueName!, rows[0].leagueApiId);
   const seo = leagueSeo(rows[0].leagueApiId, name);
-  const sample = fixtureSample(rows);
-
   return {
-    title: seo.title,
-    // The count is the page's own row count and the sample is its own leading
-    // fixtures, so the description cannot claim more than the page shows. Only
-    // the phrase and the closing sentence are per-league.
-    description: `${rows.length} ${seo.phrase}${sample ? ` — including ${sample}` : ""}. ${seo.blurb}`,
+    title: fitMetadataTitle(seo.title),
+    description: fitMetaDescription(`${rows.length} ${seo.phrase}. ${seo.blurb}`),
     alternates: { canonical: `/predictions/league/${params.slug}` },
   };
 }
@@ -182,6 +177,11 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <h2 className="mb-3 text-xl font-semibold">Recent results</h2>
         <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
       </div>
+
+      {/* Between two reference sections — settled results above, player
+          leaderboards below. The league's published picks are the last block
+          on the page, well clear of this. */}
+      <AdLeaderboard />
 
       {/* Rendered once player stats have been fetched at all. Individual
           boards can still be empty (season not started, cards lagging) and say

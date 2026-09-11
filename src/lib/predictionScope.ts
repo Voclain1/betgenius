@@ -8,6 +8,7 @@ import type { TeamDigest } from "@/lib/ai/digest";
 import type { LeagueStandingRow } from "@/lib/enrichment";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
+import { isSubstantiveH2H } from "@/lib/h2hEvidence";
 
 // Backs /predictions/league/[slug] and /predictions/team/[slug]. Prediction
 // has no leagueName/homeTeam/awayTeam index and no slug column (see
@@ -400,6 +401,55 @@ export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => 
     fetchedAt: cached?.fetchedAt ?? null,
     rows,
   };
+});
+
+/**
+ * Every H2H slug whose cached record is substantial enough to ask for
+ * indexing. Batched for the sitemap: one prediction read and one cache read,
+ * rather than one database round-trip per pairing.
+ */
+export const getSubstantiveH2HSlugs = cache(async (): Promise<Set<string>> => {
+  const rows = await prisma.prediction.findMany({
+    where: {
+      status: "PUBLISHED",
+      homeTeam: { not: null },
+      awayTeam: { not: null },
+      homeTeamApiId: { not: null },
+      awayTeamApiId: { not: null },
+    },
+    select: {
+      homeTeam: true,
+      awayTeam: true,
+      homeTeamApiId: true,
+      awayTeamApiId: true,
+    },
+  });
+
+  const slugsByPair = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const slug = h2hSlug(row.homeTeam, row.awayTeam);
+    const pairKey = h2hPairKey(row.homeTeamApiId, row.awayTeamApiId);
+    if (!slug || !pairKey) continue;
+    const slugs = slugsByPair.get(pairKey);
+    if (slugs) slugs.add(slug);
+    else slugsByPair.set(pairKey, new Set([slug]));
+  }
+
+  if (slugsByPair.size === 0) return new Set();
+
+  const caches = await prisma.h2HCache.findMany({
+    where: { pairKey: { in: [...slugsByPair.keys()] }, fetchedAt: { not: null } },
+    select: { pairKey: true, meetingsJson: true },
+  });
+
+  const substantive = new Set<string>();
+  for (const cacheRow of caches) {
+    const meetings = (cacheRow.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
+    if (!isSubstantiveH2H(meetings)) continue;
+    for (const slug of slugsByPair.get(cacheRow.pairKey) ?? []) substantive.add(slug);
+  }
+
+  return substantive;
 });
 
 /**

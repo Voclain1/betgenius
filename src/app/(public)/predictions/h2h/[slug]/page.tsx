@@ -4,13 +4,14 @@ import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
 import { getH2HBySlug } from "@/lib/predictionScope";
 import { h2hTrendLine, type H2HMeeting, type H2HRecord } from "@/lib/h2h";
+import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "@/lib/h2hEvidence";
 import { teamSlug } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, fitMetadataTitleWithSuffix, fitMetaDescription } from "@/lib/seo";
 
 const RECENT_WINDOW = 5;
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const { pair, stats } = await getH2HBySlug(params.slug);
+  const { pair, meetings, stats } = await getH2HBySlug(params.slug);
 
   if (!pair) {
     return {
@@ -28,8 +29,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       : "Full head-to-head record, results and goal trends.";
 
   return {
-    title,
-    description: `${title} — ${summary}`,
+    title: fitMetadataTitleWithSuffix(`${pair.teamAName} vs ${pair.teamBName}`, "head-to-head"),
+    description: fitMetaDescription(`${title} — ${summary}`),
+    ...(isSubstantiveH2H(meetings) ? {} : { robots: { index: false, follow: true } }),
     alternates: { canonical: `/predictions/h2h/${params.slug}` },
   };
 }
@@ -103,6 +105,13 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
   const title = `${pair.teamAName} vs ${pair.teamBName}`;
   const recent = meetings.slice(0, RECENT_WINDOW);
   const trend = stats ? h2hTrendLine(stats, pair.teamAName, pair.teamBName) : null;
+  const leader = stats
+    ? stats.overall.teamAWins > stats.overall.teamBWins
+      ? pair.teamAName
+      : stats.overall.teamBWins > stats.overall.teamAWins
+        ? pair.teamBName
+        : null
+    : null;
 
   return (
     <div className="space-y-6">
@@ -145,6 +154,16 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
               {trend}
             </p>
           )}
+
+          <section className="card space-y-3" aria-labelledby="h2h-summary-heading">
+            <h2 id="h2h-summary-heading" className="text-lg font-semibold">What the head-to-head record shows</h2>
+            <p className="text-sm leading-6 text-gray-300">
+              Across the {stats!.sample} completed {stats!.sample === 1 ? "meeting" : "meetings"} in this record, {pair.teamAName} won {stats!.overall.teamAWins}, {pair.teamBName} won {stats!.overall.teamBWins}, and {stats!.overall.draws} finished level. {leader ? `${leader} therefore has more wins in the available sample.` : "Neither team has more wins in the available sample."}
+            </p>
+            <p className="text-sm leading-6 text-gray-300">
+              These fixtures averaged {stats!.avgGoals!.toFixed(1)} total goals. Both teams scored in {Math.round(stats!.bttsPct!)}% of the recorded games, while {Math.round(stats!.over25Pct!)}% finished with more than 2.5 goals. The figures describe previous meetings only; squad changes, venue, competition and current form can make the next match different.
+            </p>
+          </section>
 
           <div className="card space-y-3">
             <div className="flex items-baseline justify-between">
@@ -248,6 +267,12 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
             </div>
           )}
         </>
+      )}
+
+      {fetchedAt && meetings.length > 0 && !isSubstantiveH2H(meetings) && (
+        <p className="text-xs text-gray-500">
+          This record currently contains fewer than {MIN_H2H_INDEX_MEETINGS} completed meetings, so treat its trends as an early sample.
+        </p>
       )}
 
       {rows.length > 0 && (

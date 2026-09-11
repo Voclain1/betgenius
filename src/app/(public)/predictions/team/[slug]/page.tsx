@@ -10,7 +10,7 @@ import { TeamSquad } from "@/components/TeamSquad";
 import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment, getFixtureEventContext } from "@/lib/predictionScope";
 import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug, matchKey } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
@@ -47,15 +47,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   }
 
   const name = resolveTeamName(rows, params.slug);
-  const sample = rows
-    .slice(0, 3)
-    .map((r) => (r.homeTeam ? `${r.homeTeam} vs ${r.awayTeam}` : null))
-    .filter(Boolean)
-    .join(", ");
-
   return {
     title: name,
-    description: `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    description: fitMetaDescription(`${rows.length} published ${name} football predictions with match analysis, confidence ratings and settled results.`),
     alternates: { canonical: `/predictions/team/${params.slug}` },
   };
 }

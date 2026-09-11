@@ -50,6 +50,31 @@ function belowGatePhrase(stat: WinRateStat): string {
 const DAY_WORD: Record<FeedDay, string> = { yesterday: "yesterday", today: "today", tomorrow: "tomorrow" };
 
 /**
+ * Homepage H1.
+ *
+ * "Including Today's Banker" was a standing claim in static JSX, and it was
+ * false on any day no banker is tagged — which is not a rare edge: BANKER
+ * averages ~4.5 picks a day across the days it runs, and still lands on zero
+ * often enough that the headline regularly promised a pick the page did not
+ * have. Gated on the SAME count the answer paragraph beneath it uses, so the
+ * H1 and the first sentence under it can never disagree.
+ *
+ * The fallback is the bare keyword phrase, which is true unconditionally.
+ *
+ * The clause is additionally limited to the "today" view. The count follows
+ * whichever day is being browsed, so on ?date=tomorrow an ungated version
+ * would read "Football Predictions Today — Including Tomorrow's Banker",
+ * which contradicts itself in one line. Those dated views are noindexed
+ * browsing conveniences (see generateMetadata on the page), so they simply
+ * carry the unqualified headline instead.
+ */
+export function homeHeadline(input: { day: FeedDay; bankerCount: number }): string {
+  const base = "Football Predictions Today";
+  if (input.day !== "today" || input.bankerCount < 1) return base;
+  return `${base} — Including Today's Banker`;
+}
+
+/**
  * Homepage.
  *
  * Deliberately no percentage. A site-wide rate quoted here would be a second
@@ -58,12 +83,21 @@ const DAY_WORD: Record<FeedDay, string> = { yesterday: "yesterday", today: "toda
  * "what is on this site right now" with counts and competitions instead, and
  * points at the page that does own the record.
  */
-export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCount: number; topLeagues: string[] }): string {
+export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCount: number; topLeagues: string[]; bankerCount: number }): string {
   const when = input.day === "today" ? "for today" : input.day === "tomorrow" ? "for tomorrow" : "for yesterday";
 
   if (input.pickCount === 0) {
     return `No football predictions are published ${when} yet — each day's card goes up once its fixtures and team data are in. Every pick we have settled stays published, win or lose, on our track record.`;
   }
+
+  // "12 football predictions today" as one phrase, rather than the previous
+  // "12 football predictions published for today" which split it around a
+  // verb. This is the most-quoted sentence on the site, so the phrase a
+  // reader actually searches should survive being lifted out of it whole. The
+  // count still leads, and nothing about the claim changed.
+  const slate = input.day === "today"
+    ? `${count(input.pickCount, "football prediction")} today`
+    : `${count(input.pickCount, "football prediction")} ${when}`;
 
   const across = input.leagueCount > 0 ? ` across ${count(input.leagueCount, "competition")}` : "";
   // "X, Y and Z among them" rather than "led by X, Y and Z": league names
@@ -72,9 +106,16 @@ export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCoun
   // competitions are named at all — when none of the day's leagues is one, the
   // clause is simply absent rather than naming a third-tier cup tie.
   const led = input.topLeagues.length > 0 ? ` — ${nameList(input.topLeagues)} among them` : "";
-  // The second sentence stays out of the way of the hero's own tagline
+  // Named only on days a banker is actually tagged. A standing claim to publish
+  // one every day would be false on the days none is — 0 bankers on a card of
+  // 80-odd picks is a real state here, not a hypothetical, so the word appears
+  // when it is earned and is simply absent when it is not.
+  const banker = input.bankerCount > 0
+    ? `${input.day === "today" ? "Today" : input.day === "tomorrow" ? "Tomorrow" : "Yesterday"}'s banker is on the card. `
+    : "";
+  // The closing sentence stays out of the way of the hero's own tagline
   // directly beneath it, which already says what a pick carries.
-  return `${SITE_NAME} has ${count(input.pickCount, "football prediction")} published ${when}${across}${led}. Every settled result — win or lose — is published on our track record.`;
+  return `${SITE_NAME} has ${slate}${across}${led}. ${banker}Every settled result — win or lose — is published on our track record.`;
 }
 
 /**
