@@ -45,12 +45,27 @@ export function classifyAgent(userAgent: string | null | undefined): AgentClass 
  * A single line, prefixed so it can be isolated with
  * `vercel logs --json | grep '\[req\]'` and split on spaces.
  *
- * The raw agent is truncated and stripped of whitespace runs: full agent
- * strings run to several hundred characters, and the discriminating part is
- * always near the front.
+ * THE MIDDLE IS WHAT GETS DROPPED, not the tail. This first shipped as a plain
+ * slice(0, 120) on the theory that the discriminating part of an agent string
+ * is near the front. It is not, for exactly the agents worth identifying: a
+ * crawler that wants to look like a browser sends the full Chrome preamble and
+ * names itself in a trailing "(compatible; SomeBot/1.0; +https://...)" clause.
+ * The first production sample logged twelve requests as `ai-crawler` and
+ * truncated every one of them at "Safari/537.36 (c" — classified, but
+ * unnameable, which is half the point of logging it at all.
+ *
+ * So keep both ends. The head carries platform and engine, the tail carries
+ * identity, and the elision in between is the part that is the same on every
+ * agent string ever sent.
  */
+const UA_MAX = 180;
+const UA_HEAD = 100;
+const UA_TAIL = 70;
+
 export function formatRequestLog(input: { method: string; path: string; userAgent: string | null }): string {
   const agent = classifyAgent(input.userAgent);
-  const raw = (input.userAgent ?? "-").replace(/\s+/g, " ").slice(0, 120);
+  const collapsed = (input.userAgent ?? "-").replace(/\s+/g, " ");
+  const raw =
+    collapsed.length <= UA_MAX ? collapsed : `${collapsed.slice(0, UA_HEAD)}…${collapsed.slice(-UA_TAIL)}`;
   return `[req] agent=${agent} method=${input.method} path=${input.path} ua="${raw}"`;
 }
