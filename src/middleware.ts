@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import withAuth from "next-auth/middleware";
 import { SESSION_COOKIE_NAME } from "@/lib/authCookies";
+import { formatRequestLog } from "@/lib/requestLog";
 
 /**
  * Two unrelated jobs, kept apart deliberately.
@@ -66,6 +67,16 @@ const requireSession = withAuth({
 }) as unknown as (req: NextRequest) => Promise<NextResponse> | NextResponse;
 
 export default function middleware(req: NextRequest) {
+  // Every matched request, with its user-agent — see src/lib/requestLog.ts for
+  // why this is here and what it deliberately does not record. It runs before
+  // the branches below so a 404 on the ads host is attributed too: that host
+  // existing at all is a crawl-surface question.
+  console.log(formatRequestLog({
+    method: req.method,
+    path: req.nextUrl.pathname,
+    userAgent: req.headers.get("user-agent"),
+  }));
+
   // `host` carries the port in dev; compare against the configured host as-is.
   const host = req.headers.get("host");
 
