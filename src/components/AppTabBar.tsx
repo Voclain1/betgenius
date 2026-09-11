@@ -58,6 +58,7 @@ export function AppTabBar() {
             <li key={tab.href} className="flex-1">
               <Link
                 href={href}
+                prefetch={false}
                 // aria-current is what tells a screen reader which section is
                 // open; the colour alone carries that for sighted users only.
                 aria-current={isCurrent ? "page" : undefined}

@@ -12,7 +12,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-7xl px-4 py-10">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.3fr,1fr,1fr,1fr]">
           <div>
-            <Link href="/" className="text-xl font-bold tracking-tight"><span className="text-brand">Bet</span>Genius</Link>
+            <Link href="/" prefetch={false} className="text-xl font-bold tracking-tight"><span className="text-brand">Bet</span>Genius</Link>
             {/* Positioning copy, addressed to a first-time visitor deciding
                 whether this site is worth reading. Someone who installed the
                 app has already made that decision, so in app context this is
@@ -27,7 +27,7 @@ export function SiteFooter() {
             <nav key={group.title} aria-label={group.title}>
               <h2 className="text-sm font-semibold text-gray-100">{group.title}</h2>
               <ul className="mt-3 space-y-2">
-                {group.links.map(([label, href]) => <li key={href}><Link href={href} className="text-sm text-gray-400 hover:text-brand">{label}</Link></li>)}
+                {group.links.map(([label, href]) => <li key={href}><Link href={href} prefetch={false} className="text-sm text-gray-400 hover:text-brand">{label}</Link></li>)}
               </ul>
             </nav>
           ))}
