@@ -19,6 +19,7 @@ import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
+import { FollowButton } from "@/components/FollowButton";
 import { matchKey } from "@/lib/slug";
 
 export async function generateMetadata(
@@ -173,6 +174,7 @@ export default async function CategoryPage(
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold">{NAMES[cat]}</h1>
+          <FollowButton targetType="CATEGORY" targetKey={cat} label={`${NAMES[cat]} tips`} />
         </div>
         {!canView && (cat === "VIP" || cat === "PREMIUM") && (
           <Link href="/pricing" className="btn btn-primary">Unlock {cat === "VIP" ? "VIP" : "Premium"}</Link>

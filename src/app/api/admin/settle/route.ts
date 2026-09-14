@@ -9,6 +9,8 @@ import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
 import { publishedDoubleLegIds, settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
 import { JOB_SETTLE, withJobRun } from "@/lib/jobRuns";
+import { createNotificationEvent, settlementEventKey } from "@/lib/notifications";
+import { matchSlug } from "@/lib/slug";
 
 // Bulk settlement runs sequentially through the throttled api-football queue
 // (up to 2 calls per prediction) — bound generously since Vercel Cron (and
@@ -239,10 +241,13 @@ async function runSettlement(req: Request) {
         continue;
       }
 
+      const settledAt = new Date();
       await prisma.prediction.update({
         where: { id: p.id },
-        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt: new Date(), settlementNote: null, settlementAttempts: 0 },
+        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 },
       });
+      const slug = matchSlug({ homeTeam: p.homeTeam, awayTeam: p.awayTeam, kickoff: p.kickoff });
+      await createNotificationEvent({ eventKey: settlementEventKey(p.id, outcome, settledAt), type: `RESULT_${outcome}`, predictionId: p.id, fixtureApiId: p.fixtureApiId, category: p.category, leagueApiId: p.leagueApiId, teamApiIds: [p.homeTeamApiId, p.awayTeamApiId].filter((x): x is number => x != null), title: `Tip ${outcome.toLowerCase()}`, body: `${match}: ${outcome}.`, link: slug ? `/predictions/match/${slug}` : "/predictions" });
 
       results.push({ id: p.id, match, result: outcome, detail: `${lookup.homeScore}-${lookup.awayScore}` });
     } catch (err: any) {

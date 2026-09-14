@@ -19,6 +19,7 @@ import {
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
+import { FollowButton } from "@/components/FollowButton";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fixtureSample } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
@@ -144,6 +145,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
       />
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">{name}</h1>
+        {leagueApiId != null && <FollowButton targetType="LEAGUE" targetKey={String(leagueApiId)} label={name} />}
         {/* The scoped record as a sentence, above standings and fixtures. The
             RateCard below shows the same stat broken out; this is the version
             a reader (or an answer engine) can quote without assembling it. */}

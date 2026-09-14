@@ -9,6 +9,8 @@ import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
+import { createNotificationEvent, materialChangeKey, materialSnapshot, publicationEventKey, settlementEventKey } from "@/lib/notifications";
+import { matchSlug } from "@/lib/slug";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -64,6 +66,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = Patch.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { action, patch } = parsed.data;
+  const before = await prisma.prediction.findUnique({ where: { id: params.id }, include: { categories: true } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
@@ -148,6 +152,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data,
     include: { categories: true },
   });
+  const slug = matchSlug({ homeTeam: updated.homeTeam, awayTeam: updated.awayTeam, kickoff: updated.kickoff });
+  const link = slug ? `/predictions/match/${slug}` : "/predictions";
+  const common = { predictionId: updated.id, fixtureApiId: updated.fixtureApiId, category: updated.category, leagueApiId: updated.leagueApiId, teamApiIds: [updated.homeTeamApiId, updated.awayTeamApiId].filter((x): x is number => x != null), link };
+  if (before.status !== "PUBLISHED" && updated.status === "PUBLISHED" && updated.publishedAt) {
+    await createNotificationEvent({ ...common, eventKey: publicationEventKey(updated.id, updated.publishedAt), type: "NEW_PREDICTION", title: "New prediction published", body: `${updated.homeTeam} vs ${updated.awayTeam}` });
+  } else if (before.status === "PUBLISHED" && updated.status === "PUBLISHED") {
+    const oldState = materialSnapshot(before), newState = materialSnapshot(updated);
+    if (JSON.stringify(oldState) !== JSON.stringify(newState)) await createNotificationEvent({ ...common, eventKey: materialChangeKey(updated.id, oldState, newState), type: "TIP_CHANGED", title: "Followed tip changed", body: `${updated.homeTeam} vs ${updated.awayTeam} has a material update.`, data: { before: oldState, after: newState } });
+  }
+  if (action === "ARCHIVE" && before.status === "PUBLISHED") await createNotificationEvent({ ...common, eventKey: `prediction:${updated.id}:withdrawn:${updated.updatedAt.toISOString()}`, type: "WITHDRAWN", title: "Prediction withdrawn", body: `${updated.homeTeam} vs ${updated.awayTeam} is no longer available.` });
+  if (updated.outcome !== "PENDING" && updated.settledAt && (before.outcome !== updated.outcome || before.settledAt?.getTime() !== updated.settledAt.getTime())) await createNotificationEvent({ ...common, eventKey: settlementEventKey(updated.id, updated.outcome, updated.settledAt), type: `RESULT_${updated.outcome}`, title: before.outcome !== "PENDING" ? "Result corrected" : `Tip ${updated.outcome.toLowerCase()}`, body: `${updated.homeTeam} vs ${updated.awayTeam}: ${updated.outcome}.`, data: { before: before.outcome, after: updated.outcome } });
   return NextResponse.json({ prediction: updated });
 }
 
