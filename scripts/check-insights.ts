@@ -14,6 +14,11 @@ const rows = [
 const opts={teamApiId:1,teamName:"A",cutoff:new Date("2026-09-14T00:00:00Z"),refreshedAt:new Date("2026-09-14T00:00:00Z")};
 const all=calculateInsights(rows,opts);
 assert.equal(all.find(x=>x.type==="UNBEATEN_STREAK")?.count,5,"AET/PEN use provider final goals and eligible completed status");
+assert.equal(all.find(x=>x.type==="UNBEATEN_STREAK")?.exact,false,"a truncated all-positive history is labelled as at least N");
+assert.match(all.find(x=>x.type==="UNBEATEN_STREAK")?.explanation??"",/^At least /);
 assert.equal(all[0]?.matchIds.length,5,"duplicates and future/non-finished fixtures are removed");
 assert.equal(calculateInsights(rows,{...opts,scope:"HOME"}).length,0,"minimum sample applies after home/away scope");
+const withBoundary=[...rows,fixture(8,"2026-08-30T12:00:00Z",1,9,0,1)];
+assert.equal(calculateInsights(withBoundary,opts).find(x=>x.type==="UNBEATEN_STREAK")?.exact,true,"a preceding eligible loss proves an exact streak");
+assert.equal(calculateInsights(rows.map((r:any)=>({...r,league:{...r.league,id:r.fixture.id===1?140:39}})),{...opts,scope:"COMPETITION",leagueApiId:39}).length,0,"competition scope is applied before the minimum sample");
 console.log("insight calculation checks passed");

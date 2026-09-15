@@ -242,12 +242,11 @@ async function runSettlement(req: Request) {
       }
 
       const settledAt = new Date();
-      await prisma.prediction.update({
-        where: { id: p.id },
-        data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 },
-      });
       const slug = matchSlug({ homeTeam: p.homeTeam, awayTeam: p.awayTeam, kickoff: p.kickoff });
-      await createNotificationEvent({ eventKey: settlementEventKey(p.id, outcome, settledAt), type: `RESULT_${outcome}`, predictionId: p.id, fixtureApiId: p.fixtureApiId, category: p.category, leagueApiId: p.leagueApiId, teamApiIds: [p.homeTeamApiId, p.awayTeamApiId].filter((x): x is number => x != null), title: `Tip ${outcome.toLowerCase()}`, body: `${match}: ${outcome}.`, link: slug ? `/predictions/match/${slug}` : "/predictions" });
+      await prisma.$transaction(async (tx) => {
+        await tx.prediction.update({ where: { id: p.id }, data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 } });
+        await createNotificationEvent({ eventKey: settlementEventKey(p.id, outcome, settledAt), type: `RESULT_${outcome}`, predictionId: p.id, fixtureApiId: p.fixtureApiId, category: p.category, leagueApiId: p.leagueApiId, teamApiIds: [p.homeTeamApiId, p.awayTeamApiId].filter((x): x is number => x != null), title: `Tip ${outcome.toLowerCase()}`, body: `${match}: ${outcome}.`, link: slug ? `/predictions/match/${slug}` : "/predictions" }, tx);
+      });
 
       results.push({ id: p.id, match, result: outcome, detail: `${lookup.homeScore}-${lookup.awayScore}` });
     } catch (err: any) {

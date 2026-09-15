@@ -753,11 +753,12 @@ model NotificationEvent {
   data         Json?
   availableAt  DateTime @default(now())
   expiresAt    DateTime?
+  fannedOutAt  DateTime?
   createdAt    DateTime @default(now())
   deliveries   NotificationDelivery[]
   notifications UserNotification[]
 
-  @@index([availableAt, createdAt])
+  @@index([fannedOutAt, availableAt, createdAt])
   @@index([predictionId, createdAt])
 }
 
