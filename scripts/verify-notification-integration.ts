@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
-import { claimDeliveries, createNotificationEvent, fanOutPendingEvents } from "../src/lib/notifications";
+import { claimDeliveries, createNotificationEvent, fanOutPendingEvents, recordPredictionEvents, releaseDelivery } from "../src/lib/notifications";
+import { reviewTransition } from "../src/lib/predictions";
 import { runNotificationDispatch } from "../src/lib/notificationDispatch";
 import { sendPush } from "../src/lib/push";
 
@@ -68,6 +69,32 @@ async function main() {
   const reminder = await createNotificationEvent({ eventKey: `${prefix}reminder`, type: "KICKOFF_REMINDER", predictionId: prediction.id, category: "FEATURED", title: "Reminder", body: "Reminder", link: "/predictions", data: { kickoff: oldKickoff.toISOString() }, expiresAt: oldKickoff });
   await fanOutPendingEvents(); await runNotificationDispatch(async () => true);
   assert.equal((await prisma.notificationDelivery.findUnique({ where: { eventId_userId: { eventId: reminder.id, userId: premium.id } } }))?.status, "SKIPPED", "rescheduled reminder is suppressed");
+
+  // A worker whose lease was taken over cannot overwrite the newer outcome.
+  assert.equal(await releaseDelivery(claimed.id, "stale-token", { status: "FAILED" }), false, "release requires the current lease token");
+  assert.equal((await prisma.notificationDelivery.findUnique({ where: { id: claimed.id } }))?.status, "DELIVERED");
+
+  // A delivered row is never leased again, even with its lease cleared.
+  assert.ok(!(await claimDeliveries(50)).rows.some((r) => r.id === claimed.id), "a delivered row cannot be reclaimed");
+
+  // Kickoff reminders reach tip and team followers only, not league followers.
+  const leagueOnly = await prisma.user.create({ data: { email: `${prefix}league@example.test`, role: "USER", subscription: { create: { tier: "FREE", status: "ACTIVE" } } } });
+  await prisma.userFollow.create({ data: { userId: leagueOnly.id, targetType: "LEAGUE", targetKey: "39" } });
+  const soon = new Date(Date.now() + 90 * 60_000);
+  const audience = await createNotificationEvent({ eventKey: `${prefix}reminder-audience`, type: "KICKOFF_REMINDER", predictionId: prediction.id, leagueApiId: 39, teamApiIds: [91001, 91002], title: "Reminder", body: "Reminder", link: "/predictions", data: { kickoff: soon.toISOString(), predictionIds: [prediction.id] }, expiresAt: soon });
+  await fanOutPendingEvents();
+  const recipients = (await prisma.notificationDelivery.findMany({ where: { eventId: audience.id }, select: { userId: true } })).map((d) => d.userId);
+  assert.ok(!recipients.includes(leagueOnly.id), "a league follower is not sent kickoff reminders");
+  assert.ok(recipients.includes(free.id), "a team follower is sent the reminder");
+
+  // Publishing through the shared helper (used by the bulk route) creates the event in the same transaction.
+  const draft = await prisma.prediction.create({ data: { category: "FEATURED", leagueApiId: 39, leagueName: "Premier League", homeTeam: "Synthetic Home", awayTeam: "Synthetic Away", homeTeamApiId: 91001, awayTeamApiId: 91002, kickoff: new Date(Date.now() + 86_400_000), status: "PENDING_REVIEW", marketType: "MATCH_WINNER", selection: { side: "HOME" }, manualSettlementOnly: false, market: "Match winner", pick: "Synthetic Home", confidence: 65, reasoning: "Synthetic bulk publish row", outcome: "PENDING", authorId: author.id, categories: { create: [{ category: "FEATURED" }] } }, include: { categories: true } });
+  await prisma.$transaction(async (tx) => {
+    const published = await tx.prediction.update({ where: { id: draft.id }, data: reviewTransition("PUBLISH", author.id, draft), include: { categories: true } });
+    await recordPredictionEvents(tx, draft, published, "PUBLISH");
+  });
+  assert.equal(await prisma.notificationEvent.count({ where: { predictionId: draft.id, type: "NEW_PREDICTION" } }), 1, "a bulk-style publish records one NEW_PREDICTION event");
+  await prisma.notificationEvent.deleteMany({ where: { predictionId: draft.id } });
 
   const before = await prisma.prediction.findUniqueOrThrow({ where: { id: prediction.id } });
   await assert.rejects(prisma.$transaction(async tx => { await tx.prediction.update({ where: { id: prediction.id }, data: { pick: "Must roll back" } }); await tx.notificationEvent.create({ data: { eventKey: `${prefix}invalid`, type: "TIP_CHANGED", title: null as any, body: "x", link: "/predictions", teamApiIds: [] } }); }));

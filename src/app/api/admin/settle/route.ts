@@ -132,6 +132,7 @@ async function runSettlement(req: Request) {
     },
     orderBy: { kickoff: "asc" },
     take: limit,
+    include: { categories: { select: { category: true } } },
   });
 
   // ONE batched call set for the whole run, instead of one full-day fixture
@@ -245,7 +246,23 @@ async function runSettlement(req: Request) {
       const slug = matchSlug({ homeTeam: p.homeTeam, awayTeam: p.awayTeam, kickoff: p.kickoff });
       await prisma.$transaction(async (tx) => {
         await tx.prediction.update({ where: { id: p.id }, data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 } });
-        await createNotificationEvent({ eventKey: settlementEventKey(p.id, outcome, settledAt), type: `RESULT_${outcome}`, predictionId: p.id, fixtureApiId: p.fixtureApiId, category: p.category, leagueApiId: p.leagueApiId, teamApiIds: [p.homeTeamApiId, p.awayTeamApiId].filter((x): x is number => x != null), title: `Tip ${outcome.toLowerCase()}`, body: `${match}: ${outcome}.`, link: slug ? `/predictions/match/${slug}` : "/predictions" }, tx);
+        // Hidden double legs settle here too, but nobody can follow a row that
+        // was never published, so only published tips produce a result event.
+        if (p.status === "PUBLISHED") {
+          await createNotificationEvent({
+            eventKey: settlementEventKey(p.id, outcome, settledAt),
+            type: `RESULT_${outcome}`,
+            predictionId: p.id,
+            fixtureApiId: p.fixtureApiId,
+            category: p.category,
+            leagueApiId: p.leagueApiId,
+            teamApiIds: [p.homeTeamApiId, p.awayTeamApiId].filter((x): x is number => x != null),
+            title: `Tip ${outcome.toLowerCase()}`,
+            body: `${match}: ${outcome}.`,
+            link: slug ? `/predictions/match/${slug}` : "/predictions",
+            data: { categories: p.categories.map((c) => c.category) },
+          }, tx);
+        }
       });
 
       results.push({ id: p.id, match, result: outcome, detail: `${lookup.homeScore}-${lookup.awayScore}` });

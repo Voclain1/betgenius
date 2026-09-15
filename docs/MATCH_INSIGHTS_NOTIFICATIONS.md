@@ -1,44 +1,97 @@
 # Match Insights, Following, and Notifications
 
-## Data and guarantees
+## Match Insights
 
-Insights are calculated only by `src/lib/insights.ts` from cached API-Football fixtures. Eligible statuses are `FT`, `AET`, and `PEN`; API-Football's final goals are used (extra-time included for `AET`, shoot-out kicks excluded from the goals fields). Rows are deduplicated by provider fixture ID, ordered newest-first, filtered before the target cutoff, and scoped before the five-match minimum is applied. A streak is exact only when a preceding eligible result disproves it; otherwise the copy says "at least". Insight evidence expires six hours after its source cache refresh.
+### Data
 
-Following a paid category never grants access. Entitlement is rechecked when the feed is rendered and when a delivery is claimed. Push copy for VIP/Premium is deliberately generic and does not expose lock-screen selections.
+Insights are calculated by `src/lib/insights.ts` (pure) and maintained by `src/lib/insightRefresh.ts` (worker). The worker fetches each target team's last 20 fixtures (`/fixtures?team=X&last=20`, one call per team) into `TeamFixtureHistory`.
+
+`TeamEnrichmentCache.lastFixtures` is deliberately not used. It holds five trimmed summaries without fixture id, status or score breakdown. That is too short for a streak, and it cannot be verified. The existing `last: 5` enrichment call is unchanged because the AI digest and form panels depend on it.
+
+### Accuracy rules
+
+- **Regulation time.** AET and PEN matches use the 90-minute score, validated by settlement's `regulationScoreOf`, which is how bookmakers settle 1X2, goals and BTTS markets. A shootout defeat after 1-1 is a draw.
+- **Friendlies** are excluded. **Postponed, cancelled and abandoned** fixtures are skipped.
+- **Unverifiable matches end the history.** A completed match with an inconsistent score breakdown, or an awarded result (AWD/WO), stops the history at that point, so two runs are never joined across it.
+- **Exact vs "at least".** A streak is stated exactly only when an older verified match ended it. Otherwise the copy says "at least N".
+- **Samples.** At least 5 verified matches in scope. Frequencies use the 10 most recent. Streaks need 3 or more; frequencies need 70% or more. "Unbeaten" or "winless" is dropped when it only repeats an equal winning or losing run.
+- **Scopes.** All competitions, the team's venue in the target fixture (home form for the home side, away form for the away side), and the target competition. A competition sample identical to all-competitions is not repeated.
+
+### Targets and freshness
+
+- **Targets.** Only teams in a published, unsettled tip kicking off within 7 days. Each team is tied to its soonest such fixture.
+- **Refetch.** A history is refetched when it is 6 hours old, or immediately when a match we know the team played has finished since the fetch and is missing from it.
+- **Hide, don't serve stale.** A history older than 12 hours, or known to be missing a finished match, is not used. The team's insights are removed.
+- **Expiry.** `expiresAt` is the earlier of the target kickoff and the history's 12-hour limit.
+- **Replacement.** A team's insights are replaced wholesale on every change, so an insight the latest results contradict disappears immediately.
+- **Failures.** A failed fetch is not retried for 30 minutes.
+
+### API cost
+
+One call per team per refetch, bounded per run by `fetchLimit` (default 30, maximum 60). With about 125 upcoming teams that is roughly 500 calls a day, within the Pro plan's 7,500. Calls go through `apiFetch`, so the daily budget gate and throttle apply.
+
+## Following and entitlement
+
+Following a paid category never grants access. Entitlement is rechecked when the feed and inbox render and when a delivery is claimed. Push copy for VIP and Premium is generic and does not expose selections on a lock screen.
+
+## Events
+
+- **Publishing, changing and withdrawing** a tip record events through `recordPredictionEvents`, inside the same transaction as the change. Both the single-row admin route and the bulk review route use it.
+- **Settlement** records result events for published tips only. Hidden double legs never notify anyone.
+- **Kickoff reminders** are one per fixture and go to followers of the tip or either team. League and category followers are deliberately excluded, since for them a reminder would become a stream of reminders.
 
 ## Environment
 
-Set `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (normally a monitored `mailto:` URI). The private key is server-only. Existing `CRON_SECRET` bearer authentication protects every worker route.
+Set `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (normally a monitored `mailto:` URI). The private key is server-only. `CRON_SECRET` bearer authentication protects every worker route.
 
-If VAPID is absent, following and the in-site inbox remain available, dispatch completes without attempting push, and the test-push endpoint returns `503`. An unapplied schema is not supported: keep all feature routes and jobs disabled until the schema step below succeeds.
+If VAPID is absent, following and the in-site inbox still work. Dispatch completes without attempting push, and the test-push endpoint returns `503`.
 
 ## Database rollout
 
-This repository's established schema process is Prisma `db push`, guarded by `scripts/check-schema-sync.ts`; it has no migrations directory. Review the Prisma diff against a safe Preview/development Neon branch, apply with `npx prisma db push` there, rerun schema sync, and only then schedule deployment approval. This implementation does not run `db push` or modify production data.
+The schema process is Prisma `db push`, guarded by `scripts/check-schema-sync.ts`. This change is additive: new tables only, and no existing table or column is altered. Nothing has been applied to Preview or Production.
 
-Safe rollout order:
+1. Select an isolated preview or development database and verify its host, database and user.
+2. Run `npx prisma db push` there, then `npm run check:schema`.
+3. Configure `CRON_SECRET`, and all three VAPID values together if browser push is being enabled.
+4. Deploy with the scheduler jobs disabled.
+5. Run one authenticated `GET /api/admin/refresh-insights?fetchLimit=30`. Repeat until `fetched` reaches 0, then check `/match-insights`.
+6. Enable the reminders, dispatch and insights schedules.
 
-1. Create or select an isolated preview/development database and verify its host, database, and user.
-2. Apply `npx prisma db push` to that database and run `npm run check:schema`.
-3. Configure `CRON_SECRET`; configure all three VAPID values together if browser push is being enabled.
-4. Deploy the application with scheduler jobs still disabled.
-5. Run one authenticated `GET /api/admin/refresh-insights?limit=25`, then verify the public insights and synthetic follow/inbox flow.
-6. Enable reminders, dispatch, and refresh schedules only after the preceding checks pass.
-
-Rollback is application-first: disable the three jobs, roll back the application, then leave the additive tables/columns in place until a separately reviewed cleanup. Do not drop notification data while either application version or a worker may still reference it.
+Rollback is application-first. Disable the three jobs, roll back the application, and leave the additive tables in place until a separately reviewed cleanup.
 
 ## Scheduler configuration
 
-Configure cron-job.org with GET, `Authorization: Bearer <CRON_SECRET>`, and Africa/Lagos timezone:
+Configure cron-job.org with GET, `Authorization: Bearer <CRON_SECRET>`, and the Africa/Lagos timezone:
 
-- `/api/admin/refresh-insights?limit=25` at `8,23,38,53 * * * *`.
-- `/api/admin/notifications/reminders` every five minutes: `*/5 * * * *`.
-- `/api/admin/notifications/dispatch` every two minutes: `*/2 * * * *`.
+| Endpoint | Schedule |
+|---|---|
+| `/api/admin/refresh-insights?fetchLimit=30` | `8,23,38,53 * * * *` |
+| `/api/admin/notifications/reminders` | `*/5 * * * *` |
+| `/api/admin/notifications/dispatch` | `*/2 * * * *` |
 
-The reminders worker creates expiring idempotent events; dispatch fans out follows, claims at most 50 deliveries with a 60-second lease, retries with exponential backoff up to five attempts, removes 404/410 push endpoints, records terminal failures, and writes `JobRun` summaries. External push is at-least-once: event/delivery keys and service-worker notification tags minimise visible duplicates but cannot guarantee exactly-once receipt.
+Dispatch behaviour:
 
-The two-minute interval is safe to overlap: workers claim rows with unique lease tokens, conditional updates prevent double claims, and expired leases are recoverable. All scheduler endpoints accept `GET` only and require the bearer secret. Insight refresh reads cached fixture history and therefore adds zero API-Football calls per scheduled run or retry; its database workload is bounded by `limit=25` and rotates through eligible teams.
+- Fans out follows and claims up to 50 deliveries under a 5-minute lease, which is longer than the route's 60-second limit, so a live worker never loses its rows.
+- Finalises each row only while it still holds the lease token.
+- Retries with exponential backoff up to five attempts and removes 404/410 push endpoints.
+- Writes a `JobRun` summary, including how many leases were lost.
+
+External push remains at-least-once. Event keys, delivery keys and notification tags minimise visible duplicates.
+
+## Verification
+
+| Check | Scope | Notes |
+|---|---|---|
+| `npx tsx scripts/check-insights.ts` | Calculation rules | Includes the legacy cached shape that previously crashed the worker |
+| `npx tsx scripts/check-notifications.ts` | Notification policy helpers | Pure, no database |
+| `npx tsx scripts/verify-insight-integration.ts` | Worker behaviour | Refetch rules, a contradicted streak removed at once, stale histories withdrawn. The provider is stubbed. |
+| `npx tsx scripts/verify-notification-integration.ts` | Delivery | Fan-out, entitlement, lease races, reminder audience, publish events, rollback |
+
+Both `verify-*` scripts refuse to run anywhere except the disposable database at `127.0.0.1:55432/betgenius_feature_test`.
 
 ## Operational notes
 
-Run insights only after team enrichment. Do not call the football API from public requests. The daily cap defaults to 12, timezone to Africa/Lagos, and kickoff reminders to 30 minutes. Quiet hours suppress push while retaining the in-site inbox. The current release omits the optional daily digest.
+- The daily cap defaults to 12, the timezone to Africa/Lagos, and kickoff reminders to 30 minutes. All three can be changed on `/notifications`.
+- Quiet hours suppress push but still fill the inbox.
+- Opening `/notifications` marks the notifications shown as read.
+- The optional daily digest is not in this release.

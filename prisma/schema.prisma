@@ -795,20 +795,45 @@ model UserNotification {
   @@index([userId, readAt, createdAt])
 }
 
-// Shared, explainable evidence derived by cron from TeamEnrichmentCache.
-model MatchInsightCache {
-  id              String   @id @default(cuid())
-  insightKey      String   @unique
-  teamApiId       Int
-  leagueApiId     Int?
-  scope           String
-  calculationVersion String
-  evidence        Json
-  refreshedAt     DateTime
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+// A team's recent results, fetched for Match Insights only. Deliberately not
+// TeamEnrichmentCache.lastFixtures: that column holds five trimmed summaries
+// the form panel and AI digest depend on, which is too short a history for a
+// streak and drops the fixture id, status and regulation score an insight has
+// to be verified against. `fixtures` holds compact InsightFixture rows.
+model TeamFixtureHistory {
+  id            String    @id @default(cuid())
+  teamApiId     Int       @unique
+  fixtures      Json?
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
 
+// Explainable evidence for one team ahead of its next published fixture.
+// Replaced wholesale per team on every recalculation, so an insight the latest
+// history no longer supports disappears instead of lingering until expiry.
+// expiresAt is the earlier of the target kickoff and the history's freshness
+// limit, so evidence is never shown after the match it was calculated for.
+model MatchInsightCache {
+  id                 String   @id @default(cuid())
+  insightKey         String   @unique
+  teamApiId          Int
+  type               String
+  scope              String
+  leagueApiId        Int?
+  predictionId       String
+  kickoff            DateTime
+  strength           Float
+  calculationVersion String
+  evidence           Json
+  refreshedAt        DateTime
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([expiresAt, kickoff])
   @@index([leagueApiId, expiresAt])
   @@index([teamApiId, expiresAt])
 }

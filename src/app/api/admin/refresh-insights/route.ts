@@ -1,4 +1,31 @@
-import {NextRequest,NextResponse} from "next/server";import {prisma} from "@/lib/prisma";import {calculateInsights,INSIGHT_MAX_AGE_MS,INSIGHT_VERSION} from "@/lib/insights";import {withJobRun} from "@/lib/jobRuns";
-function authorized(r:NextRequest){return !!process.env.CRON_SECRET&&r.headers.get("authorization")===`Bearer ${process.env.CRON_SECRET}`}
-async function run(req:NextRequest){const limit=Math.min(50,Math.max(1,Number(req.nextUrl.searchParams.get("limit"))||25)),now=new Date();const previous=await prisma.jobRun.findFirst({where:{job:"refresh-insights",ok:true},orderBy:{ranAt:"desc"},select:{detail:true}}),cursor=Number((previous?.detail as any)?.lastTeamId)||0;let rows=await prisma.teamEnrichmentCache.findMany({where:{fetchedAt:{not:null},teamApiId:{gt:cursor}},orderBy:{teamApiId:"asc"},take:limit});if(rows.length<limit){const wrapped=await prisma.teamEnrichmentCache.findMany({where:{fetchedAt:{not:null},teamApiId:{lte:cursor}},orderBy:{teamApiId:"asc"},take:limit-rows.length});rows=[...rows,...wrapped]}let written=0;for(const row of rows){const upcoming=await prisma.prediction.findFirst({where:{status:"PUBLISHED",kickoff:{gt:now},OR:[{homeTeamApiId:row.teamApiId},{awayTeamApiId:row.teamApiId}]},orderBy:{kickoff:"asc"},select:{leagueApiId:true,leagueName:true,homeTeam:true,awayTeam:true}});const teamName=row.teamName??upcoming?.homeTeam??String(row.teamApiId);for(const scope of ["ALL","HOME","AWAY"] as const)for(const evidence of calculateInsights(row.lastFixtures,{teamApiId:row.teamApiId,teamName,leagueApiId:upcoming?.leagueApiId,leagueName:upcoming?.leagueName,scope,cutoff:now,refreshedAt:row.fetchedAt!})){const insightKey=`${INSIGHT_VERSION}:${row.teamApiId}:${scope}:${evidence.type}`;await prisma.matchInsightCache.upsert({where:{insightKey},update:{evidence:evidence as any,refreshedAt:row.fetchedAt!,expiresAt:new Date(row.fetchedAt!.getTime()+INSIGHT_MAX_AGE_MS)},create:{insightKey,teamApiId:row.teamApiId,leagueApiId:evidence.leagueApiId,scope,calculationVersion:INSIGHT_VERSION,evidence:evidence as any,refreshedAt:row.fetchedAt!,expiresAt:new Date(row.fetchedAt!.getTime()+INSIGHT_MAX_AGE_MS)}});written++;}}return{teams:rows.length,written,lastTeamId:rows.at(-1)?.teamApiId??cursor};}
-export async function GET(req:NextRequest){if(!authorized(req))return NextResponse.json({error:"Forbidden"},{status:403});return NextResponse.json(await withJobRun("refresh-insights",()=>run(req),r=>`teams ${r.teams}, insights ${r.written}`));}
+import { NextRequest, NextResponse } from "next/server";
+import { withJobRun } from "@/lib/jobRuns";
+import { DEFAULT_FETCH_LIMIT, JOB_REFRESH_INSIGHTS, refreshMatchInsights } from "@/lib/insightRefresh";
+
+/**
+ * Scheduled Match Insights refresh. GET with `Authorization: Bearer
+ * <CRON_SECRET>`, like every other worker route.
+ *
+ * `fetchLimit` bounds api-football calls per run (one per team history).
+ * Recalculation itself covers every upcoming team on every run — it is cheap,
+ * and skipping teams is exactly how stale insights would survive.
+ */
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
+function authorized(req: NextRequest) {
+  return !!process.env.CRON_SECRET && req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const raw = req.nextUrl.searchParams.get("fetchLimit");
+  const requested = raw === null || raw === "" ? NaN : Number(raw);
+  const fetchLimit = Number.isFinite(requested) && requested >= 0 ? Math.min(60, Math.floor(requested)) : DEFAULT_FETCH_LIMIT;
+  const result = await withJobRun(
+    JOB_REFRESH_INSIGHTS,
+    () => refreshMatchInsights({ fetchLimit }),
+    (r) => `targets ${r.targets}, fetched ${r.fetched} (${r.fetchFailed} failed), stale ${r.staleTeams}, insights ${r.insights}, teams rewritten ${r.teamsWritten}, cleared ${r.cleared}`,
+  );
+  return NextResponse.json(result);
+}

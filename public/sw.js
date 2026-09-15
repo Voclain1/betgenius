@@ -113,7 +113,20 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = new URL(event.notification.data?.url || "/notifications", self.location.origin).href;
-  event.waitUntil((async () => { const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true }); const existing = windows.find((client) => client.url.startsWith(self.location.origin)); if (existing) { await existing.navigate(url); return existing.focus(); } return self.clients.openWindow(url); })());
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find((client) => client.url.startsWith(self.location.origin));
+    if (existing) {
+      // navigate() rejects for a window this worker does not control (e.g. one
+      // opened before it activated); fall back to a new window rather than
+      // swallowing the click.
+      try {
+        const navigated = await existing.navigate(url);
+        return (navigated ?? existing).focus();
+      } catch {}
+    }
+    return self.clients.openWindow(url);
+  })());
 });
 
 async function staleWhileRevalidate(request) {

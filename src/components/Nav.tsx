@@ -177,7 +177,19 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
             className="btn btn-ghost text-sm"
             onClick={async () => {
               onNavigate?.();
-              try { const reg = await navigator.serviceWorker?.ready; const sub = await reg?.pushManager.getSubscription(); if (sub) { await fetch("/api/push-subscriptions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); } } catch {}
+              // Detach this browser's push subscription from the account first,
+              // so the next person to sign in here is not sent the previous
+              // user's notifications. getRegistration() resolves to undefined
+              // when no worker is registered; `serviceWorker.ready` would never
+              // resolve and sign-out would silently hang.
+              try {
+                const reg = await navigator.serviceWorker?.getRegistration();
+                const sub = await reg?.pushManager.getSubscription();
+                if (sub) {
+                  await fetch("/api/push-subscriptions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+                  await sub.unsubscribe();
+                }
+              } catch {}
               signOut();
             }}
           >
