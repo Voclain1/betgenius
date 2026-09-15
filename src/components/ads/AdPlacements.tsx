@@ -1,4 +1,5 @@
 import { AdFrame } from "@/components/ads/AdUnit";
+import { RailPortal } from "@/components/ads/RailPortal";
 
 /**
  * The placements. Call sites use these, never AdFrame directly, so that what
@@ -221,12 +222,13 @@ type RailUnit = "skyscraper" | "railHalf";
  * non-pick pages — form, team news, stats, standings, results — where a 160px
  * column costs the content nothing.
  *
- * The width maths is why it is `xl` and not `lg`. The content box is
- * `max-w-7xl px-4`, so at the xl breakpoint (1280px) the main column keeps
- * 1280 - 32 - 160 - 24 = 1064px, which is still wider than the `lg` breakpoint
- * every grid on those pages was laid out against. Below 1280 the rail does not
- * exist at all and the page is byte-identical to what it was before — no
- * reflow, no squeeze, nothing to check.
+ * WHERE IT SITS: directly under the Top trends panel, in the right-hand column
+ * the predictions layout owns from `xl`. It used to be a 160px column of its
+ * own beside the content; once the 340px trends column arrived, that put the
+ * ad between the content and the panel and cut a match page's content to
+ * 716px. Sharing the panel's column gives the content back 184px (884px at
+ * 1280) and keeps the ad in the sidebar. Below `xl` it does not render, as
+ * before.
  *
  * One unit per rail, deliberately. Stacking the 600 and the 300 in one sticky
  * block makes it ~950px tall, which does not fit the usable height of a 1080p
@@ -250,26 +252,18 @@ export function AdRail({ unit }: { unit: RailUnit }) {
 }
 
 /**
- * Wraps a page body so a rail can sit beside it.
- *
- * A separate component rather than a grid written inline on each page, because
- * the two pages that use it must not be free to disagree about the column
- * widths — the whole safety argument for the rail (see AdRail) is the specific
- * arithmetic of `minmax(0,1fr) 160px` inside `max-w-7xl px-4` at `xl`.
- *
- * `min-w-0` on the content column is not optional: a grid item's default
- * `min-width:auto` refuses to shrink below its content's intrinsic width, and
- * one wide table on these pages — standings, the results list — would push the
- * rail off the side of the container instead of scrolling inside its own box.
- *
- * Below `xl` this renders a plain wrapper `div` with no grid at all, so the
- * page reflows exactly as it did before the rail existed.
+ * Gives a page a rail unit. The page chooses the unit; RailPortal places it in
+ * the slot under the Top trends panel (see AdRail), so the page body itself is
+ * no longer wrapped in a grid. Only valid under /predictions, whose layout
+ * renders that slot.
  */
 export function WithAdRail({ unit, children }: { unit: RailUnit; children: React.ReactNode }) {
   return (
-    <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_160px] xl:items-start xl:gap-6">
-      <div className="min-w-0">{children}</div>
-      <AdRail unit={unit} />
-    </div>
+    <>
+      {children}
+      <RailPortal>
+        <AdRail unit={unit} />
+      </RailPortal>
+    </>
   );
 }

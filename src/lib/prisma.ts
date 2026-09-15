@@ -91,8 +91,32 @@ function createPrismaClient() {
   }
 }
 
-const globalForPrisma = globalThis as unknown as { prisma?: ReturnType<typeof createPrismaClient> };
+type Client = ReturnType<typeof createPrismaClient>;
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+const globalForPrisma = globalThis as unknown as { prisma?: Client };
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+/**
+ * Importing this module in the browser must not throw.
+ *
+ * Client components legitimately import shared constants and types from lib
+ * modules that also query the database — TrackRecordView reads its window
+ * options from trackRecord.ts, for one — which pulls this file into the
+ * browser bundle. A bare `new PrismaClient()` tolerated that, but `$extends`
+ * throws on access in Prisma's browser stub, and doing it at import time took
+ * down /track-record and every league and team page with a client-side
+ * exception. So the browser gets a stand-in that only fails if something
+ * actually tries to query, with an error that says why.
+ */
+function browserStandIn(): Client {
+  return new Proxy({} as Client, {
+    get(_target, property) {
+      // Inspection by tooling (thenable checks, React/dev-overlay symbols) is not a query.
+      if (typeof property === "symbol" || property === "then" || property === "$$typeof") return undefined;
+      throw new Error(`prisma.${String(property)} was called in the browser; database access is server-only`);
+    },
+  });
+}
+
+export const prisma: Client = typeof window !== "undefined" ? browserStandIn() : (globalForPrisma.prisma ?? createPrismaClient());
+
+if (typeof window === "undefined" && process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
