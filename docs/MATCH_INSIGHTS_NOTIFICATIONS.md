@@ -30,6 +30,17 @@ Insights are calculated by `src/lib/insights.ts` (pure) and maintained by `src/l
 
 One call per team per refetch, bounded per run by `fetchLimit` (default 30, maximum 60). With about 125 upcoming teams that is roughly 500 calls a day, within the Pro plan's 7,500. Calls go through `apiFetch`, so the daily budget gate and throttle apply.
 
+### Top trends panel and page
+
+**Where it appears.** Every page under `/predictions` shows a Top trends panel through `src/app/(public)/predictions/layout.tsx`. From 1280px wide it sits as a right-hand column; on smaller screens it follows the page content. `/match-insights` shows every trend in the same card style.
+
+**What it shows.**
+- **Periods:** Today, Tomorrow and Weekend, in Lagos time. The weekend is Saturday and Sunday: the coming one, or the current one while it's under way.
+- **Selection:** the panel shows the strongest trend per fixture, up to six. `/match-insights` lists every trend for the period, strongest first, 24 per page.
+- **Price:** each card shows the bet its trend literally describes, from the trend team's side of the fixture. Unbeaten means the team or the draw; a winless run means the opponent or the draw; a losing run means the opponent; failed to score or clean sheet means BTTS No. The price shown is the best quoted, and only when at least `MIN_BOOKMAKERS` (5) books quote that exact selection. Otherwise no price is shown.
+
+**Data loading.** The panel fetches `/api/top-trends`, which is edge-cached for 2 minutes, instead of the layout querying the database. Some prediction pages render statically, and a data-reading layout would either freeze the panel at build time or force those pages dynamic.
+
 ## Following and entitlement
 
 Following a paid category never grants access. Entitlement is rechecked when the feed and inbox render and when a delivery is claimed. Push copy for VIP and Premium is generic and does not expose selections on a lock screen.
