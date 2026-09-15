@@ -9,6 +9,7 @@ import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
+import { recordPredictionEvents } from "@/lib/notifications";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -64,6 +65,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const parsed = Patch.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { action, patch } = parsed.data;
+  const before = await prisma.prediction.findUnique({ where: { id: params.id }, include: { categories: true } });
+  if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
@@ -143,10 +146,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     });
     await setPredictionCategories(params.id, held ? [...categories, "BET_OF_THE_DAY"] : categories);
   }
-  const updated = await prisma.prediction.update({
-    where: { id: params.id },
-    data,
-    include: { categories: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.prediction.update({ where: { id: params.id }, data, include: { categories: true } });
+    await recordPredictionEvents(tx, before, row, action);
+    return row;
   });
   return NextResponse.json({ prediction: updated });
 }

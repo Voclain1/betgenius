@@ -14,12 +14,15 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
-  const oauthError = useSearchParams().get("error");
+  const searchParams = useSearchParams();
+  const oauthError = searchParams.get("error");
+  const requested = searchParams.get("callbackUrl");
+  const callbackUrl = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await signIn("credentials", { email, password, redirect: false });
-    if (res?.ok) router.push("/dashboard");
+    if (res?.ok) router.push(callbackUrl);
     else setErr("Invalid credentials");
   };
 
@@ -32,7 +35,7 @@ function LoginForm() {
             {OAUTH_ERROR_MESSAGES[oauthError] ?? "Something went wrong signing in — please try again."}
           </div>
         )}
-        <GoogleSignInButton />
+        <GoogleSignInButton callbackUrl={callbackUrl} />
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <div className="h-px flex-1 bg-brand-border" />
           <span>OR</span>

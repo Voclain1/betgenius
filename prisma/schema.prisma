@@ -59,6 +59,11 @@ model User {
   betSlips        BetSlip[]
   aiJobs          AIJob[]
   accounts        Account[]
+  follows         UserFollow[]
+  notificationPreference NotificationPreference?
+  pushSubscriptions PushSubscription[]
+  notifications   UserNotification[]
+  notificationDeliveries NotificationDelivery[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -711,6 +716,158 @@ model AppLock {
   expiresAt  DateTime
 
   @@index([expiresAt])
+}
+
+// Stable, polymorphic follows. targetKey is a provider id for TEAM/LEAGUE,
+// a Prediction id for PREDICTION, and a canonical PredictionCategory for CATEGORY.
+model UserFollow {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType String
+  targetKey  String
+  label      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, targetType, targetKey])
+  @@index([targetType, targetKey, userId])
+  @@index([userId, createdAt])
+}
+
+model NotificationPreference {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushEnabled           Boolean  @default(false)
+  newPredictions        Boolean  @default(true)
+  kickoffReminders     Boolean  @default(true)
+  tipChanges            Boolean  @default(true)
+  results               Boolean  @default(true)
+  kickoffMinutes        Int      @default(30)
+  timezone              String   @default("Africa/Lagos")
+  quietStartMinutes     Int?
+  quietEndMinutes       Int?
+  dailyCap              Int      @default(12)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model PushSubscription {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpointHash   String   @unique
+  endpoint       String   @db.Text
+  p256dh         String   @db.Text
+  auth           String   @db.Text
+  userAgent      String?
+  createdAt      DateTime @default(now())
+  lastSuccessAt  DateTime?
+  failureCount   Int      @default(0)
+
+  @@index([userId, createdAt])
+}
+
+// Event/outbox rows are immutable facts. eventKey prevents lifecycle hooks and
+// retrying cron requests from creating the same event twice.
+model NotificationEvent {
+  id           String   @id @default(cuid())
+  eventKey     String   @unique
+  type         String
+  predictionId String?
+  fixtureApiId Int?
+  category     String?
+  leagueApiId  Int?
+  teamApiIds   Int[]
+  title        String
+  body         String
+  link         String
+  data         Json?
+  availableAt  DateTime @default(now())
+  expiresAt    DateTime?
+  fannedOutAt  DateTime?
+  createdAt    DateTime @default(now())
+  deliveries   NotificationDelivery[]
+  notifications UserNotification[]
+
+  @@index([fannedOutAt, availableAt, createdAt])
+  @@index([predictionId, createdAt])
+}
+
+model NotificationDelivery {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseToken  String?
+  leasedUntil DateTime?
+  lastError   String?
+  deliveredAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([status, nextAttemptAt, leasedUntil])
+  @@index([userId, createdAt])
+}
+
+model UserNotification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@index([userId, readAt, createdAt])
+}
+
+// A team's recent results, fetched for Match Insights only. Deliberately not
+// TeamEnrichmentCache.lastFixtures: that column holds five trimmed summaries
+// the form panel and AI digest depend on, which is too short a history for a
+// streak and drops the fixture id, status and regulation score an insight has
+// to be verified against. `fixtures` holds compact InsightFixture rows.
+model TeamFixtureHistory {
+  id            String    @id @default(cuid())
+  teamApiId     Int       @unique
+  fixtures      Json?
+  fetchedAt     DateTime?
+  lastAttemptAt DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// Explainable evidence for one team ahead of its next published fixture.
+// Replaced wholesale per team on every recalculation, so an insight the latest
+// history no longer supports disappears instead of lingering until expiry.
+// expiresAt is the earlier of the target kickoff and the history's freshness
+// limit, so evidence is never shown after the match it was calculated for.
+model MatchInsightCache {
+  id                 String   @id @default(cuid())
+  insightKey         String   @unique
+  teamApiId          Int
+  type               String
+  scope              String
+  leagueApiId        Int?
+  predictionId       String
+  kickoff            DateTime
+  strength           Float
+  calculationVersion String
+  evidence           Json
+  refreshedAt        DateTime
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([expiresAt, kickoff])
+  @@index([leagueApiId, expiresAt])
+  @@index([teamApiId, expiresAt])
 }
 
 model AdminTask {

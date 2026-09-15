@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { applyCategoryChanges, reviewTransition, setPredictionCategories } from "@/lib/predictions";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
+import { recordPredictionEvents } from "@/lib/notifications";
 import { z } from "zod";
 
 /**
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
   // approved, so this cannot be a single updateMany.
   const rows = await prisma.prediction.findMany({
     where: { id: { in: ids } },
-    select: { id: true, approvedById: true, status: true, category: true, categories: { select: { category: true } } },
+    include: { categories: true },
   });
 
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
@@ -64,9 +65,15 @@ export async function POST(req: Request) {
         const next = applyCategoryChanges(current, parsed.data.add, parsed.data.remove);
         await setPredictionCategories(row.id, next);
       } else {
-        await prisma.prediction.update({
-          where: { id: row.id },
-          data: reviewTransition(action, session!.user.id, row),
+        // Same transaction and events as the single-row route: a bulk publish
+        // is how most tips go live, so it must notify followers too.
+        await prisma.$transaction(async (tx) => {
+          const updated = await tx.prediction.update({
+            where: { id: row.id },
+            data: reviewTransition(action, session!.user.id, row),
+            include: { categories: true },
+          });
+          await recordPredictionEvents(tx, row, updated, action);
         });
       }
       results.push({ id: row.id, ok: true });

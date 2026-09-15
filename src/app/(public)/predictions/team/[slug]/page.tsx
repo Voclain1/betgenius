@@ -15,6 +15,7 @@ import { AnswerSummary } from "@/components/AnswerSummary";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
+import { FollowButton } from "@/components/FollowButton";
 
 /** The row set can mix two spellings that happen to slug the same, or (rarely) one team's home games and another same-slugged team's away games; picks whichever stored name actually matches `slug` for display. */
 function resolveTeamName(rows: { homeTeam: string | null; awayTeam: string | null }[], slug: string): string {
@@ -129,6 +130,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       />
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">{name}</h1>
+        {teamApiId != null && <FollowButton targetType="TEAM" targetKey={String(teamApiId)} label={name} />}
         {/* Answers "what is this site's record on this team" in one line,
             above the form panel and the RateCard that break it down. */}
         <AnswerSummary text={teamSummary({ name, pickCount: rows.length, stat })} />

@@ -407,6 +407,17 @@ export async function getTeamContext(teamId: number, leagueId: number, season: n
 }
 
 /**
+ * A team's most recent fixtures across every competition, for Match Insights.
+ *
+ * Separate from getTeamContext's `last: 5`, which feeds the AI digest and the
+ * form panel and should not change shape underneath them. `last` is one call
+ * whatever its size, so the longer history costs nothing extra per team.
+ */
+export function getTeamRecentFixtures(teamId: number, last: number) {
+  return apiFetch<FixtureRow[]>("/fixtures", { team: teamId, last });
+}
+
+/**
  * One entry from the /players/top* family. All of them share this shape — the
  * endpoint only decides the ordering, so each response carries the player's
  * full stat line regardless of which leaderboard was asked for.

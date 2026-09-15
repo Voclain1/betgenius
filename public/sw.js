@@ -34,7 +34,7 @@
 // artwork under the SAME filenames, and /icons/ is served cache-first as
 // immutable — without this bump every already-installed client would keep
 // showing the old mark on its home screen indefinitely.
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const SHELL_CACHE = `betgenius-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `betgenius-runtime-${CACHE_VERSION}`;
 
@@ -47,7 +47,7 @@ const RUNTIME_CACHE = `betgenius-runtime-${CACHE_VERSION}`;
 const SHELL_ASSETS = ["/offline", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 /** Paths whose responses are never valid to reuse. */
-const NEVER_CACHE = [/^\/api\//, /^\/livescores/, /^\/fixtures/, /^\/admin/, /^\/dashboard/];
+const NEVER_CACHE = [/^\/api\//, /^\/livescores/, /^\/fixtures/, /^\/admin/, /^\/dashboard/, /^\/following/, /^\/notifications/];
 
 const isNeverCached = (pathname) => NEVER_CACHE.some((re) => re.test(pathname));
 
@@ -99,6 +99,34 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request));
   }
+});
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data?.json() ?? {}; } catch { data = {}; }
+  const title = typeof data.title === "string" ? data.title : "BetGenius";
+  const body = typeof data.body === "string" ? data.body : "You have a new notification.";
+  const url = typeof data.url === "string" && /^\/(?!\/)/.test(data.url) ? data.url : "/notifications";
+  event.waitUntil(self.registration.showNotification(title, { body, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", tag: typeof data.tag === "string" ? data.tag : undefined, data: { url } }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/notifications", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find((client) => client.url.startsWith(self.location.origin));
+    if (existing) {
+      // navigate() rejects for a window this worker does not control (e.g. one
+      // opened before it activated); fall back to a new window rather than
+      // swallowing the click.
+      try {
+        const navigated = await existing.navigate(url);
+        return (navigated ?? existing).focus();
+      } catch {}
+    }
+    return self.clients.openWindow(url);
+  })());
 });
 
 async function staleWhileRevalidate(request) {

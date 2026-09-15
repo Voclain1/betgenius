@@ -8,6 +8,7 @@ import { ChevronDown, Menu, X } from "lucide-react";
 import { SearchBox } from "@/components/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandAssets";
+import { NotificationBell } from "@/components/NotificationBell";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -38,6 +39,7 @@ const TIP_LINKS: NavLink[] = [
 ];
 
 const PRIMARY_LINKS: NavLink[] = [
+  { href: "/match-insights", label: "Insights" },
   { href: "/bet-builder", label: "Bet Builder" },
   { href: "/multi-bets", label: "Multi Bets" },
   { href: "/track-record", label: "Track Record" },
@@ -171,10 +173,24 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
             <Link href="/admin" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Admin</Link>
           )}
           <Link href="/dashboard" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
+          <Link href="/following" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
           <button
             className="btn btn-ghost text-sm"
-            onClick={() => {
+            onClick={async () => {
               onNavigate?.();
+              // Detach this browser's push subscription from the account first,
+              // so the next person to sign in here is not sent the previous
+              // user's notifications. getRegistration() resolves to undefined
+              // when no worker is registered; `serviceWorker.ready` would never
+              // resolve and sign-out would silently hang.
+              try {
+                const reg = await navigator.serviceWorker?.getRegistration();
+                const sub = await reg?.pushManager.getSubscription();
+                if (sub) {
+                  await fetch("/api/push-subscriptions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+                  await sub.unsubscribe();
+                }
+              } catch {}
               signOut();
             }}
           >
@@ -259,6 +275,7 @@ export function Nav() {
               single icon-width control, so it costs nothing in the mobile bar
               and does not need to hide in the drawer to fit. */}
           <ThemeToggle />
+          <NotificationBell />
 
           {/* The Account tab owns sign-in/out and the dashboard in the app, so
               the inline pair would be a duplicate control in the one place a
