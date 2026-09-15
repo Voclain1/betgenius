@@ -9,17 +9,19 @@ export async function generateMetadata(): Promise<Metadata> {
 
   if (data.totalSettledAllTime < MIN_SETTLED_SAMPLE_SIZE) {
     return {
-      title: "Track Record",
+      title: "Football Prediction Track Record",
       description: "Our real settled prediction results, published transparently once there's a fair sample size to judge.",
       alternates: { canonical: "/track-record" },
       robots: { index: false, follow: true },
     };
   }
 
-  const rate30 = data.windows[30].headline.rate;
-  const rateText = rate30 != null ? `${Math.round(rate30 * 100)}% win rate over the last 30 days, ` : "";
+  const last30 = data.windows[30].headline;
+  const rateText = last30.decided >= MIN_SETTLED_SAMPLE_SIZE && last30.rate != null
+    ? `${Math.round(last30.rate * 100)}% win rate over the last 30 days, `
+    : "";
   return {
-    title: "Track Record",
+    title: "Football Prediction Track Record",
     description: `${rateText}${data.totalSettledAllTime} settled tips all-time — every result, win or lose, published transparently.`,
     alternates: { canonical: "/track-record" },
   };

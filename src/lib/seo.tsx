@@ -19,6 +19,33 @@ export function pageTitle(title: string): string {
   return `${title} | ${SITE_NAME}`;
 }
 
+function shortenAtWord(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) return compact;
+  const candidate = compact.slice(0, maxLength - 1).trimEnd();
+  const lastSpace = candidate.lastIndexOf(" ");
+  const shortened = lastSpace >= Math.floor(maxLength * 0.65) ? candidate.slice(0, lastSpace) : candidate;
+  return `${shortened.replace(/[,:;–—-]+$/u, "")}…`;
+}
+
+/** Leaves room for the root layout's ` | BetGenius` title suffix. */
+export function fitMetadataTitle(value: string): string {
+  return shortenAtWord(value, 47);
+}
+
+/** Fits a variable entity name while retaining the search-intent phrase at the end. */
+export function fitMetadataTitleWithSuffix(subject: string, suffix: string): string {
+  const ending = ` ${suffix.trim()}`;
+  const full = `${subject}${ending}`;
+  if (full.length <= 47) return full;
+  return `${shortenAtWord(subject, Math.max(12, 47 - ending.length))}${ending}`;
+}
+
+/** Keeps generated descriptions within a conservative search-snippet budget. */
+export function fitMetaDescription(value: string): string {
+  return shortenAtWord(value, 155);
+}
+
 export type BreadcrumbItem = { name: string; path: string };
 
 /** schema.org BreadcrumbList JSON-LD for category/league pages. */
@@ -80,9 +107,9 @@ export function titleDate(kickoff: Date | string | null): string | null {
  * league is appended by Next's title template, not repeated here.
  */
 export function matchTitle(input: { homeTeam: string; awayTeam: string; kickoff: Date | string | null }): string {
-  const base = `${input.homeTeam} vs ${input.awayTeam} prediction`;
+  const fixture = `${input.homeTeam} vs ${input.awayTeam}`;
   const date = titleDate(input.kickoff);
-  return date ? `${base}, ${date}` : base;
+  return fitMetadataTitleWithSuffix(fixture, date ? `prediction, ${date}` : "prediction");
 }
 
 /**
@@ -111,10 +138,10 @@ export function matchDescription(input: {
     const { market, pick, confidence } = input.topPick;
     const extra =
       input.marketCount > 1 ? ` Plus ${input.marketCount - 1} more market${input.marketCount === 2 ? "" : "s"}, form, team news and head-to-head.` : "";
-    return `${fixture}${where ? ` (${where})` : ""}: we back ${pick} — ${market} at ${confidence}% confidence.${extra}`;
+    return fitMetaDescription(`${fixture}${where ? ` (${where})` : ""}: we back ${pick} — ${market} at ${confidence}% confidence.${extra}`);
   }
 
-  return `${fixture}${where ? ` (${where})` : ""} — prediction, recent form, team news, head-to-head and league table context.`;
+  return fitMetaDescription(`${fixture}${where ? ` (${where})` : ""} — prediction, recent form, team news, head-to-head and league table context.`);
 }
 
 /**
@@ -399,20 +426,9 @@ export function sportsEventJsonLd(input: {
     // the objects rather than rebuilding them is what guarantees the performer
     // entry and the homeTeam entry are the same entity down to the `@id`.
     performer: [home, away],
-    // An approximation, and only that: this is the COMPETITION, not the
-    // federation that runs it. Resolving a real governing body would need an
-    // entity source the site does not have, and inventing one would be worse
-    // than naming the competition a reader would recognise.
-    ...(input.league
-      ? {
-          organizer: {
-            "@type": "SportsOrganization",
-            ...(input.leagueApiId != null ? { "@id": `${SITE_URL}/#league-${input.leagueApiId}` } : {}),
-            name: input.league,
-            ...(input.leagueLogo ? { logo: input.leagueLogo } : {}),
-          },
-        }
-      : {}),
+    // No organizer is asserted. The stored league identifies the competition,
+    // not the federation or company hosting the fixture; calling it an
+    // organizer would turn a known competition into an invented organization.
     // Venue comes from the same cached row the match info panel renders, so the
     // markup and the visible page cannot disagree.
     ...(input.venue
@@ -542,11 +558,24 @@ export function organizationJsonLd() {
   return {
     "@context": "https://schema.org",
     "@type": "Organization",
+    "@id": `${SITE_URL}/#organization`,
     name: SITE_NAME,
     url: SITE_URL,
     // Absolute, because consumers of JSON-LD do not resolve against the
     // document the way Next resolves openGraph paths against metadataBase.
     logo: absoluteUrl(SOCIAL_CARD),
     description: "Football predictions grounded in verified match data, with a published settled-results record.",
+  };
+}
+
+/** Homepage-only site-name signal. No SearchAction: search has no crawlable query-result URL. */
+export function websiteJsonLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": `${SITE_URL}/#website`,
+    url: SITE_URL,
+    name: SITE_NAME,
+    publisher: { "@id": `${SITE_URL}/#organization` },
   };
 }

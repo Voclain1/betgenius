@@ -20,9 +20,10 @@ import {
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
 import { FollowButton } from "@/components/FollowButton";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fixtureSample } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fitMetadataTitle, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
+import { AdLeaderboard, WithAdRail } from "@/components/ads/AdPlacements";
 import type { PredictionCategory } from "@/lib/enums";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -47,14 +48,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
   const name = leagueDisplayName(rows[0].leagueName!, rows[0].leagueApiId);
   const seo = leagueSeo(rows[0].leagueApiId, name);
-  const sample = fixtureSample(rows);
-
   return {
-    title: seo.title,
-    // The count is the page's own row count and the sample is its own leading
-    // fixtures, so the description cannot claim more than the page shows. Only
-    // the phrase and the closing sentence are per-league.
-    description: `${rows.length} ${seo.phrase}${sample ? ` — including ${sample}` : ""}. ${seo.blurb}`,
+    title: fitMetadataTitle(seo.title),
+    description: fitMetaDescription(`${rows.length} ${seo.phrase}. ${seo.blurb}`),
     alternates: { canonical: `/predictions/league/${params.slug}` },
   };
 }
@@ -132,6 +128,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   );
 
   return (
+    // Rail carries the 160x300 rather than the 600 — see AdRail on why one
+    // unit per rail and why the tall one went to the match page.
+    <WithAdRail unit="railHalf">
     <div className="space-y-6">
       <JsonLd
         data={[
@@ -156,6 +155,10 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <RateCard stat={stat} label={`All-time in ${name}`} big />
       </div>
 
+      {/* After the first main content section — the summary line and the
+          all-time rate card — and before standings. */}
+      <AdLeaderboard />
+
       {standings && standings.length > 0 && (
         <div className="card space-y-3">
           <h2 className="text-xl font-semibold">Standings</h2>
@@ -176,6 +179,11 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         <h2 className="mb-3 text-xl font-semibold">Recent results</h2>
         <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
       </div>
+
+      {/* Between two reference sections — settled results above, player
+          leaderboards below. The league's published picks are the last block
+          on the page, well clear of this. */}
+      <AdLeaderboard />
 
       {/* Rendered once player stats have been fetched at all. Individual
           boards can still be empty (season not started, cards lagging) and say
@@ -209,5 +217,6 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         </div>
       </div>
     </div>
+    </WithAdRail>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { StatusTabs, LeagueGroup, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
 import { tabOfStatus, type MatchStatusGroup } from "@/lib/matchStatus";
@@ -8,7 +9,20 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIndex }) {
+/**
+ * `adSlot` is rendered directly under the header controls. It arrives as a
+ * node from the server page rather than being imported here on purpose: the
+ * import then lives in the route's own page.tsx, which is where
+ * scripts/check-ad-placement.ts looks, and this component keeps no dependency
+ * on the ad stack at all.
+ */
+export default function LivescoresClient({
+  linkIndex,
+  adSlot,
+}: {
+  linkIndex: MatchLinkIndex;
+  adSlot?: React.ReactNode;
+}) {
   const [dateRows, setDateRows] = useState<FixtureRow[]>([]);
   const [liveRows, setLiveRows] = useState<FixtureRow[]>([]);
   // Tracked as two independent flags rather than one shared `loading` flag
@@ -81,9 +95,14 @@ export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIn
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Livescores</h1>
+        <h1 className="text-2xl font-bold">Live football scores today</h1>
         <StatusTabs active={tab} onChange={setTab} counts={counts} />
       </div>
+      <p className="max-w-3xl text-sm leading-6 text-gray-300">
+        Follow in-play football scores, match minutes and goal updates by competition. Switch between live, upcoming and finished fixtures to see today&apos;s schedule and results in one place.
+      </p>
+
+      {adSlot}
 
       {loading && <EmptyState>Loading fixtures…</EmptyState>}
       {!loading && groups.length === 0 && (
@@ -100,6 +119,12 @@ export default function LivescoresClient({ linkIndex }: { linkIndex: MatchLinkIn
           <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
         ))}
       </div>
+
+      <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">How the live score page updates</h2>
+        <p className="text-sm leading-6 text-gray-300">Live matches refresh approximately every 20 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
+        <p className="text-sm leading-6 text-gray-300">Where BetGenius has published match analysis, the fixture links to its preview. You can also browse the full <Link href="/fixtures" className="text-brand hover:underline">football fixtures calendar</Link> or review <Link href="/predictions/today" className="text-brand hover:underline">today&apos;s football predictions</Link> before kick-off.</p>
+      </section>
     </div>
   );
 }

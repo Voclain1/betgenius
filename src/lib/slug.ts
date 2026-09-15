@@ -133,3 +133,46 @@ export function matchSlug(input: {
   if (!home || !away) return null;
   return `${home}-vs-${away}-${kickoffDay(input.kickoff)}`;
 }
+
+/**
+ * The five denormalised slug keys on Prediction, derived from one row.
+ *
+ * This is the ONLY place the mapping from a row to its slug columns is
+ * written. src/lib/prisma.ts applies it on every create/update/upsert,
+ * scripts/backfill-prediction-slugs.ts repairs existing rows with it, and
+ * scripts/check-prediction-slugs.ts asserts the stored values still equal it.
+ * Three callers, one definition — a second implementation (a SQL trigger, a
+ * hand-rolled copy at a write site) is what turns a slug column into a 404.
+ *
+ * Every field is nullable because every source field is: a DRAFT row may have
+ * no teams or no kickoff yet. Null means "this row has no such page", which is
+ * exactly what a WHERE on the column should not match.
+ */
+export type PredictionSlugSource = {
+  leagueName?: string | null;
+  leagueApiId?: number | null;
+  homeTeam?: string | null;
+  awayTeam?: string | null;
+  kickoff?: Date | string | null;
+};
+
+export type PredictionSlugKeys = {
+  leagueSlugKey: string | null;
+  homeSlugKey: string | null;
+  awaySlugKey: string | null;
+  matchSlugKey: string | null;
+  h2hSlugKey: string | null;
+};
+
+export function derivePredictionSlugs(row: PredictionSlugSource): PredictionSlugKeys {
+  return {
+    leagueSlugKey: row.leagueName ? leagueSlug(row.leagueName, row.leagueApiId) : null,
+    homeSlugKey: row.homeTeam ? teamSlug(row.homeTeam) : null,
+    awaySlugKey: row.awayTeam ? teamSlug(row.awayTeam) : null,
+    matchSlugKey: matchSlug(row),
+    h2hSlugKey: h2hSlug(row.homeTeam, row.awayTeam),
+  };
+}
+
+/** The row fields every slug key is derived from — a write touching any of these invalidates them. */
+export const PREDICTION_SLUG_SOURCE_FIELDS = ["leagueName", "leagueApiId", "homeTeam", "awayTeam", "kickoff"] as const;

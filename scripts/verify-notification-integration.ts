@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/prisma";
 import { claimDeliveries, createNotificationEvent, fanOutPendingEvents, recordPredictionEvents, releaseDelivery } from "../src/lib/notifications";
 import { reviewTransition } from "../src/lib/predictions";
 import { runNotificationDispatch } from "../src/lib/notificationDispatch";
@@ -7,7 +7,6 @@ import { sendPush } from "../src/lib/push";
 
 const url = new URL(process.env.DATABASE_URL ?? "");
 if (url.hostname !== "127.0.0.1" || url.port !== "55432" || !url.pathname.endsWith("/betgenius_feature_test")) throw new Error("Refusing to run outside the disposable BetGenius test database");
-const prisma = new PrismaClient();
 const prefix = "verify-notifications-";
 
 async function clear() {

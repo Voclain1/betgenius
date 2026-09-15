@@ -47,7 +47,20 @@ function datesFor(range: Range): string[] {
   return Array.from({ length: 7 }, (_, i) => isoDaysFromNow(i));
 }
 
-export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkIndex }) {
+/**
+ * `adSlot` is rendered directly under the header controls. It arrives as a
+ * node from the server page rather than being imported here on purpose: the
+ * import then lives in the route's own page.tsx, which is where
+ * scripts/check-ad-placement.ts looks, and this component keeps no dependency
+ * on the ad stack at all.
+ */
+export default function FixturesClient({
+  linkIndex,
+  adSlot,
+}: {
+  linkIndex: MatchLinkIndex;
+  adSlot?: React.ReactNode;
+}) {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -167,6 +180,8 @@ export default function FixturesClient({ linkIndex }: { linkIndex: MatchLinkInde
         <LeagueScopeToggle scope={leagueScope} onChange={(s) => setParam("league", s)} />
         <StatusTabs active={tab} onChange={(t) => setParam("status", t)} counts={counts} />
       </div>
+
+      {adSlot}
 
       {!loading && rows.length > 0 && (
         <p className="text-xs text-gray-500">

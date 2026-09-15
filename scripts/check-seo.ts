@@ -14,12 +14,13 @@
  * Run: npx tsx scripts/check-seo.ts
  */
 import { assessMatchEvidence, EVIDENCE_THRESHOLD, MAX_EVIDENCE_SCORE } from "../src/lib/matchEvidence";
-import { matchTitle, matchDescription, titleDate, sportsEventJsonLd, organizationJsonLd, breadcrumbJsonLd } from "../src/lib/seo";
+import { matchTitle, matchDescription, titleDate, fitMetadataTitleWithSuffix, fitMetaDescription, sportsEventJsonLd, sportsEventsForFixtures, organizationJsonLd, websiteJsonLd, breadcrumbJsonLd } from "../src/lib/seo";
 import { toParagraphs, stripInlineMarkers } from "../src/components/Prose";
 import { buildAnalysis } from "../src/lib/predictionAnalysis";
 import type { TeamDigest } from "../src/lib/ai/digest";
 import type { H2HMeeting } from "../src/lib/h2h";
 import type { LeagueStandingRow } from "../src/lib/enrichment";
+import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "../src/lib/h2hEvidence";
 
 let passed = 0;
 const failures: string[] = [];
@@ -105,6 +106,9 @@ check("evidence: one cold side does not suppress an otherwise full page", oneCol
 // Signal-level correctness.
 eq("evidence: 2 meetings is too few for h2h", assessMatchEvidence({ ...base, h2hMeetings: meetings(2) }).signals.headToHead, false);
 eq("evidence: 3 meetings counts", assessMatchEvidence({ ...base, h2hMeetings: meetings(3) }).signals.headToHead, true);
+eq("h2h index: threshold stays aligned with match evidence", MIN_H2H_INDEX_MEETINGS, 3);
+check("h2h index: two meetings remain a thin sample", !isSubstantiveH2H(meetings(2)));
+check("h2h index: three meetings clear the index bar", isSubstantiveH2H(meetings(3)));
 eq("evidence: h2h needs both team ids",
   assessMatchEvidence({ ...base, h2hMeetings: meetings(6), homeTeamApiId: null }).signals.headToHead, false);
 eq("evidence: an unplayed table row is not standings evidence",
@@ -128,6 +132,15 @@ eq("title: survives a missing kickoff",
 const s1 = matchTitle({ homeTeam: "A", awayTeam: "B", kickoff: "2025-08-17T00:00:00Z" });
 const s2 = matchTitle({ homeTeam: "A", awayTeam: "B", kickoff: "2026-08-17T00:00:00Z" });
 check("title: repeat fixtures get distinct titles", s1 !== s2, [s1, s2]);
+const longTitle = matchTitle({
+  homeTeam: "Podhale Nowy Targ Football Club",
+  awayTeam: "Pogon Grodzisk Mazowiecki United",
+  kickoff: "2026-08-17T00:00:00Z",
+});
+check("title: generated title leaves room for the brand suffix", longTitle.length <= 47, longTitle);
+check("title: shortening retains prediction intent and date", longTitle.includes("prediction") && longTitle.includes("2026"), longTitle);
+const longH2hTitle = fitMetadataTitleWithSuffix("A Very Long Football Club Name vs Another Extremely Long Football Club Name", "head-to-head");
+check("title: suffix-aware shortening retains H2H intent", longH2hTitle.length <= 47 && longH2hTitle.endsWith("head-to-head"), longH2hTitle);
 
 // Day derivation must be UTC, matching the slug's own day.
 eq("titleDate: uses UTC, not local time", titleDate("2026-08-17T23:30:00Z"), "17 Aug 2026");
@@ -142,6 +155,9 @@ check("description: leads with the actual call", d.includes("Benfica to win"), d
 check("description: states confidence", d.includes("72%"), d);
 check("description: mentions the remaining markets", d.includes("2 more markets"), d);
 check("description: includes league and date", d.includes("Primeira Liga") && d.includes("17 Aug 2026"), d);
+check("description: generated match snippets stay within budget", d.length <= 155, d);
+const longDescription = fitMetaDescription("A deliberately long generated description ".repeat(10));
+check("description: shared limiter stays within budget", longDescription.length <= 155, longDescription.length);
 
 // The gating case: no publicly visible pick must never leak one.
 const gated = matchDescription({
@@ -176,6 +192,29 @@ const asString = JSON.stringify([ld, organizationJsonLd(), breadcrumbJsonLd([{ n
 check("jsonld: no FAQPage anywhere", !asString.includes("FAQPage"), asString.slice(0, 120));
 check("jsonld: no Article markup anywhere", !/"@type":"(News)?Article"/.test(asString));
 eq("jsonld: organization is an Organization", (organizationJsonLd() as any)["@type"], "Organization");
+const org: any = organizationJsonLd();
+const website: any = websiteJsonLd();
+eq("jsonld homepage: WebSite uses the brand name", website.name, "BetGenius");
+eq("jsonld homepage: WebSite publisher resolves to Organization", website.publisher?.["@id"], org["@id"]);
+check("jsonld homepage: omits false crawlable search action", !("potentialAction" in website), website);
+check("jsonld match: competition is not mislabelled as organizer", !("organizer" in ld), ld.organizer);
+
+const feedEvents: any[] = sportsEventsForFixtures([
+  { homeTeam: "A", awayTeam: "B", kickoff: "2026-08-17T12:00:00Z", league: "League", publicPick: null },
+  { homeTeam: "A", awayTeam: "B", kickoff: "2026-08-17T12:00:00Z", league: "League", publicPick: { market: "Winner", pick: "A", confidence: 70 } },
+]);
+eq("jsonld league/team: duplicate market rows produce one event", feedEvents.length, 1);
+check("jsonld league/team: feed event describes the public pick", feedEvents[0].description.includes("we back A"), feedEvents[0]);
+
+for (const [template, path] of [
+  ["match", "/predictions/match/a-vs-b-2026-08-17"],
+  ["league", "/predictions/league/premier-league"],
+  ["team", "/predictions/team/arsenal"],
+  ["h2h", "/predictions/h2h/arsenal-vs-chelsea"],
+] as const) {
+  const crumb: any = breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: template, path }]);
+  eq(`jsonld ${template}: breadcrumb identifies canonical page`, crumb.itemListElement[1].item, `https://betgenius-iota.vercel.app${path}`);
+}
 
 // --- Prose ----------------------------------------------------------------
 const twoParas = "Casa Pia host Benfica in the second round.\n\nBenfica were held to a 2-2 draw.";

@@ -7,6 +7,7 @@ import type { PredictionCategory } from "@/lib/enums";
 import { ComboCard, type ComboView } from "@/components/ComboCard";
 import { comboIsUpcoming } from "@/lib/combos";
 import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
+import Link from "next/link";
 
 export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);
@@ -104,8 +105,8 @@ export default async function MultiBetsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Multi Bets</h1>
-        <p className="text-sm text-gray-400">Multi bet accumulators spanning several fixtures, each leg taken from our published football tips.</p>
+        <h1 className="text-2xl font-bold">Multi bet predictions</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Browse football accumulators assembled from individual predictions already published on BetGenius. Each available leg shows its match, market and selection so you can inspect the component picks before considering the combined bet.</p>
       </div>
 
       {bookmakers.length > 0 && <AffiliateDisclosure compact />}
@@ -146,6 +147,13 @@ export default async function MultiBetsPage() {
           ))}
         </div>
       )}
+
+      <section className="card space-y-3">
+        <h2 className="text-lg font-semibold">How to assess a multi bet</h2>
+        <p className="text-sm leading-6 text-gray-300">An accumulator succeeds only when every included leg wins. Adding selections can increase the combined return, but it also creates more ways for the ticket to lose. A higher displayed odds target should therefore be treated as higher risk, not as stronger evidence.</p>
+        <p className="text-sm leading-6 text-gray-300">Open the underlying match predictions, compare their reasoning and check that team news or kickoff status has not changed. Our <Link href="/methodology" className="text-brand hover:underline">prediction methodology</Link> explains confidence and evidence limits, while the <Link href="/track-record" className="text-brand hover:underline">track record</Link> retains settled results.</p>
+        <p className="text-xs leading-5 text-gray-500">Odds may move or become unavailable. BetGenius does not guarantee a return, and no accumulator should be treated as certain.</p>
+      </section>
     </div>
   );
 }

@@ -6,7 +6,12 @@ import type { PredictionCategory, Role, SubscriptionStatus, SubscriptionTier } f
 import { safeNotificationLink } from "@/lib/notificationLinks";
 import { matchSlug } from "@/lib/slug";
 
-type Db = Prisma.TransactionClient | typeof prisma;
+/**
+ * The client or an interactive-transaction client. Derived from the exported
+ * `prisma` rather than Prisma.TransactionClient because that client is built
+ * with $extends, and an extended client's `tx` is not the base type.
+ */
+type Db = typeof prisma | Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 export type EventInput = {
   eventKey: string;

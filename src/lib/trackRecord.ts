@@ -53,6 +53,9 @@ export type WindowStats = {
 
 export type TrackRecordData = {
   totalSettledAllTime: number;
+  allTime: WinRateStat;
+  firstPublishedAt: string | null;
+  lastSettledAt: string | null;
   windows: Record<WindowDays, WindowStats>;
   recentTips: RecentTip[];
 };
@@ -64,23 +67,53 @@ export type TrackRecordData = {
  * in this module distinguishes settlement method in the numbers themselves.
  */
 export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
-  const totalSettledAllTime = await prisma.prediction.count({
-    where: { status: "PUBLISHED", outcome: { not: "PENDING" } },
-  });
-
   const maxWindowDays = Math.max(...WINDOW_OPTIONS);
   const maxCutoff = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
+  const settledWhere = { status: "PUBLISHED" as const, outcome: { not: "PENDING" as const } };
 
-  const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", outcome: { not: "PENDING" }, publishedAt: { gte: maxCutoff } },
-    select: {
-      outcome: true,
-      marketType: true,
-      category: true,
-      publishedAt: true,
-      categories: { select: { category: true } },
-    },
-  });
+  const [rows, outcomeCounts, dateRange, recent] = await Promise.all([
+    prisma.prediction.findMany({
+      where: { ...settledWhere, publishedAt: { gte: maxCutoff } },
+      select: {
+        outcome: true,
+        marketType: true,
+        category: true,
+        publishedAt: true,
+        categories: { select: { category: true } },
+      },
+    }),
+    prisma.prediction.groupBy({
+      by: ["outcome"],
+      where: settledWhere,
+      _count: { _all: true },
+    }),
+    prisma.prediction.aggregate({
+      where: settledWhere,
+      _min: { publishedAt: true },
+      _max: { settledAt: true },
+    }),
+    prisma.prediction.findMany({
+      where: settledWhere,
+      orderBy: { settledAt: "desc" },
+      take: 20,
+      select: { id: true, homeTeam: true, awayTeam: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
+    }),
+  ]);
+
+  const outcomeCount = (outcome: string) => outcomeCounts.find((row) => row.outcome === outcome)?._count._all ?? 0;
+  const won = outcomeCount("WON");
+  const lost = outcomeCount("LOST");
+  const voided = outcomeCount("VOID");
+  const decided = won + lost;
+  const allTime: WinRateStat = {
+    won,
+    lost,
+    void: voided,
+    total: won + lost + voided,
+    decided,
+    rate: decided > 0 ? won / decided : null,
+  };
+  const totalSettledAllTime = allTime.total;
 
   const windows = {} as Record<WindowDays, WindowStats>;
   for (const days of WINDOW_OPTIONS) {
@@ -100,20 +133,20 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
     windows[days] = { headline: computeStat(windowRows.map((r) => r.outcome)), byCategory, byMarketType };
   }
 
-  const recent = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", outcome: { not: "PENDING" } },
-    orderBy: { settledAt: "desc" },
-    take: 20,
-    select: { id: true, homeTeam: true, awayTeam: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
-  });
-
   const recentTips: RecentTip[] = recent.map((r) => ({
     ...r,
     kickoff: r.kickoff?.toISOString() ?? null,
     settledAt: r.settledAt?.toISOString() ?? null,
   }));
 
-  return { totalSettledAllTime, windows, recentTips };
+  return {
+    totalSettledAllTime,
+    allTime,
+    firstPublishedAt: dateRange._min.publishedAt?.toISOString() ?? null,
+    lastSettledAt: dateRange._max.settledAt?.toISOString() ?? null,
+    windows,
+    recentTips,
+  };
 });
 
 /**

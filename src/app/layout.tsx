@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { Analytics } from "@/components/Analytics";
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
 import { SOCIAL_CARD_IMAGE } from "@/lib/brandAssets";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
@@ -112,6 +113,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             about why no Article or FAQPage markup is emitted anywhere. */}
         <JsonLd data={organizationJsonLd()} />
         <ServiceWorkerRegistration />
+        {/* In the body, not the head: the two head scripts above must beat
+            first paint, and analytics must not compete with them. See the
+            note in Analytics.tsx — it renders nothing unless a measurement
+            id is configured, so previews and local development stay out of
+            the property. */}
+        <Analytics />
         <Providers>{children}</Providers>
       </body>
     </html>

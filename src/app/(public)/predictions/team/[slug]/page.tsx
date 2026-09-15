@@ -10,8 +10,9 @@ import { TeamSquad } from "@/components/TeamSquad";
 import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment, getFixtureEventContext } from "@/lib/predictionScope";
 import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug, matchKey } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
+import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton } from "@/components/FollowButton";
@@ -47,15 +48,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   }
 
   const name = resolveTeamName(rows, params.slug);
-  const sample = rows
-    .slice(0, 3)
-    .map((r) => (r.homeTeam ? `${r.homeTeam} vs ${r.awayTeam}` : null))
-    .filter(Boolean)
-    .join(", ");
-
   return {
     title: name,
-    description: `${rows.length} published ${name} predictions${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    description: fitMetaDescription(`${rows.length} published ${name} football predictions with match analysis, confidence ratings and settled results.`),
     alternates: { canonical: `/predictions/team/${params.slug}` },
   };
 }
@@ -146,6 +141,10 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       <div className="max-w-xs">
         <RateCard stat={stat} label={`All-time for ${name}`} big />
       </div>
+
+      {/* After the first main content section — the summary line, the form
+          panel and the all-time rate card — and before the squad. */}
+      <AdLeaderboard />
 
       {squad.length > 0 && (
         <div>

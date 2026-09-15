@@ -148,6 +148,7 @@ function NavDropdown({ label, items }: { label: string; items: NavLink[] }) {
             <Link
               key={l.href}
               href={l.href}
+              prefetch={false}
               onClick={() => setOpen(false)}
               className="flex items-center rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
             >
@@ -169,10 +170,10 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
       {user ? (
         <>
           {isAdmin && (
-            <Link href="/admin" onClick={onNavigate} className="btn btn-ghost text-sm">Admin</Link>
+            <Link href="/admin" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Admin</Link>
           )}
-          <Link href="/dashboard" onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
-          <Link href="/following" onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
+          <Link href="/dashboard" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
+          <Link href="/following" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
           <button
             className="btn btn-ghost text-sm"
             onClick={async () => {
@@ -198,8 +199,8 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
         </>
       ) : (
         <>
-          <Link href="/login" onClick={onNavigate} className="btn btn-ghost text-sm">Log in</Link>
-          <Link href="/register" onClick={onNavigate} className="btn btn-primary text-sm">Join</Link>
+          <Link href="/login" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Log in</Link>
+          <Link href="/register" prefetch={false} onClick={onNavigate} className="btn btn-primary text-sm">Join</Link>
         </>
       )}
     </div>
@@ -237,7 +238,7 @@ export function Nav() {
     <>
       <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-          <Link href="/" aria-label="BetGenius home" className="flex shrink-0 items-center gap-2">
+          <Link href="/" aria-label="BetGenius home" prefetch={false} className="flex shrink-0 items-center gap-2">
             <BrandLockup className="text-xl font-bold tracking-tight" />
           </Link>
           {/* No overflow-x-auto any more: four items fit, and a scroll
@@ -251,7 +252,7 @@ export function Nav() {
           <nav data-web-only className="hidden items-center gap-1 md:flex">
             <NavDropdown label="Tips" items={TIP_LINKS} />
             {PRIMARY_LINKS.map((l) => (
-              <Link key={l.href} href={l.href} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
+              <Link key={l.href} href={l.href} prefetch={false} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
                 {l.label}
               </Link>
             ))}
@@ -337,6 +338,7 @@ export function Nav() {
                     <Link
                       key={l.href}
                       href={l.href}
+                      prefetch={false}
                       onClick={() => setOpen(false)}
                       className="rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
                     >
@@ -351,6 +353,7 @@ export function Nav() {
                 <Link
                   key={l.href}
                   href={l.href}
+                  prefetch={false}
                   onClick={() => setOpen(false)}
                   className="rounded-md px-3 py-2 text-sm font-medium text-gray-200 hover:bg-brand-card"
                 >
@@ -364,6 +367,7 @@ export function Nav() {
                 <Link
                   key={l.href}
                   href={l.href}
+                  prefetch={false}
                   onClick={() => setOpen(false)}
                   className="rounded-md px-3 py-2 text-sm text-gray-400 hover:bg-brand-card"
                 >
