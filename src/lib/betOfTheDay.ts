@@ -5,6 +5,7 @@ import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { qualifiesForBetOfDay, affordsBetOfDayPrice, MIN_ODDS, MAX_ODDS, type FixtureOdds, type OddsGateResult } from "@/lib/odds";
 import { leaguePriorityRank } from "@/lib/leagues";
+import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/selector";
 
 /**
  * Bet of the Day — the single pinned pick.
@@ -358,10 +359,13 @@ export type GenerationTarget = {
  * has predictions — that exclusion lives in the generation queue, but is
  * repeated here so the reported targets match what generation will actually do.
  */
-export async function selectBetOfTheDayTargets(now: Date = new Date(), limit = BET_OF_DAY_DAILY_QUOTA): Promise<{ targets: GenerationTarget[]; considered: number; pricedInBand: number }> {
+export async function selectBetOfTheDayTargets(
+  now: Date = new Date(),
+  limit = BET_OF_DAY_DAILY_QUOTA,
+): Promise<{ targets: GenerationTarget[]; considered: number; claimable: number; pricedInBand: number }> {
   const { getCandidateOddsTargets } = await import("@/lib/enrichment");
   const candidates = await getCandidateOddsTargets(now);
-  if (candidates.length === 0) return { targets: [], considered: 0, pricedInBand: 0 };
+  if (candidates.length === 0) return { targets: [], considered: 0, claimable: 0, pricedInBand: 0 };
 
   const cached = await prisma.fixtureOddsCache.findMany({
     where: { matchKey: { in: candidates.map((c) => c.matchKey) }, fetchedAt: { not: null } },
@@ -371,14 +375,47 @@ export async function selectBetOfTheDayTargets(now: Date = new Date(), limit = B
 
   const ledger = await prisma.generationAttempt.findMany({
     where: { matchKey: { in: candidates.map((c) => c.matchKey) } },
-    select: { matchKey: true, leagueApiId: true, homeTeam: true, awayTeam: true, kickoff: true, fixtureApiId: true },
+    select: {
+      matchKey: true, leagueApiId: true, homeTeam: true, awayTeam: true,
+      kickoff: true, fixtureApiId: true, status: true,
+    },
   });
   const metaByKey = new Map(ledger.map((l) => [l.matchKey, l]));
 
+  /**
+   * Only fixtures the worker can actually CLAIM.
+   *
+   * getCandidateOddsTargets deliberately returns ledger rows in BOTH the PENDING
+   * and SUCCEEDED states, because the odds workload wants to keep pricing a
+   * fixture after it has been generated. Targeting must not inherit that:
+   * selectCandidates only ever offers fixtures that still need predictions, so a
+   * SUCCEEDED fixture handed to the worker through matchKeys can never be
+   * claimed and every slot spent on one is wasted.
+   *
+   * MEASURED, not inferred. Before this filter existed, a live run of
+   * selectBetOfTheDayTargets returned 12 targets of which ZERO were claimable —
+   * all 12 already SUCCEEDED, and 9 of them outside the generation window
+   * entirely, with kickoffs between 0.5 and 4 hours away. The identical defect
+   * made the first live run of the dedicated VIP/PREMIUM pass report
+   * `claimed 0`; see selectVipPremiumTargets, which carries the same guard.
+   *
+   * This has cost nothing so far only because Bet of the Day generation has
+   * never actually been scheduled — 0 jobs carrying BET_OF_THE_DAY intent in 90
+   * days. The filter is here so that whenever it IS scheduled, it is not broken
+   * by construction.
+   */
+  const fromMs = now.getTime() + GENERATE_FROM_HOURS * 3_600_000;
+  const untilMs = now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000;
+
   const inBand: GenerationTarget[] = [];
+  let claimable = 0;
   for (const c of candidates) {
     const meta = metaByKey.get(c.matchKey);
     if (!meta?.fixtureApiId) continue;
+    if (meta.status !== "PENDING") continue;
+    const ko = meta.kickoff.getTime();
+    if (ko < fromMs || ko > untilMs) continue;
+    claimable++;
     const { affords, best, market } = affordsBetOfDayPrice(oddsByKey.get(c.matchKey) ?? null);
     if (!affords || !best || !market) continue;
     inBand.push({
@@ -402,7 +439,11 @@ export async function selectBetOfTheDayTargets(now: Date = new Date(), limit = B
       a.matchKey.localeCompare(b.matchKey),
   );
 
-  return { targets: inBand.slice(0, limit), considered: candidates.length, pricedInBand: inBand.length };
+  // `claimable` is reported alongside `pricedInBand` so a run that finds nothing
+  // says WHICH stage emptied — no claimable fixtures, or none of them priced
+  // into the band. Those call for opposite responses and were previously
+  // indistinguishable.
+  return { targets: inBand.slice(0, limit), considered: candidates.length, claimable, pricedInBand: inBand.length };
 }
 
 /**
