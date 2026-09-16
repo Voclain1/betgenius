@@ -87,7 +87,8 @@ const broadPool = Array.from({ length: 20 }, (_, i) => ({ id: `row-${String(i).p
 eq("Genius: maximum is fifteen", selectCuratedIds(broadPool, GENIUS_CONFIDENCE_FLOOR).length, CURATION_MAX);
 eq("VIP: maximum is fifteen", selectCuratedIds(broadPool.map((r) => ({ ...r, confidence: 80 })), VIP_CONFIDENCE_FLOOR).length, CURATION_MAX);
 eq("PREMIUM: maximum is fifteen", selectCuratedIds(broadPool.map((r) => ({ ...r, confidence: 80 })), PREMIUM_CONFIDENCE_FLOOR).length, CURATION_MAX);
-eq("PREMIUM: confidence floor is 75%", PREMIUM_CONFIDENCE_FLOOR, 75);
+eq("PREMIUM: confidence floor sits above VIP's, not level with it", PREMIUM_CONFIDENCE_FLOOR, 80);
+check("PREMIUM: the floor is strictly higher than VIP's", PREMIUM_CONFIDENCE_FLOOR > VIP_CONFIDENCE_FLOOR);
 check("curation: minimum remains five", CURATION_MIN === 5);
 const geniusSet = new Set(selectCuratedIds(broadPool, GENIUS_CONFIDENCE_FLOOR));
 const vipSet = new Set(selectCuratedIds(broadPool, VIP_CONFIDENCE_FLOOR));
@@ -95,7 +96,30 @@ const premiumSet = new Set(selectCuratedIds(broadPool, PREMIUM_CONFIDENCE_FLOOR)
 check("curation: GENIUS and VIP can overlap", [...geniusSet].some((id) => vipSet.has(id)));
 check("curation: a prediction can qualify for GENIUS, VIP and PREMIUM", [...premiumSet].some((id) => geniusSet.has(id) && vipSet.has(id)));
 check("curation: GENIUS and VIP are independently bounded", geniusSet.size !== vipSet.size);
-eq("curation: PREMIUM applies its own 75% selection", [...premiumSet], [...vipSet]);
+// The previous assertion here required PREMIUM and VIP to select the IDENTICAL
+// set, which is precisely the defect that made two paid tiers indistinguishable
+// (148 rows each, same fixtures). It passed on `broadPool` only because that
+// pool has no row between the two floors. This pool does.
+const tierPool = [
+  { id: "vip-only-76", leagueApiId: 39, confidence: 76 },
+  { id: "vip-only-79", leagueApiId: 39, confidence: 79 },
+  { id: "both-84", leagueApiId: 39, confidence: 84 },
+  { id: "both-88", leagueApiId: 140, confidence: 88 },
+  { id: "neither-60", leagueApiId: 140, confidence: 60 },
+];
+const tierVip = new Set(selectCuratedIds(tierPool, VIP_CONFIDENCE_FLOOR));
+const tierPremium = new Set(selectCuratedIds(tierPool, PREMIUM_CONFIDENCE_FLOOR, CURATION_MIN, CURATION_MAX, { hardFloor: true }));
+check("curation: PREMIUM and VIP select genuinely different sets", tierVip.size !== tierPremium.size);
+check("curation: PREMIUM is a strict subset of VIP", [...tierPremium].every((id) => tierVip.has(id)));
+check("curation: a 76-confidence row reaches VIP but not PREMIUM", tierVip.has("vip-only-76") && !tierPremium.has("vip-only-76"));
+// The hard floor is the whole difference between an honest small tier and a
+// padded one: with only two rows above 80, the ordinary top-up would drag
+// three sub-floor rows in to reach CURATION_MIN.
+eq("PREMIUM: a hard floor never relaxes to reach the minimum", tierPremium.size, 2);
+check(
+  "PREMIUM: the same pool WOULD have been padded without the hard floor",
+  selectCuratedIds(tierPool, PREMIUM_CONFIDENCE_FLOOR).length > tierPremium.size,
+);
 // These two assert the TIERED block, which stopped being the default in
 // c37c16a when calibration moved to margin-keyed. They must name the mode
 // explicitly — passing no mode now renders the margin block, which carries

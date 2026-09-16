@@ -22,6 +22,7 @@ import {
   BET_OF_DAY_PRICE_BAND,
 } from "@/lib/betOfTheDay";
 import { z } from "zod";
+import { BANKER_INTENT, BANKER_DAILY_QUOTA, bankerQuotaRemaining } from "@/lib/bankerPipeline";
 
 /**
  * Scheduled generation. Same shape and auth as /api/admin/settle and
@@ -99,6 +100,18 @@ export async function GET(req: Request) {
    */
   const wantsBetOfTheDay = valid.includes("BET_OF_THE_DAY");
   const wantsMarketConfirmed = url.searchParams.get("marketConfirmed") === "1";
+  /**
+   * The dedicated BANKER pass.
+   *
+   * Requested as an ordinary category (?categories=BANKER) rather than a flag,
+   * because unlike Market-Confirmed its output IS a BANKER pick the moment it
+   * is generated — there is no gate standing between the draft and the tag, so
+   * nothing is being withheld from a feed while it waits to qualify.
+   *
+   * resolveGenerationRisk already routes BANKER intent to the bolder
+   * uncalibrated path; this branch is only what makes something actually ask.
+   */
+  const wantsBanker = valid.includes("BANKER");
   let matchKeys: string[] | undefined;
   let targeting: Record<string, unknown> | undefined;
 
@@ -189,9 +202,28 @@ export async function GET(req: Request) {
    * Once the quota is spent this falls through to the existing single-market
    * path. It never suppresses ordinary generation.
    */
-  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsMarketConfirmed;
+  let bankerTargeting: Record<string, unknown> | undefined;
+  if (wantsBanker) {
+    const remaining = await bankerQuotaRemaining();
+    if (remaining <= 0) {
+      return NextResponse.json({
+        ok: true,
+        skipped: "daily BANKER generation quota already spent",
+        quota: BANKER_DAILY_QUOTA,
+        generatedToday: BANKER_DAILY_QUOTA,
+        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+      });
+    }
+    effectiveLimit = Math.min(remaining, effectiveLimit);
+    bankerTargeting = { quota: BANKER_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
+  }
+
+  // Excluded from the regular-combo path for the same reason the others are: a
+  // banker is a single high-conviction call, and the multi-market breadth that
+  // feeds double assembly is the opposite instruction.
+  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsMarketConfirmed && !wantsBanker;
   let regularComboTargeting: Record<string, unknown> | undefined;
-  let generationIntent: string | undefined = wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : undefined;
+  let generationIntent: string | undefined = wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : wantsBanker ? BANKER_INTENT : undefined;
   if (wantsRegularCombo) {
     const remaining = await doublesQuotaRemaining();
     if (remaining > 0) {
@@ -243,6 +275,7 @@ export async function GET(req: Request) {
       },
     }, { status: 200 });
   }
+  if (bankerTargeting) return NextResponse.json({ ...report, banker: bankerTargeting }, { status: 200 });
   if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
   if (regularComboTargeting) return NextResponse.json({ ...report, regularCombo: regularComboTargeting }, { status: 200 });
 
