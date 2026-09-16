@@ -36,6 +36,7 @@ import { trimOdds } from "@/lib/odds";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
 import { cupSupports } from "@/lib/cupConfig";
+import { DEDICATED_PAID_PROVENANCES } from "@/lib/geniusCuration";
 
 export type TeamTarget = {
   teamApiId: number;
@@ -1035,8 +1036,8 @@ export async function getScopedOddsTargets(now: Date = new Date()): Promise<Odds
 export const ODDS_CANDIDATE_HORIZON_MS = 72 * 60 * 60 * 1000;
 
 export async function getCandidateOddsTargets(now: Date = new Date()): Promise<OddsTarget[]> {
-  // Fixtures that already carry a Market-Confirmed pick are done: at most one
-  // is ever persisted per fixture, so there is nothing left for a fresher
+  // Fixtures that already carry a dedicated paid-tier pick are done: at most
+  // one is ever persisted per fixture, so there is nothing left for a fresher
   // quote to change. This is the "terminal dedicated-pass verdict" half of the
   // scope rule; the other half is simply kickoff, bounded by the horizon below.
   //
@@ -1044,8 +1045,17 @@ export async function getCandidateOddsTargets(now: Date = new Date()): Promise<O
   // and a rejection at 40 hours out says nothing about the market at 4. The
   // failed-fetch back-off (ODDS_FAILED_RETRY_MS) is what stops that costing
   // repeated calls on fixtures the books never price.
+  //
+  // NOTE the ordering dependency this now carries. The VIP/PREMIUM pass targets
+  // fixtures that are ALREADY priced, so this workload is what feeds it: a
+  // fixture never warmed here can never become a target. MARKET_CONFIRMED stays
+  // in the list for the three rows that still carry it, though its pass is
+  // retired.
   const confirmed = await prisma.prediction.findMany({
-    where: { provenance: "MARKET_CONFIRMED", kickoff: { gt: now } },
+    where: {
+      provenance: { in: [...DEDICATED_PAID_PROVENANCES] },
+      kickoff: { gt: now },
+    },
     select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });
   const settledKeys = new Set(confirmed.map((c) => matchKey(c)).filter((k): k is string => k !== null));

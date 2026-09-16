@@ -27,7 +27,10 @@ async function main() {
     curateVipTips,
     curatePremiumTips,
     VIP_ROUTE_PROVENANCE,
+    VIP_GENERATED_PROVENANCE,
+    PREMIUM_GENERATED_PROVENANCE,
     STANDARD_CURATED_PROVENANCE,
+    DEDICATED_PAID_PROVENANCES,
     VIP_ROUTE_CUTOVER,
     VIP_CONFIDENCE_FLOOR,
     PREMIUM_CONFIDENCE_FLOOR,
@@ -146,16 +149,89 @@ async function main() {
     check("a second run still excludes the wrong-route row", !(await tagged(wrongRoute.id, "VIP")));
     check("PREMIUM behaves identically across runs", !premium2.removed.includes(routed.id));
 
+    console.log("\ndedicated VIP/PREMIUM pass — the markers it stamps are honoured:");
+    // The properties that matter are not "a confident row is selected" - the
+    // route gate above already proves that. They are that a dedicated pick is
+    // PROTECTED on evidence the confidence floor cannot see, and that VIP and
+    // PREMIUM stay genuinely different sets.
+    //
+    // Confidence 76 throughout, DELIBERATELY BELOW PREMIUM_CONFIDENCE_FLOOR.
+    // A PREMIUM_GENERATED row earns its tier from a market probability >= 80,
+    // not from its own confidence, and PREMIUM carries hardFloor - so if the
+    // protection were inert this row would be dropped outright rather than
+    // merely left un-topped-up. That is the regression this case catches.
+    const premiumGenerated = await make("premgen", 76, PREMIUM_GENERATED_PROVENANCE);
+
+    // A VIP-only dedicated pick: tagged VIP alone, because its market
+    // probability cleared 75 but not 80. It must never drift into PREMIUM.
+    const vipGenerated = await make("vipgen", 76, VIP_GENERATED_PROVENANCE, { tag: false });
+    await setPredictionCategories(vipGenerated.id, ["VIP"]);
+
+    // Untagged, to prove hasRequiredRoute accepts the new markers on their own
+    // - a dedicated row that lost its tag must be re-selectable, not exiled.
+    const vipGenUntagged = await make("vipgenuntagged", 88, VIP_GENERATED_PROVENANCE, { tag: false });
+
+    const vip3 = await curateVipTips(NOW);
+    const premium3 = await curatePremiumTips(NOW);
+
+    check("a PREMIUM_GENERATED row keeps VIP", await tagged(premiumGenerated.id, "VIP"));
+    check(
+      `a PREMIUM_GENERATED row keeps PREMIUM despite confidence 76 < ${PREMIUM_CONFIDENCE_FLOOR}`,
+      await tagged(premiumGenerated.id, "PREMIUM"),
+      "protected on market evidence, not on the confidence floor",
+    );
+    check(
+      "the dedicated row is never listed for removal",
+      !vip3.removed.includes(premiumGenerated.id) && !premium3.removed.includes(premiumGenerated.id),
+    );
+    check("a VIP_GENERATED row keeps VIP", await tagged(vipGenerated.id, "VIP"));
+    check(
+      "a VIP_GENERATED row does NOT drift into PREMIUM",
+      !(await tagged(vipGenerated.id, "PREMIUM")),
+      "PREMIUM is a strict subset, not a relabelling",
+    );
+    check(
+      "curation counts the dedicated rows as protected",
+      vip3.dedicatedProtected >= 2,
+      `dedicatedProtected=${vip3.dedicatedProtected}`,
+    );
+    check(
+      "an untagged VIP_GENERATED row satisfies the route requirement",
+      await tagged(vipGenUntagged.id, "VIP"),
+      "hasRequiredRoute accepts the dedicated markers",
+    );
+
     console.log("\ntier differentiation — PREMIUM must not simply mirror VIP:");
-    const vipSet = new Set(vip2.selectedIds);
-    const premiumSet = new Set(premium2.selectedIds);
+    const vipSet = new Set(vip3.selectedIds);
+    const premiumSet = new Set(premium3.selectedIds);
     check("PREMIUM is a subset of VIP", [...premiumSet].every((id) => vipSet.has(id)), `${premiumSet.size} of ${vipSet.size}`);
     check("PREMIUM is strictly SMALLER than VIP", premiumSet.size < vipSet.size, `premium=${premiumSet.size} vip=${vipSet.size}`);
     check("a 77-confidence row reaches VIP", await tagged(vipOnly.id, "VIP"));
     check("the same row does NOT reach PREMIUM", !(await tagged(vipOnly.id, "PREMIUM")));
-    // Without the hard floor the top-up would drag this sub-80 row in to reach
+    // Without the hard floor the top-up would drag a sub-80 row in to reach
     // CURATION_MIN, which is exactly how a premium tier stops being premium.
-    check("PREMIUM is not padded to CURATION_MIN", premiumSet.size < 5, `premium=${premiumSet.size}`);
+    //
+    // Asserted on the PROPERTY, not on the count. This was once
+    // `premiumSet.size < 5`, which only ever worked as a proxy while this
+    // fixture set happened to produce fewer than CURATION_MIN qualifying rows —
+    // adding legitimately-qualifying rows broke it while nothing was padded.
+    // What must actually hold is that every sub-floor row in PREMIUM got there
+    // by protection, never by top-up.
+    const premiumRows = await prisma.prediction.findMany({
+      where: { id: { in: [...premiumSet] } },
+      select: { id: true, confidence: true, provenance: true, marketType: true, createdAt: true },
+    });
+    const padded = premiumRows.filter(
+      (r) =>
+        r.confidence < PREMIUM_CONFIDENCE_FLOOR &&
+        !(DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") &&
+        r.createdAt >= VIP_ROUTE_CUTOVER,
+    );
+    check(
+      "PREMIUM is not padded below its floor",
+      padded.length === 0,
+      `premium=${premiumSet.size}, sub-floor and unprotected=${padded.length}`,
+    );
   } finally {
     if (createdIds.length) {
       await prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: createdIds } } });

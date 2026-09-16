@@ -174,9 +174,12 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
    * AIJob.prompt.categories against league priority, which is how the mismatch
    * was found — works but is archaeology; a row should carry its own history.
    *
-   * A Market-Confirmed row may be re-stamped MARKET_CONFIRMED later by its
-   * odds gate. That is a stricter, more specific classification of the same
-   * row and is meant to win.
+   * A row from the dedicated VIP/PREMIUM pass may be re-stamped VIP_GENERATED
+   * or PREMIUM_GENERATED later by its odds gate. That is a stricter, more
+   * specific classification of the same row and is meant to win. A draft that
+   * FAILS the gate keeps the VIP_ROUTE_CONFIRMED stamped here and competes for
+   * the paid feeds through ordinary curation like any other row — so a target
+   * this pass claimed is never wasted.
    */
   const provenance =
     riskRoute.calibration === "legacy"
@@ -186,7 +189,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
         : STANDARD_CURATED_PROVENANCE;
   // A regular-combo or legacy doubles job asks for several markets so a
   // same-game double can be assembled from independently-reasoned rows.
-  // Market-Confirmed also uses multi breadth for its separate odds gate.
+  // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = marketBreadthForCategories(input.categories, input.intent);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,

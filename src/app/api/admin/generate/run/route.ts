@@ -5,11 +5,14 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { runGeneration } from "@/lib/generation/worker";
 import {
-  MARKET_CONFIRMED_INTENT,
-  MARKET_CONFIRMED_DAILY_QUOTA,
-  marketConfirmedQuotaRemaining,
-  applyMarketConfirmedGate,
-} from "@/lib/marketConfirmedPipeline";
+  VIP_PREMIUM_INTENT,
+  VIP_PREMIUM_DAILY_QUOTA,
+  vipPremiumQuotaRemaining,
+  selectVipPremiumTargets,
+  applyVipPremiumGate,
+  VIP_MARKET_FLOOR,
+  PREMIUM_MARKET_FLOOR,
+} from "@/lib/vipPremiumPipeline";
 import {
   DOUBLES_DAILY_QUOTA,
   REGULAR_COMBO_INTENT,
@@ -99,13 +102,13 @@ export async function GET(req: Request) {
    * same ledger; only the candidate set differs.
    */
   const wantsBetOfTheDay = valid.includes("BET_OF_THE_DAY");
-  const wantsMarketConfirmed = url.searchParams.get("marketConfirmed") === "1";
+  const wantsVipPremium = url.searchParams.get("vipPremium") === "1";
   /**
    * The dedicated BANKER pass.
    *
    * Requested as an ordinary category (?categories=BANKER) rather than a flag,
-   * because unlike Market-Confirmed its output IS a BANKER pick the moment it
-   * is generated — there is no gate standing between the draft and the tag, so
+   * because unlike the VIP/PREMIUM pass its output IS a BANKER pick the moment
+   * it is generated — there is no gate standing between the draft and the tag, so
    * nothing is being withheld from a feed while it waits to qualify.
    *
    * resolveGenerationRisk already routes BANKER intent to the bolder
@@ -169,27 +172,64 @@ export async function GET(req: Request) {
   }
 
   /**
-   * The dedicated Market-Confirmed pass.
+   * The dedicated VIP/PREMIUM pass.
    *
-   * Requested with ?marketConfirmed=1 rather than a category, because its rows
-   * are not VIP/PREMIUM picks until they pass the odds gate — tagging them up
-   * front would put ungated picks straight into the paid feeds.
+   * Requested with ?vipPremium=1 rather than a category, because its rows are
+   * not VIP/PREMIUM picks until they pass the odds gate — tagging them up front
+   * would put ungated picks straight into the paid feeds.
+   *
+   * MARKET-FIRST, like Bet of the Day and unlike the Market-Confirmed pass this
+   * replaces: the pass prices its own candidates, then hands the worker only
+   * those the market puts at or above the VIP bar, via its matchKeys allow-list.
+   * That is what guarantees a fresh quote exists when the gate runs — the
+   * previous pass had none on any of its 168 drafts.
+   *
+   * SCHEDULE THIS BEFORE THE ORDINARY GENERATION RUN. It is not optional and it
+   * is the one thing that will silently reduce this pass to nothing if it is got
+   * wrong. Targeting can only select fixtures the worker can still CLAIM, and a
+   * fixture stays PENDING for a median of 23 minutes (p10 8, p90 113) before
+   * ordinary generation takes it. Run this second and the candidate pool is
+   * empty every time — measured: every in-scope fixture in the next 72 hours was
+   * already SUCCEEDED. Run it first and it takes the few market-qualified
+   * fixtures it wants; ordinary generation then covers the rest as usual.
    */
-  let marketConfirmedTargeting: Record<string, unknown> | undefined;
+  let vipPremiumTargeting: Record<string, unknown> | undefined;
 
-  if (wantsMarketConfirmed) {
-    const remaining = await marketConfirmedQuotaRemaining();
+  if (wantsVipPremium) {
+    const remaining = await vipPremiumQuotaRemaining();
     if (remaining <= 0) {
       return NextResponse.json({
         ok: true,
-        skipped: "daily Market-Confirmed generation quota already spent",
-        quota: MARKET_CONFIRMED_DAILY_QUOTA,
-        generatedToday: MARKET_CONFIRMED_DAILY_QUOTA,
+        skipped: "daily VIP/PREMIUM generation quota already spent",
+        quota: VIP_PREMIUM_DAILY_QUOTA,
+        generatedToday: VIP_PREMIUM_DAILY_QUOTA,
         claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
       });
     }
+    const selection = await selectVipPremiumTargets(new Date(), Math.min(remaining, limit), { warmOdds: true });
+    matchKeys = selection.targets.map((t) => t.matchKey);
     effectiveLimit = Math.min(remaining, effectiveLimit);
-    marketConfirmedTargeting = { quota: MARKET_CONFIRMED_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
+    vipPremiumTargeting = {
+      quota: VIP_PREMIUM_DAILY_QUOTA,
+      remainingBeforeRun: remaining,
+      limitApplied: effectiveLimit,
+      vipMarketFloor: VIP_MARKET_FLOOR,
+      premiumMarketFloor: PREMIUM_MARKET_FLOOR,
+      candidatesConsidered: selection.considered,
+      inLeagueScope: selection.inScope,
+      oddsWarmed: selection.warmed,
+      freshlyPriced: selection.freshlyPriced,
+      marketQualified: selection.qualified,
+      targets: selection.targets.map((t) => ({
+        match: `${t.homeTeam} v ${t.awayTeam}`,
+        kickoff: t.kickoff.toISOString(),
+        market: t.market,
+        selection: t.selection,
+        marketProbability: Number(t.marketProbability.toFixed(1)),
+        bookmakers: t.bookmakers,
+        quoteAgeMinutes: Math.round(t.quoteAgeMs / 60000),
+      })),
+    };
   }
 
   /**
@@ -221,9 +261,9 @@ export async function GET(req: Request) {
   // Excluded from the regular-combo path for the same reason the others are: a
   // banker is a single high-conviction call, and the multi-market breadth that
   // feeds double assembly is the opposite instruction.
-  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsMarketConfirmed && !wantsBanker;
+  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsVipPremium && !wantsBanker;
   let regularComboTargeting: Record<string, unknown> | undefined;
-  let generationIntent: string | undefined = wantsMarketConfirmed ? MARKET_CONFIRMED_INTENT : wantsBanker ? BANKER_INTENT : undefined;
+  let generationIntent: string | undefined = wantsVipPremium ? VIP_PREMIUM_INTENT : wantsBanker ? BANKER_INTENT : undefined;
   if (wantsRegularCombo) {
     const remaining = await doublesQuotaRemaining();
     if (remaining > 0) {
@@ -248,24 +288,26 @@ export async function GET(req: Request) {
   });
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
-  if (marketConfirmedTargeting) {
+  if (vipPremiumTargeting) {
     // The gate runs in the SAME request, immediately after generation, so a
     // passing pick is promoted before anything else can look at the feeds and
     // so the odds quote is still inside its two-hour freshness window.
-    const gate = await applyMarketConfirmedGate();
+    const gate = await applyVipPremiumGate();
+    const describe = (p: (typeof gate.promotedVip)[number]) => ({
+      fixture: p.fixture, pick: p.pick, tier: p.tier,
+      model: p.verdict.modelProbability,
+      market: p.verdict.marketProbability,
+      gapPP: p.verdict.gapPP,
+      bookmakers: p.verdict.bookmakers,
+    });
     return NextResponse.json({
       ...report,
-      marketConfirmed: {
-        ...marketConfirmedTargeting,
+      vipPremium: {
+        ...vipPremiumTargeting,
         evaluated: gate.evaluated,
         fixtures: gate.fixtures,
-        promoted: gate.promoted.map((p) => ({
-          fixture: p.fixture, pick: p.pick,
-          model: p.verdict.modelProbability,
-          market: p.verdict.marketProbability,
-          gapPP: p.verdict.gapPP,
-          bookmakers: p.verdict.bookmakers,
-        })),
+        promotedVip: gate.promotedVip.map(describe),
+        promotedPremium: gate.promotedPremium.map(describe),
         rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
           const k = r.verdict.reason ?? "?";
           acc[k] = (acc[k] ?? 0) + 1;

@@ -74,6 +74,48 @@ export const STANDARD_CURATED_PROVENANCE = "STANDARD_CURATED" as const;
 export const VIP_ROUTE_PROVENANCE = "VIP_ROUTE_CONFIRMED" as const;
 
 /**
+ * Stamped on rows the dedicated VIP/PREMIUM pass generated AND the market then
+ * independently confirmed — see src/lib/vipPremiumPipeline.ts.
+ *
+ * WHY THESE REPLACED MARKET_CONFIRMED_PROVENANCE. That pipeline was already a
+ * dedicated VIP/PREMIUM pass, and it was measured, not assumed, to be broken:
+ * 82 jobs across 22 days produced 168 drafts and promoted 3 rows (1.8%). None
+ * of the 168 had a fresh quote when the gate read it: drafts are created a
+ * median 43.3h before kickoff, while the odds refresh cron was only reaching a
+ * fixture a median 1.8h before kickoff, so the gate asked the market a question
+ * ~41 hours before anything had asked the books. 60.7% of its drafts fell below
+ * the model floor besides, because it took whatever ordinary discovery offered
+ * rather than targeting anything.
+ *
+ * The replacement prices its own candidates and selects on the result, so a
+ * fresh quote exists by construction — and the books turned out to be open all
+ * along: on demand, fixtures 25-28h from kickoff returned full quotes at five
+ * to six bookmakers. Two markers rather than one because PREMIUM is
+ * now a strict subset on a HIGHER MARKET BAR, not a higher confidence floor:
+ * over 206 settled paid-tier-eligible rows, model confidence >= 80 strikes
+ * 78.8% (n=33) against >= 75's 76.2%, while market probability >= 80 strikes
+ * 86.5% (n=37) against >= 75's 84.2%. The market separates the tiers; the
+ * confidence floor barely does.
+ */
+export const VIP_GENERATED_PROVENANCE = "VIP_GENERATED" as const;
+export const PREMIUM_GENERATED_PROVENANCE = "PREMIUM_GENERATED" as const;
+
+/**
+ * Every marker that means "a dedicated pass produced this and something
+ * independent confirmed it".
+ *
+ * MARKET_CONFIRMED is retained though its pass no longer runs: three rows
+ * carry it, they are published and settled, and rewriting a published track
+ * record is the larger trust problem — the same promise VIP_ROUTE_CUTOVER
+ * keeps for the pre-cutover cohort.
+ */
+export const DEDICATED_PAID_PROVENANCES = [
+  MARKET_CONFIRMED_PROVENANCE,
+  VIP_GENERATED_PROVENANCE,
+  PREMIUM_GENERATED_PROVENANCE,
+] as const;
+
+/**
  * Stamped on rows generated with explicit BANKER intent, which routes through
  * the bolder uncalibrated path.
  *
@@ -189,11 +231,18 @@ async function curateCategory(category: AutoCategory, rule: CurationRule, now: D
 
   const tagged = new Set(rows.filter((r) => r.categories.some((c) => c.category === category)).map((r) => r.id));
 
-  // Market-Confirmed picks already IN this feed are fixed points: they keep
-  // their place and they consume slots, but they are never re-ranked and never
+  // Dedicated-pass picks already IN this feed are fixed points: they keep their
+  // place and they consume slots, but they are never re-ranked and never
   // removed. Curation fills whatever is left.
-  const marketConfirmedIds = new Set(
-    rows.filter((r) => r.provenance === MARKET_CONFIRMED_PROVENANCE && tagged.has(r.id)).map((r) => r.id),
+  //
+  // Scoped by `tagged`, which is per-category — so a VIP_GENERATED row that
+  // cleared only the VIP bar is protected in VIP's feed and is simply absent
+  // from PREMIUM's, which is exactly what makes PREMIUM a strict subset rather
+  // than a relabelling of VIP.
+  const dedicatedIds = new Set(
+    rows
+      .filter((r) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") && tagged.has(r.id))
+      .map((r) => r.id),
   );
 
   /**
@@ -211,12 +260,12 @@ async function curateCategory(category: AutoCategory, rule: CurationRule, now: D
   const grandfatheredIds = new Set(
     rule.requireVipRoute
       ? rows
-          .filter((r) => tagged.has(r.id) && !marketConfirmedIds.has(r.id) && r.createdAt < VIP_ROUTE_CUTOVER)
+          .filter((r) => tagged.has(r.id) && !dedicatedIds.has(r.id) && r.createdAt < VIP_ROUTE_CUTOVER)
           .map((r) => r.id)
       : [],
   );
 
-  const protectedIds = new Set([...marketConfirmedIds, ...grandfatheredIds]);
+  const protectedIds = new Set([...dedicatedIds, ...grandfatheredIds]);
 
   /**
    * May this row be NEWLY selected into a paid feed?
@@ -228,7 +277,14 @@ async function curateCategory(category: AutoCategory, rule: CurationRule, now: D
    * route marker they can never carry would silently delete the doubles feed.
    */
   const hasRequiredRoute = (r: (typeof rows)[number]) =>
-    !rule.requireVipRoute || r.provenance === VIP_ROUTE_PROVENANCE || r.marketType === "SAME_GAME_DOUBLE";
+    !rule.requireVipRoute ||
+    r.provenance === VIP_ROUTE_PROVENANCE ||
+    // A dedicated-pass row satisfies the route requirement on its own evidence:
+    // it was generated FOR this tier and the market independently confirmed the
+    // pick, which is a stronger claim than the league-rank proxy the VIP route
+    // marker records. It reaches this branch only if something untagged it.
+    (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") ||
+    r.marketType === "SAME_GAME_DOUBLE";
 
   // Both bounds shrink by the protected count, so the feed still lands at the
   // same 5-15 shape overall rather than 15 curated PLUS however many dedicated
@@ -256,7 +312,7 @@ async function curateCategory(category: AutoCategory, rule: CurationRule, now: D
     selectedIds,
     added: add,
     removed: remove,
-    marketConfirmedProtected: marketConfirmedIds.size,
+    dedicatedProtected: dedicatedIds.size,
     grandfathered: grandfatheredIds.size,
     routeExcluded,
   };
