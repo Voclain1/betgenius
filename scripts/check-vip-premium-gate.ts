@@ -119,6 +119,22 @@ async function main() {
           prompt: JSON.stringify({ intent: opts.intent ?? VIP_PREMIUM_INTENT, home: opts.label }),
           model: "test:check-vip-premium-gate",
           rawOutput: "{}",
+          /**
+           * Dated into the far future so this test cannot consume the LIVE daily
+           * quota while it runs.
+           *
+           * vipPremiumGeneratedToday counts AIJobs carrying this intent inside
+           * today's Lagos bounds, and these rows carry exactly that intent. Left
+           * at the default `now()`, seven of them land in today's window for the
+           * duration of the run — and that is not hypothetical: a poller tick
+           * landing mid-test reported "quota spent for today" and stood down
+           * while the real remaining quota was six. A crash before the `finally`
+           * cleanup would burn the day's quota permanently.
+           *
+           * The gate itself is unaffected: it selects on the PREDICTION's kickoff
+           * and its job's intent, never on when the job was created.
+           */
+          createdAt: new Date("2099-06-14T00:00:00.000Z"),
         },
       });
       jobIds.push(job.id);
@@ -176,6 +192,17 @@ async function main() {
     const staleQuote = await seed({ label: "stale", confidence: 78, marketHomeProbability: 86, quoteAgeMs: MC_MAX_QUOTE_AGE_MS + 60_000 });
     // Would sail through on the numbers. Must never be looked at.
     const wrongIntent = await seed({ label: "otherintent", confidence: 84, marketHomeProbability: 86, intent: "REGULAR_COMBO" });
+
+    // Asserted, not merely intended: if a future edit drops the far-future
+    // createdAt above, this catches it here rather than by silently standing
+    // down a real scheduled run one day.
+    const { vipPremiumQuotaRemaining, VIP_PREMIUM_DAILY_QUOTA } = await import("../src/lib/vipPremiumPipeline");
+    const remainingDuringTest = await vipPremiumQuotaRemaining();
+    check(
+      "the test does not consume the live daily quota",
+      remainingDuringTest === VIP_PREMIUM_DAILY_QUOTA,
+      `remaining ${remainingDuringTest} of ${VIP_PREMIUM_DAILY_QUOTA} with 7 intent-carrying jobs seeded`,
+    );
 
     const gate = await applyVipPremiumGate();
     console.log(`gate evaluated ${gate.evaluated} draft(s) across ${gate.fixtures} fixture(s)\n`);
