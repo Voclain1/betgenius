@@ -236,9 +236,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           kickoff={match.kickoff.toISOString()}
         />
         <div className="flex flex-wrap gap-2">
-          {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} />}
-          {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} />}
-          {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} />}
+          {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
+          {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
+          {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
         </div>
       </div>
 

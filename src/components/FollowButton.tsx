@@ -30,12 +30,15 @@ export function FollowButton({
   targetType,
   targetKey,
   label,
+  subject,
   compact = false,
   initiallyFollowing,
 }: {
   targetType: FollowTargetType;
   targetKey: string;
   label?: string;
+  /** Names what is being followed, for pages that render several buttons side by side. */
+  subject?: string;
   compact?: boolean;
   /** Known server-side (e.g. on /following); skips the lookup. */
   initiallyFollowing?: boolean;
@@ -60,7 +63,7 @@ export function FollowButton({
   if (status !== "authenticated") {
     return (
       <Link className="btn btn-ghost text-xs" href={`/login?callbackUrl=${encodeURIComponent(path)}`}>
-        Follow{compact ? "" : " this"}
+        Follow{subject ? ` ${subject}` : compact ? "" : " this"}
       </Link>
     );
   }
@@ -89,7 +92,13 @@ export function FollowButton({
 
   return (
     <button type="button" className="btn btn-ghost text-xs" disabled={pending} aria-pressed={following} title={error || undefined} onClick={toggle}>
-      {pending ? "Saving…" : error ? "Retry" : following ? "Following ✓" : "Follow"}
+      {pending
+        ? "Saving…"
+        : error
+          ? "Retry"
+          : following
+            ? `Following${subject ? ` ${subject}` : ""} ✓`
+            : `Follow${subject ? ` ${subject}` : ""}`}
     </button>
   );
 }
