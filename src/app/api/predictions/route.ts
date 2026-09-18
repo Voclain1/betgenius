@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
@@ -14,10 +15,8 @@ export async function GET(req: Request) {
     ? (raw as PredictionCategory)
     : undefined);
 
-  const session = await getServerSession(authOptions);
-  const role = session?.user?.role;
-  const tier = session?.user?.tier;
-  const status = session?.user?.subStatus;
+  const viewer = await getViewerEntitlement();
+  const { tier, status, role } = viewer;
 
   const today = lagosTodayBounds();
   const unordered = await prisma.prediction.findMany({

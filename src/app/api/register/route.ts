@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { RegistrationBody } from "@/lib/registration";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
-const Body = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().min(1).optional(),
-});
-
 export async function POST(req: Request) {
-  const parsed = Body.safeParse(await req.json());
+  const parsed = RegistrationBody.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   const { email, password, name } = parsed.data;
 

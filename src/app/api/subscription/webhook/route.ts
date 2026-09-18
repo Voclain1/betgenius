@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyPaystackSignature } from "@/lib/paystack/verifySignature";
 import { verifyTransaction } from "@/lib/paystack/paystack";
-import { validateVerifiedEntitlement } from "@/lib/paystack/entitlement";
+import { PAID_PERIOD_MS, validateRenewal, validateVerifiedEntitlement } from "@/lib/paystack/entitlement";
+import { tierFromCheckoutReference } from "@/lib/paystack/checkoutReference";
 
 /**
  * Paystack webhook.
@@ -35,20 +36,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid transaction reference" }, { status: 400 });
     }
 
-    const pendingMatches = await prisma.subscription.findMany({
-      where: { paystackRef: webhookReference, status: "PENDING" },
-      include: { user: { select: { id: true, email: true } } },
-      take: 2,
-    });
-    if (pendingMatches.length !== 1) {
-      console.error("Paystack entitlement rejected", {
-        code: pendingMatches.length === 0 ? "PENDING_CHECKOUT_NOT_FOUND" : "AMBIGUOUS_PENDING_REFERENCE",
-        reference: webhookReference,
-      });
-      return NextResponse.json({ error: "Unique pending checkout not found" }, { status: 409 });
-    }
-    const pending = pendingMatches[0];
-
+    // Verify with Paystack before deciding anything. The webhook body is a
+    // claim; /transaction/verify is the fact, and both paths below are decided
+    // from it.
     let verified;
     try {
       verified = await verifyTransaction(webhookReference);
@@ -60,28 +50,100 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Transaction verification failed" }, { status: 502 });
     }
 
-    const mismatches = validateVerifiedEntitlement(
-      {
-        userId: pending.userId,
-        userEmail: pending.user.email,
-        tier: pending.tier,
-        paystackRef: pending.paystackRef,
-        status: pending.status,
-      },
-      verified.data,
-    );
-    if (mismatches.length > 0) {
+    // A checkout we started. Matched on the reference alone: the status filter
+    // that used to be part of this lookup would now reject upgrades, because a
+    // subscriber who already has paid access keeps their ACTIVE row (see the
+    // initialize route). A row is only treated as a checkout when the
+    // reference is one of ours, or when it is still PENDING — which is what a
+    // checkout started before this shipped looks like. That keeps a replayed
+    // renewal, whose reference is recorded on an ACTIVE row, out of this path.
+    const matches = await prisma.subscription.findMany({
+      where: { paystackRef: webhookReference },
+      include: { user: { select: { id: true, email: true } } },
+      take: 2,
+    });
+    if (matches.length > 1) {
       console.error("Paystack entitlement rejected", {
+        code: "AMBIGUOUS_PENDING_REFERENCE",
         reference: webhookReference,
-        mismatches,
       });
-      return NextResponse.json({ error: "Transaction does not match pending checkout" }, { status: 409 });
+      return NextResponse.json({ error: "Unique pending checkout not found" }, { status: 409 });
+    }
+    const pending = matches[0];
+    const checkoutTier = pending ? tierFromCheckoutReference(pending.paystackRef) : null;
+    const isCheckout = pending != null && (checkoutTier != null || pending.status === "PENDING");
+
+    if (isCheckout) {
+      // What this checkout was for. The reference carries it; a legacy
+      // reference falls back to the tier the old initialize route wrote.
+      const purchasedTier = checkoutTier ?? pending.tier;
+
+      // Unchanged in substance: amount, currency, reference, customer email,
+      // metadata userId and metadata tier are all still cross-checked against
+      // Paystack's own verified response. Only two inputs differ — the tier
+      // comes from the checkout rather than the row, and the status check is
+      // told that a preserved ACTIVE row is a legitimate payer.
+      const mismatches = validateVerifiedEntitlement(
+        {
+          userId: pending.userId,
+          userEmail: pending.user.email,
+          tier: purchasedTier,
+          paystackRef: pending.paystackRef,
+          status: pending.status,
+        },
+        verified.data,
+      );
+      if (mismatches.length > 0) {
+        console.error("Paystack entitlement rejected", { reference: webhookReference, mismatches });
+        return NextResponse.json({ error: "Transaction does not match pending checkout" }, { status: 409 });
+      }
+
+      // The grant. `tier` is written here rather than at initialize, which is
+      // what lets an upgrade keep the tier it already paid for until the new
+      // one is actually paid for. Clearing paystackRef spends the reference: a
+      // replayed charge.success for it no longer matches any row, so it cannot
+      // extend the period a second time.
+      await prisma.subscription.update({
+        where: { userId: pending.userId },
+        data: {
+          tier: purchasedTier,
+          status: "ACTIVE",
+          currentPeriodEnd: new Date(Date.now() + PAID_PERIOD_MS),
+          paystackRef: null,
+        },
+      });
+      return NextResponse.json({ received: true });
     }
 
-    const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    // Otherwise a recurring charge: Paystack's own reference against a
+    // subscription we already granted. Matched by the verified customer email.
+    const email = verified.data?.customer?.email;
+    const subscriber = email
+      ? await prisma.user.findUnique({
+          where: { email: email.trim().toLowerCase() },
+          select: { id: true, subscription: true },
+        })
+      : null;
+    if (!subscriber?.subscription) {
+      console.error("Paystack entitlement rejected", {
+        code: "PENDING_CHECKOUT_NOT_FOUND",
+        reference: webhookReference,
+      });
+      return NextResponse.json({ error: "Unique pending checkout not found" }, { status: 409 });
+    }
+
+    const renewal = validateRenewal(subscriber.subscription, verified.data);
+    if (!renewal.granted) {
+      // A redelivery of a renewal we already applied is not an error.
+      const status = renewal.code === "ALREADY_APPLIED" ? 200 : 409;
+      console.error("Paystack renewal not applied", { reference: webhookReference, code: renewal.code });
+      return NextResponse.json({ received: renewal.code === "ALREADY_APPLIED" }, { status });
+    }
+
     await prisma.subscription.update({
-      where: { userId: pending.userId },
-      data: { status: "ACTIVE", currentPeriodEnd: periodEnd },
+      where: { userId: subscriber.id },
+      // The reference is recorded so a redelivered renewal is a no-op.
+      data: { status: "ACTIVE", currentPeriodEnd: renewal.periodEnd, paystackRef: webhookReference },
     });
   } else if (event.event === "subscription.create") {
     // A subscription lifecycle notification is not proof of payment. Access is

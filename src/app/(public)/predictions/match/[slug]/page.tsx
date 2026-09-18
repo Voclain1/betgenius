@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { FollowButton } from "@/components/FollowButton";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { MatchInfoPanel } from "@/components/MatchInfoPanel";
 import { MatchLiveStatus } from "@/components/MatchLiveStatus";
@@ -120,12 +121,13 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   }
 
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
   // Gated per row on its own category, exactly as the league/team/category
   // pages do — a VIP market on an otherwise-free match stays visible as a
   // locked row rather than disappearing, so the reader can see the market
   // exists and what it would cost to read it.
   const shaped = rows.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
+    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return canView
       ? r
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };

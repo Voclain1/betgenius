@@ -15,7 +15,9 @@ export default function RegisterPage() {
     const res = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      // Blank means "not given" — the field is optional (no `required` here,
+      // unlike email and password), so don't post an empty string for it.
+      body: JSON.stringify({ ...form, name: form.name.trim() || undefined }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));

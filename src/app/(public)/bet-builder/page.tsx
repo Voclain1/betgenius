@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { CATEGORY_NAMES, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { BetBuilderClient } from "@/components/BetBuilderClient";
@@ -11,13 +12,14 @@ import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 
 export default async function BetBuilderPage() {
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
 
   // Same gating as everywhere else — canViewCategory() fed from the session,
   // works for a logged-out visitor too (FEATURED/GENIUS/TODAY are public).
   const canViewMap = Object.fromEntries(
     PREDICTION_CATEGORIES.map((cat) => [
       cat,
-      canViewCategory(cat, session?.user.tier, session?.user.subStatus, session?.user.role),
+      canViewCategory(cat, viewer.tier, viewer.status, viewer.role),
     ]),
   ) as Record<PredictionCategory, boolean>;
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);

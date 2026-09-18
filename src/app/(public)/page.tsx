@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { LeagueNav } from "@/components/LeagueNav";
@@ -191,6 +192,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getBetOfTheDay(),
     fetchDaySlate(day),
   ]);
+  const viewer = await getViewerEntitlement();
   const popular = popularLeagues(leagues);
 
   // A row can be cross-posted from a paywalled category into GENIUS — gate
@@ -203,7 +205,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   const featuredRows = featured.map((r) => ({ ...r, outcome: showOutcomes ? r.outcome : null }));
 
   const genius = geniusPreview.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
+    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return canView ? { ...r, locked: false } : { ...r, pick: "LOCKED", confidence: null, locked: true };
   });
 
