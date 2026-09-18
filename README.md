@@ -51,10 +51,21 @@ Open `http://localhost:3000` and log in with the `SEED_ADMIN_EMAIL` / `SEED_ADMI
 | `API_FOOTBALL_KEY` / `API_FOOTBALL_HOST` | https://www.api-football.com/documentation-v3 |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | https://console.anthropic.com |
 | `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | https://dashboard.paystack.com/#/settings/developer |
-| `PAYSTACK_PLAN_VIP` / `PAYSTACK_PLAN_PREMIUM` | Create plans in Paystack, paste their plan codes |
+| `PAYSTACK_PLAN_VIP` / `PAYSTACK_PLAN_PREMIUM` | Create plans in Paystack, paste their plan codes (currently unused — see below) |
+
+> **Checkout is one-time, not recurring, for now.** This Paystack integration has
+> no active recurring-capable channel, so a plan checkout resolves to zero
+> available channels. `PAYSTACK_PLAN_*` is kept configured and unused; see the
+> comment at the top of `src/app/api/subscription/initialize/route.ts` for how to
+> restore recurring billing.
 
 ### Paystack webhook
 Point Paystack's webhook to `https://<your-domain>/api/subscription/webhook`. Signature is verified with your secret key (HMAC-SHA512).
+
+### Diagnosing failed payments
+`/admin/payments` records and classifies every checkout attempt. See
+[docs/PAYMENTS_OBSERVABILITY.md](docs/PAYMENTS_OBSERVABILITY.md) — in particular
+why a fraud block and a bank decline need different people to act.
 
 ## Category access matrix
 
