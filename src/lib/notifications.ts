@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { resolveSubscription } from "@/lib/entitlement";
 import type { PredictionCategory, Role, SubscriptionStatus, SubscriptionTier } from "@/lib/enums";
 import { safeNotificationLink } from "@/lib/notificationLinks";
 import { matchSlug } from "@/lib/slug";
@@ -264,14 +265,30 @@ export function preferenceAllows(type: string, p: Partial<Record<"newPredictions
   return true;
 }
 
+/**
+ * Whether a notification's category may be shown to this user.
+ *
+ * The subscription is already a fresh row here (the dispatcher loads it), but
+ * it is still put through resolveSubscription so an ACTIVE row whose paid
+ * period has run out does not keep receiving paid picks by email or push —
+ * the same rule the pages apply, from the same helper.
+ */
 export function entitled(
   category: string | null,
-  user: { role: string; subscription: { tier: string; status: string } | null },
+  user: {
+    role: string;
+    subscription: { tier: string; status: string; currentPeriodEnd?: Date | null } | null;
+  },
+  now: Date = new Date(),
 ) {
+  const resolved = resolveSubscription(
+    user.subscription ? { ...user.subscription, currentPeriodEnd: user.subscription.currentPeriodEnd ?? null } : null,
+    now,
+  );
   return !category || canViewCategory(
     category as PredictionCategory,
-    user.subscription?.tier as SubscriptionTier | undefined,
-    user.subscription?.status as SubscriptionStatus | undefined,
+    resolved.tier,
+    resolved.status,
     user.role as Role,
   );
 }

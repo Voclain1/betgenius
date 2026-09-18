@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
 
 // Public — feeds BetBuilderClient's ?combo=<id> load-into-slip flow and any
@@ -11,6 +12,7 @@ import type { PredictionCategory } from "@/lib/enums";
 // allowed to see them — a locked combo's picks never leave the server.
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
   const meta = await prisma.combo.findUnique({
     where: { id: params.id },
     select: { id: true, title: true, description: true, category: true, published: true },
@@ -19,9 +21,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   const canView = canViewCategory(
     meta.category as PredictionCategory,
-    session?.user.tier,
-    session?.user.subStatus,
-    session?.user.role,
+    viewer.tier,
+    viewer.status,
+    viewer.role,
   );
   if (!canView) return NextResponse.json({ error: "Locked" }, { status: 403 });
 

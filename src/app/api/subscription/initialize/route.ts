@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { initializeTransaction, PAYSTACK_PLANS } from "@/lib/paystack/paystack";
 import { koboFor } from "@/lib/pricing";
+import { hasActivePaidAccess } from "@/lib/entitlement";
+import { newCheckoutReference } from "@/lib/paystack/checkoutReference";
 import { z } from "zod";
 
 // Tier only. The amount is NOT accepted from the client: it used to be, which
@@ -32,6 +34,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Checkout is unavailable for this tier" }, { status: 503 });
   }
 
+  // Our own reference rather than Paystack's, because it carries the tier
+  // being bought — see newCheckoutReference. The row can then be left alone
+  // for a subscriber who already has paid access.
+  const reference = newCheckoutReference(tier);
+
   // Paystack rejects checkouts for reasons the visitor can act on (an address
   // it won't accept) and reasons they can't (an outage, a revoked key). An
   // unhandled throw here surfaced as a blank 500 with no body: the visitor saw
@@ -42,6 +49,7 @@ export async function POST(req: Request) {
       email: session.user.email!,
       amountKobo: koboFor(tier),
       plan,
+      reference,
       callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
       metadata: { userId: session.user.id, tier: parsed.data.tier },
     });
@@ -54,9 +62,24 @@ export async function POST(req: Request) {
     );
   }
 
+  // Starting a checkout must not cost the viewer access they already hold.
+  // This used to write `{ tier, status: "PENDING" }` unconditionally, so an
+  // active subscriber who clicked subscribe again — or started an upgrade and
+  // changed their mind — was locked out on the spot, having paid. A row with
+  // live paid access keeps its tier, status and period; only the reference of
+  // the checkout in flight is recorded. The tier being bought is carried by
+  // that reference, so nothing is lost by not writing it here.
+  const existing = await prisma.subscription.findUnique({
+    where: { userId: session.user.id },
+    select: { tier: true, status: true, currentPeriodEnd: true },
+  });
+  const keepsAccess = hasActivePaidAccess(existing);
+
   await prisma.subscription.upsert({
     where: { userId: session.user.id },
-    update: { tier: parsed.data.tier, status: "PENDING", paystackRef: init.data.reference },
+    update: keepsAccess
+      ? { paystackRef: init.data.reference }
+      : { tier: parsed.data.tier, status: "PENDING", paystackRef: init.data.reference },
     create: {
       userId: session.user.id,
       tier: parsed.data.tier,

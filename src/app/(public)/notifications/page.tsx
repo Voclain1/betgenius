@@ -4,6 +4,7 @@ import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
 import { PushSettings } from "@/components/PushSettings";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
@@ -15,6 +16,7 @@ const PAGE_SIZE = 20;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: { page?: string } }) {
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
   if (!session?.user.id) redirect("/login?callbackUrl=%2Fnotifications");
   const page = Math.max(1, Math.floor(Number(searchParams.page)) || 1);
   const rows = await prisma.userNotification.findMany({
@@ -38,7 +40,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
       <section className="space-y-2">
         {shown.map((n) => {
           // Re-checked on every view: a lapsed subscription must not keep reading paid-tier detail from its inbox.
-          const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, session.user.tier, session.user.subStatus, session.user.role);
+          const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
           return (
             <Link key={n.id} href={n.event.link} className={`card block ${n.readAt ? "opacity-70" : "border-brand/50"}`}>
               <div className="flex justify-between gap-3">

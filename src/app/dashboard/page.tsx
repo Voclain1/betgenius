@@ -7,9 +7,11 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { entitlementFor, hasActivePaidAccess } from "@/lib/entitlement";
 import { DashboardShell, type DashboardNavItem } from "@/components/DashboardShell";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
+import { PaymentConfirmation } from "@/components/PaymentConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
@@ -114,11 +116,13 @@ async function OverviewSection({
   status,
   currentPeriodEnd,
   unlockedCategories,
+  paymentNotice,
 }: {
   tier: SubscriptionTier;
   status: SubscriptionStatus;
   currentPeriodEnd: Date | null;
   unlockedCategories: PredictionCategory[];
+  paymentNotice?: ReactNode;
 }) {
   const categoryRows = Object.fromEntries(
     await Promise.all(
@@ -137,6 +141,7 @@ async function OverviewSection({
 
   return (
     <div className="space-y-8">
+      {paymentNotice}
       <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
 
       <div className="space-y-3">
@@ -179,21 +184,23 @@ async function OverviewSection({
 export default async function AccountDashboard({
   searchParams,
 }: {
-  searchParams: { section?: string };
+  searchParams: { section?: string; paid?: string };
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
 
   const sub = await prisma.subscription.findUnique({ where: { userId: session.user.id } });
 
-  // Gating uses the session's tier/status/role — the same source
-  // canViewCategory() is already fed from on /predictions/[category] — not a
-  // fresh DB read, so the dashboard's access decisions stay consistent with
-  // every other row-level gate in the app instead of a second source of truth.
+  // Gating uses the subscription row this page already loaded, resolved through
+  // the same helper every other gate uses — so the dashboard agrees with the
+  // rest of the app without a second query. It reads the row rather than the
+  // session's tier/subStatus deliberately: those are a sign-in snapshot, and
+  // this is the page a customer lands on straight after paying.
+  const viewer = entitlementFor(sub, session.user.role);
   const canViewMap = Object.fromEntries(
     PREDICTION_CATEGORIES.map((cat) => [
       cat,
-      canViewCategory(cat, session.user.tier, session.user.subStatus, session.user.role),
+      canViewCategory(cat, viewer.tier, viewer.status, viewer.role),
     ]),
   ) as Record<PredictionCategory, boolean>;
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
@@ -228,10 +235,15 @@ export default async function AccountDashboard({
     title = "Overview";
     content = (
       <OverviewSection
-        tier={session.user.tier}
-        status={session.user.subStatus}
+        tier={viewer.tier ?? "FREE"}
+        status={viewer.status ?? "PENDING"}
         currentPeriodEnd={sub?.currentPeriodEnd ?? null}
         unlockedCategories={unlockedCategories}
+        paymentNotice={
+          // `paid=1` only decides whether to SHOW this; whether the payment
+          // landed is `activated`, computed from the database row above.
+          searchParams.paid === "1" ? <PaymentConfirmation activated={hasActivePaidAccess(sub)} /> : null
+        }
       />
     );
   } else if (activeCategory) {
@@ -265,8 +277,8 @@ export default async function AccountDashboard({
     content = (
       <AccountSection
         email={session.user.email}
-        tier={session.user.tier}
-        status={session.user.subStatus}
+        tier={viewer.tier ?? "FREE"}
+        status={viewer.status ?? "PENDING"}
         currentPeriodEnd={sub?.currentPeriodEnd ?? null}
       />
     );

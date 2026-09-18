@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { CATEGORY_NAMES } from "@/lib/categoryPredictions";
 import type { PredictionCategory } from "@/lib/enums";
 import { ComboCard, type ComboView } from "@/components/ComboCard";
@@ -11,6 +12,7 @@ import Link from "next/link";
 
 export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
 
   const allCombos = await prisma.combo.findMany({
     where: { published: true },
@@ -25,7 +27,7 @@ export default async function MultiBetsPage() {
   const combos = allCombos.filter((combo) => comboIsUpcoming(combo.legs.map((leg) => leg.predictionId ? kickoffByPrediction.get(leg.predictionId) ?? null : null)));
 
   const unlocked = combos.filter((c) =>
-    canViewCategory(c.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role),
+    canViewCategory(c.category as PredictionCategory, viewer.tier, viewer.status, viewer.role),
   );
   const unlockedIds = new Set(unlocked.map((c) => c.id));
 

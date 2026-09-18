@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import {
   CATEGORY_SLUGS as SLUGS,
@@ -91,7 +92,8 @@ export default async function CategoryPage(
   const showOutcomes = dayShowsOutcomes(day);
 
   const session = await getServerSession(authOptions);
-  const canView = canViewCategory(cat, session?.user.tier, session?.user.subStatus, session?.user.role);
+  const viewer = await getViewerEntitlement();
+  const canView = canViewCategory(cat, viewer.tier, viewer.status, viewer.role);
 
   const rows = await getCategoryPredictions(cat, day);
 

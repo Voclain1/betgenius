@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
@@ -75,6 +76,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
     getPublishedMatchIndex(),
     getServerSession(authOptions),
   ]);
+  const viewer = await getViewerEntitlement();
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
   const upcoming = (enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null;
   const clubs = standings?.length ? await getLeagueClubs(standings) : [];
@@ -85,7 +87,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   // name-derived slug — the values of the id-keyed index are those same slugs.
   const publishedSlugs = Object.values(matchIndex);
   const shaped = rows.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
+    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return canView
       ? r
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };

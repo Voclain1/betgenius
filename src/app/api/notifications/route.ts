@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasValidMutationOrigin } from "@/lib/requestSecurity";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
 
 const PAGE_SIZE = 20;
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.user.id;
+  const viewer = await getViewerEntitlement();
 
   const unread = await prisma.userNotification.count({ where: { userId, readAt: null } });
   if (req.nextUrl.searchParams.get("countOnly") === "1") return NextResponse.json({ unread });
@@ -26,7 +28,7 @@ export async function GET(req: NextRequest) {
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
   const notifications = rows.slice(0, PAGE_SIZE).map((n) => {
-    const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, session.user.tier, session.user.subStatus, session.user.role);
+    const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return allowed ? n : { ...n, event: { ...n.event, body: "A followed tip has an update.", data: null } };
   });
   return NextResponse.json({ notifications, nextCursor: rows.length > PAGE_SIZE ? rows[PAGE_SIZE - 1].id : null, unread });

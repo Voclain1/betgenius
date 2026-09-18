@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
@@ -74,8 +75,9 @@ export default async function TeamPage({ params }: { params: { slug: string } })
   const squad = (enrichment?.squadJson as unknown as SquadPlayer[] | null) ?? [];
 
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
   const shaped = rows.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, session?.user.tier, session?.user.subStatus, session?.user.role);
+    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return canView
       ? r
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };

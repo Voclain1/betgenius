@@ -113,23 +113,40 @@ export const authOptions: NextAuthOptions = {
       }
       return true;
     },
-    async jwt({ token, user }) {
-      // Only recomputed at sign-in (`user` is only passed on that first
-      // call) — same as before, so tier/subStatus are cached in the JWT for
-      // its lifetime rather than hitting the DB on every session check.
+    /**
+     * tier/subStatus on the token are FOR DISPLAY ONLY. Nothing authorizes
+     * from them.
+     *
+     * They are a snapshot taken at sign-in, and a token lives 30 days. When a
+     * customer paid, the webhook made their row ACTIVE and this snapshot went
+     * on saying FREE/PENDING, so the product stayed locked until they signed
+     * out and back in. Paid access is now resolved per request from the
+     * database in src/lib/entitlement.ts, and every gate reads it from there.
+     *
+     * The claims are kept because components show them (the account banner),
+     * and they are recomputed on an explicit `update()` — which is how the
+     * page a payer lands on refreshes them without the client being trusted to
+     * assert anything: it can ask for a refresh, the server decides what the
+     * values are.
+     */
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.uid = (user as any).id;
         token.role = (user as any).role;
-        // Not read off `user` — Credentials' authorize() and the OAuth
-        // adapter's user object have different shapes (only authorize() used
-        // to precompute these before), so both providers now resolve
-        // tier/subStatus here instead, from the same source, with the same
-        // FREE/PENDING fallback for a user with no Subscription row yet
-        // (e.g. every new Google sign-up, which the adapter never creates
-        // one for).
-        const sub = await prisma.subscription.findUnique({ where: { userId: (user as any).id } });
-        token.tier = (sub?.tier ?? "FREE") as SubscriptionTier;
-        token.subStatus = (sub?.status ?? "PENDING") as SubscriptionStatus;
+      }
+      // At sign-in, and again whenever the session is explicitly updated.
+      // Credentials' authorize() and the OAuth adapter's user object have
+      // different shapes, so both providers resolve tier/subStatus from the
+      // same source here, with a FREE/PENDING fallback for a user with no
+      // Subscription row yet (e.g. every new Google sign-up, which the adapter
+      // never creates one for).
+      if (user || trigger === "update") {
+        const userId = (user as any)?.id ?? token.uid;
+        if (userId) {
+          const sub = await prisma.subscription.findUnique({ where: { userId: userId as string } });
+          token.tier = (sub?.tier ?? "FREE") as SubscriptionTier;
+          token.subStatus = (sub?.status ?? "PENDING") as SubscriptionStatus;
+        }
       }
       return token;
     },

@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton, type FollowTargetType } from "@/components/FollowButton";
 import { matchSlug } from "@/lib/slug";
@@ -15,6 +16,7 @@ const PAGE_SIZE = 20;
 
 export default async function FollowingPage({ searchParams }: { searchParams: { page?: string } }) {
   const session = await getServerSession(authOptions);
+  const viewer = await getViewerEntitlement();
   if (!session?.user.id) redirect("/login?callbackUrl=%2Ffollowing");
   const page = Math.max(1, Math.floor(Number(searchParams.page)) || 1);
 
@@ -70,7 +72,7 @@ export default async function FollowingPage({ searchParams }: { searchParams: { 
       <section className="space-y-3">
         <h2 className="section-heading">Your prediction feed</h2>
         {rows.slice(0, PAGE_SIZE).map((p) => {
-          const allowed = canViewCategory(p.category as PredictionCategory, session.user.tier, session.user.subStatus, session.user.role);
+          const allowed = canViewCategory(p.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
           const slug = matchSlug(p);
           const rowCategories = p.categories.map((c) => c.category);
           const reasons: string[] = [];
