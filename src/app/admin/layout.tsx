@@ -18,6 +18,7 @@ const items = [
   { href: "/admin/combos", label: "Combos" },
   { href: "/admin/bookmakers", label: "Bookmakers" },
   { href: "/admin/subscribers", label: "Subscribers" },
+  { href: "/admin/payments", label: "Payments" },
   { href: "/admin/admins", label: "Admins" },
   { href: "/admin/tasks", label: "Tasks" },
 ];
