@@ -2,11 +2,36 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { initializeTransaction, PAYSTACK_PLANS } from "@/lib/paystack/paystack";
+import { initializeTransaction } from "@/lib/paystack/paystack";
 import { koboFor } from "@/lib/pricing";
 import { hasActivePaidAccess } from "@/lib/entitlement";
 import { newCheckoutReference } from "@/lib/paystack/checkoutReference";
 import { z } from "zod";
+
+/**
+ * TEMPORARY: ONE-TIME PAYMENTS, NOT RECURRING SUBSCRIPTIONS.
+ *
+ * WHY. This Paystack integration has no active recurring-capable channel.
+ * Paystack narrows a plan checkout to the channels that support recurring
+ * billing — Card and Direct Debit — and neither is active here, so attaching a
+ * plan resolved the channel list to literally `[]` and the hosted page died
+ * with "There are no channels available to process this transaction". Every
+ * VIP and Premium checkout was unsellable. Bank, Bank Transfer and USSD are
+ * active and are perfectly valid for a ONE-TIME charge, so dropping the plan
+ * sells a single 30-day period through the channels that do work.
+ *
+ * Commit 389ea0e deliberately made a missing plan code refuse the checkout,
+ * because a silent `plan: undefined` sold one month while looking like a
+ * subscription. That hazard has not gone away — it is now the intended
+ * behaviour, declared here and reflected in the customer-facing copy, which
+ * promises a 30-day period and does NOT advertise automatic renewal.
+ *
+ * RESTORING RECURRING BILLING. PAYSTACK_PLAN_VIP / PAYSTACK_PLAN_PREMIUM and
+ * PAYSTACK_PLANS are deliberately left in place and unchanged. Once Paystack
+ * activates Card or Direct Debit, put `plan` back on the initializeTransaction
+ * call below (the parameter is still supported), restore the missing-plan
+ * guard, and revert the copy. Nothing else here needs to move.
+ */
 
 // Tier only. The amount is NOT accepted from the client: it used to be, which
 // made the price whatever the browser claimed it was. It's derived from the
@@ -23,16 +48,6 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const tier = parsed.data.tier;
-  // A missing plan code used to fall through as `plan: undefined`, which
-  // Paystack happily accepts as a ONE-OFF charge. Checkout still looked
-  // successful, but it sold a single month instead of a subscription and
-  // nothing downstream could tell the two apart. Refuse the checkout instead
-  // of taking money for the wrong thing.
-  const plan = tier === "VIP" ? PAYSTACK_PLANS.VIP : PAYSTACK_PLANS.PREMIUM;
-  if (!plan) {
-    console.error("Paystack checkout blocked", { code: "PLAN_CODE_NOT_CONFIGURED", tier });
-    return NextResponse.json({ error: "Checkout is unavailable for this tier" }, { status: 503 });
-  }
 
   // Our own reference rather than Paystack's, because it carries the tier
   // being bought — see newCheckoutReference. The row can then be left alone
@@ -48,7 +63,7 @@ export async function POST(req: Request) {
     init = await initializeTransaction({
       email: session.user.email!,
       amountKobo: koboFor(tier),
-      plan,
+      // NO `plan` — see the block comment at the top of this file.
       reference,
       callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
       metadata: { userId: session.user.id, tier: parsed.data.tier },

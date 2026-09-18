@@ -184,7 +184,7 @@ async function OverviewSection({
 export default async function AccountDashboard({
   searchParams,
 }: {
-  searchParams: { section?: string; paid?: string };
+  searchParams: { section?: string; paid?: string; reference?: string; trxref?: string };
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
@@ -241,8 +241,16 @@ export default async function AccountDashboard({
         unlockedCategories={unlockedCategories}
         paymentNotice={
           // `paid=1` only decides whether to SHOW this; whether the payment
-          // landed is `activated`, computed from the database row above.
-          searchParams.paid === "1" ? <PaymentConfirmation activated={hasActivePaidAccess(sub)} /> : null
+          // landed is `activated`, computed from the database row above. The
+          // reference is what Paystack appends to the callback URL, and it is
+          // passed through only so the component can ASK the server to verify
+          // it — a reference in the URL grants nothing by itself.
+          searchParams.paid === "1" ? (
+            <PaymentConfirmation
+              activated={hasActivePaidAccess(sub)}
+              reference={searchParams.reference ?? searchParams.trxref ?? null}
+            />
+          ) : null
         }
       />
     );

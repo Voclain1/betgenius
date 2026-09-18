@@ -33,7 +33,7 @@ export default function AdminSubscribers() {
               <th className="px-3 py-2">User</th>
               <th className="px-3 py-2">Tier</th>
               <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Renews</th>
+              <th className="px-3 py-2">Access ends</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>

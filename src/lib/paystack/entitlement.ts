@@ -78,11 +78,44 @@ export function validateVerifiedEntitlement(
   return mismatches;
 }
 
-/** One paid month. Both grant paths extend by the same amount. */
+/** One paid month. Every grant path extends by the same amount. */
 export const PAID_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
+export type PaidPeriod = { start: Date; end: Date };
+
+/**
+ * The period a payment buys. THE ONLY PLACE A DURATION IS CALCULATED.
+ *
+ * Both grant paths route through here so a checkout and a recurring charge
+ * cannot drift apart. That drift was real: the checkout path used to write
+ * `now + PAID_PERIOD_MS` flat, so a subscriber who renewed on day 20 threw
+ * away the ten days they had already paid for, while the renewal path
+ * extended from the period end correctly. Under one-time payments EVERY
+ * payment is a checkout, so that bug would have hit every early renewal.
+ *
+ * `end` extends from the later of now and the current period end — renewing
+ * early adds a month on top rather than restarting it.
+ *
+ * `start` is the beginning of the access span the customer is currently in,
+ * not of the month this payment added: extending an unexpired period keeps
+ * the existing start, and a fresh or lapsed grant starts now. It is recorded
+ * for display and support, and a null legacy value simply reads as now.
+ * Access is gated on `end` alone (see lib/entitlement).
+ */
+export function nextPaidPeriod(
+  sub: { currentPeriodStart?: Date | null; currentPeriodEnd: Date | null },
+  now: Date = new Date(),
+): PaidPeriod {
+  const unexpired = sub.currentPeriodEnd != null && sub.currentPeriodEnd.getTime() > now.getTime();
+  const from = unexpired ? sub.currentPeriodEnd! : now;
+  return {
+    start: unexpired ? sub.currentPeriodStart ?? now : now,
+    end: new Date(from.getTime() + PAID_PERIOD_MS),
+  };
+}
+
 export type RenewalDecision =
-  | { granted: true; periodEnd: Date }
+  | { granted: true; periodStart: Date; periodEnd: Date }
   | { granted: false; code: string };
 
 /**
@@ -100,7 +133,14 @@ export type RenewalDecision =
  * a redelivered webhook extends nothing a second time.
  */
 export function validateRenewal(
-  sub: { tier: string; status: string; currentPeriodEnd: Date | null; paystackRef: string | null },
+  sub: {
+    tier: string;
+    status: string;
+    currentPeriodStart?: Date | null;
+    currentPeriodEnd: Date | null;
+    paystackRef: string | null;
+    lastPaymentRef?: string | null;
+  },
   transaction: VerifiedPaystackTransaction,
   now: Date = new Date(),
 ): RenewalDecision {
@@ -112,8 +152,56 @@ export function validateRenewal(
   if (sub.paystackRef && transaction.reference === sub.paystackRef) {
     return { granted: false, code: "ALREADY_APPLIED" };
   }
-  // From the later of now and the current period end, so renewing early adds a
-  // month rather than throwing the remainder away.
-  const from = sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() > now.getTime() ? sub.currentPeriodEnd : now;
-  return { granted: true, periodEnd: new Date(from.getTime() + PAID_PERIOD_MS) };
+  if (sub.lastPaymentRef && transaction.reference === sub.lastPaymentRef) {
+    return { granted: false, code: "ALREADY_APPLIED" };
+  }
+  const period = nextPaidPeriod(sub, now);
+  return { granted: true, periodStart: period.start, periodEnd: period.end };
+}
+
+export type CheckoutRow = PendingEntitlement & {
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  lastPaymentRef: string | null;
+};
+
+export type CheckoutDecision =
+  | { granted: true; tier: PaidTier; periodStart: Date; periodEnd: Date }
+  | { granted: false; code: "ALREADY_GRANTED" }
+  | { granted: false; code: "MISMATCH"; mismatches: EntitlementMismatch[] };
+
+/**
+ * A one-time checkout payment against the row that started it.
+ *
+ * This is the whole grant rule for the one-time fallback, and it is pure so
+ * every case below can be asserted without a database or a real charge:
+ * see scripts/check-onetime-fallback.ts.
+ *
+ * ALREADY_GRANTED comes first and is not a failure. The callback verifies the
+ * payment the moment Paystack redirects, and the webhook verifies it again
+ * whenever it arrives — so the same transaction is presented twice by design,
+ * often within the same second. Recognising the spent reference here is what
+ * makes the second one a no-op instead of a free extra month. The database
+ * write is claimed atomically as well (see applyCheckoutPayment), because two
+ * callers can both read the row before either writes.
+ *
+ * Everything else is delegated to validateVerifiedEntitlement, so the one-time
+ * path enforces exactly the checks the recurring path did: success status,
+ * NGN, the tier's server-side price to the kobo, our own reference, the
+ * customer's verified email, and the userId/tier metadata.
+ */
+export function decideCheckoutGrant(
+  row: CheckoutRow,
+  purchasedTier: string,
+  transaction: VerifiedPaystackTransaction,
+  now: Date = new Date(),
+): CheckoutDecision {
+  if (row.lastPaymentRef && transaction.reference === row.lastPaymentRef) {
+    return { granted: false, code: "ALREADY_GRANTED" };
+  }
+  const mismatches = validateVerifiedEntitlement({ ...row, tier: purchasedTier }, transaction);
+  if (mismatches.length > 0) return { granted: false, code: "MISMATCH", mismatches };
+  if (!paidTier(purchasedTier)) return { granted: false, code: "MISMATCH", mismatches: [{ code: "INVALID_PENDING_TIER" }] };
+  const period = nextPaidPeriod(row, now);
+  return { granted: true, tier: purchasedTier, periodStart: period.start, periodEnd: period.end };
 }

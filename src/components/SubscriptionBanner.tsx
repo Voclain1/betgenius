@@ -41,8 +41,11 @@ export function SubscriptionBanner({
 
   const subtitle = isFree
     ? "Upgrade to unlock VIP and Premium tips."
+    // "renews" would be a promise the billing cannot currently keep: access is
+    // sold as a single 30-day period and nothing is charged automatically, so
+    // the date is when access ENDS, not when it renews.
     : `${status === "ACTIVE" ? "Active" : status}${
-        currentPeriodEnd ? ` · renews ${new Date(currentPeriodEnd).toLocaleDateString()}` : ""
+        currentPeriodEnd ? ` · access ends ${new Date(currentPeriodEnd).toLocaleDateString()}` : ""
       }`;
 
   const inner = (
@@ -60,7 +63,7 @@ export function SubscriptionBanner({
           <span className="btn btn-primary pointer-events-none shrink-0">Upgrade</span>
         ) : (
           <Link href="/pricing" className="btn btn-ghost shrink-0 text-sm">
-            Manage plan
+            Renew access
           </Link>
         )}
       </div>
