@@ -294,6 +294,73 @@ export function evaluateMarketConfirmed(input: {
 }
 
 /**
+ * The selections targeting is allowed to judge a fixture on.
+ *
+ * NARROW ON PURPOSE, and the narrowness was earned the hard way. The first
+ * version of this scanned every quoted selection and took the highest de-vigged
+ * probability. On a real run it returned "Over 0.5 Goals" at 92.7% and
+ * "Under 5.5 Goals" at 91.2% as its top candidates — numbers that are perfectly
+ * accurate and say nothing whatever about the fixture. It is the same trap
+ * HEADLINE_MARKETS already documents from the other direction: a rule that
+ * maximises over the full market list picks "Over 6.5 @ 80.0" every single day.
+ *
+ * What targeting actually wants is LOPSIDEDNESS — evidence that one side is
+ * much stronger — because that is the property the margin calibration responds
+ * to and the property that produced a 56.3% gate pass rate on MATCH_WINNER.
+ * Only three selection shapes carry it:
+ *
+ *   Match Winner  Home / Away   (Draw excluded: a high draw price is not a
+ *                               strong side, and no tip is "the draw is likely"
+ *                               at 75%+)
+ *   Double Chance Home/Draw, Away/Draw
+ *                               (Home/Away excluded: "not the draw" is a
+ *                               low-draw signal, not a strong-side one — it
+ *                               surfaced Barcelona v Racing at 93.6% purely
+ *                               because a draw was improbable)
+ *
+ * Goals markets are excluded from TARGETING entirely. They remain fully
+ * eligible at the GATE: if the model, looking at a fixture selected for its
+ * lopsidedness, reasons its way to an Over 2.5, that pick is judged on its
+ * merits. This list governs only which fixtures are worth a look.
+ */
+const TARGETABLE_SELECTIONS: ReadonlyArray<{ market: TrimmedMarket; value: string }> = [
+  { market: "Match Winner", value: "Home" },
+  { market: "Match Winner", value: "Away" },
+  { market: "Double Chance", value: "Home/Draw" },
+  { market: "Double Chance", value: "Away/Draw" },
+];
+
+/**
+ * How one-sided the market says this fixture is, or null if it will not say.
+ *
+ * Reads the market WITHOUT any model draft, which is what makes market-first
+ * targeting possible: a fixture can be judged worth a paid-tier attempt before
+ * anything has been generated for it, the same inversion affordsBetOfDayPrice
+ * performs for the price band.
+ *
+ * Returns the strongest qualifying signal, subject to MC_MIN_BOOKMAKERS.
+ */
+export function lopsidednessSignal(odds: FixtureOdds | null): {
+  probability: number;
+  market: TrimmedMarket;
+  value: string;
+  bookmakers: number;
+} | null {
+  if (!odds?.markets) return null;
+
+  let best: { probability: number; market: TrimmedMarket; value: string; bookmakers: number } | null = null;
+  for (const want of TARGETABLE_SELECTIONS) {
+    const devigged = devigProbability(odds, want.market, want.value);
+    if (!devigged) continue;
+    if (devigged.bookmakers < MC_MIN_BOOKMAKERS) continue;
+    if (!best || devigged.probability > best.probability) {
+      best = { probability: devigged.probability, market: want.market, value: want.value, bookmakers: devigged.bookmakers };
+    }
+  }
+  return best;
+}
+
+/**
  * Picks the single selection to keep when a fixture produces several passing ones.
  *
  * Highest min(model, market) first — the pick whose WEAKER side is strongest,

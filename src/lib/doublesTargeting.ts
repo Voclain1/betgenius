@@ -62,12 +62,19 @@ export async function doublesQuotaRemaining(now: Date = new Date()): Promise<num
  * second parameter through every layer would let the two disagree.
  */
 export function marketBreadthForCategories(categories: readonly string[], intent?: string | null): "single" | "multi" {
-  // Market-Confirmed generation also wants several markets per fixture, for a
-  // different reason: the odds gate rejects most selections, so a fixture that
-  // offers only one has one chance to clear it. Its intent is not a category —
-  // its rows are tagged VIP/PREMIUM only after they pass — so it is matched
-  // here explicitly rather than through the category list.
-  if (intent === "MARKET_CONFIRMED") return "multi";
+  // The dedicated VIP/PREMIUM pass also wants several markets per fixture, for
+  // a different reason from doubles: the odds gate rejects most selections, so
+  // a fixture that offers only one has exactly one chance to clear it. Its
+  // intent is not a category — its rows are tagged VIP/PREMIUM only after they
+  // pass — so it is matched here explicitly rather than through the category
+  // list.
+  //
+  // The string is written out rather than imported from vipPremiumPipeline,
+  // which imports generation/selector and would close an import cycle back
+  // through here. MARKET_CONFIRMED is kept alongside it: the pass that used it
+  // is retired, but leaving the arm costs nothing and removing it would silently
+  // narrow any replay of an old job.
+  if (intent === "VIP_PREMIUM" || intent === "MARKET_CONFIRMED") return "multi";
   if (intent === REGULAR_COMBO_INTENT) return "multi";
   return categories.includes(SAME_GAME_DOUBLE) ? "multi" : "single";
 }
@@ -123,13 +130,20 @@ export function startCutoffMsForCategories(
   defaultCutoffMs: number,
   intent?: string | null,
 ): number {
-  // Market-Confirmed generation was measured SEPARATELY rather than assumed to
-  // match: 26.8, 25.7, 23.6 and 24.3s per fixture, mean 25.1s. That is the same
-  // regime as doubles — both ask for several markets and both pay the same
-  // ~15s of throttled api-football fetches — so it takes the same tight cutoff
+  // Multi-market dedicated passes were measured SEPARATELY rather than assumed
+  // to match: 26.8, 25.7, 23.6 and 24.3s per fixture, mean 25.1s. That is the
+  // same regime as doubles — both ask for several markets and both pay the same
+  // ~15s of throttled api-football fetches — so they take the same tight cutoff
   // rather than the general 22s one, which would start a fixture with 8s of
   // client budget left and ~25s of work to do.
-  if (intent === "MARKET_CONFIRMED") return DOUBLES_START_CUTOFF_MS;
+  //
+  // VIP_PREMIUM belongs here for exactly the reason it takes "multi" breadth
+  // above: it asks for several markets per fixture so its odds gate has more
+  // than one selection to judge. Leaving it on the general cutoff would let a
+  // run start a ~25s fixture with 8s of budget left. Kept in step with
+  // marketBreadthForCategories — the two must not disagree about which intents
+  // are multi-market.
+  if (intent === "VIP_PREMIUM" || intent === "MARKET_CONFIRMED") return DOUBLES_START_CUTOFF_MS;
   if (intent === REGULAR_COMBO_INTENT) return DOUBLES_START_CUTOFF_MS;
   return categories.includes(SAME_GAME_DOUBLE) ? DOUBLES_START_CUTOFF_MS : defaultCutoffMs;
 }

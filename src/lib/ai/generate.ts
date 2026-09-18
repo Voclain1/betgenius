@@ -16,6 +16,7 @@ import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
 import { scanDraftForInternalTerminology, type InternalTerminologyViolation } from "@/lib/houseVoice";
 import { normalizeLeagueName } from "@/lib/leagues";
+import { VIP_ROUTE_PROVENANCE, BANKER_INTENT_PROVENANCE, STANDARD_CURATED_PROVENANCE } from "@/lib/geniusCuration";
 
 /**
  * Thrown when a draft asserts certainty. Carries the violations so the failure
@@ -164,9 +165,31 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
 
   const startedAt = Date.now();
   const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId);
+  /**
+   * The calibration route this row was ACTUALLY generated under, recorded on
+   * the row itself.
+   *
+   * Derived here, one line from resolveGenerationRisk, precisely so the marker
+   * and the route cannot drift apart. Reconstructing it later — replaying
+   * AIJob.prompt.categories against league priority, which is how the mismatch
+   * was found — works but is archaeology; a row should carry its own history.
+   *
+   * A row from the dedicated VIP/PREMIUM pass may be re-stamped VIP_GENERATED
+   * or PREMIUM_GENERATED later by its odds gate. That is a stricter, more
+   * specific classification of the same row and is meant to win. A draft that
+   * FAILS the gate keeps the VIP_ROUTE_CONFIRMED stamped here and competes for
+   * the paid feeds through ordinary curation like any other row — so a target
+   * this pass claimed is never wasted.
+   */
+  const provenance =
+    riskRoute.calibration === "legacy"
+      ? BANKER_INTENT_PROVENANCE
+      : riskRoute.calibration === "vip"
+        ? VIP_ROUTE_PROVENANCE
+        : STANDARD_CURATED_PROVENANCE;
   // A regular-combo or legacy doubles job asks for several markets so a
   // same-game double can be assembled from independently-reasoned rows.
-  // Market-Confirmed also uses multi breadth for its separate odds gate.
+  // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = marketBreadthForCategories(input.categories, input.intent);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
@@ -331,6 +354,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           // analysis, several market rows.
           analysisJson: buildAnalysis(output) as unknown as Prisma.InputJsonValue,
           contextComplete,
+          provenance,
           authorId: input.authorId,
           aiJobId: job.id,
         },
