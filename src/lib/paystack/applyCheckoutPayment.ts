@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyTransaction } from "@/lib/paystack/paystack";
 import { decideCheckoutGrant, type CheckoutDecision } from "@/lib/paystack/entitlement";
 import { tierFromCheckoutReference } from "@/lib/paystack/checkoutReference";
+import { recordPaymentAttempt, type PaymentAttemptSource } from "@/lib/paystack/recordPaymentAttempt";
 
 /**
  * Apply a one-time checkout payment. THE ONLY PLACE ENTITLEMENT IS GRANTED
@@ -41,6 +42,8 @@ export async function applyCheckoutPayment(
   /** When set, the reference must belong to this user's row — the callback
    *  passes the signed-in user so one payer cannot claim another's payment. */
   expectUserId?: string,
+  /** Which path observed this attempt. Recording only; it changes no decision. */
+  source: PaymentAttemptSource = "WEBHOOK",
 ): Promise<CheckoutPaymentResult> {
   const matches = await prisma.subscription.findMany({
     where: { paystackRef: reference },
@@ -89,6 +92,16 @@ export async function applyCheckoutPayment(
       message: error instanceof Error ? error.message : "Unknown verification error",
     };
   }
+
+  // Observability, not a decision. Recorded before the grant rule runs so a
+  // REJECTED or already-spent attempt is captured just as a successful one is
+  // — those are precisely the attempts an admin needs to see. It records only
+  // an allowlisted subset (see recordPaymentAttempt) and cannot throw.
+  await recordPaymentAttempt(verified.data, source, {
+    reference,
+    userId: row.userId,
+    tier: purchasedTier,
+  });
 
   const decision: CheckoutDecision = decideCheckoutGrant(
     {

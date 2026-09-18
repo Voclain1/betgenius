@@ -57,3 +57,28 @@ export function initializeTransaction(input: {
 export function verifyTransaction(reference: string) {
   return paystackFetch<{ status: boolean; data: any }>(`/transaction/verify/${encodeURIComponent(reference)}`);
 }
+
+/**
+ * Recent transactions, newest first. READ-ONLY, and used only to reconcile the
+ * payment-attempt log: an abandoned checkout never produces a webhook and the
+ * payer never returns to trigger the callback, so listing is the only way it
+ * can be observed at all.
+ *
+ * It does not, and must not, retry anything. Nothing in this client re-charges
+ * or re-initializes a transaction.
+ */
+export function listTransactions(perPage = 100) {
+  return paystackFetch<{
+    status: boolean;
+    data: Array<{
+      reference?: string;
+      status?: string;
+      channel?: string;
+      gateway_response?: string;
+      amount?: number;
+      currency?: string;
+      created_at?: string;
+      metadata?: { userId?: string; tier?: string } | null;
+    }>;
+  }>(`/transaction?perPage=${encodeURIComponent(String(perPage))}`);
+}

@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "A transaction reference is required" }, { status: 400 });
 
-  const result = await applyCheckoutPayment(parsed.data.reference, session.user.id);
+  const result = await applyCheckoutPayment(parsed.data.reference, session.user.id, "CALLBACK");
 
   switch (result.outcome) {
     case "GRANTED":
