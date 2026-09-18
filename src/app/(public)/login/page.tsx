@@ -16,6 +16,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const oauthError = searchParams.get("error");
+  const justReset = searchParams.get("reset") === "1";
   const requested = searchParams.get("callbackUrl");
   const callbackUrl = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard";
 
@@ -30,6 +31,11 @@ function LoginForm() {
     <div className="mx-auto max-w-md">
       <h1 className="mb-4 text-2xl font-bold">Log in</h1>
       <div className="card space-y-3">
+        {justReset && (
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+            Your password has been changed — log in with it below.
+          </div>
+        )}
         {oauthError && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
             {OAUTH_ERROR_MESSAGES[oauthError] ?? "Something went wrong signing in — please try again."}
@@ -49,6 +55,9 @@ function LoginForm() {
           {err && <div className="text-sm text-red-400">{err}</div>}
           <button className="btn btn-primary w-full">Log in</button>
         </form>
+        <p className="text-sm text-gray-400">
+          <Link href="/forgot-password" className="text-brand">Forgot your password?</Link>
+        </p>
       </div>
       <p className="mt-4 text-sm text-gray-400">
         No account? <Link href="/register" className="text-brand">Create one</Link>.
