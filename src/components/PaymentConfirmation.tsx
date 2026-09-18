@@ -19,9 +19,16 @@ import { useSession } from "next-auth/react";
  *
  * 2. Paystack redirects the payer here as soon as the charge clears, which can
  *    beat its own webhook. The row is then still PENDING through no fault of
- *    the payment. Rather than show a padlock to someone who has just paid, poll
- *    briefly: refresh the server components (which re-read the subscription)
- *    and stop as soon as access appears, or after ~30s.
+ *    the payment. Rather than show a padlock to someone who has just paid, ask
+ *    the server to verify the reference NOW (POST /api/subscription/verify),
+ *    then keep the existing brief poll as the fallback for when there is no
+ *    reference in the URL, or the verify call fails, or the payer arrived some
+ *    other way.
+ *
+ *    THE REFERENCE IS NOT A CREDENTIAL. It is handed to the server only so the
+ *    server can fetch Paystack's own verified transaction and decide; posting
+ *    one grants nothing on its own, and posting someone else's grants nothing
+ *    at all. See the route for why.
  *
  * `activated` is computed on the SERVER from the database row and passed in —
  * this component only decides whether to keep waiting.
@@ -29,15 +36,43 @@ import { useSession } from "next-auth/react";
 const ATTEMPTS = 10;
 const INTERVAL_MS = 3000;
 
-export function PaymentConfirmation({ activated }: { activated: boolean }) {
+export function PaymentConfirmation({
+  activated,
+  reference,
+}: {
+  activated: boolean;
+  reference?: string | null;
+}) {
   const { update } = useSession();
   const router = useRouter();
   const [waiting, setWaiting] = useState(!activated);
   const attempts = useRef(0);
 
-  // Sync the browser's session claims with the database once, either way.
+  // Sync the browser's session claims with the database once, either way, and
+  // — when Paystack gave us a reference to check — trigger verification before
+  // the first poll tick so a paid customer is not made to wait out a webhook.
   useEffect(() => {
-    void update();
+    let cancelled = false;
+    void (async () => {
+      if (reference && !activated) {
+        try {
+          await fetch("/api/subscription/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reference }),
+          });
+        } catch {
+          // The poll below is the fallback; a failed verify is not worth
+          // showing anyone, because the webhook still grants access.
+        }
+      }
+      if (cancelled) return;
+      await update();
+      router.refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

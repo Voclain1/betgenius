@@ -57,7 +57,7 @@ export default function Pricing() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">BetGenius VIP and Premium pricing</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a monthly plan for access to additional prediction categories and analysis tools. Prices shown in naira are the amounts charged through Paystack; the dollar figures are references only.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a plan for access to additional prediction categories and analysis tools. Each payment buys a single 30-day access period — there is no automatic renewal, so you renew yourself when the period ends. Prices shown in naira are the amounts charged through Paystack; the dollar figures are references only.</p>
       </div>
       {err && <div className="card text-red-400">{err}</div>}
       <div className="grid gap-4 md:grid-cols-2">
@@ -76,9 +76,13 @@ export default function Pricing() {
                   pay in dollars. */}
               <div className="mt-1 text-3xl font-bold">
                 {formatNgn(price.ngn)}
-                <span className="text-sm font-normal text-gray-400">/month</span>
+                <span className="text-sm font-normal text-gray-400">/30 days</span>
               </div>
               <div className="mt-0.5 text-sm text-gray-400">≈ {formatUsd(price.usd)} — billed in naira</div>
+              {/* Says what the payment actually buys. While recurring billing
+                  is unavailable this is a single period, so the page must not
+                  imply a card will be charged again. */}
+              <div className="mt-1 text-sm text-gray-300">30-day access — renew when your access period ends.</div>
               <ul className="mt-3 space-y-1 text-sm text-gray-300">
                 {t.features.map((f) => <li key={f}>✓ {f}</li>)}
               </ul>
@@ -86,7 +90,7 @@ export default function Pricing() {
                 disabled={busy === t.id}
                 onClick={() => subscribe(t.id)}
                 className="btn btn-primary mt-4 w-full disabled:opacity-50">
-                {busy === t.id ? "Redirecting…" : `Subscribe to ${t.name}`}
+                {busy === t.id ? "Redirecting…" : `Get ${t.name} — 30 days`}
               </button>
             </div>
           );
@@ -94,8 +98,8 @@ export default function Pricing() {
       </div>
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Before choosing a plan</h2>
-        <p className="text-sm leading-6 text-gray-300">VIP adds the VIP prediction category plus Bet Builder and StatsPad. Premium includes the VIP features, Premium-category selections, deeper match previews and priority support. A subscription provides access to analysis; it does not guarantee that any prediction will win.</p>
-        <p className="text-sm leading-6 text-gray-300">Review the public <Link href="/track-record" className="text-brand hover:underline">prediction track record</Link> and <Link href="/methodology" className="text-brand hover:underline">methodology</Link> before subscribing. You can cancel the recurring plan, and access remains subject to the current subscription terms.</p>
+        <p className="text-sm leading-6 text-gray-300">VIP adds the VIP prediction category plus Bet Builder and StatsPad. Premium includes the VIP features, Premium-category selections, deeper match previews and priority support. Paid access provides analysis; it does not guarantee that any prediction will win.</p>
+        <p className="text-sm leading-6 text-gray-300">Review the public <Link href="/track-record" className="text-brand hover:underline">prediction track record</Link> and <Link href="/methodology" className="text-brand hover:underline">methodology</Link> before paying. Access runs for 30 days from payment and then stops on its own — nothing is charged automatically and there is no plan to cancel. Access remains subject to the current subscription terms.</p>
         <p className="text-xs leading-5 text-gray-500">Only bet with money you can afford to lose. See our <Link href="/responsible-gambling" className="text-brand hover:underline">responsible gambling guidance</Link>.</p>
       </section>
     </div>

@@ -99,7 +99,12 @@ model Subscription {
   status           String    @default("PENDING")
   paystackRef      String?
   paystackSubCode  String?
-  currentPeriodEnd DateTime?
+  // The reference of the transaction that last granted entitlement. A payment
+  // is spent once: a redelivered webhook, or a callback racing that webhook,
+  // recognises its own reference here and extends nothing a second time.
+  lastPaymentRef     String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
   approvedById     String?
   approvedAt       DateTime?
   createdAt        DateTime  @default(now())
