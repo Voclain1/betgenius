@@ -33,7 +33,6 @@ import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import { trimH2H } from "@/lib/h2h";
 import { trimOdds } from "@/lib/odds";
-import { lagosTodayBounds } from "@/lib/lagosDate";
 import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
 import { cupSupports } from "@/lib/cupConfig";
 import { DEDICATED_PAID_PROVENANCES } from "@/lib/geniusCuration";
@@ -1082,12 +1081,34 @@ export async function getCandidateOddsTargets(now: Date = new Date()): Promise<O
     .map((r) => ({ matchKey: r.matchKey, fixtureApiId: r.fixtureApiId!, kickoff: r.kickoff, kind: "candidate" as const }));
 }
 
+/**
+ * How far ahead a PUBLISHED pick is priced.
+ *
+ * WAS "today", VIA lagosTodayBounds, AND THAT WAS THE WHOLE BUG. A pick
+ * published for tomorrow was out of scope until the Lagos day rolled over, so
+ * it could not be priced before then — and the other half of the scope
+ * (getCandidateOddsTargets) only sees UN-GENERATED ledger rows, of which there
+ * are normally zero because ordinary generation drains the ledger. Between
+ * them, a published pick kicking off in 24-72h was reachable by neither.
+ *
+ * Measured at the time this changed: of 192 fixtures in the next 72h, 45 had
+ * any odds row and 25 were fresh — and every fresh one kicked off the same day.
+ * 147 had no price at all, which is what left Bet of the Day rejecting 173 of
+ * 286 picks for "no cached bookmaker price".
+ *
+ * 72h matches ODDS_CANDIDATE_HORIZON_MS deliberately: the same research bounds
+ * both (odds density is near-total inside 72h and collapses past a week), and
+ * two different horizons for the same question would be a bug waiting to
+ * happen. Quota is unaffected by the widening itself — selectStaleOddsTargets
+ * still prices a fixture beyond 24h exactly ONCE.
+ */
+export const ODDS_PUBLISHED_HORIZON_MS = 72 * 60 * 60 * 1000;
+
 async function getPublishedOddsTargets(now: Date = new Date()): Promise<OddsTarget[]> {
-  const { start, end } = lagosTodayBounds(now);
   const rows = await prisma.prediction.findMany({
     where: {
       status: "PUBLISHED",
-      kickoff: { gte: start, lt: end },
+      kickoff: { gt: now, lte: new Date(now.getTime() + ODDS_PUBLISHED_HORIZON_MS) },
       homeTeamApiId: { not: null },
       awayTeamApiId: { not: null },
     },
@@ -1175,12 +1196,28 @@ export async function selectStaleOddsTargets(targets: OddsTarget[], now: Date = 
     return now.getTime() - row.fetchedAt.getTime() >= ODDS_NEAR_KICKOFF_TTL_MS;
   });
 
-  // Published picks first — a stale price in front of a reader matters more
-  // than an unpriced candidate — then soonest kickoff.
-
+  /**
+   * BREADTH FIRST: a fixture with NO price outranks one being re-priced.
+   *
+   * The previous order was published-before-candidate, then soonest kickoff,
+   * which starves the far end of the horizon whenever the queue is longer than
+   * `limit`. Near-kickoff published picks are re-priced hourly and sort first
+   * by kickoff, so they refilled the head of the queue on every cycle while
+   * fixtures 24-72h out — the ones with no price at all — never reached it.
+   * A run capped at 25 spent all 25 on fixtures that already had a readable
+   * quote.
+   *
+   * Getting SOME price onto every fixture is worth more than getting the
+   * freshest possible price onto a few: an unpriced fixture is invisible to Bet
+   * of the Day and to VIP/PREMIUM targeting, whereas an hour-old quote is
+   * merely slightly stale. Within each group the old order is kept, so
+   * near-kickoff freshness still wins among equals.
+   */
   return due.sort(
     (a, b) =>
-      Number(a.kind === "candidate") - Number(b.kind === "candidate") || a.kickoff.getTime() - b.kickoff.getTime(),
+      Number(byKey.get(a.matchKey)?.fetchedAt != null) - Number(byKey.get(b.matchKey)?.fetchedAt != null) ||
+      Number(a.kind === "candidate") - Number(b.kind === "candidate") ||
+      a.kickoff.getTime() - b.kickoff.getTime(),
   );
 }
 

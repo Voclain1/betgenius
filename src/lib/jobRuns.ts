@@ -20,6 +20,31 @@ import { prisma } from "@/lib/prisma";
 /** Job identifiers. A constant so a typo cannot silently split one job's history in two. */
 export const JOB_CURATE_ACCUMULATORS = "curate-accumulators" as const;
 export const JOB_SETTLE = "settle" as const;
+/**
+ * The generation-reliability jobs.
+ *
+ * These exist because production scheduling lives in cron-job.org, outside this
+ * repository — so "the VIP/PREMIUM pass is starving" and "the VIP/PREMIUM cron
+ * was never firing" were indistinguishable from inside the app. Both produce no
+ * paid picks. Only one of them is fixable by changing code, and telling them
+ * apart previously meant logging into a third-party scheduler.
+ */
+export const JOB_GENERATE = "generate-ordinary" as const;
+export const JOB_GENERATE_VIP_PREMIUM = "generate-vip-premium" as const;
+export const JOB_GENERATE_BET_OF_DAY = "generate-bet-of-the-day" as const;
+export const JOB_BET_OF_DAY_SELECT = "select-bet-of-the-day" as const;
+export const JOB_REFRESH_ODDS = "refresh-odds" as const;
+
+/** Every job this app records, for the admin view's benefit. */
+export const KNOWN_JOBS = [
+  JOB_REFRESH_ODDS,
+  JOB_GENERATE_VIP_PREMIUM,
+  JOB_GENERATE,
+  JOB_GENERATE_BET_OF_DAY,
+  JOB_BET_OF_DAY_SELECT,
+  JOB_CURATE_ACCUMULATORS,
+  JOB_SETTLE,
+] as const;
 
 export type JobRunInput = {
   job: string;
@@ -91,5 +116,51 @@ export async function recentJobRuns(job: string, limit = 20) {
     orderBy: { ranAt: "desc" },
     take: limit,
     select: { id: true, job: true, ranAt: true, ok: true, summary: true, ms: true, detail: true },
+  });
+}
+
+/**
+ * Record a scheduled route's run without changing what it returns.
+ *
+ * WHY A WRAPPER RATHER THAN recordJobRun AT EACH EXIT. The generation route has
+ * eleven return points, several of them early "quota already spent" stand-downs
+ * — and those are precisely the runs worth recording, because a stand-down and
+ * a cron that never fired look identical from outside. Threading a call through
+ * every branch would be eleven chances to miss one; reading the response the
+ * handler already produced cannot miss any.
+ *
+ * The response is CLONED before its body is read, so the caller still receives
+ * an unconsumed stream.
+ *
+ * AUTH FAILURES ARE NOT RUNS. A 401/403 is someone calling the endpoint wrongly,
+ * not a scheduled job executing, and recording those would bury real history
+ * under noise. 5xx IS recorded, with ok=false — a job that failed is the most
+ * important thing this table can tell anyone.
+ */
+export async function recordRouteRun(
+  job: string,
+  response: Response,
+  startedAt: number,
+  summarise: (payload: any) => string,
+): Promise<void> {
+  if (response.status === 401 || response.status === 403) return;
+  let payload: unknown = null;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    // A non-JSON body is still a run worth recording; the summary just says less.
+  }
+  await recordJobRun({
+    job,
+    ok: response.status < 400,
+    summary: (() => {
+      try {
+        return summarise(payload);
+      } catch {
+        return `status ${response.status}`;
+      }
+    })(),
+    detail: payload,
+    ms: Date.now() - startedAt,
   });
 }
