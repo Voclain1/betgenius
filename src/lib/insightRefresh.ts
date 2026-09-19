@@ -20,7 +20,8 @@ import { getTeamRecentFixtures, type FixtureRow } from "@/lib/football/api-footb
 import { regulationScoreOf } from "@/lib/settlement";
 import { calculateInsights, HISTORY_SIZE, INSIGHT_VERSION, isInsightFixture, type InsightEvidence, type InsightFixture, type InsightScope } from "@/lib/insights";
 
-export const JOB_REFRESH_INSIGHTS = "refresh-insights" as const;
+/** Re-exported so this module stays the one place the worker's callers import from. */
+export { JOB_REFRESH_INSIGHTS } from "@/lib/jobRuns";
 
 export const TARGET_HORIZON_MS = 7 * 24 * 60 * 60_000;
 export const HISTORY_REFETCH_MS = 6 * 60 * 60_000;
