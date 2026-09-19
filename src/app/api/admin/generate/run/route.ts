@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import {
+  JOB_GENERATE,
+  JOB_GENERATE_BET_OF_DAY,
+  JOB_GENERATE_VIP_PREMIUM,
+  recordRouteRun,
+} from "@/lib/jobRuns";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
@@ -75,7 +81,7 @@ async function resolveAuthorId(sessionUserId?: string): Promise<string | null> {
   return admin?.id ?? null;
 }
 
-export async function GET(req: Request) {
+async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
@@ -325,4 +331,35 @@ export async function GET(req: Request) {
   // external scheduler must not treat overlapping pokes as errors and start
   // alerting or backing off.
   return NextResponse.json(report, { status: 200 });
+}
+
+/**
+ * The scheduled entry point. Delegates to the handler unchanged and records
+ * the run, so a starving pass is diagnosable from /admin/jobs instead of from
+ * cron-job.org.
+ *
+ * The job NAME is derived from the query, because one endpoint serves three
+ * different scheduled passes and lumping them into one history would hide
+ * exactly the comparison that matters: ordinary generation firing 96 times a day
+ * while the paid pass fires 4 times in a fortnight.
+ */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const categories = (url.searchParams.get("categories") ?? "").toUpperCase();
+  const job =
+    url.searchParams.get("vipPremium") === "1"
+      ? JOB_GENERATE_VIP_PREMIUM
+      : categories.includes("BET_OF_THE_DAY")
+        ? JOB_GENERATE_BET_OF_DAY
+        : JOB_GENERATE;
+
+  const startedAt = Date.now();
+  const response = await handleGenerationRequest(req);
+  await recordRouteRun(job, response, startedAt, (p) =>
+    p?.skipped
+      ? `stood down: ${p.skipped}`
+      : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
+        (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : ""),
+  );
+  return response;
 }

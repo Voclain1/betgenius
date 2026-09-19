@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { autoSelectBetOfTheDay, getBetOfTheDayCandidates } from "@/lib/betOfTheDay";
+import { JOB_BET_OF_DAY_SELECT, recordJobRun } from "@/lib/jobRuns";
 
 export const dynamic = "force-dynamic";
 
@@ -39,5 +40,20 @@ export async function GET(req: Request) {
     });
   }
 
-  return NextResponse.json(await autoSelectBetOfTheDay());
+  // Recorded because this is now a scheduled job, and "no acceptable pick today"
+  // is a legitimate outcome that must be distinguishable from "the cron never
+  // fired". Both leave the slot empty.
+  const startedAt = Date.now();
+  const result = await autoSelectBetOfTheDay();
+  await recordJobRun({
+    job: JOB_BET_OF_DAY_SELECT,
+    ok: true,
+    // `action` already distinguishes every outcome that matters — including
+    // "kept" (the right pick was already tagged) and "skipped-manual-pin" (an
+    // admin chose by hand), neither of which is a failure.
+    summary: `${result.action}: ${result.consideredEligible} eligible, ${result.consideredRejected} rejected${result.detail ? ` — ${result.detail}` : ""}`,
+    detail: result,
+    ms: Date.now() - startedAt,
+  });
+  return NextResponse.json(result);
 }

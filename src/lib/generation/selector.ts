@@ -19,6 +19,8 @@ import { matchKey } from "@/lib/slug";
 import { LEAGUE_CATALOGUE, leaguePriorityRank } from "@/lib/leagues";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { fixtureIsInCupScope } from "@/lib/cupConfig";
+import { reservePaidTierFixtures } from "@/lib/generation/paidTierGrace";
+import { GENERATE_FROM_HOURS, SAME_DAY_GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 
 /**
  * The generation window, in hours before kickoff.
@@ -33,9 +35,10 @@ import { fixtureIsInCupScope } from "@/lib/cupConfig";
  * The sweet spot the ordering actually targets is ~24-36h out: firm enough
  * team news, and a full review cycle still ahead of it.
  */
-export const GENERATE_FROM_HOURS = 12;
-export const SAME_DAY_GENERATE_FROM_HOURS = 2;
-export const GENERATE_UNTIL_HOURS = 48;
+// Defined in generation/window so paidTierGrace can read them without importing
+// this module (which imports it). Re-exported because four callers already take
+// them from here.
+export { GENERATE_FROM_HOURS, SAME_DAY_GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 
 /** Backoff schedule by attempt count. Beyond the last entry the fixture is abandoned. */
 export const RETRY_BACKOFF_MINUTES = [15, 60, 240];
@@ -75,7 +78,7 @@ export async function selectCandidates(opts: {
   now?: Date;
   /** Hard cap on returned candidates — the worker's own deadline may take fewer. */
   limit: number;
-}): Promise<{ candidates: Candidate[]; scanned: number; discoveryCalls: number }> {
+}): Promise<{ candidates: Candidate[]; scanned: number; discoveryCalls: number; reservedForPaidTier: number }> {
   const now = opts.now ?? new Date();
   const leagueIds = opts.leagueApiIds?.length ? opts.leagueApiIds : LEAGUE_CATALOGUE.map((l) => l.id);
   const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
@@ -115,7 +118,7 @@ export async function selectCandidates(opts: {
     })
     .filter((x): x is { key: string; f: FixtureRow } => x !== null);
 
-  if (keyed.length === 0) return { candidates: [], scanned: 0, discoveryCalls };
+  if (keyed.length === 0) return { candidates: [], scanned: 0, discoveryCalls, reservedForPaidTier: 0 };
 
   // Collapse the slate to ONE entry per provider fixture before anything else.
   //
@@ -177,6 +180,8 @@ export async function selectCandidates(opts: {
   );
 
   const candidates: Candidate[] = [];
+  /** Keys with no ledger row at all — the only ones eligible for a paid-tier reservation. */
+  const newToLedger = new Set<string>();
   for (const { key, f } of keyed) {
     if (generated.has(key)) continue;
     if (f.fixture.id != null && generatedFixtureIds.has(f.fixture.id)) continue;
@@ -203,6 +208,43 @@ export async function selectCandidates(opts: {
       round: f.league.round ?? null,
       priorAttempts: attempt?.attempts ?? 0,
     });
+    if (!attempt) newToLedger.add(key);
+  }
+
+  /**
+   * FIRST REFUSAL FOR THE PAID PASS.
+   *
+   * A paid-tier fixture this run has just discovered is reserved rather than
+   * claimed: a PENDING ledger row with a short future `nextAttemptAt`, which the
+   * VIP/PREMIUM pass can target immediately and this selector skips until it
+   * expires. Without it the paid pass can never see the fixture at all — this
+   * function completes it in one run, so it is never observably claimable. See
+   * lib/generation/paidTierGrace for the measurements and the grace duration.
+   *
+   * Only fixtures new to the ledger are affected, so nothing already generated,
+   * retrying or abandoned changes behaviour, and the reservation self-expires.
+   */
+  const reserved = await reservePaidTierFixtures(
+    candidates
+      .filter((c) => newToLedger.has(c.matchKey))
+      .map((c) => ({
+        matchKey: c.matchKey,
+        fixtureApiId: c.fixtureApiId,
+        leagueApiId: c.leagueApiId,
+        leagueName: c.leagueName,
+        homeTeam: c.homeTeam,
+        awayTeam: c.awayTeam,
+        homeTeamApiId: c.homeTeamApiId,
+        awayTeamApiId: c.awayTeamApiId,
+        kickoff: c.kickoff,
+        round: c.round,
+        isNewToLedger: true,
+      })),
+    now,
+  );
+  const withheld = reserved.size;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (reserved.has(candidates[i].matchKey)) candidates.splice(i, 1);
   }
 
   // Exhaust today's remaining eligible fixtures before tomorrow+, regardless
@@ -215,5 +257,8 @@ export async function selectCandidates(opts: {
       || a.kickoff.getTime() - b.kickoff.getTime();
   });
 
-  return { candidates: candidates.slice(0, opts.limit), scanned: keyed.length, discoveryCalls };
+  // `reservedForPaidTier` is reported so a run that looks quiet can be told
+  // apart from one that stood off paid-tier fixtures on purpose — the same
+  // "did nothing" vs "deliberately did nothing" distinction JobRun exists for.
+  return { candidates: candidates.slice(0, opts.limit), scanned: keyed.length, discoveryCalls, reservedForPaidTier: withheld };
 }

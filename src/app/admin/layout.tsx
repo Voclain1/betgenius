@@ -20,6 +20,7 @@ const items = [
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/admins", label: "Admins" },
+  { href: "/admin/jobs", label: "Scheduled jobs" },
   { href: "/admin/tasks", label: "Tasks" },
 ];
 
