@@ -320,18 +320,23 @@ function followClauses(event: EventTargets): Prisma.UserFollowWhereInput[] {
 /**
  * The audience for an editorial broadcast: users who have OPTED IN.
  *
- * "Opted in" means holding a NotificationPreference row with editorialAlerts
- * true - not "every user in the table". The row is created the moment someone
- * enables push or opens their notification settings, so this is exactly the set
- * of people who have engaged with notifications at all. Broadcasting to
- * everyone would mean mailing dormant accounts that never asked for anything,
- * which is the behaviour the anti-spam rules exist to prevent.
+ * "Opted in" is literal here, not inferred. The column defaults to FALSE, so a
+ * row only reads true because that user accepted the onboarding prompt (which
+ * names Bet of the Day and top-prediction alerts) or ticked the box in their
+ * settings. Nobody is in this set by default, by migration, or by having once
+ * opened a settings page. Re-checked at dispatch by preferenceAllows in case
+ * the preference changed between fan-out and delivery.
  *
- * `editorialAlerts: true` is matched explicitly rather than `not: false`. The
- * column defaults to true, so the two are equivalent for stored rows; being
- * explicit is what keeps this readable as "opted in" rather than "not opted
- * out", and it is re-checked at dispatch by preferenceAllows in case the
- * preference changed in between.
+ * DELIBERATELY INDEPENDENT OF pushEnabled AND OF HAVING A LIVE SUBSCRIPTION.
+ * This selects who the event is FOR, not who can be reached by web push. A
+ * user who opted in and later lost their browser subscription — a new device, a
+ * 410 that pruned the row, permission revoked — still gets the broadcast in
+ * their inbox, which works without push and is the surface /notifications
+ * exists to serve. Whether a push is also SENT is decided much later, per
+ * device, by pushEnabled, quiet hours and the subscriptions actually on file.
+ * Filtering here on push-reachability would silently turn the inbox into a
+ * mirror of the push channel and lose notifications for exactly the people
+ * whose subscription had just expired.
  */
 async function editorialAudience() {
   const rows = await prisma.notificationPreference.findMany({ where: { editorialAlerts: true }, select: { userId: true } });
@@ -461,11 +466,20 @@ export type PreferenceFlags = Partial<
  *                        only "tell me when my match starts" must be able to
  *                        have exactly that.
  *
- * Every flag defaults to TRUE when absent, so a user with no preference row
- * behaves exactly as they did before these columns existed.
+ * ABSENT FLAGS FALL BACK ASYMMETRICALLY, matching the column defaults:
+ *
+ *   - Everything follow-driven defaults TRUE, so a user with no preference row
+ *     behaves exactly as they did before these columns existed.
+ *   - editorialAlerts defaults FALSE. A broadcast is a new category of
+ *     notification nobody has consented to, and a missing row is not consent.
+ *     This is the same rule as the column default, repeated here because the
+ *     two are reached by different paths: the column covers rows created from
+ *     now on, this covers users who have no row at all.
  */
 export function preferenceAllows(type: string, p: PreferenceFlags | null | undefined) {
-  if (type === TOP_PREDICTION) return p?.editorialAlerts ?? true;
+  // NOT `?? true`. See the note above — silence is the correct default for a
+  // broadcast, and a user who has never been asked has not agreed.
+  if (type === TOP_PREDICTION) return p?.editorialAlerts ?? false;
   // Independent of followedAlerts - see 3 above.
   if (type === "KICKOFF_REMINDER") return p?.kickoffReminders ?? true;
 

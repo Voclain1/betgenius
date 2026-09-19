@@ -43,6 +43,14 @@ async function workerRegistration() {
   return (await navigator.serviceWorker.getRegistration()) ?? navigator.serviceWorker.register("/sw.js", { scope: "/" });
 }
 
+/**
+ * Which surface asked. Forwarded to the API, which uses it to decide whether
+ * the user was shown the editorial-alerts promise before agreeing — see the
+ * `source` field in src/app/api/push-subscriptions/route.ts. Not cosmetic:
+ * "onboarding" is the only value that opts someone into broadcasts.
+ */
+export type PushSource = "onboarding" | "settings";
+
 export type SubscribeResult =
   | { ok: true; created: boolean }
   | { ok: false; reason: "unsupported" | "unconfigured" | "denied" | "dismissed" | "unauthenticated" | "error"; message: string };
@@ -60,7 +68,7 @@ export type SubscribeResult =
  * can send an anonymous visitor through login and resume - which is what keeps
  * PushSubscription ownership intact instead of inventing an anonymous row.
  */
-export async function enablePush(): Promise<SubscribeResult> {
+export async function enablePush(source: PushSource): Promise<SubscribeResult> {
   if (!pushSupported()) return { ok: false, reason: "unsupported", message: "Push is unavailable in this browser." };
 
   const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -79,7 +87,7 @@ export async function enablePush(): Promise<SubscribeResult> {
     const r = await fetch("/api/push-subscriptions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify({ ...sub.toJSON(), source }),
     });
     if (r.status === 401) return { ok: false, reason: "unauthenticated", message: "Log in to finish enabling notifications." };
     if (!r.ok) {
@@ -103,6 +111,10 @@ export async function enablePush(): Promise<SubscribeResult> {
  * service worker rotated its subscription. Safe to call on mount precisely
  * because it never prompts: it returns null when there is nothing already
  * subscribed, and the POST upserts on endpointHash, so a repeat is a no-op.
+ *
+ * Sends source "settings", never "onboarding": this is a reconciliation of a
+ * decision already made, not a fresh agreement, so it must not opt anyone into
+ * editorial broadcasts on its way past.
  */
 export async function ensureSubscriptionPersisted(): Promise<boolean | null> {
   if (!pushSupported() || currentPermission() !== "granted") return null;
@@ -113,7 +125,7 @@ export async function ensureSubscriptionPersisted(): Promise<boolean | null> {
     const r = await fetch("/api/push-subscriptions", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(sub.toJSON()),
+      body: JSON.stringify({ ...sub.toJSON(), source: "settings" }),
     });
     return r.ok;
   } catch {

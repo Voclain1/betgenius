@@ -31,6 +31,10 @@ import {
   topPredictionEventKey,
 } from "../src/lib/notifications";
 import { TREND_MIN_CONFIDENCE, qualifiesAsTopPrediction } from "../src/lib/topPredictions";
+import { readFileSync } from "node:fs";
+
+/** Source text, for the structural assertions below. */
+const read = (path: string) => readFileSync(path, "utf8");
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = "") => {
@@ -131,13 +135,29 @@ eq("...and nothing else", preferenceAllows("NEW_PREDICTION", { ...ALL_ON, kickof
 eq("newPredictions still applies while followedAlerts is on", preferenceAllows("NEW_PREDICTION", { ...ALL_ON, newPredictions: false }), false);
 eq("results still applies while followedAlerts is on", preferenceAllows("RESULT_LOST", { ...ALL_ON, results: false }), false);
 
-console.log("\na user with no preference row behaves exactly as before:");
-// The migration adds two columns that default true. Nothing about an existing
-// user's effective settings may change because of it.
-for (const type of ["NEW_PREDICTION", "KICKOFF_REMINDER", "TIP_CHANGED", "WITHDRAWN", "RESULT_WON", MATCH_INSIGHT, TOP_PREDICTION]) {
-  eq(`${type} is allowed with no preferences stored`, preferenceAllows(type, null), true);
+console.log("\na legacy user gains no notification they had not already agreed to:");
+// followedAlerts defaults true, so everything that already reached them still
+// does. This is the whole reason the two columns have different defaults.
+for (const type of ["NEW_PREDICTION", "KICKOFF_REMINDER", "TIP_CHANGED", "WITHDRAWN", "RESULT_WON", MATCH_INSIGHT]) {
+  eq(`${type} is unchanged with no preferences stored`, preferenceAllows(type, null), true);
 }
-eq("an empty preference object is equally permissive", preferenceAllows("NEW_PREDICTION", {}), true);
+eq("an empty preference object is equally permissive for follow-driven types", preferenceAllows("NEW_PREDICTION", {}), true);
+// THE OPT-IN RULE. A broadcast is a new category of notification nobody has
+// consented to, and a column appearing in a migration is not consent. A legacy
+// row — one written before editorialAlerts existed — carries no value for it,
+// and must read as OFF rather than as agreement.
+eq("a legacy row with no editorial field is opted OUT", preferenceAllows(TOP_PREDICTION, { followedAlerts: true, newPredictions: true }), false);
+eq("no preference row at all is opted OUT", preferenceAllows(TOP_PREDICTION, null), false);
+eq("an empty preference object is opted OUT", preferenceAllows(TOP_PREDICTION, {}), false);
+eq("an explicit false is opted out", preferenceAllows(TOP_PREDICTION, { editorialAlerts: false }), false);
+// ...and only an explicit true opts in.
+eq("only an explicit true opts in", preferenceAllows(TOP_PREDICTION, { editorialAlerts: true }), true);
+// The asymmetry is the point: the same absent-row input gives opposite answers
+// for the two audiences.
+check(
+  "absent preferences mean yes for follows and no for broadcasts",
+  preferenceAllows("NEW_PREDICTION", null) === true && preferenceAllows(TOP_PREDICTION, null) === false,
+);
 
 console.log("\nduplicate top-pick events collapse onto one key:");
 const DAY = "2026-09-19";
@@ -185,6 +205,60 @@ eq("a trend pick needs a price", qualifiesAsTopPrediction({ ...live, odds: null 
 eq("a trend pick clearing every bar qualifies", qualifiesAsTopPrediction(live, "TREND_SELECTED"), true);
 // The human-selected sources are not held to the trend bar — a pin IS the decision.
 eq("an admin pin needs no market confirmation", qualifiesAsTopPrediction({ ...live, provenance: "STANDARD_CURATED", confidence: 50 }, "ADMIN_PINNED"), true);
+
+console.log("\nthe opt-in is wired end to end:");
+// Source-level assertions, because these are STRUCTURAL guarantees about which
+// code path may write which column — the kind of thing that stays true only if
+// something fails when it stops being true. A behavioural test would need a
+// database and a browser and would still not prove the negative.
+const schema = read("prisma/schema.prisma");
+const preference = schema.slice(schema.indexOf("model NotificationPreference"), schema.indexOf("model PushSubscription"));
+check("followedAlerts defaults true in the schema", /followedAlerts\s+Boolean\s+@default\(true\)/.test(preference));
+// The one that must not regress. A default of true here would opt every
+// existing user into broadcasts the moment the migration ran.
+check("editorialAlerts defaults FALSE in the schema", /editorialAlerts\s+Boolean\s+@default\(false\)/.test(preference));
+
+const subscriptions = read("src/app/api/push-subscriptions/route.ts");
+check('the endpoint distinguishes an onboarding accept from a settings enable', /source:\s*z\.enum\(\["onboarding",\s*"settings"\]\)/.test(subscriptions));
+check("only the onboarding source opts a user in", /source\s*===\s*"onboarding"/.test(subscriptions));
+// Written only to TRUE, and only on that path: a settings enable or a silent
+// re-persist must not be able to overwrite a deliberate opt-out on its way past.
+check("editorialAlerts is never written false by this endpoint", !/editorialAlerts:\s*false/.test(subscriptions));
+check("the write is conditional, not unconditional", /optIntoEditorial\s*\?\s*\{\s*editorialAlerts:\s*true\s*\}/.test(subscriptions));
+
+const client = read("src/lib/pushClient.ts");
+check("the reconciliation path never claims to be onboarding", /source:\s*"settings"/.test(client));
+check('"onboarding" is passed by the modal, not hardcoded in the client', !/enablePush\("onboarding"\)/.test(client));
+check("the onboarding modal is what passes it", /enablePush\("onboarding"\)/.test(read("src/components/PushOnboarding.tsx")));
+check("the settings panel passes settings", /enablePush\("settings"\)/.test(read("src/components/PushSettings.tsx")));
+
+console.log("\nthe inbox and browser push are gated separately:");
+const notifications = read("src/lib/notifications.ts");
+const dispatch = read("src/lib/notificationDispatch.ts");
+// Opting in must not require a live browser subscription. Someone who opted in
+// and later lost their subscription — new device, a 410 that pruned the row,
+// permission revoked — still belongs in the fan-out, because the inbox works
+// without push and is what /notifications exists to serve.
+const audience = notifications.slice(notifications.indexOf("async function editorialAudience"), notifications.indexOf("async function eligibleRecipients"));
+check("the editorial audience is selected on editorialAlerts", /editorialAlerts:\s*true/.test(audience));
+check("...and not narrowed by pushEnabled", !/pushEnabled/.test(audience));
+check("...and not narrowed by having a subscription", !/pushSubscription/i.test(audience));
+
+// The two-stage rule, asserted by position: the preference check must come
+// BEFORE the inbox row is written, so a disabled editorial alert produces no
+// inbox entry at all; and pushEnabled must be consulted only after it, so it
+// can suppress the push without suppressing the inbox.
+const prefGate = dispatch.indexOf("preferenceAllows(row.event.type, pref)");
+const inboxWrite = dispatch.indexOf("prisma.userNotification.upsert");
+const pushGate = dispatch.indexOf("pref?.pushEnabled");
+check("the preference gate precedes the inbox write", prefGate > -1 && inboxWrite > -1 && prefGate < inboxWrite);
+check("so disabling editorial alerts suppresses the inbox entry too", prefGate < inboxWrite);
+check("the pushEnabled gate comes after the inbox write", pushGate > inboxWrite);
+check("...so a user with push off still receives the inbox entry", pushGate > inboxWrite);
+// The editorial cap must sit alongside the global one, not replace it.
+check("the global daily cap is still enforced", /sentToday\s*>=\s*\(pref\?\.dailyCap \?\? 12\)/.test(dispatch));
+check("the editorial cap is applied only to editorial events", /isEditorialEvent\(row\.event\.type\)/.test(dispatch));
+check("quiet hours still gate the push", /inQuietHours\(/.test(dispatch));
 
 console.log("\nthe anti-spam rules still apply, and the editorial cap sits under them:");
 eq("the editorial cap is conservative", EDITORIAL_DAILY_CAP <= 3, true);

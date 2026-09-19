@@ -40,7 +40,10 @@ export function PushSettings() {
     setBusy(true);
     setMessage("");
     try {
-      const result = await enablePush();
+      // "settings", never "onboarding". This panel enables push on a device;
+      // it makes no promise about editorial broadcasts, which have their own
+      // checkbox in NotificationPreferences directly above.
+      const result = await enablePush("settings");
       setState(currentPermission());
       if (result.ok) setMessage("Push enabled on this device.");
       else if (result.reason === "unauthenticated") setMessage("Log in to enable push on this device.");

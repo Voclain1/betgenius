@@ -123,7 +123,10 @@ export function PushOnboarding() {
     setBusy(true);
     setMessage("");
     try {
-      const result = await enablePush();
+      // "onboarding" is what opts this user into editorial broadcasts: the
+      // modal above lists Bet of the Day and top-prediction alerts, so pressing
+      // Enable is agreement to them. No other caller may pass this.
+      const result = await enablePush("onboarding");
       if (result.ok) {
         setMessage("Notifications are on for this device.");
         // Clear the soft dismissal: it described someone who had not decided,

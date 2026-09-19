@@ -26,7 +26,7 @@ type Preferences = {
  */
 const AUDIENCE_TOGGLES = [
   ["followedAlerts", "Teams, leagues and matches I follow", "Covers the three settings below."],
-  ["editorialAlerts", "Top predictions", "Bet of the Day and featured picks. Independent of your follows."],
+  ["editorialAlerts", "Top predictions", "Bet of the Day and featured picks. Off unless you turn it on; independent of your follows."],
   ["kickoffReminders", "Kickoff reminders", "When a match you follow is about to start."],
 ] as const;
 
