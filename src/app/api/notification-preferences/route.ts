@@ -10,6 +10,10 @@ const minuteOfDay = z.number().int().min(0).max(1439).nullable();
 const Preferences = z.object({
   pushEnabled: z.boolean().optional(),
   newPredictions: z.boolean().optional(),
+  // The two audience switches. Independent of each other and of
+  // kickoffReminders — see preferenceAllows in src/lib/notifications.ts.
+  followedAlerts: z.boolean().optional(),
+  editorialAlerts: z.boolean().optional(),
   kickoffReminders: z.boolean().optional(),
   tipChanges: z.boolean().optional(),
   results: z.boolean().optional(),

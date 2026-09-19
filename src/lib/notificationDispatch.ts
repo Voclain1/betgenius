@@ -1,5 +1,16 @@
 import { prisma } from "@/lib/prisma";
-import { claimDeliveries, entitled, fanOutPendingEvents, inQuietHours, localDayStartUtc, preferenceAllows, releaseDelivery, stillFollowsEvent } from "@/lib/notifications";
+import {
+  EDITORIAL_DAILY_CAP,
+  claimDeliveries,
+  entitled,
+  fanOutPendingEvents,
+  inQuietHours,
+  isEditorialEvent,
+  localDayStartUtc,
+  preferenceAllows,
+  releaseDelivery,
+  stillFollowsEvent,
+} from "@/lib/notifications";
 import { pushConfigured, sendPush } from "@/lib/push";
 
 const MAX_ATTEMPTS = 5;
@@ -47,8 +58,20 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
     if (!preferenceAllows(row.event.type, pref)) { await skip(row.id, "disabled in preferences"); continue; }
     if (!entitled(row.event.category, row.user)) { await skip(row.id, "no entitlement"); continue; }
 
-    const sentToday = await prisma.userNotification.count({ where: { userId: row.userId, createdAt: { gte: localDayStartUtc(now, pref?.timezone ?? "Africa/Lagos") } } });
+    const dayStart = localDayStartUtc(now, pref?.timezone ?? "Africa/Lagos");
+    const sentToday = await prisma.userNotification.count({ where: { userId: row.userId, createdAt: { gte: dayStart } } });
     if (sentToday >= (pref?.dailyCap ?? 12)) { await skip(row.id, "daily cap"); continue; }
+
+    // The editorial cap is applied AFTER the global one and never replaces it:
+    // a broadcast has to clear both. Counted from the inbox rows already
+    // written today, on the same local-day boundary as the global cap, so the
+    // two agree about when "today" started for this user.
+    if (isEditorialEvent(row.event.type)) {
+      const editorialToday = await prisma.userNotification.count({
+        where: { userId: row.userId, createdAt: { gte: dayStart }, event: { type: row.event.type } },
+      });
+      if (editorialToday >= EDITORIAL_DAILY_CAP) { await skip(row.id, "editorial daily cap"); continue; }
+    }
 
     try {
       await prisma.userNotification.upsert({

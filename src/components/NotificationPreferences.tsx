@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 type Preferences = {
   newPredictions: boolean;
+  followedAlerts: boolean;
+  editorialAlerts: boolean;
   kickoffReminders: boolean;
   tipChanges: boolean;
   results: boolean;
@@ -14,9 +16,22 @@ type Preferences = {
   dailyCap: number;
 };
 
+/**
+ * The three independent audience controls, rendered above the finer per-kind
+ * flags because they govern them. `followedAlerts` is a master switch over
+ * newPredictions / tipChanges / results; `editorialAlerts` and
+ * `kickoffReminders` stand on their own. Their descriptions say which, so the
+ * relationship is visible rather than something a reader has to discover by
+ * toggling.
+ */
+const AUDIENCE_TOGGLES = [
+  ["followedAlerts", "Teams, leagues and matches I follow", "Covers the three settings below."],
+  ["editorialAlerts", "Top predictions", "Bet of the Day and featured picks. Off unless you turn it on; independent of your follows."],
+  ["kickoffReminders", "Kickoff reminders", "When a match you follow is about to start."],
+] as const;
+
 const TOGGLES = [
   ["newPredictions", "New predictions"],
-  ["kickoffReminders", "Kickoff reminders"],
   ["tipChanges", "Tip changes"],
   ["results", "Results"],
 ] as const;
@@ -75,10 +90,26 @@ export function NotificationPreferences() {
   return (
     <section className="card space-y-4">
       <h2 className="section-heading">Notification preferences</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
+
+      <div className="space-y-2">
+        {AUDIENCE_TOGGLES.map(([key, label, hint]) => (
+          <label key={key} className="flex items-start gap-2">
+            <input className="mt-1" type="checkbox" checked={prefs[key]} onChange={(e) => save({ [key]: e.target.checked })} />
+            <span>
+              <span className="block">{label}</span>
+              <span className="block text-xs text-gray-500">{hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <div className="grid gap-3 border-t border-brand-border pt-3 sm:grid-cols-2">
+        {/* Visibly subordinate to "Teams, leagues and matches I follow": these
+            refine what a followed alert is about, and have no effect while that
+            switch is off — which is what the disabled state says. */}
         {TOGGLES.map(([key, label]) => (
-          <label key={key} className="flex items-center gap-2">
-            <input type="checkbox" checked={prefs[key]} onChange={(e) => save({ [key]: e.target.checked })} />
+          <label key={key} className={`flex items-center gap-2 ${prefs.followedAlerts ? "" : "opacity-50"}`}>
+            <input type="checkbox" checked={prefs[key]} disabled={!prefs.followedAlerts} onChange={(e) => save({ [key]: e.target.checked })} />
             <span>{label}</span>
           </label>
         ))}

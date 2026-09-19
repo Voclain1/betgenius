@@ -745,6 +745,41 @@ model NotificationPreference {
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   pushEnabled           Boolean  @default(false)
   newPredictions        Boolean  @default(true)
+  // The two independent audiences a notification can reach, split apart from
+  // newPredictions because they are not one preference.
+  //
+  // BEFORE THIS SPLIT a single flag governed both, so someone who wanted no
+  // editorial broadcasts had to switch off alerts for the teams they had
+  // explicitly chosen to follow, and someone who wanted only their own follows
+  // could not stop Bet of the Day. Those are opposite intentions sharing one
+  // switch.
+  //
+  //   followedAlerts  - fan-out driven by a UserFollow row: a team, a league,
+  //                     a single match, a category the visitor asked for.
+  //   editorialAlerts - broadcasts nobody followed: Bet of the Day, a selected
+  //                     BANKER/Genius pick, an admin-pinned prediction. These
+  //                     are the ones capped separately (EDITORIAL_DAILY_CAP).
+  //
+  // THE TWO DEFAULTS DIFFER, and the difference is the point.
+  //
+  // followedAlerts defaults TRUE because it governs notifications that already
+  // existed under newPredictions/tipChanges/results. Every one of them was
+  // requested by the user, one follow at a time, and they are already receiving
+  // them. Defaulting it false would silently switch off alerts people had opted
+  // into by following something.
+  //
+  // editorialAlerts defaults FALSE because the broadcast is a NEW CATEGORY of
+  // notification that nobody has ever agreed to. It is addressed to the whole
+  // opted-in audience and was requested by nobody in particular, so consent to
+  // it cannot be manufactured by a column appearing in a migration. An existing
+  // user is opted out until they say otherwise — either by accepting the
+  // onboarding prompt, which names Bet of the Day and top-prediction alerts
+  // explicitly, or by ticking the box in their notification settings.
+  //
+  // preferenceAllows mirrors this asymmetry for users with NO preference row at
+  // all: followed alerts fall back to true, editorial to false.
+  followedAlerts        Boolean  @default(true)
+  editorialAlerts       Boolean  @default(false)
   kickoffReminders     Boolean  @default(true)
   tipChanges            Boolean  @default(true)
   results               Boolean  @default(true)

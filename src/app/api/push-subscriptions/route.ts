@@ -12,6 +12,22 @@ const Subscription = z.object({
     return url.protocol === "https:" && !["localhost", "127.0.0.1", "::1"].includes(url.hostname) && !url.hostname.endsWith(".local");
   }),
   keys: z.object({ p256dh: z.string().min(20).max(512), auth: z.string().min(8).max(256) }),
+  /**
+   * Where this subscription came from, and therefore what the user was shown
+   * before they agreed.
+   *
+   * "onboarding" means they accepted the first-visit prompt, which names
+   * followed teams and leagues, Match Insights AND Bet of the Day /
+   * top-prediction alerts. Accepting it is consent to that list, so it is the
+   * one path that opts the user into editorial broadcasts.
+   *
+   * Anything else — the settings panel, a re-persist after losing a
+   * subscription — carries no such statement, so it must not flip the flag.
+   * That is why this is an explicit field rather than something inferred from
+   * the request: two callers hit this endpoint and only one of them asked the
+   * question.
+   */
+  source: z.enum(["onboarding", "settings"]).optional(),
 });
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -23,7 +39,7 @@ export async function POST(req: NextRequest) {
   const parsed = Subscription.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
 
-  const { endpoint, keys } = parsed.data;
+  const { endpoint, keys, source } = parsed.data;
   const endpointHash = hash(endpoint);
   const existing = await prisma.pushSubscription.findUnique({ where: { endpointHash } });
   if (existing && existing.userId !== session.user.id) {
@@ -35,10 +51,16 @@ export async function POST(req: NextRequest) {
     update: { p256dh: keys.p256dh, auth: keys.auth, userAgent },
     create: { userId: session.user.id, endpointHash, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
   });
+  // editorialAlerts is written ONLY on the onboarding path, and only ever to
+  // true. Omitting the field otherwise is what keeps a settings-panel enable,
+  // or a silent re-persist of an existing subscription, from opting someone
+  // into broadcasts they were never told about — and from overwriting a
+  // deliberate opt-out on the way past.
+  const optIntoEditorial = source === "onboarding";
   await prisma.notificationPreference.upsert({
     where: { userId: session.user.id },
-    update: { pushEnabled: true },
-    create: { userId: session.user.id, pushEnabled: true },
+    update: { pushEnabled: true, ...(optIntoEditorial ? { editorialAlerts: true } : {}) },
+    create: { userId: session.user.id, pushEnabled: true, ...(optIntoEditorial ? { editorialAlerts: true } : {}) },
   });
   return NextResponse.json({ ok: true }, { status: 201 });
 }
