@@ -193,15 +193,31 @@ async function main() {
     // Would sail through on the numbers. Must never be looked at.
     const wrongIntent = await seed({ label: "otherintent", confidence: 84, marketHomeProbability: 86, intent: "REGULAR_COMBO" });
 
-    // Asserted, not merely intended: if a future edit drops the far-future
-    // createdAt above, this catches it here rather than by silently standing
-    // down a real scheduled run one day.
-    const { vipPremiumQuotaRemaining, VIP_PREMIUM_DAILY_QUOTA } = await import("../src/lib/vipPremiumPipeline");
-    const remainingDuringTest = await vipPremiumQuotaRemaining();
+    /**
+     * Asserted, not merely intended: if a future edit drops the far-future
+     * createdAt above, this catches it here rather than by silently standing
+     * down a real scheduled run one day.
+     *
+     * Phrased as "none of MY rows are in today's window" rather than "the day's
+     * remaining quota is still the full six". The second is what this used to
+     * assert, and it reads live state: production generating one paid pick on
+     * the same day — which is the pass working correctly — left remaining at
+     * five and failed the check for a reason that had nothing to do with this
+     * test. The count of seeded rows inside today's bounds is the invariant
+     * actually under test, and it is the same one whatever production is doing.
+     *
+     * The quota rule itself is covered with controlled counts in
+     * scripts/check-vip-premium-quota.ts, which needs no database at all.
+     */
+    const { lagosTodayBounds } = await import("../src/lib/lagosDate");
+    const today = lagosTodayBounds();
+    const seededInTodaysWindow = await prisma.aIJob.count({
+      where: { id: { in: jobIds }, createdAt: { gte: today.start, lt: today.end } },
+    });
     check(
-      "the test does not consume the live daily quota",
-      remainingDuringTest === VIP_PREMIUM_DAILY_QUOTA,
-      `remaining ${remainingDuringTest} of ${VIP_PREMIUM_DAILY_QUOTA} with 7 intent-carrying jobs seeded`,
+      "the test's own rows never land in today's quota window",
+      seededInTodaysWindow === 0,
+      `${seededInTodaysWindow} of ${jobIds.length} seeded job(s) dated into today`,
     );
 
     const gate = await applyVipPremiumGate();

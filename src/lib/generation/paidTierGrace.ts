@@ -116,9 +116,9 @@ export async function reservePaidTierFixtures(
   try {
     // Deferred import: vipPremiumPipeline imports this module's siblings in
     // generation/selector, and a static import here would close that cycle.
-    const { vipPremiumGeneratedToday, VIP_PREMIUM_DAILY_QUOTA } = await import("@/lib/vipPremiumPipeline");
+    const { vipPremiumGeneratedToday, vipPremiumQuotaExhausted } = await import("@/lib/vipPremiumPipeline");
     const spent = await vipPremiumGeneratedToday(now);
-    if (spent >= VIP_PREMIUM_DAILY_QUOTA) return new Set();
+    if (vipPremiumQuotaExhausted(spent)) return new Set();
 
     const nextAttemptAt = new Date(now.getTime() + PAID_TIER_GRACE_MS);
     // skipDuplicates keeps this idempotent: two overlapping runs cannot create

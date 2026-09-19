@@ -35,6 +35,11 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "select-bet-of-the-day": 26 * 60,
   "curate-accumulators": 26 * 60,
   settle: 26 * 60,
+  // Every 15 minutes, every 5 and every 2 respectively; an hour of slack keeps
+  // this reporting "not scheduled at all" rather than a single missed tick.
+  "refresh-insights": 60,
+  "notifications-reminders": 60,
+  "notifications-dispatch": 60,
 };
 
 const LABEL: Record<string, string> = {
@@ -45,6 +50,9 @@ const LABEL: Record<string, string> = {
   "select-bet-of-the-day": "Bet of the Day selection",
   "curate-accumulators": "Accumulator curation",
   settle: "Settlement",
+  "refresh-insights": "Match Insights refresh",
+  "notifications-reminders": "Kickoff reminders",
+  "notifications-dispatch": "Notification dispatch",
 };
 
 function ago(iso: string | null): string {

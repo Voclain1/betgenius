@@ -42,6 +42,13 @@ export const JOB_REFRESH_ODDS = "refresh-odds" as const;
  */
 export const JOB_NOTIFICATIONS_DISPATCH = "notifications-dispatch" as const;
 export const JOB_NOTIFICATIONS_REMINDERS = "notifications-reminders" as const;
+/**
+ * The Match Insights refresh. Defined here with the other job names rather than
+ * in insightRefresh.ts, which re-exports it: that module pulls in the provider
+ * client, and KNOWN_JOBS is read by the admin route, which has no business
+ * loading api-football to render a table of job names.
+ */
+export const JOB_REFRESH_INSIGHTS = "refresh-insights" as const;
 
 /** Every job this app records, for the admin view's benefit. */
 export const KNOWN_JOBS = [
@@ -52,6 +59,9 @@ export const KNOWN_JOBS = [
   JOB_BET_OF_DAY_SELECT,
   JOB_CURATE_ACCUMULATORS,
   JOB_SETTLE,
+  JOB_REFRESH_INSIGHTS,
+  JOB_NOTIFICATIONS_REMINDERS,
+  JOB_NOTIFICATIONS_DISPATCH,
 ] as const;
 
 export type JobRunInput = {

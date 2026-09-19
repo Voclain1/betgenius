@@ -152,8 +152,29 @@ export async function vipPremiumGeneratedToday(now: Date = new Date()): Promise<
   return jobs.filter((j) => intentOf(j.prompt) === VIP_PREMIUM_INTENT).length;
 }
 
+/**
+ * Remaining quota for a KNOWN count, and whether that count exhausts the day.
+ *
+ * Pure, and separated from the counting query on purpose. The quota rule and
+ * "how many did we generate today" are different questions: the first is fixed
+ * arithmetic that must hold for every input, the second is whatever production
+ * happens to have done since midnight in Lagos. Folding them together meant the
+ * rule could only be checked against live state, so the check that guarded it
+ * failed legitimately on any day generation had already run.
+ *
+ * Both call sites below go through these, so the stand-down decision is the
+ * same comparison everywhere rather than two inequalities that could drift.
+ */
+export function vipPremiumQuotaFrom(generatedToday: number): number {
+  return Math.max(0, VIP_PREMIUM_DAILY_QUOTA - generatedToday);
+}
+
+export function vipPremiumQuotaExhausted(generatedToday: number): boolean {
+  return vipPremiumQuotaFrom(generatedToday) <= 0;
+}
+
 export async function vipPremiumQuotaRemaining(now: Date = new Date()): Promise<number> {
-  return Math.max(0, VIP_PREMIUM_DAILY_QUOTA - (await vipPremiumGeneratedToday(now)));
+  return vipPremiumQuotaFrom(await vipPremiumGeneratedToday(now));
 }
 
 export type VipPremiumTarget = {
