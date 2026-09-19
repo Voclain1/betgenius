@@ -78,6 +78,10 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   const [market, setMarket] = useState<MarketFormState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Outcome of the last "Send as notification" press. Not part of `error`:
+  // "already queued earlier today" is a success, and showing it in red would
+  // read as a failure of an action that behaved exactly as designed.
+  const [notifyState, setNotifyState] = useState<string | null>(null);
   const [settleForm, setSettleForm] = useState({ outcome: "PENDING", homeScore: "", awayScore: "" });
   const [settleBusy, setSettleBusy] = useState(false);
   const [settleError, setSettleError] = useState<string | null>(null);
@@ -227,6 +231,39 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) setError(j?.error ?? "Could not pin as Bet of the Day");
       else load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Feature this prediction as an editorial notification.
+   *
+   * ENQUEUES ONLY. The request creates a NotificationEvent through the normal
+   * pipeline and returns; nothing here sends a push, and the delivery happens
+   * on the dispatcher's own schedule after every recipient's preferences,
+   * quiet hours, entitlement and caps have been applied. An admin page that
+   * called web-push directly would bypass all of them.
+   *
+   * Safe to press twice: the server keys the event on (prediction, day) and
+   * upserts, so a repeat reports `alreadyBroadcast` instead of sending again.
+   * The confirm is there because a broadcast reaches everyone opted into
+   * editorial alerts at once and cannot be recalled - not because the repeat
+   * itself is dangerous.
+   */
+  const featureAsNotification = async () => {
+    if (!confirm("Send this to everyone who opted into top-prediction alerts? This cannot be recalled.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/predictions/${params.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "NOTIFY_TOP_PREDICTION" }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) setError(j?.error ?? "Could not feature this as a notification");
+      else setNotifyState(j.alreadyBroadcast ? "Already queued earlier today — nothing sent again." : `Queued as a ${String(j.source).toLowerCase().replace(/_/g, " ")} alert.`);
     } finally {
       setBusy(false);
     }
@@ -449,9 +486,29 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           >
             {isBetOfTheDay ? "★ Bet of the Day" : "Pin as Bet of the Day"}
           </button>
+          {/* Separate from the pin on purpose. Pinning decides what the Bet of
+              the Day IS; this decides whether it is worth interrupting people
+              for. Most pinned picks should never be pressed here — the
+              editorial cap is one push a day. */}
+          <button
+            className="btn btn-ghost text-sm disabled:opacity-40"
+            disabled={busy || p.status !== "PUBLISHED" || p.outcome !== "PENDING"}
+            title={
+              p.status !== "PUBLISHED"
+                ? "Publish this prediction first"
+                : p.outcome !== "PENDING"
+                  ? "This prediction has already been settled"
+                  : "Queue an editorial alert through the notification pipeline"
+            }
+            onClick={featureAsNotification}
+          >
+            Send as notification
+          </button>
         </div>
         <button className="text-sm text-red-400 hover:underline" onClick={remove}>Delete prediction</button>
       </div>
+
+      {notifyState && <p className="text-sm text-brand" role="status">{notifyState}</p>}
 
       {p.status === "PENDING_REVIEW" && (
         <div className="card space-y-2">

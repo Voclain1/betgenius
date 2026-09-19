@@ -1,39 +1,61 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-function urlBase64ToBytes(value: string) {
-  const padded = (value + "=".repeat((4 - (value.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
-  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-}
+import { currentPermission, disablePush, enablePush, ensureSubscriptionPersisted, pushSupported } from "@/lib/pushClient";
+import type { PushPermission } from "@/lib/pushOnboarding";
 
 /**
- * The registration from ServiceWorkerRegistration, registering it here if it
- * has not happened yet. Deliberately not `serviceWorker.ready`, which never
- * resolves when nothing is registered and would leave the button spinning.
+ * Per-device push controls.
+ *
+ * The subscribe/unsubscribe mechanics live in src/lib/pushClient.ts, shared
+ * with the onboarding modal. Two components asking for the same permission and
+ * POSTing the same endpoint by two different routes would be two push systems
+ * in everything but name, and they would drift the first time one of them
+ * learned something the other did not.
+ *
+ * This panel and the onboarding modal answer different questions. The modal is
+ * the one-time ask for someone who has not decided; this is the settings
+ * surface, always present, for someone who wants to change their mind or add a
+ * second device. It is therefore NOT subject to the onboarding cooldown, and it
+ * is the place the "blocked in browser settings" state is explained in full.
  */
-async function workerRegistration() {
-  return (await navigator.serviceWorker.getRegistration()) ?? navigator.serviceWorker.register("/sw.js", { scope: "/" });
-}
-
 export function PushSettings() {
-  const [state, setState] = useState<string>("loading");
+  const [state, setState] = useState<PushPermission | "loading" | "unsupported">("loading");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    if (!pushSupported()) {
       setState("unsupported");
       return;
     }
-    setState(Notification.permission);
+    setState(currentPermission());
+    // Permission alone does not prove a PushSubscription row exists for the
+    // account now signed in — see ensureSubscriptionPersisted. Never prompts,
+    // so it is safe in an effect.
+    void ensureSubscriptionPersisted();
   }, []);
 
-  const run = async (action: () => Promise<void>) => {
+  const enable = async () => {
     setBusy(true);
     setMessage("");
     try {
-      await action();
+      const result = await enablePush();
+      setState(currentPermission());
+      if (result.ok) setMessage("Push enabled on this device.");
+      else if (result.reason === "unauthenticated") setMessage("Log in to enable push on this device.");
+      else if (result.reason !== "dismissed") setMessage(result.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      await disablePush();
+      setMessage("Push disabled on this device.");
     } catch {
       setMessage("Something went wrong. Please try again.");
     } finally {
@@ -41,36 +63,19 @@ export function PushSettings() {
     }
   };
 
-  const enable = () => run(async () => {
-    const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    if (!key) {
-      setMessage("Push has not been configured by the site operator.");
-      return;
+  const test = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const r = await fetch("/api/push-test", { method: "POST" });
+      const data = await r.json().catch(() => ({}));
+      setMessage(r.ok ? `Sent to ${data.sent} device(s).` : data.error || "Could not send a test.");
+    } catch {
+      setMessage("Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
     }
-    const permission = await Notification.requestPermission();
-    setState(permission);
-    if (permission !== "granted") return;
-    const reg = await workerRegistration();
-    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToBytes(key) }));
-    const r = await fetch("/api/push-subscriptions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(sub.toJSON()) });
-    setMessage(r.ok ? "Push enabled on this device." : (await r.json().catch(() => null))?.error || "Could not enable push.");
-  });
-
-  const disable = () => run(async () => {
-    const reg = await navigator.serviceWorker.getRegistration();
-    const sub = await reg?.pushManager.getSubscription();
-    if (sub) {
-      await fetch("/api/push-subscriptions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
-      await sub.unsubscribe();
-    }
-    setMessage("Push disabled on this device.");
-  });
-
-  const test = () => run(async () => {
-    const r = await fetch("/api/push-test", { method: "POST" });
-    const data = await r.json().catch(() => ({}));
-    setMessage(r.ok ? `Sent to ${data.sent} device(s).` : data.error || "Could not send a test.");
-  });
+  };
 
   return (
     <section className="card space-y-3">
@@ -85,6 +90,9 @@ export function PushSettings() {
               : "Permission is only requested when you choose Enable."}
           </p>
           <div className="flex flex-wrap gap-2">
+            {/* Disabled on "denied" because requestPermission() would resolve
+                to denied without showing anything — a button that can only
+                appear to fail. The browser settings are the only way out. */}
             <button className="btn btn-primary" onClick={enable} disabled={busy || state === "denied"}>Enable push</button>
             <button className="btn btn-ghost" onClick={disable} disabled={busy}>Disable on this device</button>
             <button className="btn btn-ghost" onClick={test} disabled={busy || state !== "granted"}>Send test notification</button>

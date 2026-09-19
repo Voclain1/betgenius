@@ -745,6 +745,28 @@ model NotificationPreference {
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   pushEnabled           Boolean  @default(false)
   newPredictions        Boolean  @default(true)
+  // The two independent audiences a notification can reach, split apart from
+  // newPredictions because they are not one preference.
+  //
+  // BEFORE THIS SPLIT a single flag governed both, so someone who wanted no
+  // editorial broadcasts had to switch off alerts for the teams they had
+  // explicitly chosen to follow, and someone who wanted only their own follows
+  // could not stop Bet of the Day. Those are opposite intentions sharing one
+  // switch.
+  //
+  //   followedAlerts  - fan-out driven by a UserFollow row: a team, a league,
+  //                     a single match, a category the visitor asked for.
+  //   editorialAlerts - broadcasts nobody followed: Bet of the Day, a selected
+  //                     BANKER/Genius pick, an admin-pinned prediction. These
+  //                     are the ones capped separately (EDITORIAL_DAILY_CAP).
+  //
+  // Both default TRUE, which preserves today's behaviour exactly: newPredictions
+  // already defaults true, so no existing user's effective settings change when
+  // these columns arrive. A user who had turned newPredictions OFF still
+  // receives nothing new - preferenceAllows requires newPredictions as well for
+  // every type that had it before.
+  followedAlerts        Boolean  @default(true)
+  editorialAlerts       Boolean  @default(true)
   kickoffReminders     Boolean  @default(true)
   tipChanges            Boolean  @default(true)
   results               Boolean  @default(true)

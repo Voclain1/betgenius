@@ -3,6 +3,7 @@ import { PreviewDataBanner } from "@/components/PreviewDataBanner";
 import { Nav } from "@/components/Nav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { InstallPrompt } from "@/components/InstallPrompt";
+import { PushOnboarding } from "@/components/PushOnboarding";
 import { AppTabBar } from "@/components/AppTabBar";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -24,6 +25,13 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
         {children}
       </main>
       <SiteFooter />
+      {/* The push onboarding prompt. Mounted here rather than in the root
+          layout for the same reason as InstallPrompt below: /admin and
+          /dashboard are separate trees, and an admin mid-review is not the
+          audience for a first-visit ask. It renders nothing at all unless
+          resolvePushOnboarding says otherwise, and it NEVER calls
+          Notification.requestPermission() on mount - only its own button does. */}
+      <PushOnboarding />
       {/* Bottom-anchored and fixed, so it overlays rather than displacing the
           footer. Mounted on the PUBLIC layout only — /admin and /dashboard are
           separate trees, and prompting a signed-in admin to install the tipping

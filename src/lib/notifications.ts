@@ -65,6 +65,113 @@ export function kickoffReminderKey(fixtureKey: string, kickoff: Date) {
   return `fixture:${fixtureKey}:kickoff:${Math.floor(kickoff.getTime() / 60_000)}`;
 }
 
+/**
+ * The editorial broadcast type. ONE type, deliberately, whatever selected the
+ * prediction (Bet of the Day, a BANKER/Genius pick, an admin pin): the visitor's
+ * preference is about being broadcast to, not about which desk chose the pick,
+ * and a type per source would mean a preference per source to keep in step.
+ * The source is carried in `data.source` for the inbox and for analytics.
+ */
+export const TOP_PREDICTION = "TOP_PREDICTION";
+
+/** How a prediction came to be broadcast. An explicit decision is required for every one of them. */
+export type TopPredictionSource = "BET_OF_THE_DAY" | "BANKER" | "ADMIN_PINNED" | "TREND_SELECTED";
+
+/**
+ * A pre-match Match Insight worth interrupting someone for.
+ *
+ * Follow-driven, not editorial: it goes to people who follow the match or a
+ * team in it, so it is capped and gated as a followed alert.
+ */
+export const MATCH_INSIGHT = "MATCH_INSIGHT";
+
+/**
+ * How strong a cached insight has to be before it is worth a push.
+ *
+ * MatchInsightCache.strength is 0-1 and exists to ORDER insights on the match
+ * page, where a weak one costs nothing because the reader chose to look. A push
+ * is not chosen, so the bar is different: at 0.9 an insight is a run that has
+ * held in at least nine of the last ten qualifying matches, which is the kind of
+ * fact worth telling someone about before a match they follow. Everything below
+ * stays on the page, where it belongs.
+ */
+export const INSIGHT_PUSH_MIN_STRENGTH = 0.9;
+
+/**
+ * One announcement per insight, per match.
+ *
+ * Scoped by the PREDICTION as well as the cache's insightKey, because
+ * insightKey alone is `teamApiId:scope:type` — stable across matches by
+ * design, so a team on a long run carries the same key from one fixture to the
+ * next. Keying on it alone would announce that run once and then stay silent
+ * for every later match; including the prediction announces it once per match,
+ * which is what a pre-match insight is.
+ *
+ * The cache rows are deleted and rebuilt on each refresh, so the event key
+ * cannot be derived from a row id — it has to be built from the stable parts.
+ */
+export function matchInsightEventKey(predictionId: string, insightKey: string) {
+  return `insight:${predictionId}:${insightKey}`;
+}
+
+/**
+ * Types that are BROADCASTS rather than fan-out over follows.
+ *
+ * This is the hinge of the whole targeting model. An editorial event has no
+ * UserFollow row behind it, so followClauses() returns nothing for it and it
+ * would silently reach zero people; and stillFollowsEvent() would then skip
+ * every delivery at dispatch. Both of those consult this predicate instead of
+ * assuming every event is a follow fan-out.
+ */
+export function isEditorialEvent(type: string) {
+  return type === TOP_PREDICTION;
+}
+
+/**
+ * The key for an editorial broadcast of one prediction.
+ *
+ * Scoped to the prediction and the LOCAL DAY, not to the click. eventKey is
+ * unique and createNotificationEvent upserts on it, so this is what makes the
+ * admin action idempotent: a double-click, a retried request, or an admin
+ * pressing the button again an hour later all resolve to the same row and
+ * broadcast exactly once. Including the day rather than nothing at all leaves
+ * a deliberate re-feature of the same prediction on a later day possible,
+ * which is an editorial decision someone may legitimately make.
+ */
+export function topPredictionEventKey(predictionId: string, day: string) {
+  return `prediction:${predictionId}:top-pick:${day}`;
+}
+
+/**
+ * THE EDITORIAL CAP. Deliberately far below NotificationPreference.dailyCap.
+ *
+ * The global cap protects against volume; this protects against a DIFFERENT
+ * failure, which the global cap cannot see. Editorial candidates are plentiful
+ * - a Bet of the Day, a Genius BANKER, any number of admin pins, and trend
+ * selections on top - and every one of them is addressed to the whole opted-in
+ * audience rather than to someone who asked for it. Letting all the candidates
+ * through would fill a reader's daily allowance with broadcasts and crowd out
+ * the alerts for the teams they actually follow.
+ *
+ * One a day. It is a floor on quality, not a budget to spend: the product
+ * promise is that a top-pick push means something, and the second one of the
+ * day already weakens it. Tunable without a deploy through EDITORIAL_DAILY_CAP,
+ * and an unparseable or non-positive value falls back to 1 rather than to
+ * "unlimited", so a typo in an environment variable cannot open the gate.
+ *
+ * This is a cap ON TOP OF the user's own settings, never instead of them:
+ * quiet hours, entitlement, editorialAlerts and dailyCap are all still applied.
+ */
+export const EDITORIAL_DAILY_CAP = (() => {
+  const configured = Number(process.env.EDITORIAL_DAILY_CAP);
+  return Number.isInteger(configured) && configured > 0 ? configured : 1;
+})();
+
+/** The Lagos calendar day of `now`, as YYYY-MM-DD — the day boundary the rest of the product uses. */
+export function editorialDay(now: Date = new Date(), timezone = "Africa/Lagos") {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
 type PredictionForEvents = {
   id: string;
   status: string;
@@ -151,32 +258,105 @@ type EventTargets = {
  * teams. Sending it to every follower of the league or a category would turn
  * a reminder into a stream of them, so those follows are deliberately left out.
  */
-function followClauses(event: EventTargets): Prisma.UserFollowWhereInput[] {
+/** One follow target an event reaches: a target type and the keys of that type it matches. */
+export type FollowTarget = { targetType: "PREDICTION" | "TEAM" | "CATEGORY" | "LEAGUE"; targetKeys: string[] };
+
+/**
+ * WHICH FOLLOWS RECEIVE THIS EVENT — the single source of truth for targeting.
+ *
+ * Pure, and returns plain data rather than a Prisma clause, so every targeting
+ * rule can be asserted directly (scripts/check-notification-targeting.ts)
+ * instead of only being observable by seeding a database and watching who got
+ * mail. followClauses() below is a mechanical translation of this, and
+ * receivesEvent() answers the same question for one follow row, so a rule
+ * cannot be right in the fan-out and wrong in the dispatch recheck.
+ *
+ * Returns an EMPTY list for a broadcast. That is not "nobody": it means this
+ * event does not use the follow model at all, and its audience comes from
+ * editorialAudience() instead. Callers must branch on isEditorialEvent rather
+ * than reading emptiness here as "no recipients".
+ */
+export function followTargets(event: EventTargets): FollowTarget[] {
+  // Returning nothing here, rather than falling through to the category and
+  // league targets below, is deliberate: a Bet of the Day carries category
+  // BET_OF_THE_DAY and a leagueApiId, so without this it would ALSO reach
+  // league and category followers — under their FOLLOWED-alert preference and
+  // outside the editorial cap. One event must have exactly one audience.
+  if (isEditorialEvent(event.type)) return [];
+
   const data = (event.data ?? {}) as { categories?: unknown; predictionIds?: unknown };
   const predictionIds = new Set<string>(event.predictionId ? [event.predictionId] : []);
   if (Array.isArray(data.predictionIds)) for (const id of data.predictionIds) if (typeof id === "string") predictionIds.add(id);
 
-  const clauses: Prisma.UserFollowWhereInput[] = [];
-  if (predictionIds.size) clauses.push({ targetType: "PREDICTION", targetKey: { in: [...predictionIds] } });
-  if (event.teamApiIds.length) clauses.push({ targetType: "TEAM", targetKey: { in: event.teamApiIds.map(String) } });
-  if (event.type === "KICKOFF_REMINDER") return clauses;
+  const targets: FollowTarget[] = [];
+  if (predictionIds.size) targets.push({ targetType: "PREDICTION", targetKeys: [...predictionIds] });
+  if (event.teamApiIds.length) targets.push({ targetType: "TEAM", targetKeys: event.teamApiIds.map(String) });
+  // MATCH-SCOPED types stop here: they reach people who follow the tip or one
+  // of the two teams, and nobody else.
+  //
+  // A kickoff reminder sent to every follower of the league or a category would
+  // turn a reminder into a stream of them. A pre-match insight is the same
+  // shape of mistake — it is a fact about THIS match, interesting to someone
+  // tracking this match or one of its teams, and noise to someone who followed
+  // a whole competition.
+  if (event.type === "KICKOFF_REMINDER" || event.type === MATCH_INSIGHT) return targets;
 
   const categories = new Set<string>(event.category ? [event.category] : []);
   if (Array.isArray(data.categories)) for (const c of data.categories) if (typeof c === "string") categories.add(c);
-  if (categories.size) clauses.push({ targetType: "CATEGORY", targetKey: { in: [...categories] } });
-  if (event.leagueApiId) clauses.push({ targetType: "LEAGUE", targetKey: String(event.leagueApiId) });
-  return clauses;
+  if (categories.size) targets.push({ targetType: "CATEGORY", targetKeys: [...categories] });
+  if (event.leagueApiId) targets.push({ targetType: "LEAGUE", targetKeys: [String(event.leagueApiId)] });
+  return targets;
 }
 
-async function eligibleFollowers(event: EventTargets & { createdAt: Date }) {
+/** Whether one follow row is in this event's audience. The same rules as followTargets, by construction. */
+export function receivesEvent(follow: { targetType: string; targetKey: string }, event: EventTargets): boolean {
+  return followTargets(event).some((t) => t.targetType === follow.targetType && t.targetKeys.includes(follow.targetKey));
+}
+
+function followClauses(event: EventTargets): Prisma.UserFollowWhereInput[] {
+  return followTargets(event).map((t) => ({ targetType: t.targetType, targetKey: { in: t.targetKeys } }));
+}
+
+/**
+ * The audience for an editorial broadcast: users who have OPTED IN.
+ *
+ * "Opted in" means holding a NotificationPreference row with editorialAlerts
+ * true - not "every user in the table". The row is created the moment someone
+ * enables push or opens their notification settings, so this is exactly the set
+ * of people who have engaged with notifications at all. Broadcasting to
+ * everyone would mean mailing dormant accounts that never asked for anything,
+ * which is the behaviour the anti-spam rules exist to prevent.
+ *
+ * `editorialAlerts: true` is matched explicitly rather than `not: false`. The
+ * column defaults to true, so the two are equivalent for stored rows; being
+ * explicit is what keeps this readable as "opted in" rather than "not opted
+ * out", and it is re-checked at dispatch by preferenceAllows in case the
+ * preference changed in between.
+ */
+async function editorialAudience() {
+  const rows = await prisma.notificationPreference.findMany({ where: { editorialAlerts: true }, select: { userId: true } });
+  return rows.map((r) => r.userId);
+}
+
+async function eligibleRecipients(event: EventTargets & { createdAt: Date }) {
+  if (isEditorialEvent(event.type)) return editorialAudience();
   const clauses = followClauses(event);
   if (!clauses.length) return [];
   const follows = await prisma.userFollow.findMany({ where: { OR: clauses, createdAt: { lte: event.createdAt } }, select: { userId: true } });
   return [...new Set(follows.map((f) => f.userId))];
 }
 
-/** Rechecked at dispatch: an unfollow between fan-out and delivery wins. */
+/**
+ * Rechecked at dispatch: an unfollow between fan-out and delivery wins.
+ *
+ * An editorial broadcast has no follow to lose, so it passes here
+ * unconditionally - without this it would be skipped as "no longer followed"
+ * for every recipient, which is precisely the bug of treating one audience
+ * model as if it were the other. Its own opt-out is enforced immediately
+ * afterwards by preferenceAllows(editorialAlerts).
+ */
 export async function stillFollowsEvent(userId: string, event: EventTargets) {
+  if (isEditorialEvent(event.type)) return true;
   const clauses = followClauses(event);
   return clauses.length > 0 && !!(await prisma.userFollow.findFirst({ where: { userId, OR: clauses }, select: { id: true } }));
 }
@@ -189,7 +369,7 @@ export async function fanOutPendingEvents(limit = 25) {
   });
   let recipients = 0;
   for (const event of events) {
-    const ids = await eligibleFollowers(event);
+    const ids = await eligibleRecipients(event);
     if (ids.length) {
       await prisma.notificationDelivery.createMany({ data: ids.map((userId) => ({ eventId: event.id, userId })), skipDuplicates: true });
       recipients += ids.length;
@@ -257,10 +437,43 @@ export async function releaseDelivery(id: string, token: string, data: Prisma.No
   return result.count === 1;
 }
 
-export function preferenceAllows(type: string, p: Partial<Record<"newPredictions" | "kickoffReminders" | "tipChanges" | "results", boolean>> | null | undefined) {
-  if (type === "NEW_PREDICTION") return p?.newPredictions ?? true;
+/** The preference fields this decision reads. Named so callers can pass a partial row in tests. */
+export type PreferenceFlags = Partial<
+  Record<"newPredictions" | "kickoffReminders" | "tipChanges" | "results" | "followedAlerts" | "editorialAlerts", boolean>
+>;
+
+/**
+ * Whether this user's preferences allow a notification of this type.
+ *
+ * THREE INDEPENDENT CONTROLS, which is the point of the followedAlerts /
+ * editorialAlerts split:
+ *
+ *   1. followedAlerts  - everything driven by a UserFollow row. A master switch
+ *                        over the existing per-kind flags, so turning it off
+ *                        silences follow-driven alerts WITHOUT touching the
+ *                        editorial broadcasts, and the finer newPredictions /
+ *                        tipChanges / results flags keep working underneath it.
+ *   2. editorialAlerts - broadcasts nobody followed. Governs TOP_PREDICTION and
+ *                        nothing else, so switching it off costs the user none
+ *                        of their own follows.
+ *   3. kickoffReminders - deliberately NOT under followedAlerts. A reminder is
+ *                        a clock, not a content update, and someone who wants
+ *                        only "tell me when my match starts" must be able to
+ *                        have exactly that.
+ *
+ * Every flag defaults to TRUE when absent, so a user with no preference row
+ * behaves exactly as they did before these columns existed.
+ */
+export function preferenceAllows(type: string, p: PreferenceFlags | null | undefined) {
+  if (type === TOP_PREDICTION) return p?.editorialAlerts ?? true;
+  // Independent of followedAlerts - see 3 above.
   if (type === "KICKOFF_REMINDER") return p?.kickoffReminders ?? true;
+
+  const followed = p?.followedAlerts ?? true;
+  if (!followed) return false;
+  if (type === "NEW_PREDICTION") return p?.newPredictions ?? true;
   if (type === "TIP_CHANGED" || type === "WITHDRAWN") return p?.tipChanges ?? true;
+  if (type === MATCH_INSIGHT) return true;
   if (type.startsWith("RESULT_")) return p?.results ?? true;
   return true;
 }

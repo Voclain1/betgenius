@@ -10,6 +10,7 @@ import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUn
 import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
+import { broadcastTopPrediction } from "@/lib/topPredictions";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -29,7 +30,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 }
 
 const Patch = z.object({
-  action: z.enum(["APPROVE", "PUBLISH", "ARCHIVE", "EDIT", "SETTLE", "PIN_BET_OF_THE_DAY"]),
+  action: z.enum(["APPROVE", "PUBLISH", "ARCHIVE", "EDIT", "SETTLE", "PIN_BET_OF_THE_DAY", "NOTIFY_TOP_PREDICTION"]),
   patch: z
     .object({
       outcome: z.enum(["PENDING", "WON", "LOST", "VOID"]).optional(),
@@ -105,6 +106,36 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data.ouLine = ouLine ?? null;
     data.ouDirection = ouDirection ?? null;
     data.overUnder = deriveOverUnderText(data.ouLine, data.ouDirection);
+  }
+
+  if (action === "NOTIFY_TOP_PREDICTION") {
+    // Returned early for the same reason as the pin below: this is not a field
+    // patch, and falling through would write `data` as well.
+    //
+    // The route ENQUEUES AN EVENT and nothing else. It does not import web-push,
+    // does not load subscriptions and does not know who the recipients are -
+    // all of that is the dispatcher's job, reached on its own schedule. An
+    // admin page that sent pushes directly would be a second delivery system
+    // with none of the pipeline's preference checks, caps or retries.
+    //
+    // The source is derived from the tags the row already holds rather than
+    // asked for, so one button covers every editorial case and an admin cannot
+    // mislabel a broadcast.
+    const source = before.categories.some((c) => c.category === "BET_OF_THE_DAY")
+      ? "BET_OF_THE_DAY"
+      : before.categories.some((c) => c.category === "BANKER")
+        ? "BANKER"
+        : "ADMIN_PINNED";
+    const result = await broadcastTopPrediction(params.id, source);
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.reason === "not-found" ? "Not found" : "Only a PUBLISHED, unsettled prediction can be featured as a notification" },
+        { status: result.reason === "not-found" ? 404 : 400 },
+      );
+    }
+    // Idempotent: a repeat press finds the same eventKey and reports it rather
+    // than broadcasting again. See broadcastTopPrediction.
+    return NextResponse.json({ ok: true, source, alreadyBroadcast: result.alreadyBroadcast });
   }
 
   if (action === "PIN_BET_OF_THE_DAY") {
