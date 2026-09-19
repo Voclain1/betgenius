@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createNotificationEvent, kickoffReminderKey } from "@/lib/notifications";
-import { withJobRun } from "@/lib/jobRuns";
+import { JOB_NOTIFICATIONS_REMINDERS, withJobRun } from "@/lib/jobRuns";
 import { matchKey, matchSlug } from "@/lib/slug";
 
 /**
@@ -70,5 +70,5 @@ async function run() {
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  return NextResponse.json(await withJobRun("notification-reminders", run, (r) => `fixtures ${r.fixtures}, reminders ${r.created}`));
+  return NextResponse.json(await withJobRun(JOB_NOTIFICATIONS_REMINDERS, run, (r) => `fixtures ${r.fixtures}, reminders ${r.created}`));
 }

@@ -34,6 +34,14 @@ export const JOB_GENERATE_VIP_PREMIUM = "generate-vip-premium" as const;
 export const JOB_GENERATE_BET_OF_DAY = "generate-bet-of-the-day" as const;
 export const JOB_BET_OF_DAY_SELECT = "select-bet-of-the-day" as const;
 export const JOB_REFRESH_ODDS = "refresh-odds" as const;
+/**
+ * The notification jobs. Same reason as above: their schedules live in
+ * cron-job.org, so the run history is the only way to tell a cron that never
+ * fired from one that fired and had nothing to send. Named in the plural to
+ * match `notifications-dispatch`, which was already recording under that name.
+ */
+export const JOB_NOTIFICATIONS_DISPATCH = "notifications-dispatch" as const;
+export const JOB_NOTIFICATIONS_REMINDERS = "notifications-reminders" as const;
 
 /** Every job this app records, for the admin view's benefit. */
 export const KNOWN_JOBS = [

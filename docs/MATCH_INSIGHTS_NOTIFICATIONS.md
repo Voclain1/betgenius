@@ -55,6 +55,8 @@ Following a paid category never grants access. Entitlement is rechecked when the
 
 Set `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (normally a monitored `mailto:` URI). The private key is server-only. `CRON_SECRET` bearer authentication protects every worker route.
 
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY` is inlined into the client bundle at build time, so setting it in the environment is not enough on its own: until the app is redeployed, "Enable push" keeps reporting that push is not configured even though the server-side keys are present. The other two are read at runtime and take effect immediately.
+
 If VAPID is absent, following and the in-site inbox still work. Dispatch completes without attempting push, and the test-push endpoint returns `503`.
 
 ## Database rollout
@@ -74,11 +76,13 @@ Rollback is application-first. Disable the three jobs, roll back the application
 
 Configure cron-job.org with GET, `Authorization: Bearer <CRON_SECRET>`, and the Africa/Lagos timezone:
 
-| Endpoint | Schedule |
-|---|---|
-| `/api/admin/refresh-insights?fetchLimit=30` | `8,23,38,53 * * * *` |
-| `/api/admin/notifications/reminders` | `*/5 * * * *` |
-| `/api/admin/notifications/dispatch` | `*/2 * * * *` |
+| Endpoint | Schedule | `JobRun.job` |
+|---|---|---|
+| `/api/admin/refresh-insights?fetchLimit=30` | `8,23,38,53 * * * *` | `refresh-insights` |
+| `/api/admin/notifications/reminders` | `*/5 * * * *` | `notifications-reminders` |
+| `/api/admin/notifications/dispatch` | `*/2 * * * *` | `notifications-dispatch` |
+
+The third column is what `scripts/job-runs.ts` takes, not the path: `npx tsx --env-file=.env scripts/job-runs.ts notifications-dispatch` is how you tell "the cron never fired" from "it fired and had nothing to do". Until each schedule exists these three record nothing, which is exactly what an unconfigured scheduler looks like from inside the app.
 
 Dispatch behaviour:
 
@@ -95,6 +99,7 @@ External push remains at-least-once. Event keys, delivery keys and notification 
 |---|---|---|
 | `npx tsx scripts/check-insights.ts` | Calculation rules | Includes the legacy cached shape that previously crashed the worker |
 | `npx tsx scripts/check-notifications.ts` | Notification policy helpers | Pure, no database |
+| `npm run check:match-insights` | `/match-insights` and `src/lib/topTrends.ts` | Renders the page against stubbed cache rows: card wording, crest, the matching price and its bookmaker floor, period tabs and bounds, pagination, and the empty state. No database, no network |
 | `npx tsx scripts/verify-insight-integration.ts` | Worker behaviour | Refetch rules, a contradicted streak removed at once, stale histories withdrawn. The provider is stubbed. |
 | `npx tsx scripts/verify-notification-integration.ts` | Delivery | Fan-out, entitlement, lease races, reminder audience, publish events, rollback |
 
