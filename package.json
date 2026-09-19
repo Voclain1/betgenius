@@ -39,6 +39,7 @@
     "check:betofday-targeting": "tsx scripts/check-betofday-targeting.ts",
     "check:paid-tier-grace": "tsx scripts/check-paid-tier-grace.ts",
     "check:odds-breadth": "tsx scripts/check-odds-breadth.ts",
+    "check:match-insights": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-insights-render.tsx",
     "measure:generation-health": "tsx --env-file=.env scripts/measure-generation-health.ts",
     "research:botd-gate": "tsx --env-file=.env scripts/research-betofday-gate-tuning.ts"
   },

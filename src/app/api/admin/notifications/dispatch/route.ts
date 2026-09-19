@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withJobRun } from "@/lib/jobRuns";
+import { JOB_NOTIFICATIONS_DISPATCH, withJobRun } from "@/lib/jobRuns";
 import { runNotificationDispatch } from "@/lib/notificationDispatch";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ function authorized(req: NextRequest) {
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const result = await withJobRun(
-    "notifications-dispatch",
+    JOB_NOTIFICATIONS_DISPATCH,
     () => runNotificationDispatch(),
     (r) => `events ${r.events}, claimed ${r.claimed}, delivered ${r.delivered}, retried ${r.retried}, skipped ${r.skipped}, deferred ${r.deferred}, lost leases ${r.lostLeases}`,
   );
