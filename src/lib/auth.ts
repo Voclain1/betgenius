@@ -6,6 +6,14 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import type { Role, SubscriptionStatus, SubscriptionTier } from "@/lib/enums";
 import { SESSION_COOKIE_NAME, useSecureAuthCookies } from "@/lib/authCookies";
+import { verifyGoogleIdToken } from "@/lib/googleIdToken";
+
+/**
+ * The One Tap provider's id. Named here and imported by the client so the
+ * string cannot drift between signIn() and the provider that answers it — a
+ * mismatch fails as a silent "no such provider" with no error worth reading.
+ */
+export const GOOGLE_ONE_TAP_PROVIDER = "google-one-tap";
 
 /**
  * The session cookie is pinned to the `__Host-` prefix in production.
@@ -86,6 +94,85 @@ export const authOptions: NextAuthOptions = {
         return { id: user.id, email: user.email, name: user.name, role: user.role as Role } as any;
       },
     }),
+    /**
+     * Google One Tap, bridged into the SAME user model as the button below.
+     *
+     * WHY A CREDENTIALS PROVIDER AT ALL. One Tap does not perform an OAuth
+     * redirect: Google hands the browser a signed ID token directly, so there
+     * is no authorization code for GoogleProvider to exchange. The token has to
+     * be posted to us and verified server-side, and NextAuth's shape for "I
+     * verified something myself" is a credentials provider.
+     *
+     * IT IS NOT A SECOND AUTH SYSTEM, and the three rules below are what keep
+     * that true:
+     *
+     *   1. The SAME linking policy as the Google button. An email owned by a
+     *      password account is refused here exactly as the signIn callback
+     *      refuses it there. Silently merging would mean anyone who could get a
+     *      Google token for an address could walk into the password account
+     *      behind it.
+     *   2. The SAME User rows. One Tap never invents a parallel identity: it
+     *      finds the existing user by email, or creates one that is
+     *      indistinguishable from an adapter-created one.
+     *   3. An Account LINK ROW is always written. This is the subtle one. The
+     *      adapter resolves OAuth sign-ins by (provider, providerAccountId); a
+     *      user created here without that row would later hit the Google button
+     *      and be refused as OAuthAccountNotLinked — locked out of their own
+     *      account by the convenience feature that created it. Upserted on
+     *      every One Tap sign-in, so a user who predates this also gains the
+     *      link rather than needing one.
+     *
+     * `authorize` returns null for every failure. A caller learns only that the
+     * sign-in did not happen, never which check refused it.
+     */
+    CredentialsProvider({
+      id: GOOGLE_ONE_TAP_PROVIDER,
+      name: "Google One Tap",
+      credentials: { credential: { label: "Google credential", type: "text" } },
+      async authorize(credentials) {
+        // Verified before ANYTHING is read from it — signature, audience,
+        // issuer, expiry, verified email. See lib/googleIdToken.ts.
+        const verified = await verifyGoogleIdToken(credentials?.credential);
+        if (!verified.ok) return null;
+        const { sub, email, name, picture } = verified.identity;
+
+        const existing = await prisma.user.findUnique({
+          where: { email },
+          select: { id: true, email: true, name: true, role: true, passwordHash: true },
+        });
+
+        // Rule 1 — identical to the signIn callback's policy for "google".
+        if (existing?.passwordHash) return null;
+
+        const user =
+          existing ??
+          (await prisma.user.create({
+            data: {
+              email,
+              name,
+              image: picture,
+              // Google has verified the address; recording that keeps a One
+              // Tap user shaped like an adapter-created one.
+              emailVerified: new Date(),
+              // Matches what /api/register gives a credentials signup, so a One
+              // Tap account is not a user with no subscription row. (The plain
+              // Google button does leave that null — the jwt callback below
+              // already falls back to FREE/PENDING for it.)
+              subscription: { create: { tier: "FREE", status: "ACTIVE" } },
+            },
+            select: { id: true, email: true, name: true, role: true, passwordHash: true },
+          }));
+
+        // Rule 3 — the link the adapter would have written.
+        await prisma.account.upsert({
+          where: { provider_providerAccountId: { provider: "google", providerAccountId: sub } },
+          update: {},
+          create: { userId: user.id, type: "oauth", provider: "google", providerAccountId: sub },
+        });
+
+        return { id: user.id, email: user.email, name: user.name, role: user.role as Role } as any;
+      },
+    }),
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -98,7 +185,13 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user, account }) {
-      if (account?.provider === "google" && user.email) {
+      // BOTH Google paths, not just the redirect one. The One Tap provider
+      // already refuses a password-owned email inside authorize(); repeating
+      // the rule here means the policy lives where every other reader of this
+      // file expects to find it, and a future provider that forgets it is
+      // still caught. The two must never diverge — one of them being laxer is
+      // an account takeover of the stricter one.
+      if ((account?.provider === "google" || account?.provider === GOOGLE_ONE_TAP_PROVIDER) && user.email) {
         const existing = await prisma.user.findUnique({
           where: { email: user.email.toLowerCase() },
           select: { passwordHash: true },

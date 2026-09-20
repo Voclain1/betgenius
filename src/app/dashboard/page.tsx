@@ -11,6 +11,7 @@ import { entitlementFor, hasActivePaidAccess } from "@/lib/entitlement";
 import { DashboardShell, type DashboardNavItem } from "@/components/DashboardShell";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
+import { SignupUpsellModal } from "@/components/SignupUpsellModal";
 import { PaymentConfirmation } from "@/components/PaymentConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
@@ -191,6 +192,15 @@ export default async function AccountDashboard({
 
   const sub = await prisma.subscription.findUnique({ where: { userId: session.user.id } });
 
+  // WHEN the account was created — the signal the post-signup offer turns on.
+  // Read here rather than taken from the session: a JWT carries no createdAt,
+  // and a claim the client could influence is not something to decide an offer
+  // from. See src/lib/signupUpsell.ts for why createdAt rather than a flag.
+  const account = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { createdAt: true },
+  });
+
   // Gating uses the subscription row this page already loaded, resolved through
   // the same helper every other gate uses — so the dashboard agrees with the
   // rest of the app without a second query. It reads the row rather than the
@@ -295,6 +305,24 @@ export default async function AccountDashboard({
   return (
     <DashboardShell items={navItems} activeKey={activeKey} title={title} userEmail={session.user.email}>
       {content}
+      {/* The post-signup plan offer. Mounted HERE because /dashboard is where
+          both signup paths already land — credentials registration pushes to
+          it, and Google OAuth returns to it — so nothing needed redirecting to
+          make this appear at the right moment.
+
+          Every input is server-derived. `paid` comes from the same resolved
+          entitlement the rest of this page gates on, not from a session claim,
+          so a customer who paid seconds after registering is never sold a plan
+          they already hold. The component decides only whether it was already
+          dismissed. */}
+      {account && (
+        <SignupUpsellModal
+          userId={session.user.id}
+          createdAt={account.createdAt.toISOString()}
+          tier={viewer.tier ?? "FREE"}
+          paid={hasActivePaidAccess(sub)}
+        />
+      )}
     </DashboardShell>
   );
 }

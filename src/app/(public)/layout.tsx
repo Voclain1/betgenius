@@ -4,6 +4,7 @@ import { Nav } from "@/components/Nav";
 import { SiteFooter } from "@/components/SiteFooter";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { PushOnboarding } from "@/components/PushOnboarding";
+import { GoogleOneTap } from "@/components/GoogleOneTap";
 import { AppTabBar } from "@/components/AppTabBar";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,13 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           resolvePushOnboarding says otherwise, and it NEVER calls
           Notification.requestPermission() on mount - only its own button does. */}
       <PushOnboarding />
+      {/* Google One Tap, for signed-out visitors only. Mounted on the PUBLIC
+          layout so it covers the pages a new visitor actually arrives on, and
+          nowhere near /admin or /dashboard — both of which are signed-in by
+          definition. It renders no markup and loads nothing at all unless the
+          visitor is eligible; /login and /register are excluded so it cannot
+          fight the Google button already on them. */}
+      <GoogleOneTap />
       {/* Bottom-anchored and fixed, so it overlays rather than displacing the
           footer. Mounted on the PUBLIC layout only — /admin and /dashboard are
           separate trees, and prompting a signed-in admin to install the tipping

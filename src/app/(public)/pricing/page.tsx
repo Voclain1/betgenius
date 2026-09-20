@@ -2,29 +2,13 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
-import { PLAN_PRICING, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
+import { PLAN_PRICING, PLAN_TIERS, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
 
-// Prices come from lib/pricing — the same table the checkout charges from,
-// so the page and the invoice can't disagree. Tier accents use the vip/premium
-// tokens the nav pills and dashboard banner already use.
-const tiers = [
-  {
-    id: "VIP" as const,
-    name: "VIP",
-    glyph: "★",
-    features: ["All Free tips", "VIP category (locked to others)", "Bet builder + StatsPad"],
-    color: "border-vip/40",
-    accent: "text-vip",
-  },
-  {
-    id: "PREMIUM" as const,
-    name: "Premium",
-    glyph: "◆",
-    features: ["Everything in VIP", "Premium category tips", "In-depth match previews", "Priority support"],
-    color: "border-premium/40",
-    accent: "text-premium",
-  },
-];
+// Prices AND plan copy come from lib/pricing — the same table the checkout
+// charges from, so the page, the post-signup modal and the invoice cannot
+// disagree. Tier accents use the vip/premium tokens the nav pills and
+// dashboard banner already use.
+const tiers = PLAN_TIERS;
 
 export default function Pricing() {
   const { data } = useSession();
