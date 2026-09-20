@@ -47,7 +47,12 @@ const prismaStub = {
   jobRun: {
     findMany: (args: any) => {
       queries.push({ model: "jobRun", args });
-      const wanted: string[] = args.where?.job?.in ?? [];
+      // Handles BOTH query shapes on purpose. The route now issues one query
+      // per job (`where: { job }`); the previous single `job: { in: [...] }`
+      // form is still understood so this stub cannot be the reason a
+      // regression back to it goes unnoticed — the assertions below are what
+      // must catch that, not a stub that refuses to run it.
+      const wanted: string[] = args.where?.job?.in ?? (typeof args.where?.job === "string" ? [args.where.job] : []);
       const rows = history
         .filter((r) => wanted.includes(r.job))
         .sort((a, b) => b.ranAt.getTime() - a.ranAt.getTime())
@@ -156,11 +161,73 @@ async function main() {
   check("a job with no history is reported as never run", reminders.neverRan === true);
   check("...with nothing invented for its last run", reminders.lastRanAt === null && reminders.lastOk === null && reminders.lastSummary === null);
 
+  const jobQueries = queries.filter((q) => q.model === "jobRun");
   check(
     "the query asks only for known jobs",
-    JSON.stringify(queries.find((q) => q.model === "jobRun")?.args.where?.job?.in) === JSON.stringify([...KNOWN_JOBS]),
-    JSON.stringify(queries.find((q) => q.model === "jobRun")?.args.where),
+    jobQueries.every((q) => {
+      const where = q.args.where?.job;
+      return typeof where === "string" ? KNOWN_JOBS.includes(where) : JSON.stringify(where?.in) === JSON.stringify([...KNOWN_JOBS]);
+    }),
+    JSON.stringify(jobQueries.map((q) => q.args.where)).slice(0, 200),
   );
+  check(
+    "every known job is asked about",
+    KNOWN_JOBS.every((job: string) =>
+      jobQueries.some((q) => q.args.where?.job === job || (q.args.where?.job?.in ?? []).includes(job)),
+    ),
+    String(jobQueries.length),
+  );
+
+  // -------------------------------------------------------------------------
+  // THE REGRESSION THIS SECTION EXISTS FOR.
+  //
+  // The route used to read every job's history from ONE findMany with
+  // `take: 200`, grouped in memory. Jobs run at wildly different frequencies,
+  // so a chatty job evicts a quiet one from that window and the quiet one is
+  // reported "never run" — the page's loudest alarm, fired at a healthy job.
+  //
+  // Measured against production before the fix: those 200 rows spanned 3h20m
+  // because notifications-dispatch alone contributed 101 of them, and
+  // generate-bet-of-the-day, select-bet-of-the-day and curate-accumulators
+  // were all reported as never having run despite having real, successful rows.
+  //
+  // Reproduced here exactly: one very chatty job, three quiet ones that ran
+  // earlier today. If the route ever goes back to a shared row cap, the three
+  // assertions below fail.
+  // -------------------------------------------------------------------------
+  const { JOB_GENERATE_BET_OF_DAY, JOB_BET_OF_DAY_SELECT, JOB_CURATE_ACCUMULATORS } = require("../src/lib/jobRuns");
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60_000);
+  const quiet = [
+    { job: JOB_GENERATE_BET_OF_DAY, ranAt: hoursAgo(5), summary: "claimed 1, succeeded 1, predictions 1" },
+    { job: JOB_BET_OF_DAY_SELECT, ranAt: hoursAgo(4.5), summary: "selected: 3 eligible, 7 rejected" },
+    { job: JOB_CURATE_ACCUMULATORS, ranAt: hoursAgo(24), summary: "published 6 combos" },
+  ];
+  history = [
+    // 300 rows from one high-frequency job, all newer than every quiet run —
+    // comfortably more than the 200 the old query took.
+    ...Array.from({ length: 300 }, (_, i) =>
+      run(JOB_NOTIFICATIONS_DISPATCH, { ranAt: new Date(Date.now() - i * 60_000), summary: `dispatch ${i}` }),
+    ),
+    ...quiet.map((q) => run(q.job, { ranAt: q.ranAt, ok: true, summary: q.summary })),
+  ];
+
+  const crowded = (await getJobs()).body;
+  for (const q of quiet) {
+    const row = byJob(crowded, q.job);
+    check(`"${q.job}" is NOT reported as never run when 300 newer rows exist`, row.neverRan === false, `neverRan=${row.neverRan}`);
+    check(`..."${q.job}" reports its real last run time`, row.lastRanAt != null && new Date(row.lastRanAt).getTime() === q.ranAt.getTime(), row.lastRanAt);
+    check(`..."${q.job}" reports what it actually did`, row.lastSummary === q.summary, row.lastSummary);
+    check(`..."${q.job}" is reported as successful`, row.lastOk === true, String(row.lastOk));
+  }
+  // The chatty job is still correct, and still capped.
+  const chatty = byJob(crowded, JOB_NOTIFICATIONS_DISPATCH);
+  check("the high-frequency job still reports its newest run", chatty.lastSummary === "dispatch 0", chatty.lastSummary);
+  check("...and its history is still capped", chatty.recent.length === 8, String(chatty.recent.length));
+  // A job that genuinely has no rows must STILL report never-ran. The fix must
+  // not paper over the real alarm by making it unreachable.
+  const genuinelyNever = byJob(crowded, JOB_NOTIFICATIONS_REMINDERS);
+  check("a job with genuinely no history still reports never run", genuinelyNever.neverRan === true, String(genuinelyNever.neverRan));
+  check("...and invents no last run", genuinelyNever.lastRanAt === null && genuinelyNever.lastSummary === null);
 
   // -------------------------------------------------------------------------
   // Newest first, and the per-job history is capped.

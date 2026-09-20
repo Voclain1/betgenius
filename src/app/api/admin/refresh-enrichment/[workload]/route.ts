@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { ENRICHMENT_WORKLOADS, runEnrichmentWorkload, type EnrichmentWorkload } from "@/lib/enrichmentWorkloads";
 import { JOB_REFRESH_ODDS, recordJobRun } from "@/lib/jobRuns";
+import { toCompactWorkloadReport } from "@/lib/enrichmentReport";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -39,5 +40,17 @@ export async function GET(req: Request, { params }: { params: { workload: string
       ms: Date.now() - startedAt,
     });
   }
-  return NextResponse.json(report);
+  // BOUNDED BY DEFAULT. cron-job.org aborts while READING a body it considers
+  // too large and records "Failed (output too large)" — the request succeeded,
+  // the work was done, and the scheduler disabled the job anyway after 27 of
+  // them. fixture-details is the one workload where `limit` counts days rather
+  // than fixtures, so 50 units of work can mean thousands of result rows.
+  //
+  // Serialization only: `report` above is unchanged, so the same targets were
+  // processed and the same upstream calls were made. See src/lib/enrichmentReport.ts.
+  //
+  // `verbose=1` returns the full array for a human debugging by hand. The cron
+  // URL does not carry it, and nothing should add it there.
+  if (url.searchParams.get("verbose") === "1") return NextResponse.json(report);
+  return NextResponse.json(toCompactWorkloadReport(report));
 }
