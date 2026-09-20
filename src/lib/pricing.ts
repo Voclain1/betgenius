@@ -43,3 +43,44 @@ export function formatNgn(ngn: number): string {
 export function formatUsd(usd: number): string {
   return `$${usd.toLocaleString("en-US")}`;
 }
+
+/**
+ * What each paid plan IS, for any surface that offers one.
+ *
+ * Lifted out of the pricing page when the post-signup modal became a second
+ * place a visitor can buy from. Two hand-kept feature lists would drift the
+ * first time a plan changed, and the version a new user saw at the moment they
+ * decided to pay is the worst one to have gone stale.
+ *
+ * `headline` is the short form — the modal has room for three lines, not six,
+ * and a truncated copy of the full list reads like an omission rather than a
+ * summary. The full `features` list stays the pricing page's.
+ */
+export const PLAN_TIERS: {
+  id: PaidTier;
+  name: string;
+  glyph: string;
+  features: string[];
+  headline: string[];
+  color: string;
+  accent: string;
+}[] = [
+  {
+    id: "VIP",
+    name: "VIP",
+    glyph: "★",
+    features: ["All Free tips", "VIP category (locked to others)", "Bet builder + StatsPad"],
+    headline: ["VIP-only predictions", "Bet Builder + StatsPad"],
+    color: "border-vip/40",
+    accent: "text-vip",
+  },
+  {
+    id: "PREMIUM",
+    name: "Premium",
+    glyph: "◆",
+    features: ["Everything in VIP", "Premium category tips", "In-depth match previews", "Priority support"],
+    headline: ["Everything in VIP", "Premium tips + deep previews", "Priority support"],
+    color: "border-premium/40",
+    accent: "text-premium",
+  },
+];
