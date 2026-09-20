@@ -31,17 +31,48 @@ export async function GET() {
 
   const now = new Date();
 
-  // Last run of each known job, plus a short history. One query, then grouped
-  // in memory — there are a handful of jobs, not thousands.
-  const runs = await prisma.jobRun.findMany({
-    where: { job: { in: [...KNOWN_JOBS] } },
-    orderBy: { ranAt: "desc" },
-    take: 200,
-    select: { id: true, job: true, ranAt: true, ok: true, summary: true, ms: true },
-  });
+  /**
+   * ONE QUERY PER JOB, not one shared query with a row cap.
+   *
+   * THE BUG THIS FIXES. This used to be a single findMany over every known job
+   * with `take: 200`, grouped in memory. That silently reports a job as NEVER
+   * RUN as soon as 200 newer rows exist from other jobs — and the jobs are
+   * wildly different frequencies. Measured against production: those 200 rows
+   * spanned 3h20m, because notifications-dispatch alone contributed 101 of
+   * them. Every job that runs less often than roughly every three hours fell
+   * out of the window entirely:
+   *
+   *   generate-bet-of-the-day   1 row,  last run 05:20  -> reported "never run"
+   *   select-bet-of-the-day     1 row,  last run 05:50  -> reported "never run"
+   *   curate-accumulators      13 rows, last run 10:45  -> reported "never run"
+   *
+   * All three had run successfully. `settle` was one row from joining them.
+   *
+   * That is the worst possible failure for this page, because "never run —
+   * check the schedule" is its loudest alarm and it was firing at healthy daily
+   * jobs while staying quiet about nothing. A page built to distinguish "the
+   * cron never fired" from "it fired and stood down" was reporting the former
+   * for jobs doing the latter correctly.
+   *
+   * Per-job queries cannot have that failure: each job's history is bounded by
+   * its own take, so a chatty job cannot evict a quiet one. Ten small lookups,
+   * each served by the @@index([job, ranAt]) that already exists for exactly
+   * this access pattern.
+   */
+  const RECENT_PER_JOB = 8;
+  const histories = await Promise.all(
+    KNOWN_JOBS.map((job) =>
+      prisma.jobRun.findMany({
+        where: { job },
+        orderBy: { ranAt: "desc" },
+        take: RECENT_PER_JOB,
+        select: { id: true, job: true, ranAt: true, ok: true, summary: true, ms: true },
+      }),
+    ),
+  );
 
-  const jobs = KNOWN_JOBS.map((job) => {
-    const mine = runs.filter((r) => r.job === job);
+  const jobs = KNOWN_JOBS.map((job, i) => {
+    const mine = histories[i];
     const last = mine[0] ?? null;
     return {
       job,
@@ -50,9 +81,11 @@ export async function GET() {
       lastSummary: last?.summary ?? null,
       lastMs: last?.ms ?? null,
       // Never recorded a run is the single most actionable state here: it means
-      // the schedule is missing, not that the job stood down.
+      // the schedule is missing, not that the job stood down. It is now a fact
+      // about THIS job's own history rather than about how busy its neighbours
+      // have been — see the note on the queries above.
       neverRan: mine.length === 0,
-      recent: mine.slice(0, 8),
+      recent: mine,
     };
   });
 
