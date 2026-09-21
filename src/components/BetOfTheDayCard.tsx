@@ -19,7 +19,16 @@ import { Prose } from "@/components/Prose";
  * the card renders the pick without a price rather than a placeholder number.
  * Nothing here ever invents or estimates a price.
  */
-export function BetOfTheDayCard({ data, variant = "page" }: { data: BetOfTheDayView; variant?: "hero" | "page" }) {
+export function BetOfTheDayCard({
+  data,
+  variant = "page",
+  inactive = false,
+}: {
+  data: BetOfTheDayView;
+  variant?: "hero" | "page";
+  /** Kicked off or settled: shown as history, so the pre-match price is withheld rather than offered. */
+  inactive?: boolean;
+}) {
   const { row, gate, oddsFetchedAt } = data;
   const slug = matchSlug({ homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoff: row.kickoff });
   const href = slug ? `/predictions/match/${slug}` : null;
@@ -53,7 +62,9 @@ export function BetOfTheDayCard({ data, variant = "page" }: { data: BetOfTheDayV
           <div className="text-xl font-bold text-brand">{row.pick}</div>
         </div>
 
-        {gate?.price != null ? (
+        {inactive ? (
+          <div className="text-right text-xs text-gray-500">{settled ? "Settled" : "In play — no longer an active pick"}</div>
+        ) : gate?.price != null ? (
           <div className="text-right">
             <div className="text-2xl font-bold tabular-nums">{gate.price.toFixed(2)}</div>
             <div className="text-xs text-gray-400">
@@ -71,7 +82,7 @@ export function BetOfTheDayCard({ data, variant = "page" }: { data: BetOfTheDayV
 
       <div className="flex items-center justify-between gap-3 border-t border-brand-border pt-3 text-xs text-gray-400">
         <span>{row.confidence}% confidence</span>
-        {gate?.impliedProbability != null && (
+        {!inactive && gate?.impliedProbability != null && (
           <span className="tabular-nums">
             market implies {gate.impliedProbability}%
             {gate.edgePP != null && gate.edgePP > 0 ? ` · +${gate.edgePP}pp edge` : ""}

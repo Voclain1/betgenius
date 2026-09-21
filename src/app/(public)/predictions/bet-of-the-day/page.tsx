@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getBetOfTheDay } from "@/lib/betOfTheDay";
+import { betOfTheDayState, isCurrentBetOfTheDay } from "@/lib/betOfTheDayStatus";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchDescription } from "@/lib/seo";
 import { matchSlug, matchKey } from "@/lib/slug";
 import { getFixtureEventContext } from "@/lib/predictionScope";
@@ -30,6 +31,15 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   }
   const { row, gate } = data;
+  if (!isCurrentBetOfTheDay(row)) {
+    // A finished pick is history, not a recommendation to index.
+    return {
+      title: "Bet of the Day",
+      description: "The latest Bet of the Day is no longer active — the next pick appears here once it is selected.",
+      robots: { index: false, follow: true },
+      alternates: { canonical: "/predictions/bet-of-the-day" },
+    };
+  }
   const price = gate?.price != null ? ` at ${gate.price.toFixed(2)}` : "";
   return {
     title: "Bet of the Day",
@@ -58,6 +68,8 @@ export default async function BetOfTheDayPage() {
   }
 
   const { row } = data;
+  const state = betOfTheDayState(row);
+  const live = state === "LIVE";
   const slug = matchSlug({ homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoff: row.kickoff });
 
   // Venue, crests, competition badge and fixture status for the markup.
@@ -114,7 +126,16 @@ export default async function BetOfTheDayPage() {
         </p>
       </div>
 
-      <BetOfTheDayCard data={data} variant="page" />
+      {!live && (
+        <div className="card border-brand/40 text-sm text-gray-300">
+          {state === "SETTLED"
+            ? `The latest Bet of the Day has finished — result: ${row.outcome}. `
+            : "The latest Bet of the Day has kicked off, so it is no longer an active recommendation. Its result appears here once settled. "}
+          The next pick appears here as soon as it is selected.
+        </div>
+      )}
+
+      <BetOfTheDayCard data={data} variant="page" inactive={!live} />
 
       {row.matchPreview && (
         <div className="card space-y-2">

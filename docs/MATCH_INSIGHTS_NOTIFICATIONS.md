@@ -111,3 +111,29 @@ Both `verify-*` scripts refuse to run anywhere except the disposable database at
 - Quiet hours suppress push but still fill the inbox.
 - Opening `/notifications` marks the notifications shown as read.
 - The optional daily digest is not in this release.
+
+## Digest-first delivery
+
+Publication and result events are recorded in the inbox but never pushed on their own (`NEW_PREDICTION`, `RESULT_*`). Two daily digests carry that content instead, both on the Africa/Lagos day:
+
+| Digest | Created | Event key | Expires |
+|---|---|---|---|
+| Morning | first reminders run 09:00–13:00 with at least one usable pick | `digest:morning:<day>` | 14:00 |
+| Night | evaluated from 23:00 on each reminders run; created once all of the day's picks have settled, or at least 90% of them (`NIGHT_SUBSTANTIAL_SETTLED_SHARE`); otherwise deferred until the 23:55 cutoff, which sends "Results so far" with the unsettled count; nothing if none settled | `digest:night:<day>` | 06:00 next day |
+
+The morning digest names the categories that have picks, then Bet of the Day, then at most `TOP_MATCH_HIGHLIGHT_MAX` (3) top matches, drawn only from CORE competitions with SECONDARY filling any slots left. FALLBACK and DEEP_FALLBACK fixtures are never highlighted. Push and inbox copy are rendered per recipient, so paid selections appear only for entitled users and locked categories link to `/pricing`.
+
+Who gets what:
+
+| Preferences | Digest content |
+|---|---|
+| `editorialAlerts` on | the full global digest |
+| `followedAlerts` on (plus `newPredictions` for the morning, `results` for the night), editorial off | only picks covered by the user's own team, league, category and prediction follows, matched by the same rules as the per-match alerts. Nothing relevant means no delivery. |
+| both on | one combined digest: the global content plus a "Your follows" section |
+| neither on | nothing |
+
+There is one event per digest per day and one delivery per user per event, so nobody receives two morning or two night pushes. A paid pick on something a free reader follows is counted ("members-only"), never named.
+
+These still push immediately: `KICKOFF_REMINDER`, `TIP_CHANGED`, `WITHDRAWN`, `MATCH_INSIGHT` and an explicitly selected `TOP_PREDICTION`. `EDITORIAL_DAILY_CAP` is clamped to 1–3.
+
+The reminders job creates both digests (`createDailyDigests`), so no new schedule is needed. Its `JobRun` summary reports each digest's state. The daily cap is counted separately for inbox-only rows and push-class rows, so publications cannot crowd out reminders.
