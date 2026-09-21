@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { ChevronDown, Menu, X } from "lucide-react";
 import { SearchBox } from "@/components/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandAssets";
 import { NotificationBell } from "@/components/NotificationBell";
+import { LogoutButton } from "@/components/LogoutButton";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -174,28 +175,10 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
           )}
           <Link href="/dashboard" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
           <Link href="/following" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
-          <button
-            className="btn btn-ghost text-sm"
-            onClick={async () => {
-              onNavigate?.();
-              // Detach this browser's push subscription from the account first,
-              // so the next person to sign in here is not sent the previous
-              // user's notifications. getRegistration() resolves to undefined
-              // when no worker is registered; `serviceWorker.ready` would never
-              // resolve and sign-out would silently hang.
-              try {
-                const reg = await navigator.serviceWorker?.getRegistration();
-                const sub = await reg?.pushManager.getSubscription();
-                if (sub) {
-                  await fetch("/api/push-subscriptions", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
-                  await sub.unsubscribe();
-                }
-              } catch {}
-              signOut();
-            }}
-          >
-            Log out
-          </button>
+          {/* Detaches this browser's push subscription before signing out, so
+              the next person to sign in here is not sent the previous user's
+              notifications. Shared with DashboardShell — see src/lib/logout.ts. */}
+          <LogoutButton className="btn btn-ghost text-sm" onBeforeLogout={onNavigate} />
         </>
       ) : (
         <>
