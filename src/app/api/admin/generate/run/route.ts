@@ -359,7 +359,8 @@ export async function GET(req: Request) {
     p?.skipped
       ? `stood down: ${p.skipped}`
       : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
-        (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : ""),
+        (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
+        (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : ""),
   );
   return response;
 }

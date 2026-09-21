@@ -13,7 +13,7 @@ async function api(path: string, params: Record<string, string | number>) {
 }
 
 async function main() {
-  const catalogueIds = new Set(LEAGUE_CATALOGUE.map((league) => league.id));
+  const catalogueIds = new Set<number>(LEAGUE_CATALOGUE.map((league) => league.id));
   const priorityMissingFromScheduledDefault = LEAGUE_PRIORITY_ORDER.filter((id) => !catalogueIds.has(id));
   const bundesliga = LEAGUE_CATALOGUE.find((league) => league.id === 78);
 
