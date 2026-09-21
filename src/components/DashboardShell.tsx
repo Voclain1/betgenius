@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Menu, X, Lock } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LogoutButton } from "@/components/LogoutButton";
 
 export type DashboardNavItem = {
   key: string;
@@ -115,10 +116,19 @@ export function DashboardShell({
             })}
           </nav>
 
-          <div className="mt-auto pt-4 text-xs text-gray-500">
-            Signed in as
-            <br />
-            <span className="text-gray-300">{userEmail}</span>
+          {/* The account area. The aside is both the desktop sidebar and the
+              mobile drawer, so this one control covers both. Same component
+              and flow as the public Nav's Log out — it detaches this browser's
+              push subscription first (src/lib/logout.ts). callbackUrl is "/"
+              because returning to a dashboard route would only bounce a
+              signed-out visitor to /login. */}
+          <div className="mt-auto space-y-3 border-t border-brand-border pt-4 text-xs text-gray-500">
+            <div>
+              Signed in as
+              <br />
+              <span className="break-all text-gray-300">{userEmail}</span>
+            </div>
+            <LogoutButton callbackUrl="/" onBeforeLogout={handleNavigate} className="btn btn-ghost w-full justify-center text-sm" />
           </div>
         </div>
       </aside>
