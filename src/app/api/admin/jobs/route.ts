@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { KNOWN_JOBS } from "@/lib/jobRuns";
+import { JOB_GENERATION_DISCOVERY, KNOWN_JOBS } from "@/lib/jobRuns";
 import { VIP_PROXY_LEAGUE_IDS } from "@/lib/ai/generationRisk";
 import { MC_MAX_QUOTE_AGE_MS } from "@/lib/marketConfirmed";
 import { matchKey } from "@/lib/slug";
@@ -108,9 +108,21 @@ export async function GET() {
     : [];
   const priced = cache.filter((c) => c.fetchedAt != null);
 
+  // The competition scope the latest discovery run chose, straight from its
+  // run detail. Read rather than recomputed so the page shows what discovery
+  // actually decided and why, including runs that correctly did nothing.
+  const [lastDiscovery] = await prisma.jobRun.findMany({
+    where: { job: JOB_GENERATION_DISCOVERY },
+    orderBy: { ranAt: "desc" },
+    take: 1,
+    select: { ranAt: true, detail: true },
+  });
+  const coverageDetail = (lastDiscovery?.detail as { coverage?: unknown } | null | undefined)?.coverage ?? null;
+
   return NextResponse.json({
     now,
     jobs,
+    coverage: coverageDetail ? { ranAt: lastDiscovery!.ranAt, ...(coverageDetail as object) } : null,
     pool: {
       horizonHours: 72,
       fixtures: keys.length,

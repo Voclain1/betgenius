@@ -81,7 +81,6 @@ export async function selectCandidates(opts: {
 }): Promise<{ candidates: Candidate[]; scanned: number; discoveryCalls: number; reservedForPaidTier: number }> {
   const now = opts.now ?? new Date();
   const leagueIds = opts.leagueApiIds?.length ? opts.leagueApiIds : LEAGUE_CATALOGUE.map((l) => l.id);
-  const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
 
   const from = new Date(now.getTime() + SAME_DAY_GENERATE_FROM_HOURS * 3_600_000);
   const until = new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000);
@@ -98,6 +97,32 @@ export async function selectCandidates(opts: {
     discoveryCalls++;
     if (fixtures) rows.push(...fixtures);
   }
+
+  const built = await candidatesFromFixtures(rows, { now, limit: opts.limit });
+  return { candidates: built.candidates, scanned: built.scanned, discoveryCalls, reservedForPaidTier: built.reservedForPaidTier };
+}
+
+/**
+ * The provider-independent half of selectCandidates: turn a batch of fixture
+ * rows into generation candidates.
+ *
+ * Split out so the adaptive fallback sweep (src/lib/generation/queue.ts),
+ * which finds its fixtures in one by-date call instead of one call per
+ * league, applies EXACTLY the same window, cup scope, within-run dedupe,
+ * already-generated exclusion, ledger backoff and paid-tier reservation as the
+ * per-league path. There is one set of rules, not a lenient copy for fallback.
+ *
+ * `newToLedger` holds the keys with no ledger row yet, so a caller counting
+ * how many fixtures it ADDED does not count ones already queued.
+ */
+export async function candidatesFromFixtures(
+  rows: FixtureRow[],
+  opts: { now: Date; limit: number },
+): Promise<{ candidates: Candidate[]; scanned: number; reservedForPaidTier: number; newToLedger: Set<string> }> {
+  const now = opts.now;
+  const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
+  const from = new Date(now.getTime() + SAME_DAY_GENERATE_FROM_HOURS * 3_600_000);
+  const until = new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000);
 
   // Only unstarted fixtures with both team ids and a kickoff genuinely inside
   // the window — the day-granular API query returns whole days at the edges.
@@ -118,7 +143,7 @@ export async function selectCandidates(opts: {
     })
     .filter((x): x is { key: string; f: FixtureRow } => x !== null);
 
-  if (keyed.length === 0) return { candidates: [], scanned: 0, discoveryCalls, reservedForPaidTier: 0 };
+  if (keyed.length === 0) return { candidates: [], scanned: 0, reservedForPaidTier: 0, newToLedger: new Set() };
 
   // Collapse the slate to ONE entry per provider fixture before anything else.
   //
@@ -260,5 +285,5 @@ export async function selectCandidates(opts: {
   // `reservedForPaidTier` is reported so a run that looks quiet can be told
   // apart from one that stood off paid-tier fixtures on purpose — the same
   // "did nothing" vs "deliberately did nothing" distinction JobRun exists for.
-  return { candidates: candidates.slice(0, opts.limit), scanned: keyed.length, discoveryCalls, reservedForPaidTier: withheld };
+  return { candidates: candidates.slice(0, opts.limit), scanned: keyed.length, reservedForPaidTier: withheld, newToLedger };
 }

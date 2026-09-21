@@ -91,48 +91,163 @@ export const LEAGUE_CATALOGUE = [
   // Major non-European leagues
   { id: 71, name: "Serie A", country: "Brazil", tier: "world", kind: "league", flagCode: "br" },
   { id: 399, name: "NPFL", country: "Nigeria", tier: "world", kind: "league", flagCode: "ng" },
+
+  // Fallback generation competitions (see GENERATION_TIERS below). Catalogued
+  // so a fallback pick renders with its flag and real name like any other pick.
+  // Being in the catalogue does NOT put a league in the everyday generation
+  // scope; GENERATION_TIERS decides that. Every id verified against live
+  // /leagues on 2026-09-21, each with current-season odds coverage there.
+  // International
+  { id: 5, name: "UEFA Nations League", country: "World", tier: "international", kind: "cup" },
+  { id: 32, name: "World Cup Qualification (Europe)", country: "World", tier: "international", kind: "cup" },
+  { id: 34, name: "World Cup Qualification (South America)", country: "World", tier: "international", kind: "cup" },
+  { id: 29, name: "World Cup Qualification (Africa)", country: "World", tier: "international", kind: "cup" },
+  { id: 30, name: "World Cup Qualification (Asia)", country: "World", tier: "international", kind: "cup" },
+  { id: 31, name: "World Cup Qualification (CONCACAF)", country: "World", tier: "international", kind: "cup" },
+  { id: 960, name: "Euro Championship Qualification", country: "World", tier: "international", kind: "cup" },
+  { id: 36, name: "AFCON Qualification", country: "World", tier: "international", kind: "cup" },
+  { id: 13, name: "Copa Libertadores", country: "World", tier: "international", kind: "cup" },
+  { id: 11, name: "Copa Sudamericana", country: "World", tier: "international", kind: "cup" },
+  { id: 12, name: "CAF Champions League", country: "World", tier: "international", kind: "cup" },
+  { id: 20, name: "CAF Confederation Cup", country: "World", tier: "international", kind: "cup" },
+  { id: 17, name: "AFC Champions League Elite", country: "World", tier: "international", kind: "cup" },
+  // European lower divisions
+  { id: 79, name: "2. Bundesliga", country: "Germany", tier: "lower", kind: "league", flagCode: "de" },
+  { id: 141, name: "Segunda División", country: "Spain", tier: "lower", kind: "league", flagCode: "es" },
+  { id: 136, name: "Serie B", country: "Italy", tier: "lower", kind: "league", flagCode: "it" },
+  { id: 62, name: "Ligue 2", country: "France", tier: "lower", kind: "league", flagCode: "fr" },
+  { id: 41, name: "League One", country: "England", tier: "lower", kind: "league", flagCode: "gb-eng" },
+  { id: 42, name: "League Two", country: "England", tier: "lower", kind: "league", flagCode: "gb-eng" },
+  { id: 46, name: "EFL Trophy", country: "England", tier: "lower", kind: "cup" },
+  { id: 89, name: "Eerste Divisie", country: "Netherlands", tier: "lower", kind: "league", flagCode: "nl" },
+  { id: 95, name: "Liga Portugal 2", country: "Portugal", tier: "lower", kind: "league", flagCode: "pt" },
+  { id: 180, name: "Championship", country: "Scotland", tier: "lower", kind: "league", flagCode: "gb-sct" },
+  { id: 80, name: "3. Liga", country: "Germany", tier: "lower", kind: "league", flagCode: "de" },
+  { id: 43, name: "National League", country: "England", tier: "lower", kind: "league", flagCode: "gb-eng" },
+  // Smaller European top flights
+  { id: 271, name: "NB I", country: "Hungary", tier: "minor", kind: "league", flagCode: "hu" },
+  { id: 383, name: "Ligat Ha'al", country: "Israel", tier: "minor", kind: "league", flagCode: "il" },
+  { id: 357, name: "Premier Division", country: "Ireland", tier: "minor", kind: "league", flagCode: "ie" },
+  { id: 332, name: "Super Liga", country: "Slovakia", tier: "minor", kind: "league", flagCode: "sk" },
+  { id: 318, name: "First Division", country: "Cyprus", tier: "minor", kind: "league", flagCode: "cy" },
+  // South America, North America, Africa, Asia
+  { id: 128, name: "Liga Profesional", country: "Argentina", tier: "world", kind: "league", flagCode: "ar" },
+  { id: 72, name: "Serie B", country: "Brazil", tier: "world", kind: "league", flagCode: "br" },
+  { id: 239, name: "Primera A", country: "Colombia", tier: "world", kind: "league", flagCode: "co" },
+  { id: 262, name: "Liga MX", country: "Mexico", tier: "world", kind: "league", flagCode: "mx" },
+  { id: 253, name: "Major League Soccer", country: "USA", tier: "world", kind: "league", flagCode: "us" },
+  { id: 98, name: "J1 League", country: "Japan", tier: "world", kind: "league", flagCode: "jp" },
+  { id: 292, name: "K League 1", country: "South Korea", tier: "world", kind: "league", flagCode: "kr" },
+  { id: 233, name: "Premier League", country: "Egypt", tier: "world", kind: "league", flagCode: "eg" },
+  { id: 288, name: "Premier Soccer League", country: "South Africa", tier: "world", kind: "league", flagCode: "za" },
+  { id: 242, name: "Liga Pro", country: "Ecuador", tier: "world", kind: "league", flagCode: "ec" },
+  { id: 281, name: "Primera División", country: "Peru", tier: "world", kind: "league", flagCode: "pe" },
+  { id: 265, name: "Primera División", country: "Chile", tier: "world", kind: "league", flagCode: "cl" },
+  { id: 169, name: "Super League", country: "China", tier: "world", kind: "league", flagCode: "cn" },
+  { id: 186, name: "Ligue 1", country: "Algeria", tier: "world", kind: "league", flagCode: "dz" },
+  { id: 570, name: "Premier League", country: "Ghana", tier: "world", kind: "league", flagCode: "gh" },
+  { id: 99, name: "J2 League", country: "Japan", tier: "world", kind: "league", flagCode: "jp" },
+  { id: 255, name: "USL Championship", country: "USA", tier: "world", kind: "league", flagCode: "us" },
 ] as const;
 
-/** Shared editorial order for generation and automatic curation. */
-export const LEAGUE_PRIORITY_ORDER = [
-  39, 40, 45, 48, // England: Premier League, Championship, FA Cup, EFL Cup
-  140, 143, // Spain: La Liga, Copa del Rey
-  135, 137, // Italy: Serie A, Coppa Italia
-  78, 81, // Germany: Bundesliga, DFB Pokal
-  61, 66, // France: Ligue 1, Coupe de France
-  94, 96, // Portugal
-  2, 3, 848, // European continental competitions
-  88, 90, // Netherlands
-  144, 147, // Belgium
-  307, // Saudi Arabia
-  203, 206, // Turkey
-  113, 114, 115, // Sweden
-  235, // Russia
-  103, 105, // Norway
-  286, 732, // Serbia
-  345, 347, // Czech Republic
-  210, 212, // Croatia
-  333, 335, // Ukraine
-  110, 112, // Wales
-  172, // Bulgaria
-  315, // Bosnia
-  329, // Estonia
-  365, // Latvia
-  342, // Armenia
-  218, 220, // Austria
-  419, // Azerbaijan
-  116, // Belarus
-  207, 209, // Switzerland
-  119, 121, // Denmark
-  106, 108, // Poland
-  197, 199, // Greece
-  283, 285, // Romania
-  359, // Ireland
-  167, // Iceland
-  321, // Cyprus
-  384, // Israel
-  71, // Brazil
-] as const;
+/**
+ * Generation competition tiers — WHICH leagues the scheduler generates for,
+ * and in what order. Separate from the catalogue's display `tier` above, which
+ * only groups pickers and labels; a league's display tier says nothing about
+ * whether it is generated every day.
+ *
+ *   CORE          the strongest competitions. Always discovered and generated.
+ *   SECONDARY     credible mid-tier leagues (and their domestic cups). Also
+ *                 always in scope: CORE + SECONDARY is the normal slate.
+ *   FALLBACK      internationals, European lower divisions, smaller European
+ *                 top flights, and the best-covered leagues elsewhere. Only
+ *                 discovered when CORE + SECONDARY is thin.
+ *   DEEP_FALLBACK only when the slate is very thin (see
+ *                 src/lib/generation/coverage.ts for the thresholds).
+ *
+ * Membership was set from 120 days of published predictions, FixtureOddsCache
+ * bookmaker depth per league, and live API-Football coverage flags
+ * (2026-09-21). The minor leagues that used to be scanned daily (Kazakhstan,
+ * Belarus, Baltic states, Wales, ...) are now DEEP_FALLBACK. They stay in the
+ * catalogue for display and admin use, but no longer fill a healthy day.
+ *
+ * ORDER IS LOAD-BEARING. The first VIP_PROXY_LEAGUE_CUTOFF (12) CORE entries
+ * are the paid-tier league set (src/lib/ai/generationRisk.ts), so they are
+ * exactly the twelve that headed the pre-tier priority order, in the same
+ * order. Within each later tier, leagues that were already prioritised keep
+ * their previous relative order.
+ */
+export const GENERATION_TIERS = {
+  CORE: [
+    39, 40, 45, 48, // England: Premier League, Championship, FA Cup, EFL Cup
+    140, 143, // Spain: La Liga, Copa del Rey
+    135, 137, // Italy: Serie A, Coppa Italia
+    78, 81, // Germany: Bundesliga, DFB Pokal
+    61, 66, // France: Ligue 1, Coupe de France
+    2, 3, 848, // European continental competitions
+    1, 4, // World Cup, Euro Championship
+  ],
+  SECONDARY: [
+    94, 96, // Portugal
+    88, 90, // Netherlands
+    144, 147, // Belgium
+    307, // Saudi Arabia
+    399, // Nigeria — a headline competition for this audience (MAJOR_LEAGUE_IDS)
+    203, 206, // Turkey
+    113, 115, // Sweden
+    103, 105, // Norway
+    345, 347, // Czech Republic
+    218, 220, // Austria
+    207, 209, // Switzerland
+    119, 121, // Denmark
+    106, 108, // Poland
+    197, 199, // Greece
+    179, 181, // Scotland
+    71, // Brazil
+  ],
+  FALLBACK: [
+    5, 32, 960, 34, 29, 36, // national-team competitions (the international-break slate)
+    13, 11, 12, 17, // continental club competitions outside Europe
+    10, // international friendlies
+    79, 141, 136, 62, 41, 42, 46, 89, 95, 180, 114, // European lower divisions
+    235, 286, 732, 210, 212, 333, 335, 172, 283, 285, 244, 271, 383, 357, 332, 318, // smaller European top flights
+    128, 72, 239, 262, 253, 98, 292, 233, 288, // South/North America, Asia, Africa
+  ],
+  DEEP_FALLBACK: [
+    20, 30, 31, // CAF Confederation Cup, Asian and CONCACAF qualifiers
+    80, 43, // German 3. Liga, English National League
+    110, 112, 116, 389, 329, 365, 362, 342, 419, 394, 315, // thinner European top flights
+    359, 167, 321, 384, // smaller domestic cups
+    242, 281, 265, 169, 186, 570, 99, 255, // further afield
+  ],
+} as const;
+
+export type GenerationTier = keyof typeof GENERATION_TIERS;
+/** Highest priority first. Also the widening order. */
+export const GENERATION_TIER_ORDER: readonly GenerationTier[] = ["CORE", "SECONDARY", "FALLBACK", "DEEP_FALLBACK"];
+
+const GENERATION_TIER_BY_LEAGUE = new Map<number, GenerationTier>(
+  GENERATION_TIER_ORDER.flatMap((tier) => (GENERATION_TIERS[tier] as readonly number[]).map((id) => [id, tier] as const)),
+);
+
+/** The generation tier of a competition, or null when it is not generated automatically at all. */
+export function generationTierOf(leagueApiId?: number | null): GenerationTier | null {
+  if (leagueApiId == null) return null;
+  return GENERATION_TIER_BY_LEAGUE.get(leagueApiId) ?? null;
+}
+
+/** League ids in the given tiers, in priority order. */
+export function leaguesInTiers(tiers: readonly GenerationTier[]): number[] {
+  return GENERATION_TIER_ORDER.filter((t) => tiers.includes(t)).flatMap((t) => [...GENERATION_TIERS[t]] as number[]);
+}
+
+/**
+ * Shared editorial order for generation and automatic curation: the tiers,
+ * concatenated. CORE → SECONDARY → FALLBACK → DEEP_FALLBACK, so anything that
+ * ranks by priority (the queue, curation, display ordering) prefers a stronger
+ * tier without having to know tiers exist.
+ */
+export const LEAGUE_PRIORITY_ORDER: readonly number[] = leaguesInTiers(GENERATION_TIER_ORDER);
 
 const NON_LEAGUE_NAMES = new Set([
   "unknown competition",
@@ -168,6 +283,28 @@ export function assertLeaguePriorityCatalogueInvariant(
 }
 
 assertLeaguePriorityCatalogueInvariant();
+
+/**
+ * Every catalogued competition sits in exactly one generation tier. A league
+ * in no tier would silently never be generated; one in two tiers would rank
+ * and widen ambiguously.
+ */
+export function assertGenerationTierInvariant(
+  tiers: Record<GenerationTier, readonly number[]> = GENERATION_TIERS,
+  catalogue: readonly { id: number }[] = LEAGUE_CATALOGUE,
+): void {
+  const seen = new Map<number, string>();
+  for (const tier of GENERATION_TIER_ORDER) {
+    for (const id of tiers[tier]) {
+      if (seen.has(id)) throw new Error(`GENERATION_TIERS lists league ${id} in both ${seen.get(id)} and ${tier}`);
+      seen.set(id, tier);
+    }
+  }
+  const untiered = catalogue.map((l) => l.id).filter((id) => !seen.has(id));
+  if (untiered.length) throw new Error(`LEAGUE_CATALOGUE ids with no generation tier: ${untiered.join(", ")}`);
+}
+
+assertGenerationTierInvariant();
 
 const LEAGUE_PRIORITY_RANK = new Map<number, number>(LEAGUE_PRIORITY_ORDER.map((id, index) => [id, index]));
 
@@ -213,6 +350,7 @@ export const LEAGUE_TIER_LABELS: Record<string, string> = {
   international: "International",
   mid: "Mid-tier Europe",
   minor: "Smaller European leagues",
+  lower: "European lower divisions",
   world: "Other leagues",
 };
 

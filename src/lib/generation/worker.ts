@@ -29,7 +29,9 @@ import {
   MAX_GENERATION_ATTEMPTS,
   type Candidate,
 } from "@/lib/generation/selector";
-import { selectQueuedCandidates } from "@/lib/generation/queue";
+import { assessCoverage, selectQueuedCandidates } from "@/lib/generation/queue";
+import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage";
+import type { GenerationTier } from "@/lib/leagues";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -105,6 +107,8 @@ export type RunReport = {
    * per-row detail. See src/lib/generation/kickoffAssert.ts.
    */
   kickoffMismatches: KickoffMismatch[];
+  /** The competition scope an ordinary run generated within. Absent on targeted runs. */
+  coverage?: { mode: CoverageMode; higherTierCount: number; allowedTiers: GenerationTier[] };
 };
 
 /**
@@ -223,12 +227,31 @@ export async function runGeneration(opts: {
       return empty(`api-football daily budget nearly exhausted (${usage.remaining} left)`, usage.remaining);
     }
 
-    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds, matchKeys: opts.matchKeys });
+    // Adaptive competition scope. Only for ORDINARY runs: a targeted run
+    // (explicit fixtures or leagues, e.g. the paid pass or an admin request)
+    // already chose its scope. The decision is re-read every run, so when
+    // CORE+SECONDARY is healthy again, fallback rows queued on a thin day stop
+    // being generated without anyone switching a mode off. It is a DB read
+    // only, and fails open to the previous (unscoped) behaviour.
+    let coverage: RunReport["coverage"];
+    let excludeLeagueApiIds: number[] | undefined;
+    if (!opts.matchKeys && !opts.leagueApiIds?.length) {
+      try {
+        const decision = await assessCoverage(opts.now ?? new Date());
+        excludeLeagueApiIds = excludedLeagueIds(decision);
+        coverage = { mode: decision.mode, higherTierCount: decision.higherTierCount, allowedTiers: decision.allowedTiers };
+      } catch (error) {
+        console.error("[generation] coverage assessment failed; running unscoped", error);
+      }
+    }
+
+    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds, matchKeys: opts.matchKeys, excludeLeagueApiIds });
 
     const report: RunReport = {
       ok: true, claimed: candidates.length, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
       cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0,
       quotaRemaining: usage.remaining, elapsedMs: 0, results: [], kickoffMismatches: [],
+      ...(coverage ? { coverage } : {}),
     };
 
     // Doubles cost about twice a normal fixture, so they get a tighter cutoff

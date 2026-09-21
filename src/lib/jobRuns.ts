@@ -35,6 +35,13 @@ export const JOB_GENERATE_BET_OF_DAY = "generate-bet-of-the-day" as const;
 export const JOB_BET_OF_DAY_SELECT = "select-bet-of-the-day" as const;
 export const JOB_REFRESH_ODDS = "refresh-odds" as const;
 /**
+ * Candidate discovery, which also decides the adaptive competition scope. Its
+ * run detail carries the coverage report (mode, higher-tier count, fallback
+ * selected, leagues scanned by tier, provider calls, and why the scope widened
+ * or stayed narrow) that /admin/jobs shows.
+ */
+export const JOB_GENERATION_DISCOVERY = "generation-discovery" as const;
+/**
  * The notification jobs. Same reason as above: their schedules live in
  * cron-job.org, so the run history is the only way to tell a cron that never
  * fired from one that fired and had nothing to send. Named in the plural to
@@ -52,6 +59,7 @@ export const JOB_REFRESH_INSIGHTS = "refresh-insights" as const;
 
 /** Every job this app records, for the admin view's benefit. */
 export const KNOWN_JOBS = [
+  JOB_GENERATION_DISCOVERY,
   JOB_REFRESH_ODDS,
   JOB_GENERATE_VIP_PREMIUM,
   JOB_GENERATE,

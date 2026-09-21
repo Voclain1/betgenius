@@ -24,10 +24,33 @@ type Pool = {
   oddsMissing: number;
 };
 
+type TierCounts = { CORE: number; SECONDARY: number; FALLBACK: number; DEEP_FALLBACK: number };
+
+/** The latest discovery run's scope decision — see src/lib/generation/coverage.ts. */
+type Coverage = {
+  ranAt: string;
+  mode: keyof TierCounts;
+  horizonHours: number;
+  counts: TierCounts;
+  higherTierCount: number;
+  widened: boolean;
+  target: number | null;
+  fallbackAlreadySelected: number;
+  fallbackSelected: number;
+  leaguesScannedByTier: { cursor: TierCounts; sweep: TierCounts };
+  providerCalls: { cursor: number; sweep: number; total: number };
+  sweep: { ran: boolean; dates: string[]; skippedReason: string | null; fallbackConsidered: number; gateRejected: Record<string, number> };
+  widenedReason: string | null;
+  narrowReason: string | null;
+};
+
+const TIERS: Array<keyof TierCounts> = ["CORE", "SECONDARY", "FALLBACK", "DEEP_FALLBACK"];
+
 // How long since a job last ran before that is itself the story. These are the
 // cadences the recommended schedule uses, plus generous slack — the point is to
 // catch "not scheduled at all", not to alert on a single missed tick.
 const EXPECTED_WITHIN_MIN: Record<string, number> = {
+  "generation-discovery": 60,
   "refresh-odds": 60,
   "generate-vip-premium": 60,
   "generate-ordinary": 60,
@@ -43,6 +66,7 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
 };
 
 const LABEL: Record<string, string> = {
+  "generation-discovery": "Candidate discovery & coverage",
   "refresh-odds": "Odds refresh",
   "generate-vip-premium": "VIP / Premium pass",
   "generate-ordinary": "Ordinary generation",
@@ -67,6 +91,7 @@ function ago(iso: string | null): string {
 export default function AdminJobs() {
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [pool, setPool] = useState<Pool | null>(null);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -76,6 +101,7 @@ export default function AdminJobs() {
     const j = await res.json();
     setJobs(j.jobs ?? []);
     setPool(j.pool ?? null);
+    setCoverage(j.coverage ?? null);
   }, []);
 
   useEffect(() => {
@@ -147,6 +173,61 @@ export default function AdminJobs() {
           </tbody>
         </table>
       </div>
+
+      {coverage && (
+        <div className="card space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+              Competition coverage — next {coverage.horizonHours}h
+            </h2>
+            <span className="text-xs text-gray-500">decided {ago(coverage.ranAt)}</span>
+          </div>
+          <p className={`text-sm ${coverage.widened ? "text-amber-300" : "text-emerald-300"}`}>
+            <span className="font-mono">{coverage.mode}</span> —{" "}
+            {coverage.widened ? coverage.widenedReason : coverage.narrowReason}
+          </p>
+          {coverage.widened && (
+            <p className="text-xs text-gray-400">
+              Fallback already selected: {coverage.fallbackAlreadySelected} · queued this run: {coverage.fallbackSelected}
+              {" · "}
+              {coverage.sweep.ran
+                ? `sweep ran for ${coverage.sweep.dates.join(", ")} (${coverage.sweep.fallbackConsidered} fallback fixtures considered${
+                    Object.keys(coverage.sweep.gateRejected).length
+                      ? `; gate refused ${Object.entries(coverage.sweep.gateRejected).map(([k, v]) => `${v} ${k}`).join(", ")}`
+                      : ""
+                  })`
+                : `sweep skipped: ${coverage.sweep.skippedReason ?? "—"}`}
+            </p>
+          )}
+          <div className="overflow-hidden rounded-xl border border-brand-border">
+            <table className="w-full text-sm">
+              <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
+                <tr>
+                  <th className="px-3 py-2">Tier</th>
+                  <th className="px-3 py-2">Viable fixtures</th>
+                  <th className="px-3 py-2">Leagues scanned (cursor)</th>
+                  <th className="px-3 py-2">Leagues seen (sweep)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-border">
+                {TIERS.map((t) => (
+                  <tr key={t}>
+                    <td className="px-3 py-2 font-mono text-xs">{t}</td>
+                    <td className="px-3 py-2">{coverage.counts[t]}</td>
+                    <td className="px-3 py-2">{coverage.leaguesScannedByTier.cursor[t]}</td>
+                    <td className="px-3 py-2">{coverage.leaguesScannedByTier.sweep[t]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-500">
+            Provider discovery calls this run: {coverage.providerCalls.total} ({coverage.providerCalls.cursor} per-league cursor,{" "}
+            {coverage.providerCalls.sweep} by-date sweep). A run that stays at CORE or SECONDARY with no sweep is the normal, healthy
+            state; fallback tiers are only scanned when the higher-tier slate is thin.
+          </p>
+        </div>
+      )}
 
       {pool && (
         <div className="card space-y-3">
