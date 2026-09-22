@@ -16,7 +16,8 @@
 import { prisma } from "@/lib/prisma";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { matchKey } from "@/lib/slug";
-import { LEAGUE_CATALOGUE, leaguePriorityRank } from "@/lib/leagues";
+import { LEAGUE_CATALOGUE, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
+import { isNonSeniorSide } from "@/lib/generation/coverage";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { fixtureIsInCupScope } from "@/lib/cupConfig";
 import { reservePaidTierFixtures } from "@/lib/generation/paidTierGrace";
@@ -131,6 +132,10 @@ export async function candidatesFromFixtures(
   const inWindow = rows.filter((f) => {
     if (f.fixture.status.short !== "NS") return false;
     if (!fixtureIsInCupScope(f.league.id, f.league.round)) return false;
+    // A senior women's competition can be CORE/SECONDARY, which never passes
+    // through fallbackQualityGate, so its reserve/U-age/B sides are refused
+    // here by the same senior-women rule. Men's competitions are unchanged.
+    if (isSeniorWomensCompetition(f.league.id) && (isNonSeniorSide(f.teams.home.name ?? "", f.league.id) || isNonSeniorSide(f.teams.away.name ?? "", f.league.id))) return false;
     const k = new Date(f.fixture.date);
     if (isNaN(k.getTime()) || k < from || k > until) return false;
     return lagosDateKey(k) === todayKey || k >= normalFrom;

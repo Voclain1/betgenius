@@ -153,7 +153,10 @@ export async function broadcastTopPrediction(
     // Expires at kickoff: a top pick delivered after the match has started is
     // worse than not delivering it, and the dispatcher already drops expired rows.
     expiresAt: prediction.kickoff,
-    data: { source, categories: prediction.categories.map((c) => c.category), confidence: prediction.confidence, odds: prediction.odds },
+    // provenance is what dispatch reads for a market-confirmed-only competition
+    // (TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY): without MARKET_CONFIRMED here
+    // such an event reaches the inbox but never pushes.
+    data: { source, categories: prediction.categories.map((c) => c.category), confidence: prediction.confidence, odds: prediction.odds, provenance: prediction.provenance },
   });
 
   return { ok: true, eventId: event.id, alreadyBroadcast: existing !== null };
