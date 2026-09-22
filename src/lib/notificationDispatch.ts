@@ -10,15 +10,18 @@ import {
   preferenceAllows,
   releaseDelivery,
   stillFollowsEvent,
+  TOP_PREDICTION,
 } from "@/lib/notifications";
 import {
   digestAudienceFor,
   digestData,
   isDigestEvent,
-  isInboxOnlyType,
+  isInboxOnlyEvent,
   personaliseDigest,
   pushCopy,
   shouldPush,
+  topPredictionDelivery,
+  topPredictionPushLeagueIds,
   type RenderedDigest,
 } from "@/lib/notificationDigest";
 import { pushConfigured, sendPush } from "@/lib/push";
@@ -26,8 +29,23 @@ import type { Prisma } from "@prisma/client";
 
 const MAX_ATTEMPTS = 5;
 
-/** Inbox-only event types, as a filter. Mirrors isInboxOnlyType. */
-const INBOX_ONLY_WHERE: Prisma.NotificationEventWhereInput = { OR: [{ type: "NEW_PREDICTION" }, { type: { startsWith: "RESULT_" } }] };
+const TOP_PUSH_LEAGUES = topPredictionPushLeagueIds();
+
+/** Top predictions from a competition strong enough to push. Mirrors topPredictionPushEligible. */
+const ELIGIBLE_TOP_WHERE: Prisma.NotificationEventWhereInput = { type: TOP_PREDICTION, leagueApiId: { in: TOP_PUSH_LEAGUES } };
+
+/**
+ * Inbox-only events, as a filter. Mirrors isInboxOnlyEvent: the inbox-only
+ * types, plus top predictions outside the push-eligible competitions (a null
+ * league included, which `notIn` alone would miss).
+ */
+const INBOX_ONLY_WHERE: Prisma.NotificationEventWhereInput = {
+  OR: [
+    { type: "NEW_PREDICTION" },
+    { type: { startsWith: "RESULT_" } },
+    { type: TOP_PREDICTION, OR: [{ leagueApiId: null }, { leagueApiId: { notIn: TOP_PUSH_LEAGUES } }] },
+  ],
+};
 
 /** A reminder is only valid while at least one of its tips is still live at the kickoff it announced. */
 async function reminderStillValid(event: { predictionId: string | null; data: unknown }, now: Date) {
@@ -92,7 +110,7 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
     // never ring, so letting them use up the allowance would crowd out the
     // kickoff reminders and tip changes that do; they get the same cap as a
     // separate allowance, so inbox volume stays bounded as before.
-    const inboxOnly = isInboxOnlyType(row.event.type);
+    const inboxOnly = isInboxOnlyEvent(row.event);
     const sentToday = await prisma.userNotification.count({
       where: { userId: row.userId, createdAt: { gte: dayStart }, event: inboxOnly ? INBOX_ONLY_WHERE : { NOT: INBOX_ONLY_WHERE } },
     });
@@ -102,11 +120,18 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
     // a broadcast has to clear both. Counted from the inbox rows already
     // written today, on the same local-day boundary as the global cap, so the
     // two agree about when "today" started for this user.
+    //
+    // Only push-eligible top predictions count and are capped: one from a
+    // FALLBACK/DEEP_FALLBACK (or unknown) competition is inbox-only, so it
+    // neither pushes nor uses up an allowance a CORE pick later in the day needs.
     if (isEditorialEvent(row.event.type)) {
-      const editorialToday = await prisma.userNotification.count({
-        where: { userId: row.userId, createdAt: { gte: dayStart }, event: { type: row.event.type } },
+      const eligibleToday = await prisma.userNotification.count({
+        where: { userId: row.userId, createdAt: { gte: dayStart }, event: ELIGIBLE_TOP_WHERE },
       });
-      if (editorialToday >= EDITORIAL_DAILY_CAP) { await skip(row.id, "editorial daily cap"); continue; }
+      if (topPredictionDelivery(row.event.leagueApiId, eligibleToday, EDITORIAL_DAILY_CAP) === "capped") {
+        await skip(row.id, "editorial daily cap");
+        continue;
+      }
     }
 
     try {
@@ -117,7 +142,7 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
       });
       const canPush = transport !== sendPush || pushConfigured();
       const quiet = !!pref && inQuietHours(now, pref.timezone, pref.quietStartMinutes, pref.quietEndMinutes);
-      if (canPush && shouldPush(row.event.type, { pushEnabled: !!pref?.pushEnabled, inQuietHours: quiet })) {
+      if (canPush && shouldPush(row.event.type, { pushEnabled: !!pref?.pushEnabled, inQuietHours: quiet, leagueApiId: row.event.leagueApiId })) {
         // Rendered for this recipient: paid selections only for the entitled.
         const copy = pushCopy(row.event, digest);
         if (copy) {

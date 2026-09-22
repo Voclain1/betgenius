@@ -1,4 +1,4 @@
-import { generationTierOf, leaguePriorityRank, type GenerationTier } from "@/lib/leagues";
+import { generationTierOf, leaguePriorityRank, leaguesInTiers, type GenerationTier } from "@/lib/leagues";
 
 /**
  * DIGEST-FIRST NOTIFICATION POLICY.
@@ -42,6 +42,69 @@ export function pushesImmediately(type: string) {
   return !isInboxOnlyType(type);
 }
 
+/** Literal rather than imported: notifications.ts imports this module. */
+const TOP_PREDICTION = "TOP_PREDICTION";
+
+/**
+ * SECONDARY competitions strong enough to carry an interruptive top-prediction
+ * push: established top flights, plus the NPFL, which is a headline competition
+ * for this audience (MAJOR_LEAGUE_IDS). Other SECONDARY leagues and every
+ * domestic cup in the tier are left out.
+ */
+export const TOP_PREDICTION_PUSH_SECONDARY: readonly number[] = [
+  94, // Primeira Liga
+  88, // Eredivisie
+  144, // Belgian Pro League
+  203, // Süper Lig
+  307, // Saudi Pro League
+  399, // NPFL
+];
+
+/**
+ * Whether a TOP_PREDICTION in this competition may ring a device.
+ *
+ * CORE: yes. The selected SECONDARY leagues above: yes. Everything else,
+ * including FALLBACK, DEEP_FALLBACK and an unknown league: no. The event and
+ * its inbox entry are kept either way; this only governs the interruptive push.
+ * Eligibility is not a guarantee: the editorial daily cap still limits how many
+ * eligible ones actually push.
+ */
+export function topPredictionPushEligible(leagueApiId: number | null | undefined) {
+  const tier = generationTierOf(leagueApiId);
+  return tier === "CORE" || (tier === "SECONDARY" && TOP_PREDICTION_PUSH_SECONDARY.includes(leagueApiId as number));
+}
+
+/** Every league whose top predictions may push, for database filters. */
+export function topPredictionPushLeagueIds(): number[] {
+  return [...leaguesInTiers(["CORE"]), ...TOP_PREDICTION_PUSH_SECONDARY];
+}
+
+/**
+ * An event that is recorded in the inbox but never pushed: an inbox-only type,
+ * or a top prediction from a competition not strong enough to interrupt for.
+ */
+export function isInboxOnlyEvent(event: { type: string; leagueApiId?: number | null }) {
+  if (isInboxOnlyType(event.type)) return true;
+  return event.type === TOP_PREDICTION && !topPredictionPushEligible(event.leagueApiId);
+}
+
+export type TopPredictionDelivery = "push" | "inbox-only" | "capped";
+
+/**
+ * What dispatch does with one TOP_PREDICTION for one user.
+ *
+ *   inbox-only - not in an eligible competition: inbox entry, no push, and it
+ *                does not use up the editorial cap.
+ *   capped     - eligible, but the user has already had `cap` eligible top
+ *                predictions today (the existing editorial-cap skip).
+ *   push       - eligible and under the cap; still subject to pushEnabled and
+ *                quiet hours.
+ */
+export function topPredictionDelivery(leagueApiId: number | null | undefined, eligibleToday: number, cap: number): TopPredictionDelivery {
+  if (!topPredictionPushEligible(leagueApiId)) return "inbox-only";
+  return eligibleToday >= Math.min(cap, INDIVIDUAL_TOP_PUSH_MAX) ? "capped" : "push";
+}
+
 /** At most this many individual matches are highlighted in a morning digest. */
 export const TOP_MATCH_HIGHLIGHT_MAX = 3;
 
@@ -61,9 +124,16 @@ export const HIGHLIGHT_TIERS: readonly GenerationTier[] = ["CORE", "SECONDARY"];
  * time it runs inside the window, and the event key makes later runs no-ops.
  */
 export const DIGEST_TIMING = {
-  /** Morning digest may be created from 09:00... */
+  /**
+   * Morning digest: never before 09:00. From 09:00 to 09:30 it waits unless the
+   * slate already looks complete (MORNING_EARLY_MIN_READY)...
+   */
   morningFrom: 9 * 60,
-  /** ...until 13:00, so a late slate still gets one digest. */
+  /** ...from 09:30 any category content (or Bet of the Day) is enough... */
+  morningSettle: 9 * 60 + 30,
+  /** ...and from 10:00, the hard latest point, any usable pick at all. */
+  morningHardLatest: 10 * 60,
+  /** Last run that may still create it, for a slate published very late. */
   morningUntil: 13 * 60,
   /** A morning digest not delivered by 14:00 is dropped rather than sent stale. */
   morningExpires: 14 * 60,
@@ -266,6 +336,44 @@ export function buildMorningDigest(picks: DigestPick[], betOfTheDayId: string | 
   const categories = DIGEST_CATEGORY_ORDER.map((category) => ({ category, count: usable.filter((p) => hasCategory(p, category)).length })).filter((c) => c.count > 0);
   const highlights = selectTopMatches(usable, { exclude: new Set(botd ? [botd.id] : []) });
   return { kind: "MORNING", day: lagosDay(now), categories, betOfTheDay: botd ? asMatch(botd) : null, highlights: highlights.map(asMatch), items: usable.map(asItem) };
+}
+
+/**
+ * Before 09:30, the morning digest needs at least this many ready "slots" (a
+ * digest category with picks counts one, Bet of the Day counts one). Two means
+ * one early category cannot freeze the day's digest on its own: the event is
+ * immutable once created, so anything published after it would be left out.
+ */
+export const MORNING_EARLY_MIN_READY = 2;
+
+export type MorningDecision = { send: true; reason: string } | { send: false; reason: string };
+
+/**
+ * Whether to create today's morning digest from `data` (the digest as it would
+ * be built right now), given the time. Category readiness is the signal, not
+ * merely "some pick exists":
+ *
+ *   before 09:00          never.
+ *   09:00 to 09:30        only once 2+ slots are ready (two categories, or
+ *                         Bet of the Day plus a category); otherwise wait.
+ *   09:30 to 10:00        once any category (or Bet of the Day) is ready.
+ *   10:00 (hard latest)   whatever valid picks exist, so a sparse day with a
+ *                         single category, or none, still gets its digest.
+ *   13:00 onwards         no longer created.
+ */
+export function morningDigestDecision(data: MorningDigestData | null, now: Date): MorningDecision {
+  const minute = lagosMinuteOfDay(now);
+  if (minute < DIGEST_TIMING.morningFrom) return { send: false, reason: "before 09:00" };
+  if (minute >= DIGEST_TIMING.morningUntil) return { send: false, reason: "after the morning window" };
+  if (!data) return { send: false, reason: "nothing usable yet" };
+  const ready = data.categories.length + (data.betOfTheDay ? 1 : 0);
+  if (minute >= DIGEST_TIMING.morningHardLatest) return { send: true, reason: "hard latest point" };
+  if (minute >= DIGEST_TIMING.morningSettle) {
+    return ready > 0 ? { send: true, reason: "category content ready" } : { send: false, reason: "waiting for category content" };
+  }
+  return ready >= MORNING_EARLY_MIN_READY
+    ? { send: true, reason: `${ready} categories ready` }
+    : { send: false, reason: `waiting: ${ready} of ${MORNING_EARLY_MIN_READY} categories ready` };
 }
 
 export type Record3 = { won: number; lost: number; void: number };
@@ -515,8 +623,8 @@ export function personaliseDigest(
  * never do; everything else still needs push enabled and must be outside the
  * user's quiet hours. The inbox row is written either way.
  */
-export function shouldPush(type: string, opts: { pushEnabled: boolean; inQuietHours: boolean }) {
-  return pushesImmediately(type) && opts.pushEnabled && !opts.inQuietHours;
+export function shouldPush(type: string, opts: { pushEnabled: boolean; inQuietHours: boolean; leagueApiId?: number | null }) {
+  return !isInboxOnlyEvent({ type, leagueApiId: opts.leagueApiId }) && opts.pushEnabled && !opts.inQuietHours;
 }
 
 const PAID_CATEGORIES = new Set(["VIP", "PREMIUM"]);

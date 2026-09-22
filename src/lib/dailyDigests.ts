@@ -14,6 +14,7 @@ import {
   lagosDay,
   lagosInstant,
   lagosMinuteOfDay,
+  morningDigestDecision,
   morningDigestKey,
   nightDigestDecision,
   nightDigestKey,
@@ -105,7 +106,10 @@ export async function createDailyDigests(now: Date = new Date()): Promise<Digest
     else {
       const [picks, botd] = await Promise.all([todaysPicks(day), taggedBetOfTheDayId()]);
       const data = buildMorningDigest(picks, botd, now);
-      if (!data) result.morning = "nothing usable yet";
+      // Readiness, not "any pick": the event is immutable once created, so an
+      // early run must not freeze a digest that later categories would miss.
+      const decision = morningDigestDecision(data, now);
+      if (!data || !decision.send) result.morning = decision.reason;
       else {
         const safe = renderDigest(data, FREE_MEMBER);
         await createNotificationEvent({

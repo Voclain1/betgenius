@@ -31,7 +31,20 @@ import {
   receivesEvent,
   recordPredictionEvents,
 } from "../src/lib/notifications";
-import { lagosDay as lagosDayKeyForTest, digestAudienceFor, followCoversItem, personaliseDigest } from "../src/lib/notificationDigest";
+import {
+  lagosDay as lagosDayKeyForTest,
+  MORNING_EARLY_MIN_READY,
+  digestAudienceFor,
+  followCoversItem,
+  isInboxOnlyEvent,
+  morningDigestDecision,
+  personaliseDigest,
+  topPredictionDelivery,
+  topPredictionPushEligible,
+  type MorningDigestData,
+} from "../src/lib/notificationDigest";
+import { createDailyDigests } from "../src/lib/dailyDigests";
+import { prisma } from "../src/lib/prisma";
 import { canViewCategory } from "../src/lib/access";
 import type { PredictionCategory } from "../src/lib/enums";
 
@@ -367,6 +380,127 @@ const base = {
   check("a follower with publication alerts receives it", preferenceAllows(DIGEST_MORNING, { followedAlerts: true, newPredictions: true }));
   check("followedAlerts off and no editorial opt-in: no digest", !preferenceAllows(DIGEST_MORNING, { followedAlerts: false, editorialAlerts: false }));
   check("results off: no night digest for a follower", !preferenceAllows(DIGEST_NIGHT, { followedAlerts: true, results: false }));
+
+  console.log("\nmorning readiness rule:");
+  seq = 300;
+  const bankerPick = pick({ leagueApiId: EPL, categories: ["BANKER"] });
+  const vipLater = pick({ leagueApiId: UCL, category: "VIP", categories: ["VIP"] });
+  const botdOnly = pick({ leagueApiId: SERIE_A, categories: ["BET_OF_THE_DAY"] });
+  const featuredOnly = pick({ leagueApiId: EPL });
+  const decide = (picks: DigestPick[], minutes: number, botdId: string | null = null) => morningDigestDecision(buildMorningDigest(picks, botdId, at(minutes)), at(minutes));
+  check("never before 09:00, even with a full slate", !decide([bankerPick, vipLater], 8 * 60 + 59).send);
+  check("09:00 with one category waits", !decide([bankerPick], 9 * 60).send);
+  check("09:00 with two categories sends", decide([bankerPick, vipLater], 9 * 60).send);
+  check("09:00 with Bet of the Day plus a category sends", decide([bankerPick, botdOnly], 9 * 60, botdOnly.id).send);
+  check("09:29 with one category still waits", !decide([bankerPick], 9 * 60 + 29).send);
+  check("09:30 with one category sends", decide([bankerPick], 9 * 60 + 30).send);
+  check("09:45 with only uncategorised picks waits", !decide([featuredOnly], 9 * 60 + 45).send);
+  check("10:00 (hard latest) with only uncategorised picks sends", decide([featuredOnly], 10 * 60).send);
+  check("no usable picks: never", !decide([], 11 * 60).send);
+  check("after 13:00: no longer created", !decide([bankerPick, vipLater], 13 * 60).send);
+  check("thresholds are named", MORNING_EARLY_MIN_READY === 2 && DIGEST_TIMING.morningSettle === 9 * 60 + 30 && DIGEST_TIMING.morningHardLatest === 10 * 60);
+
+  // The real createDailyDigests, run every 5 minutes against an in-memory
+  // stand-in for the reads and the one write it makes.
+  const db = prisma as unknown as Record<string, Record<string, unknown>>;
+  let published: { pick: DigestPick; at: number }[] = [];
+  let taggedBotd: string | null = null;
+  const events = new Map<string, { type: string; data: MorningDigestData; createdAt: Date }>();
+  let eventCreates = 0;
+  let clock = 0;
+  db.prediction.findMany = async () =>
+    published
+      .filter((p) => p.at <= clock)
+      .map(({ pick: p }) => ({ ...p, categories: p.categories.map((category) => ({ category })) }));
+  db.prediction.findFirst = async () => (taggedBotd && published.some((p) => p.pick.id === taggedBotd && p.at <= clock) ? { id: taggedBotd } : null);
+  db.notificationEvent.findUnique = async ({ where }: { where: { eventKey: string } }) => (events.has(where.eventKey) ? { id: where.eventKey } : null);
+  db.notificationEvent.upsert = async ({ where, create }: { where: { eventKey: string }; create: { type: string; data: MorningDigestData } }) => {
+    if (!events.has(where.eventKey)) {
+      events.set(where.eventKey, { ...create, createdAt: new Date(clock) });
+      eventCreates++;
+    }
+    return events.get(where.eventKey);
+  };
+  async function runMorning() {
+    const created: string[] = [];
+    for (let m = 8 * 60 + 50; m <= 13 * 60 + 10; m += 5) {
+      clock = at(m).getTime();
+      const r = await createDailyDigests(new Date(clock));
+      if (r.morning === "created") created.push(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+    }
+    return created;
+  }
+
+  published = [{ pick: bankerPick, at: at(9 * 60).getTime() }, { pick: vipLater, at: at(9 * 60 + 15).getTime() }];
+  events.clear(); eventCreates = 0;
+  const staggered = await runMorning();
+  const staggeredEvent = events.get(morningDigestKey(DAY));
+  check("Banker at 09:00, VIP at 09:15: nothing frozen at 09:00", !staggered.includes("09:00") && !staggered.includes("09:05") && !staggered.includes("09:10"), staggered);
+  check("...created at 09:15 when VIP arrives", JSON.stringify(staggered) === JSON.stringify(["09:15"]), staggered);
+  check(
+    "...and it names both categories",
+    JSON.stringify(staggeredEvent?.data.categories.map((c) => c.category)) === JSON.stringify(["BANKER", "VIP"]),
+    staggeredEvent?.data.categories,
+  );
+  check("idempotent: 51 reminders runs, one morning event", eventCreates === 1 && events.size === 1, eventCreates);
+
+  published = [{ pick: bankerPick, at: at(9 * 60).getTime() }];
+  events.clear(); eventCreates = 0;
+  const sparse = await runMorning();
+  check("a genuinely sparse day (one category) still sends, by 09:30", JSON.stringify(sparse) === JSON.stringify(["09:30"]), sparse);
+  published = [{ pick: featuredOnly, at: at(8 * 60).getTime() }];
+  events.clear(); eventCreates = 0;
+  const bare = await runMorning();
+  check("a day with no digest category sends at the 10:00 hard latest point", JSON.stringify(bare) === JSON.stringify(["10:00"]), bare);
+  check("...still exactly one event", eventCreates === 1);
+  published = [];
+  events.clear(); eventCreates = 0;
+  check("an empty day creates nothing", (await runMorning()).length === 0 && eventCreates === 0);
+  taggedBotd = null;
+
+  console.log("\nTOP_PREDICTION push eligibility:");
+  const SWEDEN = 113;
+  check("CORE is eligible", topPredictionPushEligible(EPL) && topPredictionPushEligible(UCL));
+  check("a selected strong SECONDARY league is eligible", topPredictionPushEligible(EREDIVISIE) && topPredictionPushEligible(399));
+  check("other SECONDARY leagues are not", !topPredictionPushEligible(SWEDEN));
+  check("FALLBACK is never eligible", !topPredictionPushEligible(FRIENDLIES));
+  check("DEEP_FALLBACK is never eligible", !topPredictionPushEligible(NATIONAL_LEAGUE));
+  check("an unknown league is not eligible", !topPredictionPushEligible(null) && !topPredictionPushEligible(undefined));
+  const on = { pushEnabled: true, inQuietHours: false };
+  check("a CORE top prediction pushes", shouldPush("TOP_PREDICTION", { ...on, leagueApiId: EPL }));
+  check("...subject to push being enabled", !shouldPush("TOP_PREDICTION", { ...on, pushEnabled: false, leagueApiId: EPL }));
+  check("...and to quiet hours", !shouldPush("TOP_PREDICTION", { ...on, inQuietHours: true, leagueApiId: EPL }));
+  check("...and to editorialAlerts", !preferenceAllows("TOP_PREDICTION", { editorialAlerts: false }));
+  check("a FALLBACK top prediction does not push", !shouldPush("TOP_PREDICTION", { ...on, leagueApiId: FRIENDLIES }));
+  check("a DEEP_FALLBACK top prediction does not push", !shouldPush("TOP_PREDICTION", { ...on, leagueApiId: NATIONAL_LEAGUE }));
+  check("...but it is delivered to the inbox, not skipped", topPredictionDelivery(FRIENDLIES, 0, 3) === "inbox-only" && topPredictionDelivery(NATIONAL_LEAGUE, 5, 1) === "inbox-only");
+  check("...and counted as an inbox-only event", isInboxOnlyEvent({ type: "TOP_PREDICTION", leagueApiId: FRIENDLIES }) && !isInboxOnlyEvent({ type: "TOP_PREDICTION", leagueApiId: EPL }));
+  const dispatch = readFileSync("src/lib/notificationDispatch.ts", "utf8");
+  check(
+    "dispatch writes the inbox row before deciding the push, and only 'capped' skips it",
+    dispatch.indexOf("userNotification.upsert") < dispatch.indexOf("shouldPush(row.event.type") && /=== "capped"\) \{\s*await skip\(row\.id, "editorial daily cap"\)/.test(dispatch),
+  );
+  check("the push decision passes the event's league", dispatch.includes("leagueApiId: row.event.leagueApiId"));
+  function pushesOver(leagues: (number | null)[], cap: number) {
+    let eligibleToday = 0;
+    let pushes = 0;
+    for (const league of leagues) {
+      const d = topPredictionDelivery(league, eligibleToday, cap);
+      if (d === "push") {
+        pushes++;
+        eligibleToday++;
+      }
+    }
+    return pushes;
+  }
+  check("5 eligible top predictions with the cap configured at 50: at most 3 push", pushesOver([EPL, UCL, LALIGA, SERIE_A, EREDIVISIE], editorialDailyCap("50")) === 3);
+  check("...even if a cap above 3 reached the decision directly", pushesOver([EPL, UCL, LALIGA, SERIE_A, EREDIVISIE], 10) === 3);
+  check("with the default cap of 1: one", pushesOver([EPL, UCL, LALIGA], editorialDailyCap(undefined)) === 1);
+  check("fallback top predictions do not use up the cap", pushesOver([FRIENDLIES, NATIONAL_LEAGUE, FRIENDLIES, EPL], 1) === 1);
+  check(
+    "Bet of the Day in the morning digest is unaffected by the push gate",
+    buildMorningDigest([pick({ leagueApiId: FRIENDLIES, categories: ["BET_OF_THE_DAY"] })], `p${String(seq).padStart(2, "0")}`, MORNING)?.betOfTheDay !== null,
+  );
 
   if (failures) {
     console.error(`\n${failures} notification digest check(s) failed`);
