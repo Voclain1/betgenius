@@ -17,7 +17,7 @@ import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { homeSummary, homeHeadline } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
-import { getBetOfTheDay } from "@/lib/betOfTheDay";
+import { getCurrentBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME, JsonLd, websiteJsonLd } from "@/lib/seo";
@@ -189,7 +189,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getLeaguesWithPublishedPredictions(),
     getPublishedMatchIndex(),
     fetchHeroPick(),
-    getBetOfTheDay(),
+    getCurrentBetOfTheDay(),
     fetchDaySlate(day),
   ]);
   const viewer = await getViewerEntitlement();

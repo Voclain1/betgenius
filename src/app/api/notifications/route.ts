@@ -7,6 +7,8 @@ import { hasValidMutationOrigin } from "@/lib/requestSecurity";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
+import { isDigestEvent } from "@/lib/notificationDigest";
+import { digestForViewer } from "@/lib/dailyDigests";
 
 const PAGE_SIZE = 20;
 
@@ -27,10 +29,17 @@ export async function GET(req: NextRequest) {
     take: PAGE_SIZE + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
-  const notifications = rows.slice(0, PAGE_SIZE).map((n) => {
+  const canView = (c: string) => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role);
+  const notifications = await Promise.all(rows.slice(0, PAGE_SIZE).map(async (n) => {
+    // A digest is rendered for this viewer (audience, follows, entitlement),
+    // and its data is never sent: it holds selections from every tier.
+    if (isDigestEvent(n.event.type)) {
+      const r = await digestForViewer(userId, n.event, canView);
+      return { ...n, event: { ...n.event, title: r.title, body: r.body, link: r.link, data: null } };
+    }
     const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return allowed ? n : { ...n, event: { ...n.event, body: "A followed tip has an update.", data: null } };
-  });
+  }));
   return NextResponse.json({ notifications, nextCursor: rows.length > PAGE_SIZE ? rows[PAGE_SIZE - 1].id : null, unread });
 }
 

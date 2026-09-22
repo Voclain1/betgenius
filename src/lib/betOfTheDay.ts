@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
+import { isCurrentBetOfTheDay } from "@/lib/betOfTheDayStatus";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { qualifiesForBetOfDay, affordsBetOfDayPrice, MIN_ODDS, MAX_ODDS, type FixtureOdds, type OddsGateResult } from "@/lib/odds";
@@ -105,12 +106,11 @@ export async function getOddsForPrediction(row: {
 }
 
 /**
- * The current Bet of the Day, with its price — or null when nothing is pinned.
+ * The tagged Bet of the Day, with its price — or null when nothing is tagged.
  *
- * Not restricted to today's kickoff on read. The tag itself is the state, and
- * a pick whose kickoff has passed should keep showing (with its result) until
- * the next selection replaces it, rather than leaving a hole on the homepage
- * between kickoff and the next cron cycle.
+ * Returns the tagged pick in ANY state, including after kickoff and after
+ * settlement: the tag is history as well as state. Surfaces that present the
+ * pick as today's recommendation must use getCurrentBetOfTheDay instead.
  */
 export const getBetOfTheDay = cache(async (): Promise<BetOfTheDayView | null> => {
   const row = await prisma.prediction.findFirst({
@@ -123,6 +123,17 @@ export const getBetOfTheDay = cache(async (): Promise<BetOfTheDayView | null> =>
   const gate = qualifiesForBetOfDay({ odds, marketType: row.marketType, selection: row.selection, confidence: row.confidence });
   return { row, odds, oddsFetchedAt: fetchedAt, gate };
 });
+
+/**
+ * The Bet of the Day only while it is still a live recommendation: published,
+ * unsettled and not yet kicked off (see betOfTheDayStatus.ts). Null otherwise,
+ * so the homepage renders no section rather than a finished match as a tip.
+ * Read-only: the settled pick keeps its tag and its history.
+ */
+export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<BetOfTheDayView | null> {
+  const view = await getBetOfTheDay();
+  return view && isCurrentBetOfTheDay(view.row, now) ? view : null;
+}
 
 /**
  * Move the tag to `predictionId`, atomically.

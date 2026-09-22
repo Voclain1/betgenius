@@ -9,6 +9,7 @@ import {
 } from "@/lib/notifications";
 import { INSIGHT_TYPE_LABELS, type InsightType } from "@/lib/insights";
 import { JOB_NOTIFICATIONS_REMINDERS, withJobRun } from "@/lib/jobRuns";
+import { createDailyDigests } from "@/lib/dailyDigests";
 import { matchKey, matchSlug } from "@/lib/slug";
 
 /**
@@ -90,10 +91,13 @@ async function createInsightEvents(
 
 async function run() {
   const now = new Date();
+  // The daily digests ride this job's schedule rather than needing one of their
+  // own; each is created at most once per Lagos day (see createDailyDigests).
+  const digests = await createDailyDigests(now);
   const follows = await prisma.userFollow.findMany({ where: { targetType: { in: ["PREDICTION", "TEAM"] } }, select: { targetType: true, targetKey: true } });
   const predictionIds = [...new Set(follows.filter((f) => f.targetType === "PREDICTION").map((f) => f.targetKey))];
   const teamIds = [...new Set(follows.filter((f) => f.targetType === "TEAM").map((f) => Number(f.targetKey)).filter(Number.isInteger))];
-  if (!predictionIds.length && !teamIds.length) return { fixtures: 0, created: 0, insights: 0 };
+  if (!predictionIds.length && !teamIds.length) return { fixtures: 0, created: 0, insights: 0, digests };
 
   const predictions = await prisma.prediction.findMany({
     where: {
@@ -136,10 +140,10 @@ async function run() {
     created++;
   }
   const insights = await createInsightEvents(predictions, now);
-  return { fixtures: fixtures.size, created, insights };
+  return { fixtures: fixtures.size, created, insights, digests };
 }
 
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  return NextResponse.json(await withJobRun(JOB_NOTIFICATIONS_REMINDERS, run, (r) => `fixtures ${r.fixtures}, reminders ${r.created}, insights ${r.insights}`));
+  return NextResponse.json(await withJobRun(JOB_NOTIFICATIONS_REMINDERS, run, (r) => `fixtures ${r.fixtures}, reminders ${r.created}, insights ${r.insights}, morning digest: ${r.digests.morning}, night digest: ${r.digests.night}`));
 }

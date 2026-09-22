@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
+import { isDigestEvent } from "@/lib/notificationDigest";
+import { digestForViewer } from "@/lib/dailyDigests";
 import { PushSettings } from "@/components/PushSettings";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
 import { MarkNotificationsRead } from "@/components/NotificationBell";
@@ -28,6 +30,13 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   });
   const shown = rows.slice(0, PAGE_SIZE);
   const unreadIds = shown.filter((n) => !n.readAt).map((n) => n.id);
+  // Digests are rendered for this viewer on every view (audience, follows and
+  // entitlement), so a lapsed subscription loses paid selections here too.
+  const canView = (c: string) => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role);
+  const userId = session.user.id;
+  const digests = new Map(
+    await Promise.all(shown.filter((n) => isDigestEvent(n.event.type)).map(async (n) => [n.id, await digestForViewer(userId, n.event, canView)] as const)),
+  );
 
   return (
     <div className="space-y-6">
@@ -39,6 +48,23 @@ export default async function NotificationsPage({ searchParams }: { searchParams
 
       <section className="space-y-2">
         {shown.map((n) => {
+          const r = digests.get(n.id);
+          if (r) {
+            return (
+              <div key={n.id} className={`card space-y-2 ${n.readAt ? "opacity-70" : "border-brand/50"}`}>
+                <div className="flex justify-between gap-3">
+                  <Link href={r.link} className="font-bold hover:underline">{r.title}</Link>
+                  <time className="shrink-0 text-xs text-gray-500">{n.createdAt.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })}</time>
+                </div>
+                <p className="whitespace-pre-line text-sm text-gray-400">{r.body}</p>
+                <div className="flex flex-wrap gap-2 text-sm">
+                  {r.links.map((l) => (
+                    <Link key={`${l.label}:${l.href}`} href={l.href} className="chip hover:opacity-80">{l.label}</Link>
+                  ))}
+                </div>
+              </div>
+            );
+          }
           // Re-checked on every view: a lapsed subscription must not keep reading paid-tier detail from its inbox.
           const allowed = !n.event.category || canViewCategory(n.event.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
           return (

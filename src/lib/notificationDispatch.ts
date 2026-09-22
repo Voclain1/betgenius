@@ -10,11 +10,42 @@ import {
   preferenceAllows,
   releaseDelivery,
   stillFollowsEvent,
+  TOP_PREDICTION,
 } from "@/lib/notifications";
+import {
+  digestAudienceFor,
+  digestData,
+  isDigestEvent,
+  isInboxOnlyEvent,
+  personaliseDigest,
+  pushCopy,
+  shouldPush,
+  topPredictionDelivery,
+  topPredictionPushLeagueIds,
+  type RenderedDigest,
+} from "@/lib/notificationDigest";
 import { pushConfigured, sendPush } from "@/lib/push";
+import type { Prisma } from "@prisma/client";
 
 const MAX_ATTEMPTS = 5;
-const PAID_CATEGORIES = new Set(["VIP", "PREMIUM"]);
+
+const TOP_PUSH_LEAGUES = topPredictionPushLeagueIds();
+
+/** Top predictions from a competition strong enough to push. Mirrors topPredictionPushEligible. */
+const ELIGIBLE_TOP_WHERE: Prisma.NotificationEventWhereInput = { type: TOP_PREDICTION, leagueApiId: { in: TOP_PUSH_LEAGUES } };
+
+/**
+ * Inbox-only events, as a filter. Mirrors isInboxOnlyEvent: the inbox-only
+ * types, plus top predictions outside the push-eligible competitions (a null
+ * league included, which `notIn` alone would miss).
+ */
+const INBOX_ONLY_WHERE: Prisma.NotificationEventWhereInput = {
+  OR: [
+    { type: "NEW_PREDICTION" },
+    { type: { startsWith: "RESULT_" } },
+    { type: TOP_PREDICTION, OR: [{ leagueApiId: null }, { leagueApiId: { notIn: TOP_PUSH_LEAGUES } }] },
+  ],
+};
 
 /** A reminder is only valid while at least one of its tips is still live at the kickoff it announced. */
 async function reminderStillValid(event: { predictionId: string | null; data: unknown }, now: Date) {
@@ -58,19 +89,49 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
     if (!preferenceAllows(row.event.type, pref)) { await skip(row.id, "disabled in preferences"); continue; }
     if (!entitled(row.event.category, row.user)) { await skip(row.id, "no entitlement"); continue; }
 
+    // A digest is personalised before anything is written: editorial readers
+    // get the global digest, follow-only readers only what their follows cover,
+    // both get one combined digest. Nothing relevant means no inbox row and no push.
+    let digest: RenderedDigest | null = null;
+    if (isDigestEvent(row.event.type)) {
+      const data = digestData(row.event.data);
+      const follows = await prisma.userFollow.findMany({
+        where: { userId: row.userId, createdAt: { lte: row.event.createdAt } },
+        select: { targetType: true, targetKey: true },
+      });
+      digest = data
+        ? personaliseDigest(data, digestAudienceFor(row.event.type, pref, follows), (category) => entitled(category, row.user, now))
+        : null;
+      if (!digest) { await skip(row.id, "nothing in digest for this user"); continue; }
+    }
+
     const dayStart = localDayStartUtc(now, pref?.timezone ?? "Africa/Lagos");
-    const sentToday = await prisma.userNotification.count({ where: { userId: row.userId, createdAt: { gte: dayStart } } });
+    // The cap is counted per class. Inbox-only rows (publications, results)
+    // never ring, so letting them use up the allowance would crowd out the
+    // kickoff reminders and tip changes that do; they get the same cap as a
+    // separate allowance, so inbox volume stays bounded as before.
+    const inboxOnly = isInboxOnlyEvent(row.event);
+    const sentToday = await prisma.userNotification.count({
+      where: { userId: row.userId, createdAt: { gte: dayStart }, event: inboxOnly ? INBOX_ONLY_WHERE : { NOT: INBOX_ONLY_WHERE } },
+    });
     if (sentToday >= (pref?.dailyCap ?? 12)) { await skip(row.id, "daily cap"); continue; }
 
     // The editorial cap is applied AFTER the global one and never replaces it:
     // a broadcast has to clear both. Counted from the inbox rows already
     // written today, on the same local-day boundary as the global cap, so the
     // two agree about when "today" started for this user.
+    //
+    // Only push-eligible top predictions count and are capped: one from a
+    // FALLBACK/DEEP_FALLBACK (or unknown) competition is inbox-only, so it
+    // neither pushes nor uses up an allowance a CORE pick later in the day needs.
     if (isEditorialEvent(row.event.type)) {
-      const editorialToday = await prisma.userNotification.count({
-        where: { userId: row.userId, createdAt: { gte: dayStart }, event: { type: row.event.type } },
+      const eligibleToday = await prisma.userNotification.count({
+        where: { userId: row.userId, createdAt: { gte: dayStart }, event: ELIGIBLE_TOP_WHERE },
       });
-      if (editorialToday >= EDITORIAL_DAILY_CAP) { await skip(row.id, "editorial daily cap"); continue; }
+      if (topPredictionDelivery(row.event.leagueApiId, eligibleToday, EDITORIAL_DAILY_CAP) === "capped") {
+        await skip(row.id, "editorial daily cap");
+        continue;
+      }
     }
 
     try {
@@ -80,11 +141,14 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
         create: { userId: row.userId, eventId: row.eventId },
       });
       const canPush = transport !== sendPush || pushConfigured();
-      if (canPush && pref?.pushEnabled && !inQuietHours(now, pref.timezone, pref.quietStartMinutes, pref.quietEndMinutes)) {
-        // Paid-tier copy stays generic: a lock screen is not an entitlement check.
-        const body = row.event.category && PAID_CATEGORIES.has(row.event.category) ? "A followed tip has an update." : row.event.body;
-        for (const sub of row.user.pushSubscriptions) {
-          await transport(sub, { title: row.event.title, body, url: row.event.link, tag: row.event.eventKey });
+      const quiet = !!pref && inQuietHours(now, pref.timezone, pref.quietStartMinutes, pref.quietEndMinutes);
+      if (canPush && shouldPush(row.event.type, { pushEnabled: !!pref?.pushEnabled, inQuietHours: quiet, leagueApiId: row.event.leagueApiId })) {
+        // Rendered for this recipient: paid selections only for the entitled.
+        const copy = pushCopy(row.event, digest);
+        if (copy) {
+          for (const sub of row.user.pushSubscriptions) {
+            await transport(sub, { ...copy, tag: row.event.eventKey });
+          }
         }
       }
       if (await releaseDelivery(row.id, token, { status: "DELIVERED", deliveredAt: now, attempts: { increment: 1 } })) delivered++;

@@ -5,6 +5,7 @@ import { canViewCategory } from "@/lib/access";
 import { resolveSubscription } from "@/lib/entitlement";
 import type { PredictionCategory, Role, SubscriptionStatus, SubscriptionTier } from "@/lib/enums";
 import { safeNotificationLink } from "@/lib/notificationLinks";
+import { DIGEST_MORNING, DIGEST_NIGHT, INDIVIDUAL_TOP_PUSH_MAX, isDigestEvent } from "@/lib/notificationDigest";
 import { matchSlug } from "@/lib/slug";
 
 /**
@@ -162,10 +163,17 @@ export function topPredictionEventKey(predictionId: string, day: string) {
  * This is a cap ON TOP OF the user's own settings, never instead of them:
  * quiet hours, entitlement, editorialAlerts and dailyCap are all still applied.
  */
-export const EDITORIAL_DAILY_CAP = (() => {
-  const configured = Number(process.env.EDITORIAL_DAILY_CAP);
-  return Number.isInteger(configured) && configured > 0 ? configured : 1;
-})();
+export const EDITORIAL_DAILY_CAP = editorialDailyCap(process.env.EDITORIAL_DAILY_CAP);
+
+/**
+ * Parses the configured cap. Clamped to INDIVIDUAL_TOP_PUSH_MAX: the digest-first
+ * policy allows one to three individually pushed top matches a day, so a large
+ * configured value cannot turn broadcasts back into a stream.
+ */
+export function editorialDailyCap(raw: string | undefined) {
+  const configured = Number(raw);
+  return Number.isInteger(configured) && configured > 0 ? Math.min(configured, INDIVIDUAL_TOP_PUSH_MAX) : 1;
+}
 
 /** The Lagos calendar day of `now`, as YYYY-MM-DD — the day boundary the rest of the product uses. */
 export function editorialDay(now: Date = new Date(), timezone = "Africa/Lagos") {
@@ -283,6 +291,8 @@ export function followTargets(event: EventTargets): FollowTarget[] {
   // league and category followers — under their FOLLOWED-alert preference and
   // outside the editorial cap. One event must have exactly one audience.
   if (isEditorialEvent(event.type)) return [];
+  // A digest summarises the whole day; its audience is digestAudience(), not a follow.
+  if (isDigestEvent(event.type)) return [];
 
   const data = (event.data ?? {}) as { categories?: unknown; predictionIds?: unknown };
   const predictionIds = new Set<string>(event.predictionId ? [event.predictionId] : []);
@@ -343,8 +353,25 @@ async function editorialAudience() {
   return rows.map((r) => r.userId);
 }
 
+/**
+ * The candidates for a daily digest: everyone who opted into editorial alerts,
+ * plus everyone who follows something. The digest REPLACES the per-publication
+ * and per-result pushes those followers used to get. This only decides who is
+ * considered: at dispatch each one gets personaliseDigest()'s version - global
+ * for editorial readers, scoped to their own follows for follow-only readers,
+ * one combined digest for both, and nothing if nothing applies.
+ */
+async function digestAudience(createdAt: Date) {
+  const [editorial, followers] = await Promise.all([
+    editorialAudience(),
+    prisma.userFollow.findMany({ where: { createdAt: { lte: createdAt } }, select: { userId: true }, distinct: ["userId"] }),
+  ]);
+  return [...new Set([...editorial, ...followers.map((f) => f.userId)])];
+}
+
 async function eligibleRecipients(event: EventTargets & { createdAt: Date }) {
   if (isEditorialEvent(event.type)) return editorialAudience();
+  if (isDigestEvent(event.type)) return digestAudience(event.createdAt);
   const clauses = followClauses(event);
   if (!clauses.length) return [];
   const follows = await prisma.userFollow.findMany({ where: { OR: clauses, createdAt: { lte: event.createdAt } }, select: { userId: true } });
@@ -361,7 +388,7 @@ async function eligibleRecipients(event: EventTargets & { createdAt: Date }) {
  * afterwards by preferenceAllows(editorialAlerts).
  */
 export async function stillFollowsEvent(userId: string, event: EventTargets) {
-  if (isEditorialEvent(event.type)) return true;
+  if (isEditorialEvent(event.type) || isDigestEvent(event.type)) return true;
   const clauses = followClauses(event);
   return clauses.length > 0 && !!(await prisma.userFollow.findFirst({ where: { userId, OR: clauses }, select: { id: true } }));
 }
@@ -484,6 +511,11 @@ export function preferenceAllows(type: string, p: PreferenceFlags | null | undef
   if (type === "KICKOFF_REMINDER") return p?.kickoffReminders ?? true;
 
   const followed = p?.followedAlerts ?? true;
+  // A digest is wanted by either audience: an explicit editorial opt-in, or a
+  // follower who still wants publication (morning) / result (night) alerts,
+  // which the digest now carries instead of one push per match.
+  if (type === DIGEST_MORNING) return p?.editorialAlerts === true || (followed && (p?.newPredictions ?? true));
+  if (type === DIGEST_NIGHT) return p?.editorialAlerts === true || (followed && (p?.results ?? true));
   if (!followed) return false;
   if (type === "NEW_PREDICTION") return p?.newPredictions ?? true;
   if (type === "TIP_CHANGED" || type === "WITHDRAWN") return p?.tipChanges ?? true;
