@@ -29,8 +29,70 @@ needed them or not.
 Membership comes from 120 days of published predictions per league,
 FixtureOddsCache bookmaker depth per league, and API-Football's live
 current-season coverage flags. Every new competition had odds coverage on
-2026-09-21. Youth, women's, reserve and regional competitions are not in
-any tier, even though they make up most of a quiet day's global slate.
+2026-09-21. Youth, reserve and regional competitions are not in any tier,
+even though they make up most of a quiet day's global slate.
+
+### Senior women's competitions
+
+Added 2026-09-22 after a live audit (`npm run research:womens-coverage` and
+`research:womens-odds`). Bookmaker depth is measured on fixtures finished in
+the last 7 days. The men's baseline is Premier League median 9 and Eredivisie 9.
+
+| Tier | Competition (provider id) | Recent fixtures priced | Books median |
+|---|---|---|---|
+| SECONDARY | Women's Super League (44) | 6/6 | 6–7 |
+| SECONDARY | Frauen-Bundesliga (82) | 5/6 | 8 |
+| SECONDARY | Liga F (142) | 5/6 | 7 |
+| SECONDARY | NWSL (254) | 5/6 | 8 |
+| FALLBACK | UEFA Women's Champions League (525) | 0 of 6 a day out; provider odds coverage off | 0 |
+| FALLBACK | Première Ligue (64) | 1/6 | 0 |
+| FALLBACK | Damallsvenskan (549) | 6/6 | 5 |
+| DEEP_FALLBACK | Super League Women, Belgium (146) | 4/4 | 5 |
+| DEEP_FALLBACK | Brasileiro Women (74) | 2/2 | 6 |
+
+Not added: Serie A Women (139), where the provider has predictions only (no
+events, statistics or odds). Also not added: Toppserien (725), Eredivisie
+Women (91), Frauenliga (484) and UEFA Europa Cup Women (1191), which are priced
+on too few fixtures.
+
+- **Ranking:** women's SECONDARY leagues sit at the end of SECONDARY, so every
+  men's CORE and SECONDARY league outranks them for curation, Bet of the Day
+  and digest highlights.
+- **Thresholds:** they go through the same pipeline with the same thresholds
+  as men's football: 5 bookmakers minimum, the 75% market-confirmation floor
+  and the Bet of the Day price band.
+- **UWCL is FALLBACK for data quality, not sporting importance.** The
+  provider does not price it yet. SECONDARY fixtures count toward the
+  CORE+SECONDARY ≥ 25 healthy threshold, so unpriced UWCL fixtures there would
+  make a thin day look healthy and suppress the fallback sweep. As FALLBACK it
+  is generated only when the slate widens. It is never a digest highlight, and
+  it can't be market-confirmed or Bet of the Day until it is priced. Move it to
+  SECONDARY once the provider covers it.
+- **Push:**
+  - The WSL can carry an immediate `TOP_PREDICTION` push on tier.
+  - UWCL is in `TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY`: it pushes only when
+    the prediction is published, unsettled and `MARKET_CONFIRMED`. That is the
+    existing odds-agreement gate, applied as a requirement; no threshold is
+    lowered for it. The broadcast records the prediction's provenance on the
+    event, and dispatch reads it.
+  - Every other women's league reaches the inbox only.
+  - All are under the 1–3 daily cap.
+- **Provider cost:**
+  - The four SECONDARY leagues join the normal per-league discovery rotation
+    (46 → 50 leagues). The cursor still makes 3 `/fixtures?league=` calls per
+    discovery cycle, so each league is visited a little less often, and the
+    calls per cycle don't change.
+  - The five FALLBACK and DEEP_FALLBACK leagues are found mainly through the
+    existing by-date sweep, and only while adaptive widening is active.
+  - Every women's fixture that is generated then costs the normal
+    per-fixture enrichment and odds calls, like any other fixture.
+  - There is no new cron job and no new provider endpoint.
+- **Name gate:** `SENIOR_WOMENS_COMPETITION_IDS` in `src/lib/leagues.ts` is the
+  explicit list. Only inside those competitions is a "… W" / Women / Ladies /
+  Fem team name accepted as a senior side. The same rule also filters
+  CORE/SECONDARY discovery, which does not go through the fallback gate. U-age,
+  B/II/III, reserve, youth, academy and Jong sides are refused everywhere, and a
+  women's fixture in any other competition is still refused.
 
 Every catalogued league is in exactly one tier (enforced at import).
 `LEAGUE_PRIORITY_ORDER` is now the tiers concatenated. Its first 12 entries,
@@ -56,7 +118,8 @@ The target is a ceiling on widening, never a quota. A fallback fixture must pass
 - valid, distinct provider ids;
 - a recognised fallback-tier competition;
 - status `NS` and a parseable kickoff;
-- both team names present, and no U21/B/II/Jong/women's/reserve side;
+- both team names present, and no U21/B/II/Jong/reserve side, and no women's
+  side unless the competition is in `SENIOR_WOMENS_COMPETITION_IDS`;
 - not a configured cup recorded as unpriced;
 - not already known to have zero bookmakers.
 

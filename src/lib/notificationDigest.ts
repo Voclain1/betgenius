@@ -58,34 +58,76 @@ export const TOP_PREDICTION_PUSH_SECONDARY: readonly number[] = [
   203, // Süper Lig
   307, // Saudi Pro League
   399, // NPFL
+  // Women's: the WSL is the strongest SECONDARY women's league. Every other
+  // senior women's competition can reach the inbox, and (if SECONDARY) the
+  // morning-digest highlights, but never an interruptive push on tier alone.
+  44, // Women's Super League
 ];
+
+/**
+ * Strong competitions held in a lower generation tier for DATA reasons, whose
+ * top predictions may still push, but only when the prediction itself is
+ * MARKET_CONFIRMED: it passed the site's normal odds-agreement gate
+ * (marketConfirmed.ts), so it is priced and a second source agreed with the
+ * model. That is the existing bar, applied as a requirement rather than
+ * lowered: no threshold here is specific to these competitions.
+ *
+ * UWCL is FALLBACK only because the provider does not price it yet.
+ */
+export const TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY: readonly number[] = [
+  525, // UEFA Women's Champions League
+];
+
+/** What a TOP_PREDICTION event carries about its prediction (NotificationEvent.data). */
+export type TopPredictionEvidence = { marketConfirmed: boolean };
+
+/** Read the evidence from an event's stored data. Missing or malformed data is not market-confirmed. */
+export function topPredictionEvidence(data: unknown): TopPredictionEvidence {
+  const d = (data ?? {}) as { provenance?: unknown; odds?: unknown };
+  return { marketConfirmed: d.provenance === "MARKET_CONFIRMED" && typeof d.odds === "number" };
+}
 
 /**
  * Whether a TOP_PREDICTION in this competition may ring a device.
  *
- * CORE: yes. The selected SECONDARY leagues above: yes. Everything else,
+ * CORE: yes. The selected SECONDARY leagues above: yes. The market-confirmed-
+ * only list: only with a MARKET_CONFIRMED, priced prediction. Everything else,
  * including FALLBACK, DEEP_FALLBACK and an unknown league: no. The event and
  * its inbox entry are kept either way; this only governs the interruptive push.
  * Eligibility is not a guarantee: the editorial daily cap still limits how many
  * eligible ones actually push.
  */
-export function topPredictionPushEligible(leagueApiId: number | null | undefined) {
+export function topPredictionPushEligible(leagueApiId: number | null | undefined, evidence?: TopPredictionEvidence) {
   const tier = generationTierOf(leagueApiId);
-  return tier === "CORE" || (tier === "SECONDARY" && TOP_PREDICTION_PUSH_SECONDARY.includes(leagueApiId as number));
+  if (tier === "CORE" || (tier === "SECONDARY" && TOP_PREDICTION_PUSH_SECONDARY.includes(leagueApiId as number))) return true;
+  return TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY.includes(leagueApiId as number) && evidence?.marketConfirmed === true;
 }
 
-/** Every league whose top predictions may push, for database filters. */
+/** Leagues whose top predictions may push on tier alone, for database filters. */
 export function topPredictionPushLeagueIds(): number[] {
   return [...leaguesInTiers(["CORE"]), ...TOP_PREDICTION_PUSH_SECONDARY];
 }
 
 /**
  * An event that is recorded in the inbox but never pushed: an inbox-only type,
- * or a top prediction from a competition not strong enough to interrupt for.
+ * or a top prediction that is not push-eligible (see topPredictionPushEligible).
  */
-export function isInboxOnlyEvent(event: { type: string; leagueApiId?: number | null }) {
+export function isInboxOnlyEvent(event: { type: string; leagueApiId?: number | null; data?: unknown }) {
   if (isInboxOnlyType(event.type)) return true;
-  return event.type === TOP_PREDICTION && !topPredictionPushEligible(event.leagueApiId);
+  return event.type === TOP_PREDICTION && !topPredictionPushEligible(event.leagueApiId, topPredictionEvidence(event.data));
+}
+
+/**
+ * Which daily-cap allowance a delivery draws on. Decided by type and league
+ * only (never the stored evidence), so it matches the database filter dispatch
+ * counts with: a top prediction in a market-confirmed-only league always draws
+ * on the push allowance, which is the conservative side.
+ */
+export function dailyCapClass(event: { type: string; leagueApiId?: number | null }): "inbox" | "push" {
+  if (isInboxOnlyType(event.type)) return "inbox";
+  if (event.type !== TOP_PREDICTION) return "push";
+  const id = event.leagueApiId;
+  return id != null && (topPredictionPushLeagueIds().includes(id) || TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY.includes(id)) ? "push" : "inbox";
 }
 
 export type TopPredictionDelivery = "push" | "inbox-only" | "capped";
@@ -100,8 +142,13 @@ export type TopPredictionDelivery = "push" | "inbox-only" | "capped";
  *   push       - eligible and under the cap; still subject to pushEnabled and
  *                quiet hours.
  */
-export function topPredictionDelivery(leagueApiId: number | null | undefined, eligibleToday: number, cap: number): TopPredictionDelivery {
-  if (!topPredictionPushEligible(leagueApiId)) return "inbox-only";
+export function topPredictionDelivery(
+  leagueApiId: number | null | undefined,
+  eligibleToday: number,
+  cap: number,
+  evidence?: TopPredictionEvidence,
+): TopPredictionDelivery {
+  if (!topPredictionPushEligible(leagueApiId, evidence)) return "inbox-only";
   return eligibleToday >= Math.min(cap, INDIVIDUAL_TOP_PUSH_MAX) ? "capped" : "push";
 }
 
@@ -623,8 +670,8 @@ export function personaliseDigest(
  * never do; everything else still needs push enabled and must be outside the
  * user's quiet hours. The inbox row is written either way.
  */
-export function shouldPush(type: string, opts: { pushEnabled: boolean; inQuietHours: boolean; leagueApiId?: number | null }) {
-  return !isInboxOnlyEvent({ type, leagueApiId: opts.leagueApiId }) && opts.pushEnabled && !opts.inQuietHours;
+export function shouldPush(type: string, opts: { pushEnabled: boolean; inQuietHours: boolean; leagueApiId?: number | null; data?: unknown }) {
+  return !isInboxOnlyEvent({ type, leagueApiId: opts.leagueApiId, data: opts.data }) && opts.pushEnabled && !opts.inQuietHours;
 }
 
 const PAID_CATEGORIES = new Set(["VIP", "PREMIUM"]);

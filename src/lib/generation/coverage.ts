@@ -40,6 +40,7 @@ import {
   leaguePriorityRank,
   leaguesInTiers,
   type GenerationTier,
+  isSeniorWomensCompetition,
 } from "@/lib/leagues";
 import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
 import { GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
@@ -195,10 +196,27 @@ export function sweepDates(now: Date, policy = COVERAGE_POLICY): string[] {
  * for them that means anything.
  */
 const NON_SENIOR_SIDE = /(?:^|[\s(])(?:U-?\d{2}|II|III|B|C|Reserves?|Res\.?|Youth|Academy|Women|Ladies|W|Fem\.?|Femenil|Feminino|Femenino)(?:$|[\s)])/i;
+/**
+ * The same rule with the women's markers taken out, for a competition that is
+ * EXPLICITLY a senior women's competition (SENIOR_WOMENS_COMPETITION_IDS). In
+ * the WSL "Arsenal W" is the senior side; "Arsenal W U21", a B team or a
+ * reserve side still fails here exactly as it does in men's football.
+ */
+const NON_SENIOR_WOMENS_SIDE = /(?:^|[\s(])(?:U-?\d{2}|II|III|B|C|Reserves?|Res\.?|Youth|Academy)(?:$|[\s)])/i;
 const JONG_PREFIX = /^Jong\s/i;
 
-export function isNonSeniorSide(name: string): boolean {
-  return NON_SENIOR_SIDE.test(name.trim()) || JONG_PREFIX.test(name.trim());
+/**
+ * Whether a team name is a reserve, youth, B or (outside a supported senior
+ * women's competition) women's side.
+ *
+ * Pass the fixture's league: the women's-name allowance is decided by the
+ * competition, never by the team name. A "… W" side in an unrelated
+ * competition is still refused, and the full regex is the default.
+ */
+export function isNonSeniorSide(name: string, leagueApiId?: number | null): boolean {
+  const trimmed = name.trim();
+  const rule = isSeniorWomensCompetition(leagueApiId) ? NON_SENIOR_WOMENS_SIDE : NON_SENIOR_SIDE;
+  return rule.test(trimmed) || JONG_PREFIX.test(trimmed);
 }
 
 export type GateRejection =
@@ -240,7 +258,7 @@ export function fallbackQualityGate(
   if (Number.isNaN(new Date(row.fixture.date).getTime())) return { ok: false, reason: "bad_kickoff" };
 
   if (!home.name?.trim() || !away.name?.trim()) return { ok: false, reason: "missing_team_names" };
-  if (isNonSeniorSide(home.name) || isNonSeniorSide(away.name)) return { ok: false, reason: "non_senior_side" };
+  if (isNonSeniorSide(home.name, row.league.id) || isNonSeniorSide(away.name, row.league.id)) return { ok: false, reason: "non_senior_side" };
 
   // A configured cup we have recorded as unpriced. Unconfigured competitions
   // are leagues, which cupSupports treats as supported.

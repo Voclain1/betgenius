@@ -148,6 +148,19 @@ export const LEAGUE_CATALOGUE = [
   { id: 570, name: "Premier League", country: "Ghana", tier: "world", kind: "league", flagCode: "gh" },
   { id: 99, name: "J2 League", country: "Japan", tier: "world", kind: "league", flagCode: "jp" },
   { id: 255, name: "USL Championship", country: "USA", tier: "world", kind: "league", flagCode: "us" },
+  // Senior women's competitions. Ids, coverage and bookmaker depth verified
+  // live on 2026-09-22 (scripts/research-womens-coverage.ts and
+  // research-womens-odds-depth.ts). Each is also in SENIOR_WOMENS_COMPETITION_IDS
+  // below, which is what lets its "… W" team names through the non-senior gate.
+  { id: 525, name: "UEFA Women's Champions League", country: "World", tier: "women", kind: "cup" },
+  { id: 44, name: "Women's Super League", country: "England", tier: "women", kind: "league", flagCode: "gb-eng" },
+  { id: 142, name: "Liga F", country: "Spain", tier: "women", kind: "league", flagCode: "es" },
+  { id: 82, name: "Frauen-Bundesliga", country: "Germany", tier: "women", kind: "league", flagCode: "de" },
+  { id: 254, name: "NWSL", country: "USA", tier: "women", kind: "league", flagCode: "us" },
+  { id: 64, name: "Première Ligue", country: "France", tier: "women", kind: "league", flagCode: "fr" },
+  { id: 549, name: "Damallsvenskan", country: "Sweden", tier: "women", kind: "league", flagCode: "se" },
+  { id: 146, name: "Super League Women", country: "Belgium", tier: "women", kind: "league", flagCode: "be" },
+  { id: 74, name: "Brasileiro Women", country: "Brazil", tier: "women", kind: "league", flagCode: "br" },
 ] as const;
 
 /**
@@ -204,6 +217,12 @@ export const GENERATION_TIERS = {
     197, 199, // Greece
     179, 181, // Scotland
     71, // Brazil
+    // Senior women's: last in the tier, so every men's CORE and SECONDARY
+    // league still outranks them for curation, Bet of the Day and highlights.
+    44, // England: Women's Super League
+    82, // Germany: Frauen-Bundesliga
+    142, // Spain: Liga F
+    254, // USA: NWSL
   ],
   FALLBACK: [
     5, 32, 960, 34, 29, 36, // national-team competitions (the international-break slate)
@@ -212,6 +231,16 @@ export const GENERATION_TIERS = {
     79, 141, 136, 62, 41, 42, 46, 89, 95, 180, 114, // European lower divisions
     235, 286, 732, 210, 212, 333, 335, 172, 283, 285, 244, 271, 383, 357, 332, 318, // smaller European top flights
     128, 72, 239, 262, 253, 98, 292, 233, 288, // South/North America, Asia, Africa
+    // Senior women's with full data but thin or no pricing, or shallower books.
+    //
+    // UWCL is here for DATA QUALITY, not sporting importance: the provider had
+    // 0 bookmakers on its fixtures a day out (2026-09-22) and its odds coverage
+    // flag is off. A SECONDARY league counts toward the CORE+SECONDARY healthy
+    // threshold, so unpriced UWCL fixtures there would make a thin day look
+    // healthy and suppress the fallback sweep. Promote it once it is priced.
+    525, // UEFA Women's Champions League
+    64, // France: Première Ligue (1 of 6 recent fixtures priced)
+    549, // Sweden: Damallsvenskan (median 5 books)
   ],
   DEEP_FALLBACK: [
     20, 30, 31, // CAF Confederation Cup, Asian and CONCACAF qualifiers
@@ -219,6 +248,8 @@ export const GENERATION_TIERS = {
     110, 112, 116, 389, 329, 365, 362, 342, 419, 394, 315, // thinner European top flights
     359, 167, 321, 384, // smaller domestic cups
     242, 281, 265, 169, 186, 570, 99, 255, // further afield
+    146, // Belgium: Super League Women
+    74, // Brazil: Brasileiro Women
   ],
 } as const;
 
@@ -352,7 +383,26 @@ export const LEAGUE_TIER_LABELS: Record<string, string> = {
   minor: "Smaller European leagues",
   lower: "European lower divisions",
   world: "Other leagues",
+  women: "Women's football",
 };
+
+/**
+ * Senior women's competitions we generate for. EXPLICIT, not inferred from a
+ * name: membership is what lets "Arsenal W"-style team names through the
+ * non-senior-side gate (src/lib/generation/coverage.ts). A women's fixture in
+ * any other competition is still treated as a non-senior side and refused,
+ * and U-age, B, reserve, youth and academy sides are refused everywhere.
+ *
+ * Deliberately NOT added (2026-09-22 audit): Serie A Women (139, provider has
+ * predictions only, no events/statistics/odds), Toppserien (725), Eredivisie
+ * Women (91), Frauenliga (484) and UEFA Europa Cup Women (1191), all priced on
+ * too few fixtures to publish against.
+ */
+export const SENIOR_WOMENS_COMPETITION_IDS: readonly number[] = [525, 44, 82, 142, 254, 64, 549, 146, 74];
+
+export function isSeniorWomensCompetition(leagueApiId?: number | null): boolean {
+  return leagueApiId != null && SENIOR_WOMENS_COMPETITION_IDS.includes(leagueApiId);
+}
 
 export type LeagueVisual = { src: string; alt: string; name: string; country: string };
 
