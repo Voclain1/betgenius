@@ -13,10 +13,13 @@ import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { SignupUpsellModal } from "@/components/SignupUpsellModal";
 import { PaymentConfirmation } from "@/components/PaymentConfirmation";
+import { SignupConfirmation } from "@/components/SignupConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES, type PredictionCategory, type SubscriptionStatus, type SubscriptionTier } from "@/lib/enums";
+import { tierFromCheckoutReference } from "@/lib/paystack/checkoutReference";
+import { PLAN_PRICING, type PaidTier } from "@/lib/pricing";
 
 export const metadata: Metadata = {
   title: "My Account",
@@ -214,6 +217,9 @@ export default async function AccountDashboard({
     ]),
   ) as Record<PredictionCategory, boolean>;
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
+  const paymentReference = searchParams.reference ?? searchParams.trxref ?? null;
+  const paymentTier = tierFromCheckoutReference(paymentReference) ??
+    (sub?.tier === "VIP" || sub?.tier === "PREMIUM" ? sub.tier as PaidTier : null);
 
   const navItems: DashboardNavItem[] = [
     { key: "overview", href: "/dashboard?section=overview", label: "Overview" },
@@ -258,7 +264,9 @@ export default async function AccountDashboard({
           searchParams.paid === "1" ? (
             <PaymentConfirmation
               activated={hasActivePaidAccess(sub)}
-              reference={searchParams.reference ?? searchParams.trxref ?? null}
+              reference={paymentReference}
+              tier={paymentTier}
+              value={paymentTier ? PLAN_PRICING[paymentTier].ngn : null}
             />
           ) : null
         }
@@ -304,6 +312,7 @@ export default async function AccountDashboard({
 
   return (
     <DashboardShell items={navItems} activeKey={activeKey} title={title} userEmail={session.user.email}>
+      <SignupConfirmation method={(session as any).pendingSignUpMethod ?? null} />
       {content}
       {/* The post-signup plan offer. Mounted HERE because /dashboard is where
           both signup paths already land — credentials registration pushes to

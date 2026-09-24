@@ -9,10 +9,10 @@
 | ID | Task | Owner | Dependency | Acceptance gate | Status |
 |---|---|---|---|---|---|
 | SEO-001 | Validate Search Console domain property and sitemap submission | SEO lead | Access | Property covers all protocols/subdomains; sitemap fetch succeeds | Complete: domain property confirmed; sitemap Success, read 2026-09-10 |
-| SEO-002 | Validate GA4 collection and organic channel attribution | Analytics | Access | Realtime visit recorded; source/medium and page_view visible | Ready |
-| SEO-003 | Define organic conversion events | Analytics/Product | SEO-002 | Registration, checkout and purchase events documented and tested | Ready |
-| SEO-004 | Export 16-month GSC query/page baseline | SEO lead | SEO-001 | Brand/non-brand, country, device and page-template views saved | In progress: live query/page and index baseline recorded; 16-month export, country and device cuts pending |
-| SEO-005 | Create weekly scorecard | SEO lead | SEO-002/004 | Visibility, traffic, conversion, index and CWV tabs populated | Ready |
+| SEO-002 | Validate GA4 collection and organic channel attribution | Analytics | Access | Realtime visit recorded; source/medium and page_view visible | Complete: Betgenius property `553490163` is collecting sessions and Organic Search attribution; baseline read 2026-09-21 |
+| SEO-003 | Define organic conversion events | Analytics/Product | SEO-002 | Registration, checkout and purchase events documented and tested | Implemented locally: successful email and newly created Google OAuth registrations emit `sign_up`; checkout emits `begin_checkout`; confirmed reference-backed activation emits a deduplicated `purchase`, all without contact/free-text PII. Dedicated offline analytics check and TypeScript check passed; browser event verification, deployment and GA4 key-event confirmation remain pending |
+| SEO-004 | Export 16-month GSC query/page baseline | SEO lead | SEO-001 | Brand/non-brand, country, device and page-template views saved | Complete for available history: 16-month request returned data from 29 August 2026 onward; query/page, country and device cuts recorded in `docs/SEO_SEARCH_CONSOLE_BASELINE.md` |
+| SEO-005 | Create weekly scorecard | SEO lead | SEO-002/004 | Visibility, traffic, conversion, index and CWV tabs populated | Implemented locally in `docs/SEO_WEEKLY_SCORECARD.md`; conversion and field-CWV rows remain unavailable until SEO-003/109 are complete |
 | SEO-006 | Record editorial and release workflow | SEO/Engineering | None | Named approver, QA gates and rollback owner documented | Ready |
 
 ## Phase 1 — Index control and technical foundations (Days 3–14)
@@ -37,7 +37,7 @@
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
 | SEO-201 | Upgrade `/predictions` as the primary football-predictions hub | Unique answer, live inventory, method, track record and internal links | Implemented locally; desktop and 390px visual QA passed with no browser errors; production validation pending |
-| SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Backlog |
+| SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Implemented locally: Lagos date and freshness guidance, evidence links and responsible-use copy added without new database queries or ad-placement changes; targeted SEO checks (78/78), Adsterra checks and TypeScript check passed; isolated new-content visual QA passed at 1280px and 390px with no browser errors. Full data-backed page and production verification remain pending |
 | SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Implemented locally: all-time outcomes, measurement dates, calculation rules, sample gates, publication-window definition and confidence/calibration limits; typecheck passed, database-backed visual and production validation pending |
 | SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Backlog |
 | SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Backlog |

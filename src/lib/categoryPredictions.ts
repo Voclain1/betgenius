@@ -44,7 +44,7 @@ export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
 export const CATEGORY_BLURBS: Record<PredictionCategory, string> = {
   FEATURED: "Editor-picked, highest-conviction plays.",
   GENIUS: "Our highest-scoring picks of the day, ranked by confidence.",
-  TODAY: "Every match happening today.",
+  TODAY: "Football picks published for today's fixture card.",
   BANKER: "Our single most-confident pick.",
   VIP: "Subscriber-only edge plays.",
   PREMIUM: "Top-tier tips + accumulators.",

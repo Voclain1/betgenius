@@ -3,6 +3,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { trackEvent } from "@/lib/clientAnalytics";
 
 export default function RegisterPage() {
   const [form, setForm] = useState({ name: "", email: "", password: "" });
@@ -24,6 +25,7 @@ export default function RegisterPage() {
       setErr(j.error ? "Please check your details" : "Registration failed");
       return;
     }
+    trackEvent("sign_up", { method: "email" });
     await signIn("credentials", { email: form.email, password: form.password, redirect: false });
     router.push("/dashboard");
   };

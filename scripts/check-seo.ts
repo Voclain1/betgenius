@@ -21,6 +21,7 @@ import type { TeamDigest } from "../src/lib/ai/digest";
 import type { H2HMeeting } from "../src/lib/h2h";
 import type { LeagueStandingRow } from "../src/lib/enrichment";
 import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "../src/lib/h2hEvidence";
+import { lagosDayLabel } from "../src/lib/lagosDate";
 
 let passed = 0;
 const failures: string[] = [];
@@ -28,7 +29,14 @@ const check = (l: string, c: boolean, got?: unknown) => {
   if (c) passed++;
   else failures.push(`${l}${got === undefined ? "" : `\n      got: ${JSON.stringify(got)}`}`);
 };
+
 const eq = (l: string, a: unknown, b: unknown) => check(l, JSON.stringify(a) === JSON.stringify(b), a);
+
+// --- Lagos date labels ----------------------------------------------------
+// Server locale must not move or rename the date shown on the daily hub.
+const lateUtc = new Date("2026-09-10T23:30:00Z");
+eq("Lagos date label: today crosses the UTC boundary correctly", lagosDayLabel(0, lateUtc), "Friday, 11 September 2026");
+eq("Lagos date label: yesterday stays relative to the Lagos day", lagosDayLabel(-1, lateUtc), "Thursday, 10 September 2026");
 
 function digest(over: Partial<TeamDigest> = {}): TeamDigest {
   return {

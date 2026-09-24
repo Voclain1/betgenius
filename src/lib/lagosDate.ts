@@ -36,3 +36,15 @@ export function lagosTodayBounds(now: Date = new Date()): { start: Date; end: Da
 export function isLagosToday(date: Date | string, now: Date = new Date()): boolean {
   return lagosDateKey(date) === lagosDateKey(now);
 }
+
+/** A reader-facing calendar date for a Lagos day, independent of server locale. */
+export function lagosDayLabel(offsetDays = 0, now: Date = new Date()): string {
+  const { start } = lagosDayBounds(offsetDays, now);
+  return new Intl.DateTimeFormat("en-NG", {
+    timeZone: "Africa/Lagos",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(start);
+}
