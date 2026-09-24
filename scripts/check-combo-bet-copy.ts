@@ -10,6 +10,8 @@
  */
 export {};
 
+import type { ComboLegRow } from "./backfill-combo-leg-labels";
+
 const react = require("react");
 react.cache = (fn: any) => fn;
 
@@ -20,6 +22,8 @@ async function main() {
   const { CATEGORY_SLUGS, CATEGORY_NAMES, CATEGORY_TO_SLUG } = await import("../src/lib/categoryPredictions");
   const { deriveMarketAndPick } = await import("../src/lib/markets");
   const { rewriteComboReasoning } = await import("./backfill-combo-bet-copy");
+  const { describeComboLeg } = await import("../src/lib/markets");
+  const { reconstructComboPick, readLegIds } = await import("./backfill-combo-leg-labels");
 
   let failures = 0;
   const check = (label: string, ok: boolean, detail = "") => {
@@ -97,6 +101,97 @@ async function main() {
   check("asterisks stripped", !after.includes("*"));
   check("the analysis itself survives", after.includes("Akhmat have scored freely."));
   check("rewrite is idempotent", rewriteComboReasoning(after) === after);
+
+  console.log("\na combo leg names its own market when the pick alone is ambiguous:");
+  const HOME = "Doma United";
+  const AWAY = "Rivers United";
+  const comboLeg = (marketType: string, selection: unknown) =>
+    describeComboLeg(marketType as never, selection as never, HOME, AWAY);
+
+  // The reported bug: a bare "No" concatenated onto another leg.
+  check("BTTS NO reads BTTS No", comboLeg("BTTS", { value: "NO" }) === "BTTS No", comboLeg("BTTS", { value: "NO" }));
+  check("BTTS YES reads BTTS Yes", comboLeg("BTTS", { value: "YES" }) === "BTTS Yes", comboLeg("BTTS", { value: "YES" }));
+
+  // Every other market's pick is already self-contained and must pass through
+  // byte-identical, so this fix cannot quietly restyle the rest of the feed.
+  const passthrough: Array<[string, unknown, string]> = [
+    ["DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }, "Doma United or Draw"],
+    ["OVER_UNDER", { line: 2.5, direction: "OVER" }, "Over 2.5 Goals"],
+    ["MATCH_WINNER", { value: "HOME" }, "Doma United to win"],
+    ["TEAM_TOTAL", { side: "HOME", line: 1.5, direction: "OVER" }, "Doma United Over 1.5 Goals"],
+    ["DRAW_NO_BET", { value: "AWAY" }, "Rivers United (draw no bet)"],
+    ["WIN_EITHER_HALF", { value: "HOME" }, "Doma United to win either half"],
+    ["HT_FT", { ht: "DRAW", ft: "HOME" }, "Draw at HT / Doma United at FT"],
+    ["EUROPEAN_HANDICAP", { value: "HOME", line: -1 }, "Doma United (Doma United -1)"],
+  ];
+  for (const [marketType, selection, expected] of passthrough) {
+    const got = comboLeg(marketType, selection);
+    check(`${marketType} passes through unchanged`, got === expected, got);
+    check(`${marketType} matches its standalone pick`,
+      got === deriveMarketAndPick(marketType as never, selection as never, HOME, AWAY).pick);
+  }
+
+  // The standalone card shows market and pick on separate lines, so its BTTS
+  // pick must stay a bare Yes/No - otherwise the card would read "Both Teams
+  // to Score / BTTS No".
+  console.log("\nand a STANDALONE BTTS card is left exactly as it was:");
+  const bttsNo = deriveMarketAndPick("BTTS", { value: "NO" } as never, HOME, AWAY);
+  const bttsYes = deriveMarketAndPick("BTTS", { value: "YES" } as never, HOME, AWAY);
+  check("standalone BTTS NO still derives pick No", bttsNo.pick === "No", bttsNo.pick);
+  check("standalone BTTS YES still derives pick Yes", bttsYes.pick === "Yes", bttsYes.pick);
+  check("standalone BTTS still shows the market separately", bttsNo.market === "Both Teams to Score", bttsNo.market);
+
+  console.log("\nthe stored-row backfill rebuilds combo pick text from the legs:");
+  const leg = (id: string, marketType: string, selection: unknown, pick: string): ComboLegRow => ({
+    id, marketType, selection, market: "", pick, homeTeam: HOME, awayTeam: AWAY,
+  });
+  const legBook = new Map<string, ComboLegRow>([
+    ["dc", leg("dc", "DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }, "Doma United or Draw")],
+    ["bttsNo", leg("bttsNo", "BTTS", { value: "NO" }, "No")],
+    ["bttsYes", leg("bttsYes", "BTTS", { value: "YES" }, "Yes")],
+    ["ou", leg("ou", "OVER_UNDER", { line: 2.5, direction: "OVER" }, "Over 2.5 Goals")],
+    ["mw", leg("mw", "MATCH_WINNER", { value: "HOME" }, "Doma United to win")],
+  ]);
+  const rebuilt = (a: string, b: string) => reconstructComboPick({ legIds: [a, b] }, legBook);
+  const pickOf = (a: string, b: string) => {
+    const r = rebuilt(a, b);
+    return r.ok ? r.pick : `SKIPPED:${r.reason}`;
+  };
+
+  check("Double Chance + BTTS No", pickOf("dc", "bttsNo") === "Doma United or Draw + BTTS No", pickOf("dc", "bttsNo"));
+  check("Double Chance + BTTS Yes", pickOf("dc", "bttsYes") === "Doma United or Draw + BTTS Yes", pickOf("dc", "bttsYes"));
+  check("BTTS Yes + Over 2.5 Goals", pickOf("bttsYes", "ou") === "BTTS Yes + Over 2.5 Goals", pickOf("bttsYes", "ou"));
+  check("Match Winner + BTTS No", pickOf("mw", "bttsNo") === "Doma United to win + BTTS No", pickOf("mw", "bttsNo"));
+  // Leg order comes from the stored legIds rather than being re-derived, so a
+  // repaired row keeps reading the way it always did apart from the label.
+  check("leg order follows legIds", pickOf("bttsNo", "dc") === "BTTS No + Doma United or Draw", pickOf("bttsNo", "dc"));
+
+  // Idempotence: the backfill writes only where the text differs, so a second
+  // pass over its own output must find nothing to do. Feed the repaired pick
+  // back in as the stored one and assert it reconstructs unchanged.
+  const repairedRow = { pick: pickOf("dc", "bttsNo"), selection: { legIds: ["dc", "bttsNo"] } };
+  const secondPass = reconstructComboPick(repairedRow.selection, legBook);
+  check("backfill is idempotent", secondPass.ok && secondPass.pick === repairedRow.pick,
+    secondPass.ok ? secondPass.pick : secondPass.reason);
+  check("an untouched combo reconstructs to itself", pickOf("ou", "mw") === "Over 2.5 Goals + Doma United to win");
+
+  console.log("\nmalformed historical doubles are skipped, never guessed at:");
+  const malformed: Array<[string, unknown, string]> = [
+    ["selection is null", null, "NO_LEG_IDS"],
+    ["selection has no legIds", { value: "HOME" }, "NO_LEG_IDS"],
+    ["legIds is not an array", { legIds: "dc,bttsNo" }, "BAD_LEG_IDS"],
+    ["only one leg id", { legIds: ["dc"] }, "BAD_LEG_IDS"],
+    ["three leg ids", { legIds: ["dc", "bttsNo", "ou"] }, "BAD_LEG_IDS"],
+    ["a leg id is empty", { legIds: ["dc", ""] }, "BAD_LEG_IDS"],
+    ["the same leg twice", { legIds: ["dc", "dc"] }, "BAD_LEG_IDS"],
+    ["a referenced leg row is gone", { legIds: ["dc", "deleted-row"] }, "LEG_ROW_MISSING"],
+  ];
+  for (const [label, selection, reason] of malformed) {
+    const r = reconstructComboPick(selection, legBook);
+    check(`${label} -> ${reason}`, !r.ok && r.reason === reason, r.ok ? `rewrote to "${r.pick}"` : r.reason);
+  }
+  check("readLegIds accepts only the shape the assembler writes",
+    JSON.stringify(readLegIds({ legIds: ["dc", "bttsNo"] })) === JSON.stringify(["dc", "bttsNo"]));
 
   console.log("\nthe rename is consistent across every user-facing surface:");
   check("route slug is combo-bets", CATEGORY_SLUGS["combo-bets"] === "SAME_GAME_DOUBLE");
