@@ -355,6 +355,38 @@ export function deriveMarketAndPick(
   }
 }
 
+/**
+ * A leg's text as it must read INSIDE a combo string, e.g. "BTTS No".
+ *
+ * deriveMarketAndPick splits a selection into a market and a pick because a
+ * standalone card shows both: "Both Teams to Score" sits above "No", and the
+ * reader has the whole bet. A combo string has no room for that — it
+ * concatenates pick text only, so "Doma United or Draw + No" reached readers
+ * with the second leg's market silently dropped. "No" what?
+ *
+ * Most picks are already self-contained ("Over 2.5 Goals", "Arsenal to win"),
+ * so they pass through untouched. BTTS is the one market whose pick is a bare
+ * Yes/No, and it gets its market name folded in. Fixing this inside
+ * deriveMarketAndPick instead would have put "BTTS No" under the "Both Teams
+ * to Score" heading on every standalone card, so the combo-specific need gets
+ * a combo-specific function.
+ */
+export function describeComboLeg(
+  marketType: MarketType,
+  selection: Selection,
+  home?: string | null,
+  away?: string | null,
+  fallback?: { market: string; pick: string },
+): string {
+  const { pick } = deriveMarketAndPick(marketType, selection, home, away, fallback);
+  if (marketType !== "BTTS") return pick;
+  // Guard on the derived text rather than on the raw selection: a malformed
+  // BTTS row whose pick came through `fallback` must not be relabelled into a
+  // claim the stored selection does not actually support.
+  if (pick === "Yes" || pick === "No") return `BTTS ${pick}`;
+  return pick;
+}
+
 export function deriveOverUnderText(line?: number | null, direction?: string | null): string | null {
   if (line == null || !direction) return null;
   return `${direction === "OVER" ? "Over" : "Under"} ${line} Goals`;

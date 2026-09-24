@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { setPredictionCategories } from "@/lib/predictions";
 import { leaguePriorityRank } from "@/lib/leagues";
-import { deriveMarketAndPick, isValidSelection, type MarketType, type Selection } from "@/lib/markets";
+import { describeComboLeg, isValidSelection, type MarketType, type Selection } from "@/lib/markets";
 import {
   checkLegCompatibility,
   comboConfidenceCeiling,
@@ -85,6 +85,20 @@ function legOf(row: CandidateLeg): Leg | null {
 }
 
 /**
+ * One leg as it reads inside a combo string.
+ *
+ * Kept as a single helper so the headline and the reasoning headings cannot
+ * disagree: both go through here, and a market that needs its name folded in
+ * (BTTS, whose standalone pick is a bare "Yes"/"No") is handled once.
+ */
+function comboLegText(r: CandidateLeg): string {
+  return describeComboLeg(r.marketType as MarketType, r.selection as Selection, r.homeTeam, r.awayTeam, {
+    market: r.market,
+    pick: r.pick,
+  });
+}
+
+/**
  * The pick text for a double, e.g. "Lyon or Draw + Under 2.5 Goals".
  *
  * Built from each leg's own derived text rather than from a separate template,
@@ -92,11 +106,7 @@ function legOf(row: CandidateLeg): Leg | null {
  * describe themselves.
  */
 export function describeDouble(a: CandidateLeg, b: CandidateLeg): { market: string; pick: string } {
-  const pickOf = (r: CandidateLeg) =>
-    deriveMarketAndPick(r.marketType as MarketType, r.selection as Selection, r.homeTeam, r.awayTeam, {
-      market: r.market,
-      pick: r.pick,
-    }).pick;
+  const pickOf = (r: CandidateLeg) => comboLegText(r);
   // Stored display string. Matches MARKET_LABELS.SAME_GAME_DOUBLE — the two
   // must agree, since cards render whichever one the row happens to carry.
   return { market: "Combo Bet", pick: `${pickOf(a)} + ${pickOf(b)}` };
@@ -121,18 +131,20 @@ export function describeDouble(a: CandidateLeg, b: CandidateLeg): { market: stri
  * for the reader's attention. The UI owns that statement now.
  */
 export function describeDoubleReasoning(a: CandidateLeg, b: CandidateLeg): string {
-  const aText = deriveMarketAndPick(a.marketType as MarketType, a.selection as Selection, a.homeTeam, a.awayTeam, { market: a.market, pick: a.pick });
-  const bText = deriveMarketAndPick(b.marketType as MarketType, b.selection as Selection, b.homeTeam, b.awayTeam, { market: b.market, pick: b.pick });
+  // Same formatter the headline uses, so a reader can never see "BTTS No" in
+  // the pick and a bare "No" as the heading of the paragraph explaining it.
+  const aText = comboLegText(a);
+  const bText = comboLegText(b);
   // BLANK line after each heading, not a single newline. Prose treats a lone
   // newline as a soft wrap and joins the lines, which ran the heading into its
   // own body text: "Dinamo Zagreb or Draw - 82% confidence Dinamo Zagreb have
   // started the HNL campaign...". Only a blank line starts a new paragraph.
   return [
-    `${aText.pick} — ${a.confidence}% confidence`,
+    `${aText} — ${a.confidence}% confidence`,
     ``,
     a.reasoning,
     ``,
-    `${bText.pick} — ${b.confidence}% confidence`,
+    `${bText} — ${b.confidence}% confidence`,
     ``,
     b.reasoning,
     ``,
