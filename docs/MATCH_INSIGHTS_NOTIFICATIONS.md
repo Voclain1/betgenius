@@ -61,7 +61,11 @@ If VAPID is absent, following and the in-site inbox still work. Dispatch complet
 
 ## Database rollout
 
-The schema process is Prisma `db push`, guarded by `scripts/check-schema-sync.ts`. This change is additive: new tables only, and no existing table or column is altered. Nothing has been applied to Preview or Production.
+The schema process is Prisma `db push`, guarded by `scripts/check-schema-sync.ts`. The change was additive: new tables only, and no existing table or column was altered.
+
+**Current state (checked read-only on 24 Sep 2026).** The notification and insight tables are live in Production: `NotificationEvent`, `NotificationDelivery`, `UserNotification`, `UserFollow`, `NotificationPreference`, `PushSubscription`, `TeamFixtureHistory` and `MatchInsightCache` all hold production rows. The first notification event was recorded on 15 Sep 2026. All three scheduler jobs below have been recording `JobRun` rows since 19 Sep 2026. Preview was not checked from this repository, because `.env` points at a single database.
+
+The steps below are kept for standing up a new environment:
 
 1. Select an isolated preview or development database and verify its host, database and user.
 2. Run `npx prisma db push` there, then `npm run check:schema`.
@@ -84,6 +88,8 @@ Configure cron-job.org with GET, `Authorization: Bearer <CRON_SECRET>`, and the 
 
 The third column is what `scripts/job-runs.ts` takes, not the path: `npx tsx --env-file=.env scripts/job-runs.ts notifications-dispatch` is how you tell "the cron never fired" from "it fired and had nothing to do". Until each schedule exists these three record nothing, which is exactly what an unconfigured scheduler looks like from inside the app.
 
+The job name comes from the route's code, not from the scheduler, which only calls the URL. `JobRun` has four historical rows named `notification-reminders` (singular), from 20:35 to 20:50 UTC on 19 Sep 2026. That was before the rename to `notifications-reminders` deployed. The plural name took over at 20:55 on the same 5-minute cadence, and the two names never overlap. The singular rows are history, not a second scheduler entry. Leave them in place.
+
 Dispatch behaviour:
 
 - Fans out follows and claims up to 50 deliveries under a 5-minute lease, which is longer than the route's 60-second limit, so a live worker never loses its rows.
@@ -99,6 +105,8 @@ External push remains at-least-once. Event keys, delivery keys and notification 
 |---|---|---|
 | `npx tsx scripts/check-insights.ts` | Calculation rules | Includes the legacy cached shape that previously crashed the worker |
 | `npx tsx scripts/check-notifications.ts` | Notification policy helpers | Pure, no database |
+| `npm run check:notification-digest` | Digest policy and timing | Includes a replay of the 22 Sep 2026 night digest across Lagos midnight through the real `createDailyDigests`. No database |
+| `npm run check:inbox-history-cap` | Daily cap by class, night-digest hold | Drives the real dispatch against an in-memory outbox. Shows that history rows pass the cap while push-class rows stay capped at 12, and that the night digest is held from 03:15 to 07:00, then respects quiet hours. No database |
 | `npm run check:match-insights` | `/match-insights` and `src/lib/topTrends.ts` | Renders the page against stubbed cache rows: card wording, crest, the matching price and its bookmaker floor, period tabs and bounds, pagination, and the empty state. No database, no network |
 | `npx tsx scripts/verify-insight-integration.ts` | Worker behaviour | Refetch rules, a contradicted streak removed at once, stale histories withdrawn. The provider is stubbed. |
 | `npx tsx scripts/verify-notification-integration.ts` | Delivery | Fan-out, entitlement, lease races, reminder audience, publish events, rollback |
@@ -107,19 +115,23 @@ Both `verify-*` scripts refuse to run anywhere except the disposable database at
 
 ## Operational notes
 
-- The daily cap defaults to 12, the timezone to Africa/Lagos, and kickoff reminders to 30 minutes. All three can be changed on `/notifications`.
+- The daily cap defaults to 12, the timezone to Africa/Lagos, and kickoff reminders to 30 minutes. All three can be changed on `/notifications`. The daily cap limits interruptions, so it does not apply to publication and result history (see below).
 - Quiet hours suppress push but still fill the inbox.
 - Opening `/notifications` marks the notifications shown as read.
-- The optional daily digest is not in this release.
+- Daily digests are live. See "Digest-first delivery".
 
 ## Digest-first delivery
 
-Publication and result events are recorded in the inbox but never pushed on their own (`NEW_PREDICTION`, `RESULT_*`). Two daily digests carry that content instead, both on the Africa/Lagos day:
+Publication and result events are recorded in the inbox but never pushed on their own (`NEW_PREDICTION`, `RESULT_*`). Two daily digests carry that content instead. Both use the Africa/Lagos day:
 
 | Digest | Created | Event key | Expires |
 |---|---|---|---|
-| Morning | never before 09:00. 09:00–09:30: only once 2+ categories are ready (Bet of the Day counts as one), `MORNING_EARLY_MIN_READY`. From 09:30: once any category or Bet of the Day is ready. From 10:00 (hard latest): any usable pick. Not created after 13:00. | `digest:morning:<day>` | 14:00 |
-| Night | evaluated from 23:00 on each reminders run; created once all of the day's picks have settled, or at least 90% of them (`NIGHT_SUBSTANTIAL_SETTLED_SHARE`); otherwise deferred until the 23:55 cutoff, which sends "Results so far" with the unsettled count; nothing if none settled | `digest:night:<day>` | 06:00 next day |
+| Morning | Never before 09:00. From 09:00 to 09:30, only once 2+ categories are ready (`MORNING_EARLY_MIN_READY`; Bet of the Day counts as one). From 09:30, once any category or Bet of the Day is ready. From 10:00 (hard latest), any usable pick. Not created after 13:00. | `digest:morning:<day>` | 14:00 |
+| Night | Summarises the **previous** Lagos day. Evaluated from 03:10 on each reminders run, after the 03:00 settlement run. Created once all of that day's picks have settled, or at least 90% of them (`NIGHT_SUBSTANTIAL_SETTLED_SHARE`). Otherwise it waits until the 03:30 cutoff, which creates "Results so far" with the unsettled count. Nothing is created if no pick has settled, or from 04:00. **Delivered from 07:00**, not when created (see below). | `digest:night:<summarised day>` | 12:00 the morning it is sent |
+
+Why the night digest moved. It used to run from 23:00 to 23:55 on the day itself. Settlement runs every three hours (00:00, 03:00, … Lagos), so the evening fixtures were almost never settled in that window. On 22 Sep 2026, 0 of 89 picks had settled by 23:55. The digest was skipped, and nothing went back for that day. The 00:00 run settled 50 of the 89, and the 03:00 run brought it to 70. Under the current rule, the 22 Sep digest is created on 23 Sep at 03:30, as "Results so far" with 70 of 89 settled, and delivered at 07:00. The title names the day ("Results for Tue 22 Sep"), because it arrives the morning after. No new cron job was added, and the settlement schedule is unchanged. A digest that already exists for a day, including one made by the old evening window, is never repeated.
+
+Delivery is held until 07:00 Lagos (`digestDeliverNotBefore`), so a recap created in the early hours never wakes anyone. Dispatch uses the same deferral as kickoff reminders: the delivery goes back to `RETRY` with `nextAttemptAt` set to 07:00. Nothing is written for the user before then, and no retry attempt is used up. At 07:00 the usual checks run: preferences, entitlement, the daily cap, and quiet hours. A user whose quiet hours cover 07:00 gets the inbox entry without a push, as with any other notification.
 
 The morning digest names the categories that have picks, then Bet of the Day, then at most `TOP_MATCH_HIGHLIGHT_MAX` (3) top matches, drawn only from CORE competitions with SECONDARY filling any slots left. FALLBACK and DEEP_FALLBACK fixtures are never highlighted. Push and inbox copy are rendered per recipient, so paid selections appear only for entitled users and locked categories link to `/pricing`.
 
@@ -138,4 +150,14 @@ These still push immediately: `KICKOFF_REMINDER`, `TIP_CHANGED`, `WITHDRAWN`, `M
 
 A `TOP_PREDICTION` push also needs a strong competition (`topPredictionPushEligible`): CORE, or one of the SECONDARY top flights in `TOP_PREDICTION_PUSH_SECONDARY` (Portugal, Netherlands, Belgium, Turkey, Saudi Arabia, NPFL). FALLBACK, DEEP_FALLBACK, other SECONDARY and unknown leagues still reach the inbox but never push, and don't use up the editorial cap. Eligibility doesn't guarantee a push; the cap still applies. Bet of the Day and category content in the morning digest are unaffected.
 
-The reminders job creates both digests (`createDailyDigests`), so no new schedule is needed. Its `JobRun` summary reports each digest's state. The daily cap is counted separately for inbox-only rows and push-class rows, so publications cannot crowd out reminders.
+The reminders job creates both digests (`createDailyDigests`), so no new schedule is needed. Its `JobRun` summary reports each digest's state.
+
+The daily cap is counted per class (`dailyCapClass`):
+
+| Class | Types | Limit |
+|---|---|---|
+| history | `NEW_PREDICTION`, `RESULT_*` | Not subject to `dailyCap`: it never rings, so it neither uses up the push allowance nor is blocked by it. It is bounded only by `INBOX_HISTORY_DAILY_CEILING`: 500 rows per user per day. That is system protection against a runaway bug, not a notification preference, and users cannot change it. Rows over it are skipped as `inbox history ceiling`, not `daily cap`. |
+| inbox | `TOP_PREDICTION` outside every push-eligible competition | its own `dailyCap` allowance |
+| push | digests, kickoff reminders, tip changes, withdrawals, insights, eligible top predictions | `dailyCap` (default 12), as before |
+
+Before this change, history shared a `dailyCap`-sized inbox allowance. In the week to 24 Sep 2026, that skipped 326 publication and result rows and no push-class rows. Entitlement, preferences and the `userId_eventId` inbox key are unchanged. A paid pick never reaches a user who is not entitled to it.

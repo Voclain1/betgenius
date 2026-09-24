@@ -16,7 +16,8 @@ import { generationTierOf, leaguePriorityRank, leaguesInTiers, type GenerationTi
  *
  * Two digests a Lagos day carry the digest-only content instead: a morning
  * one (categories ready, Bet of the Day, at most TOP_MATCH_HIGHLIGHT_MAX top
- * matches) and a night one (the day's settled record).
+ * matches) and a night one (the day's settled record, sent after midnight once
+ * the evening has settled; see DIGEST_TIMING).
  *
  * Pure: no database, no React, so every rule here is asserted directly by
  * scripts/check-notification-digest.ts.
@@ -122,12 +123,49 @@ export function isInboxOnlyEvent(event: { type: string; leagueApiId?: number | n
  * only (never the stored evidence), so it matches the database filter dispatch
  * counts with: a top prediction in a market-confirmed-only league always draws
  * on the push allowance, which is the conservative side.
+ *
+ *   history - NEW_PREDICTION / RESULT_*: the per-match inbox record behind the
+ *             digests. It can never ring (isInboxOnlyType), so the user's
+ *             dailyCap, which is a push/noise control, does not apply to it:
+ *             it neither uses up that allowance nor is blocked by it. Only the
+ *             INBOX_HISTORY_DAILY_CEILING runaway guard bounds it.
+ *   inbox   - a TOP_PREDICTION outside every push-eligible competition. Inbox
+ *             only, but an editorial broadcast rather than history the user
+ *             asked for by following, so it keeps a dailyCap-sized allowance of
+ *             its own.
+ *   push    - everything that can interrupt: digests, kickoff reminders, tip
+ *             changes, withdrawals, insights, eligible top predictions.
  */
-export function dailyCapClass(event: { type: string; leagueApiId?: number | null }): "inbox" | "push" {
-  if (isInboxOnlyType(event.type)) return "inbox";
+export type DailyCapClass = "history" | "inbox" | "push";
+
+export function dailyCapClass(event: { type: string; leagueApiId?: number | null }): DailyCapClass {
+  if (isInboxOnlyType(event.type)) return "history";
   if (event.type !== TOP_PREDICTION) return "push";
   const id = event.leagueApiId;
   return id != null && (topPredictionPushLeagueIds().includes(id) || TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY.includes(id)) ? "push" : "inbox";
+}
+
+/**
+ * Runaway guard for inbox history rows, per user per local day. Not a noise
+ * control (they never push): it exists so a bug that minted events in a loop
+ * could not write unbounded rows. Far above any real day; the busiest recent
+ * slate (22 Sep 2026) published 89 picks, so a user following all of them gets
+ * 89 publications plus 89 results.
+ */
+export const INBOX_HISTORY_DAILY_CEILING = 500;
+
+/** The user-facing default for NotificationPreference.dailyCap (see schema.prisma). */
+export const DEFAULT_DAILY_CAP = 12;
+
+/**
+ * Whether one more delivery of this class may be written today, given how many
+ * of the SAME class this user already has today. Each class is counted only
+ * against itself, so history can never crowd out a reminder and a busy push day
+ * can never stop results reaching the inbox.
+ */
+export function dailyCapAllows(capClass: DailyCapClass, sentTodayInClass: number, dailyCap: number | null | undefined) {
+  const limit = capClass === "history" ? INBOX_HISTORY_DAILY_CEILING : dailyCap ?? DEFAULT_DAILY_CAP;
+  return sentTodayInClass < limit;
 }
 
 export type TopPredictionDelivery = "push" | "inbox-only" | "capped";
@@ -185,20 +223,40 @@ export const DIGEST_TIMING = {
   /** A morning digest not delivered by 14:00 is dropped rather than sent stale. */
   morningExpires: 14 * 60,
   /**
-   * Night digest is first evaluated at 23:00. It is created then, or on any
-   * later reminders run, once the day's picks are all (or substantially,
+   * The night digest summarises the PREVIOUS Lagos day, after midnight.
+   *
+   * It used to run 23:00-23:55 on the day itself, but settlement runs every
+   * three hours (00:00, 03:00, ... Lagos), so the evening's fixtures were almost
+   * never settled by then: on 22 Sep 2026 nothing had settled by 23:55, the
+   * digest was skipped, and nothing ever went back for that day.
+   *
+   * These minutes are counted from midnight of the day AFTER the one being
+   * summarised (nightDigestDay). First evaluated at 03:10, after the 03:00
+   * settlement run, which is the one that settles the late evening fixtures
+   * (22 Sep: 50 of 89 settled after 00:00, 70 after 03:00). Created then, or on
+   * a later reminders run, once the day's picks are all (or substantially,
    * NIGHT_SUBSTANTIAL_SETTLED_SHARE) settled; otherwise it defers...
    */
-  nightFrom: 23 * 60,
+  nightFrom: 3 * 60 + 10,
   /**
-   * ...until the hard cutoff at 23:55, when whatever has settled goes out as
-   * "Results so far" with the unsettled count. Still the same Lagos day, so the
-   * digest's day key is always the day it summarises; nothing is created after
-   * midnight for the previous day.
+   * ...until the hard cutoff at 03:30, when whatever has settled goes out as
+   * "Results so far" with the unsettled count.
    */
-  nightDeadline: 23 * 60 + 55,
-  /** Dropped if still undelivered at 06:00 the next morning. */
-  nightExpiresNextDay: 6 * 60,
+  nightDeadline: 3 * 60 + 30,
+  /**
+   * Last point a run may still create it (a reminders job that missed the
+   * cutoff catches up, partial); after this that day has no digest.
+   */
+  nightUntil: 4 * 60,
+  /**
+   * The event exists from about 03:10, but nobody is woken by it: dispatch
+   * holds every delivery until 07:00 (digestDeliverNotBefore), through the
+   * ordinary deferred-retry path, so the inbox row and the push both arrive at
+   * 07:00, and quiet hours are applied then as usual.
+   */
+  nightDeliverFrom: 7 * 60,
+  /** Dropped if still undelivered at 12:00 on the morning it was created. */
+  nightExpiresNextDay: 12 * 60,
 } as const;
 
 export const DIGEST_TIMEZONE = "Africa/Lagos";
@@ -226,6 +284,39 @@ export function morningDigestKey(day: string) {
 
 export function nightDigestKey(day: string) {
   return `digest:night:${day}`;
+}
+
+/** The Lagos day a night digest evaluated at `now` summarises: the calendar day before `now`'s. */
+export function nightDigestDay(now: Date) {
+  // Noon of the previous day, so the answer never depends on the minute.
+  return lagosDay(lagosInstant(lagosDay(now), -12 * 60));
+}
+
+/**
+ * The earliest moment a delivery of this event may be made, or null for no
+ * hold. Only the night digest is held: until 07:00 Lagos on the morning after
+ * the day it summarises, so a recap created around 03:10 never rings a phone
+ * in the middle of the night. Dispatch defers the delivery to this instant with
+ * its ordinary RETRY/nextAttemptAt path; nothing is written for the user
+ * before then, and quiet hours still apply when it is delivered.
+ */
+export function digestDeliverNotBefore(event: { type: string; data: unknown }): Date | null {
+  if (event.type !== DIGEST_NIGHT) return null;
+  const data = digestData(event.data);
+  if (!data || data.kind !== "NIGHT") return null;
+  return lagosInstant(data.day, 24 * 60 + DIGEST_TIMING.nightDeliverFrom);
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "Tue 22 Sep" for a YYYY-MM-DD day key. Stable forever, unlike "today" or
+ * "yesterday". Spelled out rather than Intl: ICU versions disagree on "Sep"/"Sept".
+ */
+export function digestDayLabel(day: string) {
+  const d = new Date(`${day}T12:00:00Z`);
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 
 export type DigestPick = {
@@ -440,22 +531,28 @@ export type NightDigestData = {
 export type NightDecision = { send: true; partial: boolean } | { send: false; reason: string };
 
 /**
- * Whether the night digest should be created now, given the day's published picks.
+ * Whether the night digest should be created now, given the published picks of
+ * the day it summarises (nightDigestDay(now), the previous Lagos day). Times
+ * are Lagos, on the morning after that day:
  *
- *   before 23:00           never - the day is still being played.
- *   23:00 up to 23:55      created once all picks have settled, or at least
+ *   before 03:10           never - the 03:00 settlement run may still be going.
+ *   03:10 up to 03:30      created once all picks have settled, or at least
  *                          NIGHT_SUBSTANTIAL_SETTLED_SHARE of them; otherwise
  *                          deferred to the next reminders run.
- *   23:55 (hard cutoff)    created with whatever has settled, as a partial
+ *   03:30 (hard cutoff)    created with whatever has settled, as a partial
  *                          "Results so far" summary with the unsettled count.
+ *   04:00 onwards          no longer created.
+ *
+ * Creation is not delivery: see digestDeliverNotBefore (07:00).
  *
  * Nothing settled at all means no digest. It never claims the day is complete
  * when it is not: `partial` is true whenever anything is still pending.
  */
 export function nightDigestDecision(picks: Pick<DigestPick, "outcome">[], now: Date): NightDecision {
   const minute = lagosMinuteOfDay(now);
-  if (minute < DIGEST_TIMING.nightFrom) return { send: false, reason: "before 23:00" };
-  if (!picks.length) return { send: false, reason: "no published picks today" };
+  if (minute < DIGEST_TIMING.nightFrom) return { send: false, reason: "before 03:10" };
+  if (minute >= DIGEST_TIMING.nightUntil) return { send: false, reason: "after the night window" };
+  if (!picks.length) return { send: false, reason: "no published picks that day" };
   const pending = picks.filter((p) => p.outcome === "PENDING").length;
   if (pending === 0) return { send: true, partial: false };
   if (pending === picks.length) return { send: false, reason: minute >= DIGEST_TIMING.nightDeadline ? "nothing settled by the cutoff" : "nothing settled yet" };
@@ -472,7 +569,8 @@ function tally(picks: Pick<DigestPick, "outcome">[]): Record3 {
   };
 }
 
-export function buildNightDigest(picks: DigestPick[], betOfTheDayId: string | null, now: Date): NightDigestData {
+/** The night digest for `day` (the Lagos day summarised, not the day it is built on). */
+export function buildNightDigest(picks: DigestPick[], betOfTheDayId: string | null, day: string): NightDigestData {
   const settled = picks.filter((p) => p.outcome !== "PENDING");
   const categories = (["BET_OF_THE_DAY", ...DIGEST_CATEGORY_ORDER] as string[])
     .map((category) => {
@@ -484,7 +582,7 @@ export function buildNightDigest(picks: DigestPick[], betOfTheDayId: string | nu
   const botd = betOfTheDayId ? picks.find((p) => p.id === betOfTheDayId) ?? null : null;
   return {
     kind: "NIGHT",
-    day: lagosDay(now),
+    day,
     total: picks.length,
     settled: settled.length,
     pending: picks.length - settled.length,
@@ -542,9 +640,11 @@ export function renderDigest(data: MorningDigestData | NightDigestData, canView:
     return { title, body: lines.join("\n"), link: data.betOfTheDay ? "/predictions/bet-of-the-day" : "/predictions/today", links };
   }
 
+  // Named by date: it is sent the morning after, and read in the inbox later still.
+  const dayLabel = digestDayLabel(data.day);
   const r = data.record;
   const record = `${r.won} won, ${r.lost} lost${r.void ? `, ${r.void} void` : ""}`;
-  const title = data.pending ? `Results so far: ${record}` : `Today's results: ${record}`;
+  const title = data.pending ? `Results so far for ${dayLabel}: ${record}` : `Results for ${dayLabel}: ${record}`;
   const lines: string[] = [];
   if (data.betOfTheDay) {
     lines.push(
@@ -559,7 +659,7 @@ export function renderDigest(data: MorningDigestData | NightDigestData, canView:
     .map((c) => `${CATEGORY_LABEL[c.category] ?? c.category} ${c.won}–${c.lost}`);
   if (perCategory.length) lines.push(perCategory.join(" · "));
   if (completed.length) lines.push(`Completed: ${completed.map((c) => CATEGORY_LABEL[c.category] ?? c.category).join(", ")}`);
-  lines.push(data.pending ? `${data.settled} of ${data.total} settled — ${data.pending} still awaiting results.` : `All ${data.total} of today's picks settled.`);
+  lines.push(data.pending ? `${data.settled} of ${data.total} settled — ${data.pending} still awaiting results.` : `All ${data.total} of ${dayLabel}'s picks settled.`);
   return { title, body: lines.join("\n"), link: "/track-record", links: [{ label: "Track record", href: "/track-record" }] };
 }
 
@@ -636,7 +736,7 @@ function followedSection(
   const record = `${r.won} won, ${r.lost} lost${r.void ? `, ${r.void} void` : ""}`;
   const pendingFollowed = items.length - relevant.length;
   if (pendingFollowed) lines.push(`${pendingFollowed} of yours still awaiting results.`);
-  return { title: pendingFollowed ? `Your follows so far: ${record}` : `Your follows today: ${record}`, lines, link: "/following", links };
+  return { title: pendingFollowed ? `Your follows so far: ${record}` : `Your follows on ${digestDayLabel(data.day)}: ${record}`, lines, link: "/following", links };
 }
 
 /**

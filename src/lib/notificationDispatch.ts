@@ -16,7 +16,9 @@ import {
   digestAudienceFor,
   digestData,
   isDigestEvent,
+  dailyCapAllows,
   dailyCapClass,
+  digestDeliverNotBefore,
   personaliseDigest,
   pushCopy,
   shouldPush,
@@ -24,6 +26,7 @@ import {
   topPredictionEvidence,
   topPredictionPushLeagueIds,
   TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY,
+  type DailyCapClass,
   type RenderedDigest,
 } from "@/lib/notificationDigest";
 import { pushConfigured, sendPush } from "@/lib/push";
@@ -47,19 +50,28 @@ const ELIGIBLE_TOP_WHERE: Prisma.NotificationEventWhereInput = {
 };
 
 /**
- * Inbox-only events, as a filter, for splitting the daily cap by class: the
- * inbox-only types, plus top predictions outside every push-eligible league (a
- * null league included, which `notIn` alone would miss). A top prediction in a
+ * The daily-cap classes (dailyCapClass) as filters, so each class is counted
+ * only against itself.
+ *
+ * HISTORY_WHERE: inbox-only publication and result rows.
+ * INBOX_TOP_WHERE: top predictions outside every push-eligible league (a null
+ * league included, which `notIn` alone would miss). A top prediction in a
  * market-confirmed-only league is counted with push-class rows whichever way
  * its evidence went: slightly conservative for the push allowance, and it keeps
  * this filter free of JSON-null edge cases.
+ * Push class: neither of the above.
  */
-const INBOX_ONLY_WHERE: Prisma.NotificationEventWhereInput = {
-  OR: [
-    { type: "NEW_PREDICTION" },
-    { type: { startsWith: "RESULT_" } },
-    { type: TOP_PREDICTION, OR: [{ leagueApiId: null }, { leagueApiId: { notIn: [...TOP_PUSH_LEAGUES, ...TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY] } }] },
-  ],
+const HISTORY_WHERE: Prisma.NotificationEventWhereInput = {
+  OR: [{ type: "NEW_PREDICTION" }, { type: { startsWith: "RESULT_" } }],
+};
+const INBOX_TOP_WHERE: Prisma.NotificationEventWhereInput = {
+  type: TOP_PREDICTION,
+  OR: [{ leagueApiId: null }, { leagueApiId: { notIn: [...TOP_PUSH_LEAGUES, ...TOP_PREDICTION_PUSH_MARKET_CONFIRMED_ONLY] } }],
+};
+const CAP_CLASS_WHERE: Record<DailyCapClass, Prisma.NotificationEventWhereInput> = {
+  history: HISTORY_WHERE,
+  inbox: INBOX_TOP_WHERE,
+  push: { NOT: { OR: [HISTORY_WHERE, INBOX_TOP_WHERE] } },
 };
 
 /** A reminder is only valid while at least one of its tips is still live at the kickoff it announced. */
@@ -73,7 +85,8 @@ async function reminderStillValid(event: { predictionId: string | null; data: un
   return live > 0 ? kickoff : null;
 }
 
-export async function runNotificationDispatch(transport: typeof sendPush = sendPush) {
+/** `clock` is injectable for the offline checks, which drive dispatch at chosen Lagos times. */
+export async function runNotificationDispatch(transport: typeof sendPush = sendPush, clock: () => Date = () => new Date()) {
   const fanout = await fanOutPendingEvents(25);
   const { token, rows } = await claimDeliveries(50);
   let delivered = 0, retried = 0, skipped = 0, deferred = 0, lost = 0;
@@ -84,7 +97,7 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
   };
 
   for (const row of rows) {
-    const now = new Date();
+    const now = clock();
     const pref = row.user.notificationPreference;
 
     if (!(await stillFollowsEvent(row.userId, row.event))) { await skip(row.id, "no longer followed"); continue; }
@@ -98,6 +111,17 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
         else lost++;
         continue;
       }
+    }
+
+    // The night digest is created around 03:10 but held until 07:00 Lagos, so
+    // it never wakes anyone. Same deferral path as a kickoff reminder: nothing
+    // is written for the user until then, and every check below (preferences,
+    // entitlement, cap, quiet hours) runs at delivery time.
+    const notBefore = digestDeliverNotBefore(row.event);
+    if (notBefore && now < notBefore) {
+      if (await releaseDelivery(row.id, token, { status: "RETRY", nextAttemptAt: notBefore })) deferred++;
+      else lost++;
+      continue;
     }
 
     if (row.event.expiresAt && row.event.expiresAt <= now) { await skip(row.id, "expired"); continue; }
@@ -121,15 +145,19 @@ export async function runNotificationDispatch(transport: typeof sendPush = sendP
     }
 
     const dayStart = localDayStartUtc(now, pref?.timezone ?? "Africa/Lagos");
-    // The cap is counted per class. Inbox-only rows (publications, results)
-    // never ring, so letting them use up the allowance would crowd out the
-    // kickoff reminders and tip changes that do; they get the same cap as a
-    // separate allowance, so inbox volume stays bounded as before.
-    const inboxOnly = dailyCapClass(row.event) === "inbox";
+    // The cap is counted per class (dailyCapClass). The user's dailyCap is a
+    // push/noise control: it applies to push-class rows, and separately to
+    // inbox-only top predictions. Publication and result history never rings,
+    // so it is outside dailyCap altogether (neither counted nor blocked) and is
+    // bounded only by the INBOX_HISTORY_DAILY_CEILING runaway guard.
+    const capClass = dailyCapClass(row.event);
     const sentToday = await prisma.userNotification.count({
-      where: { userId: row.userId, createdAt: { gte: dayStart }, event: inboxOnly ? INBOX_ONLY_WHERE : { NOT: INBOX_ONLY_WHERE } },
+      where: { userId: row.userId, createdAt: { gte: dayStart }, event: CAP_CLASS_WHERE[capClass] },
     });
-    if (sentToday >= (pref?.dailyCap ?? 12)) { await skip(row.id, "daily cap"); continue; }
+    if (!dailyCapAllows(capClass, sentToday, pref?.dailyCap)) {
+      await skip(row.id, capClass === "history" ? "inbox history ceiling" : "daily cap");
+      continue;
+    }
 
     // The editorial cap is applied AFTER the global one and never replaces it:
     // a broadcast has to clear both. Counted from the inbox rows already

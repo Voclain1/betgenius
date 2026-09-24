@@ -24,6 +24,7 @@
  */
 export {};
 
+import { assertIntegrationDatabase } from "./lib/dbSafety";
 const react = require("react");
 if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
 
@@ -56,6 +57,8 @@ function oddsWithHomePrice(homePrice: number, bookmakers = 6) {
 }
 
 async function main() {
+  // Writes rows: refuses unless the target is a separate, non-Production database.
+  await assertIntegrationDatabase();
   const { prisma } = (await import("../src/lib/prisma")) as { prisma: typeof PrismaClient };
   const { selectBetOfTheDayTargets, BET_OF_DAY_PRICE_BAND } = await import("../src/lib/betOfTheDay");
   const { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } = await import("../src/lib/generation/selector");

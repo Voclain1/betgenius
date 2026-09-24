@@ -53,7 +53,7 @@ export const ADMIN_MARKET_TYPES = [
 ] as const satisfies readonly Exclude<MarketType, "SAME_GAME_DOUBLE" | "EUROPEAN_HANDICAP">[];
 
 // Every admin-editable type is a real market type, and every market type
-// except SAME_GAME_DOUBLE is admin-editable. Adding a market type without
+// except SAME_GAME_DOUBLE and EUROPEAN_HANDICAP is admin-editable. Adding a market type without
 // deciding which side it belongs on is a compile error, not an oversight.
 // EUROPEAN_HANDICAP joins SAME_GAME_DOUBLE on the excluded side: its line has
 // to come from a real quoted price, and an admin typing one into a form is the

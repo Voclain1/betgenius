@@ -36,8 +36,8 @@ import {
   topPredictionPushEligible,
   type DigestPick,
 } from "../src/lib/notificationDigest";
-import { MIN_BOOKMAKERS, MIN_ODDS, MAX_ODDS } from "../src/lib/odds";
-import { MC_MIN_MODEL_CONFIDENCE } from "../src/lib/marketConfirmed";
+import { MIN_BOOKMAKERS, MIN_ODDS, MAX_ODDS, qualifiesForBetOfDay } from "../src/lib/odds";
+import { MC_MIN_MODEL_CONFIDENCE, evaluateMarketConfirmed } from "../src/lib/marketConfirmed";
 import { TREND_MIN_CONFIDENCE, qualifiesAsTopPrediction } from "../src/lib/topPredictions";
 
 let failures = 0;
@@ -225,6 +225,15 @@ function fixture(league: number, home: string, away: string, hoursOut = 24) {
   check("women's FALLBACK/DEEP_FALLBACK leagues are never highlighted", selectTopMatches([pick(PREMIERE_LIGUE, 95), pick(DAMALLSVENSKAN, 95), pick(BELGIUM_W, 95)]).length === 0);
   check("an unpriced UWCL pick is not highlighted", selectTopMatches([pick(UWCL, 95, null)]).length === 0);
   check("...nor is a priced one while UWCL is FALLBACK: being UWCL is not enough", selectTopMatches([pick(UWCL, 95, 2.1)]).length === 0);
+
+  console.log("\nan unpriced UWCL pick cannot be promoted (the provider does not price UWCL yet):");
+  // The same pure gates curation and Bet of the Day selection call; nothing here is UWCL-specific.
+  const unpricedGateInput = { marketType: "MATCH_WINNER", selection: { value: "HOME" as const }, confidence: 95, odds: null };
+  const mcVerdict = evaluateMarketConfirmed({ ...unpricedGateInput, fetchedAt: null, now: NOW });
+  check("it cannot be MARKET_CONFIRMED, even at 95% confidence", mcVerdict.confirmed === false, mcVerdict);
+  const botdGate = qualifiesForBetOfDay(unpricedGateInput);
+  check("it cannot be Bet of the Day (the odds gate needs a real quoted price)", botdGate.qualifies === false && botdGate.price === null, botdGate);
+  check("it cannot be a morning-digest top-match highlight while UWCL is FALLBACK", selectTopMatches([pick(UWCL, 99, null)]).length === 0 && generationTierOf(UWCL) === "FALLBACK");
 
   console.log("\nimmediate TOP_PREDICTION pushes:");
   const on = { pushEnabled: true, inQuietHours: false };
