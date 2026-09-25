@@ -83,3 +83,52 @@ The first crawl-budget reduction is intentionally evidence-based rather than age
 - Empty team and league pages already emit `noindex,follow` and stay out of the sitemap.
 
 No broader team, league, cup or historical-match pruning is justified yet. Search Console already shows impressions on individual match, league, team and H2H URLs, so a blanket age or row-count cutoff could remove useful long-tail landing pages. Reassess after the first post-deployment crawl and the pending 16-month query/page export.
+
+## Connected measurement update — 21 September 2026
+
+The BetGenius Search Console domain property and GA4 property were connected through Windsor.ai for read-only reporting. A 16-month Search Console request returned no rows before 29 August 2026, so the figures below cover all history currently returned by the connector: **29 August–20 September 2026**. Search Console omits some anonymised queries, so query totals are smaller than property totals.
+
+### Search Console property totals
+
+| Period | Clicks | Impressions | CTR | Average position |
+|---|---:|---:|---:|---:|
+| 29–31 August | 11 | 404 | 2.72% | 9.14 |
+| 1–20 September | 221 | 3,882 | 5.69% | 8.57 |
+| Available history | 232 | 4,286 | 5.41% | 8.63 |
+
+The increase is promising but is not yet a stable monthly growth rate: August contains only three days and September is partial.
+
+### Brand and non-brand query visibility
+
+Visible query rows account for 172 clicks and 2,585 impressions. A manual case-insensitive classification of queries containing “betgenius” or “bet genius” gives:
+
+| Segment | Clicks | Impressions | CTR | Average position |
+|---|---:|---:|---:|---:|
+| Branded | 167 | 1,939 | 8.61% | 4.23 |
+| Non-brand | 5 | 646 | 0.77% | 20.29 |
+
+This confirms that the core growth problem is non-brand discovery. The clearest current non-brand opportunities are fixture/team terms already sitting on page one or two, led by `førde vs aalesund` (198 impressions, position 8.98), `lens prediction` (24, position 9.38), `bayern prediction` (11, position 8.73), and several individual fixture queries with smaller samples.
+
+### Device and country
+
+| Device | Clicks | Impressions | CTR | Average position |
+|---|---:|---:|---:|---:|
+| Mobile | 211 | 2,710 | 7.79% | 7.57 |
+| Desktop | 20 | 1,567 | 1.28% | 10.48 |
+| Tablet | 1 | 9 | 11.11% | 5.33 |
+
+Nigeria generated 201 clicks from 2,798 impressions at 7.18% CTR and position 6.99. Liberia was second by clicks with 17 from 50 impressions. The United States generated 291 impressions but only one click, and should not drive near-term content priorities ahead of Nigeria.
+
+### GA4 organic baseline
+
+GA4 property `553490163` contains data from **10–20 September 2026**:
+
+| Metric | Organic Search | All channels | Organic share |
+|---|---:|---:|---:|
+| Sessions | 163 | 494 | 33.0% |
+| Active users | 102 | 252 | 40.5% |
+| Engaged sessions | 120 | 359 | 33.4% |
+| Engagement rate | 73.62% | 72.67% | — |
+| Key events | 0 | 0 | — |
+
+The homepage received 109 organic landing sessions, `/predictions` 13, and `/predictions/today` 10. No registration, checkout or purchase key event is currently visible, so organic conversion performance cannot yet be measured. SEO-003 is therefore the next measurement dependency.

@@ -222,11 +222,16 @@ export const authOptions: NextAuthOptions = {
      * assert anything: it can ask for a refresh, the server decides what the
      * values are.
      */
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user, trigger, isNewUser }) {
       if (user) {
         token.uid = (user as any).id;
         token.role = (user as any).role;
       }
+      // The adapter is the authority on whether OAuth created an account.
+      // Carry that fact to the first authenticated page so GA4 records a
+      // completed sign-up rather than a Google-button click or repeat login.
+      if (isNewUser) (token as any).pendingSignUpMethod = "google";
+      if (trigger === "update") delete (token as any).pendingSignUpMethod;
       // At sign-in, and again whenever the session is explicitly updated.
       // Credentials' authorize() and the OAuth adapter's user object have
       // different shapes, so both providers resolve tier/subStatus from the
@@ -249,6 +254,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).role = token.role;
         (session.user as any).tier = token.tier;
         (session.user as any).subStatus = token.subStatus;
+        (session as any).pendingSignUpMethod = (token as any).pendingSignUpMethod ?? null;
       }
       return session;
     },

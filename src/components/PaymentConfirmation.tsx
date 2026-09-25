@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { trackEvent } from "@/lib/clientAnalytics";
+import type { PaidTier } from "@/lib/pricing";
 
 /**
  * Shown on /dashboard?paid=1 — the page Paystack sends a payer back to.
@@ -39,14 +41,34 @@ const INTERVAL_MS = 3000;
 export function PaymentConfirmation({
   activated,
   reference,
+  tier,
+  value,
 }: {
   activated: boolean;
   reference?: string | null;
+  tier?: PaidTier | null;
+  value?: number | null;
 }) {
   const { update } = useSession();
   const router = useRouter();
   const [waiting, setWaiting] = useState(!activated);
   const attempts = useRef(0);
+
+  // A confirmed, reference-backed activation is the purchase boundary. GA4
+  // also deduplicates transaction_id, while sessionStorage avoids repeat hits
+  // from this component refreshing as the session catches up.
+  useEffect(() => {
+    if (!activated || !reference || !tier || !value) return;
+    const key = `bg_purchase_${reference}`;
+    if (sessionStorage.getItem(key)) return;
+    trackEvent("purchase", {
+      transaction_id: reference,
+      currency: "NGN",
+      value,
+      items: [{ item_id: tier, item_name: `BetGenius ${tier}`, price: value, quantity: 1 }],
+    });
+    sessionStorage.setItem(key, "1");
+  }, [activated, reference, tier, value]);
 
   // Sync the browser's session claims with the database once, either way, and
   // — when Paystack gave us a reference to check — trigger verification before

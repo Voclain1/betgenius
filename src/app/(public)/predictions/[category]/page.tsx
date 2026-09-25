@@ -21,7 +21,11 @@ import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { FollowButton } from "@/components/FollowButton";
+import { TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
 import { matchKey } from "@/lib/slug";
+import { lagosDayLabel } from "@/lib/lagosDate";
+
+const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
@@ -35,7 +39,7 @@ export async function generateMetadata(
   // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
   // Featured, Genius and Premium showed near-zero volume, so they keep their
   // plain product names rather than being bent around a keyword nobody types.
-  const seoTitle = cat === "TODAY" ? "Today's Predictions"
+  const seoTitle = cat === "TODAY" ? "Football Predictions Today"
     : cat === "VIP" ? "VIP Predictions"
     : cat === "BANKER" ? "Banker Predictions"
     // Grounded in the term readers actually search, same approach as the
@@ -90,6 +94,7 @@ export default async function CategoryPage(
   if (!cat) return notFound();
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
+  const dateLabel = lagosDayLabel(DAY_OFFSETS[day]);
 
   const session = await getServerSession(authOptions);
   const viewer = await getViewerEntitlement();
@@ -178,7 +183,12 @@ export default async function CategoryPage(
       />
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{NAMES[cat]}</h1>
+          <h1 className="text-2xl font-bold">
+            {cat === "TODAY" ? "Football predictions today" : NAMES[cat]}
+          </h1>
+          {cat === "TODAY" && (
+            <p className="mt-1 text-sm text-gray-400">{dateLabel} · West Africa Time</p>
+          )}
           <FollowButton targetType="CATEGORY" targetKey={cat} label={`${NAMES[cat]} tips`} />
         </div>
         {!canView && (cat === "VIP" || cat === "PREMIUM") && (
@@ -205,6 +215,10 @@ export default async function CategoryPage(
       />
 
       <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
+
+      {cat === "TODAY" && (
+        <TodayPredictionsGuide dateLabel={dateLabel} />
+      )}
 
       {/* Ads are IN the feed now, between groups of picks, rather than in a
           single band under it — see feedAdPositions in src/lib/ads.ts for the

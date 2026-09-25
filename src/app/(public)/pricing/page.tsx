@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { PLAN_PRICING, PLAN_TIERS, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
+import { trackEvent } from "@/lib/clientAnalytics";
 
 // Prices AND plan copy come from lib/pricing — the same table the checkout
 // charges from, so the page, the post-signup modal and the invoice cannot
@@ -30,6 +31,11 @@ export default function Pricing() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error?.formErrors?.[0] || "Failed to initialize");
+      trackEvent("begin_checkout", {
+        currency: "NGN",
+        value: PLAN_PRICING[tier].ngn,
+        items: [{ item_id: tier, item_name: `BetGenius ${tier}`, price: PLAN_PRICING[tier].ngn, quantity: 1 }],
+      });
       window.location.href = j.authorization_url;
     } catch (e: any) {
       setErr(e.message);
