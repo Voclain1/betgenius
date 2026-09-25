@@ -7,6 +7,7 @@ import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { MarketSelectionFields, emptyMarketFormState, type MarketFormState } from "@/components/MarketSelectionFields";
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { RewriteRequest } from "@/components/RewriteRequest";
+import { EDITOR_PRESERVED_TAGS, isComboPrediction } from "@/lib/comboAdmin";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -95,11 +96,13 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       confidence: pred.confidence,
       reasoning: pred.reasoning,
       matchPreview: pred.matchPreview ?? "",
-      // BET_OF_THE_DAY is excluded from the editable set on purpose: it has no
-      // checkbox (it moves only via the pin action), and leaving it in this
-      // array would send a value the PATCH schema rejects. The API re-attaches
-      // it on save for rows that hold it.
-      categories: pred.categories.map((c: any) => c.category).filter((c: string) => c !== "BET_OF_THE_DAY"),
+      // BET_OF_THE_DAY and SAME_GAME_DOUBLE are excluded from the editable set
+      // on purpose: neither has a checkbox, and leaving them in this array
+      // would send a value the PATCH schema rejects. The API re-attaches both
+      // on save for rows that hold them (see mergeEditedCategories).
+      categories: pred.categories
+        .map((c: any) => c.category)
+        .filter((c: string) => !(EDITOR_PRESERVED_TAGS as readonly string[]).includes(c)),
       leagueApiId: pred.leagueApiId ?? undefined,
       leagueName: pred.leagueName ?? "",
       homeTeam: pred.homeTeam ?? "",
@@ -131,14 +134,20 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   };
 
   const save = async () => {
-    if (!form || !market || form.categories.length === 0) { setError("Select at least one category."); return; }
-    if (market.marketType === "OTHER") {
-      if (!market.otherMarket || !market.otherPick) { setError("Market and pick are required."); return; }
-    } else if (!isValidSelection(market.marketType, market.selection)) {
-      setError("Finish the selection for the chosen market type.");
-      return;
+    if (!form || !market) return;
+    // A Combo Bet's market is its two legs, fixed at assembly, and it always
+    // stays in Combo Bets, so it needs neither market fields nor a category.
+    const combo = !!p && isComboPrediction(p);
+    if (!combo) {
+      if (form.categories.length === 0) { setError("Select at least one category."); return; }
+      if (market.marketType === "OTHER") {
+        if (!market.otherMarket || !market.otherPick) { setError("Market and pick are required."); return; }
+      } else if (!isValidSelection(market.marketType, market.selection)) {
+        setError("Finish the selection for the chosen market type.");
+        return;
+      }
+      if (!market.ouLine) { setError("Over/Under line is required."); return; }
     }
-    if (!market.ouLine) { setError("Over/Under line is required."); return; }
 
     setBusy(true);
     setError(null);
@@ -158,12 +167,16 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             homeTeam: form.homeTeam || null,
             awayTeam: form.awayTeam || null,
             kickoff: form.kickoff ? new Date(form.kickoff).toISOString() : null,
-            marketType: market.marketType,
-            selection: market.marketType === "OTHER" ? undefined : market.selection,
-            otherMarket: market.marketType === "OTHER" ? market.otherMarket : undefined,
-            otherPick: market.marketType === "OTHER" ? market.otherPick : undefined,
-            ouLine: Number(market.ouLine),
-            ouDirection: market.ouDirection,
+            ...(combo
+              ? {}
+              : {
+                  marketType: market.marketType,
+                  selection: market.marketType === "OTHER" ? undefined : market.selection,
+                  otherMarket: market.marketType === "OTHER" ? market.otherMarket : undefined,
+                  otherPick: market.marketType === "OTHER" ? market.otherPick : undefined,
+                  ouLine: Number(market.ouLine),
+                  ouDirection: market.ouDirection,
+                }),
           },
         }),
       });
@@ -276,6 +289,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   };
 
   const isBetOfTheDay = !!p?.categories?.some((c) => c.category === "BET_OF_THE_DAY");
+  const isCombo = !!p && isComboPrediction(p);
 
   if (error && !p) return <div className="card text-red-400">{error}</div>;
   if (!p || !form || !market) return <div className="text-gray-400">Loading…</div>;
@@ -328,7 +342,18 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
         </label>
 
-        <MarketSelectionFields value={market} onChange={setMarket} homeTeam={form.homeTeam} awayTeam={form.awayTeam} />
+        {isCombo ? (
+          <div className="text-sm md:col-span-2">
+            <div className="mb-1">Combo Bet</div>
+            <div className="rounded-md border border-brand-border bg-brand-bg px-3 py-2">{p.pick}</div>
+            <p className="mt-1 text-xs text-gray-500">
+              The two legs are fixed when the combo is assembled and are what settlement reads, so they can&apos;t be edited here.
+              This pick always stays in Combo Bets; the categories below are optional extra feeds.
+            </p>
+          </div>
+        ) : (
+          <MarketSelectionFields value={market} onChange={setMarket} homeTeam={form.homeTeam} awayTeam={form.awayTeam} />
+        )}
 
         <label className="text-sm">Confidence %
           <input type="number" min={0} max={100} value={form.confidence}

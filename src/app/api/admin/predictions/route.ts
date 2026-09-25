@@ -8,11 +8,24 @@ import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUn
 import { normalizeName } from "@/lib/slug";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { z } from "zod";
+import { COMBO_MARKET_TYPE } from "@/lib/comboAdmin";
 
-export async function GET() {
+/**
+ * ?marketType=SAME_GAME_DOUBLE returns assembled doubles only: the admin
+ * "Combo Bets" view. Filtered here rather than in the page, because the
+ * unfiltered list is capped at the newest 200 rows and, at generation volume,
+ * that cap would push most doubles out of reach. Matches marketType, not the
+ * SAME_GAME_DOUBLE tag, which the hidden source legs carry too.
+ */
+const ListQuery = z.object({ marketType: z.literal(COMBO_MARKET_TYPE).optional() });
+
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!isAdmin(session?.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const query = ListQuery.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!query.success) return NextResponse.json({ error: query.error.flatten() }, { status: 400 });
   const items = await prisma.prediction.findMany({
+    where: query.data.marketType ? { marketType: query.data.marketType } : undefined,
     orderBy: { createdAt: "desc" },
     take: 200,
     include: { author: true, approvedBy: true, categories: true, fixture: { include: { homeTeam: true, awayTeam: true } } },

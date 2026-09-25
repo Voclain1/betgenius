@@ -18,7 +18,9 @@
  */
 
 import { randomUUID } from "crypto";
-import { startCutoffMsForCategories } from "@/lib/doublesTargeting";
+import { startCutoffMsForCategories, loadComboDayPools, REGULAR_COMBO_INTENT } from "@/lib/doublesTargeting";
+import { adaptiveComboTarget, planComboAllocation, type DayPoolEntry } from "@/lib/comboQuota";
+import { lagosDateKey } from "@/lib/lagosDate";
 
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
@@ -109,6 +111,11 @@ export type RunReport = {
   kickoffMismatches: KickoffMismatch[];
   /** The competition scope an ordinary run generated within. Absent on targeted runs. */
   coverage?: { mode: CoverageMode; higherTierCount: number; allowedTiers: GenerationTier[] };
+  /** Per kickoff day: the adaptive combo target and how this run split its fixtures. Ordinary runs only. */
+  comboPlan?: {
+    dailyRemainingBefore: number;
+    days: Record<string, { eligible: number; target: number; combosBefore: number; combos: number; singles: number }>;
+  };
 };
 
 /**
@@ -210,6 +217,13 @@ export async function runGeneration(opts: {
   matchKeys?: string[];
   limit: number;
   now?: Date;
+  /**
+   * Ordinary scheduled runs: decide combo vs single per fixture from its
+   * kickoff day (see src/lib/comboQuota.ts). `dailyRemaining` is what is left
+   * of DOUBLES_DAILY_QUOTA today; `comboCategories` are the explicitly
+   * requested categories an assembled double is also tagged with.
+   */
+  adaptiveCombo?: { dailyRemaining: number; comboCategories: string[] };
 }): Promise<RunReport> {
   const startedAt = Date.now();
   const empty = (reason: string, quotaRemaining = 0): RunReport => ({
@@ -254,14 +268,66 @@ export async function runGeneration(opts: {
       ...(coverage ? { coverage } : {}),
     };
 
-    // Doubles cost about twice a normal fixture, so they get a tighter cutoff
-    // derived from cron-job.org's 30s ceiling rather than the general one.
-    const startCutoffMs = startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS, opts.intent);
+    // Adaptive combo share (ordinary runs only). Whether each fixture is a
+    // combo is decided from its own kickoff day's pool by planComboAllocation:
+    // the day's adaptiveComboTarget, spread across the day's ranked fixtures
+    // rather than handed to whichever are claimed first, within the
+    // per-creation-day spend ceiling. If the pools cannot be read the run
+    // generates singles only: the failure mode is fewer combos, never a
+    // combo-dominated day.
+    let comboPools: Map<string, DayPoolEntry[]> | null = null;
+    let comboBudget = opts.adaptiveCombo?.dailyRemaining ?? 0;
+    if (opts.adaptiveCombo && comboBudget > 0) {
+      try {
+        comboPools = await loadComboDayPools(opts.now ?? new Date(), excludeLeagueApiIds ?? []);
+      } catch (error) {
+        console.error("[generation] combo pools unavailable; generating singles only", error);
+      }
+    }
+    if (opts.adaptiveCombo) report.comboPlan = { dailyRemainingBefore: comboBudget, days: {} };
 
     for (const c of candidates) {
-      // Stop claiming new work rather than risk being killed mid-fixture. The
-      // remaining candidates are simply re-derived next run.
-      if (Date.now() - startedAt >= startCutoffMs) {
+      // Combo or single, decided per fixture from its own kickoff day.
+      let intent = opts.intent;
+      let comboCategories: string[] | undefined;
+      if (opts.adaptiveCombo && report.comboPlan) {
+        const day = lagosDateKey(c.kickoff);
+        const pool = comboPools?.get(day) ?? [];
+        const plan = (report.comboPlan.days[day] ??= {
+          eligible: pool.length,
+          target: adaptiveComboTarget(pool.length),
+          combosBefore: pool.filter((e) => e.generated && e.combo).length,
+          combos: 0,
+          singles: 0,
+        });
+        const candidate = { matchKey: c.matchKey, leagueApiId: c.leagueApiId, kickoff: c.kickoff };
+        if (comboPools && planComboAllocation({ pool, candidate, dailyRemaining: comboBudget })) {
+          intent = REGULAR_COMBO_INTENT;
+          comboCategories = opts.adaptiveCombo.comboCategories;
+        }
+        // Stop claiming new work rather than risk being killed mid-fixture.
+        // Doubles cost about twice a normal fixture, so they get a tighter
+        // cutoff derived from cron-job.org's 30s ceiling.
+        if (Date.now() - startedAt >= startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS, intent)) {
+          report.reason = "soft deadline reached — remaining fixtures deferred to the next run";
+          break;
+        }
+        // Recorded at claim, before generation: quotas count attempts, and a
+        // failed job still spends its slot. Marking the fixture generated in
+        // the pool is what the next decision in this run reads.
+        const isCombo = intent === REGULAR_COMBO_INTENT;
+        const entry = pool.find((e) => e.matchKey === c.matchKey);
+        if (entry) Object.assign(entry, { generated: true, combo: isCombo });
+        else if (comboPools) comboPools.set(day, [...pool, { ...candidate, generated: true, combo: isCombo }]);
+        if (isCombo) {
+          comboBudget--;
+          plan.combos++;
+        } else {
+          plan.singles++;
+        }
+      } else if (Date.now() - startedAt >= startCutoffMsForCategories(opts.categories, SOFT_DEADLINE_MS, intent)) {
+        // Stop claiming new work rather than risk being killed mid-fixture. The
+        // remaining candidates are simply re-derived next run.
         report.reason = "soft deadline reached — remaining fixtures deferred to the next run";
         break;
       }
@@ -276,7 +342,8 @@ export async function runGeneration(opts: {
           kickoff: c.kickoff.toISOString(),
           round: c.round,
           categories: opts.categories,
-          intent: opts.intent,
+          intent,
+          ...(comboCategories ? { comboCategories } : {}),
           authorId: opts.authorId,
           // The fixture list already carried these — passing them through is
           // what removes the two searchTeam calls per fixture.

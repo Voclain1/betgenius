@@ -21,9 +21,10 @@ import {
 } from "@/lib/vipPremiumPipeline";
 import {
   DOUBLES_DAILY_QUOTA,
-  REGULAR_COMBO_INTENT,
+  SAME_GAME_DOUBLE,
   doublesQuotaRemaining,
 } from "@/lib/doublesTargeting";
+import { comboDestinationCategories } from "@/lib/comboQuota";
 import {
   selectBetOfTheDayTargets,
   betOfTheDayQuotaRemaining,
@@ -156,7 +157,8 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
 
   /** Legacy explicit doubles requests share the same measured daily cap as the
    * regular combo mix. The source legs are isolated during persistence and the
-   * assembled output is routed to FEATURED when no normal category was supplied.
+   * assembled output is tagged SAME_GAME_DOUBLE plus any other category the
+   * request named. There is no FEATURED fallback (see comboQuota.ts).
    */
   const wantsDoubles = valid.includes("SAME_GAME_DOUBLE");
   let doublesTargeting: Record<string, unknown> | undefined;
@@ -239,14 +241,11 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   }
 
   /**
-   * While the shared multi-market quota has room, ordinary scheduled
-   * generation produces an internally isolated set of legs and one compatible
-   * compound pick. Only the compound pick receives the requested normal-feed
-   * categories; the legs remain available for independent settlement without
-   * appearing as duplicate loose picks in FEATURED/TODAY.
-   *
-   * Once the quota is spent this falls through to the existing single-market
-   * path. It never suppresses ordinary generation.
+   * For the fixtures ordinary scheduled generation takes as combos (see the
+   * adaptive rule below), it produces an internally isolated set of legs and
+   * one compatible compound pick. The legs remain available for independent
+   * settlement without appearing as duplicate loose picks in FEATURED/TODAY.
+   * Every other fixture takes the single-market path.
    */
   let bankerTargeting: Record<string, unknown> | undefined;
   if (wantsBanker) {
@@ -267,21 +266,30 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   // Excluded from the regular-combo path for the same reason the others are: a
   // banker is a single high-conviction call, and the multi-market breadth that
   // feeds double assembly is the opposite instruction.
+  //
+  // The combo share is decided per fixture by the worker, from that fixture's
+  // own kickoff day (adaptiveComboTarget in src/lib/comboQuota.ts), rather than
+  // by putting the whole run into REGULAR_COMBO while the daily quota has room.
+  // That older rule spent the first 20 jobs of every Lagos day on combos, which
+  // on a quiet slate was nearly the whole queue. DOUBLES_DAILY_QUOTA remains as
+  // the per-creation-day spend ceiling.
+  //
+  // Doubles are tagged SAME_GAME_DOUBLE plus only the categories this request
+  // named explicitly. The ["FEATURED"] default below is generation
+  // calibration, not a destination: an ordinary double is no longer put in
+  // FEATURED by default.
   const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsVipPremium && !wantsBanker;
   let regularComboTargeting: Record<string, unknown> | undefined;
-  let generationIntent: string | undefined = wantsVipPremium ? VIP_PREMIUM_INTENT : wantsBanker ? BANKER_INTENT : undefined;
+  let adaptiveCombo: { dailyRemaining: number; comboCategories: string[] } | undefined;
+  const generationIntent: string | undefined = wantsVipPremium ? VIP_PREMIUM_INTENT : wantsBanker ? BANKER_INTENT : undefined;
   if (wantsRegularCombo) {
     const remaining = await doublesQuotaRemaining();
-    if (remaining > 0) {
-      generationIntent = REGULAR_COMBO_INTENT;
-      effectiveLimit = Math.min(remaining, effectiveLimit);
-      regularComboTargeting = {
-        quota: DOUBLES_DAILY_QUOTA,
-        remainingBeforeRun: remaining,
-        limitApplied: effectiveLimit,
-        destinationCategories: valid.length ? valid : ["FEATURED"],
-      };
-    }
+    adaptiveCombo = { dailyRemaining: remaining, comboCategories: valid.filter((c) => c !== SAME_GAME_DOUBLE) };
+    regularComboTargeting = {
+      spendCeiling: DOUBLES_DAILY_QUOTA,
+      remainingBeforeRun: remaining,
+      destinationCategories: comboDestinationCategories(adaptiveCombo.comboCategories),
+    };
   }
 
   const report = await runGeneration({
@@ -291,7 +299,9 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     matchKeys,
     limit: effectiveLimit,
+    adaptiveCombo,
   });
+  if (regularComboTargeting && report.comboPlan) regularComboTargeting.plan = report.comboPlan;
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
   if (vipPremiumTargeting) {

@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { ADMIN_COMBO_FILTER, COMBO_MARKET_TYPE, matchesAdminCategoryFilter } from "@/lib/comboAdmin";
 
 const CATEGORY_VALUES = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
 
 type Row = {
   id: string;
+  marketType: string;
   category: string;
   categories: { category: string }[];
   status: string;
@@ -67,14 +69,20 @@ export default function AdminPredictions() {
   const [categoriesToAdd, setCategoriesToAdd] = useState<Set<string>>(new Set());
   const [categoriesToRemove, setCategoriesToRemove] = useState<Set<string>>(new Set());
 
+  // The Combo Bets view asks the API for doubles directly. The unfiltered list
+  // is only the newest 200 rows, which at generation volume would leave most
+  // doubles out of reach of a client-side filter.
+  const comboView = categoryFilter === ADMIN_COMBO_FILTER;
   const load = async () => {
-    const j = await fetch("/api/admin/predictions").then((r) => r.json());
+    const url = comboView ? `/api/admin/predictions?marketType=${COMBO_MARKET_TYPE}` : "/api/admin/predictions";
+    const j = await fetch(url).then((r) => r.json());
     setRows(j.items);
     // Selections refer to rows that may have just changed status — clearing
     // avoids acting twice on something already actioned.
     setSelected(new Set());
   };
-  useEffect(() => { load(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [comboView]);
 
   const act = async (id: string, action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
     await fetch(`/api/admin/predictions/${id}`, {
@@ -182,11 +190,7 @@ export default function AdminPredictions() {
 
   const shown = rows
     .filter((r) => filter === "ALL" || r.status === filter)
-    .filter(
-      (r) =>
-        categoryFilter === "ALL" ||
-        (r.categories?.length ? r.categories.some((c) => c.category === categoryFilter) : r.category === categoryFilter),
-    )
+    .filter((r) => matchesAdminCategoryFilter(r, categoryFilter))
     .filter((r) => leagueFilter === "ALL" || r.leagueName === leagueFilter)
     .filter((r) => r.confidence >= minConfidence)
     .sort((a, b) => {
@@ -229,6 +233,8 @@ export default function AdminPredictions() {
         <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
           className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
           {["ALL", "FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"].map((c) => <option key={c}>{c}</option>)}
+          {/* Matches assembled doubles by market type, not by tag: see comboAdmin.ts. */}
+          <option value={ADMIN_COMBO_FILTER}>Combo Bets</option>
         </select>
         <select value={leagueFilter} onChange={(e) => setLeagueFilter(e.target.value)}
           className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">

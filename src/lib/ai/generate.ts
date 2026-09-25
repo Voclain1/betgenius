@@ -92,6 +92,15 @@ export type GenerateFixtureInput = {
    * quota has to count attempts, so the attempt has to be labelled.
    */
   intent?: string;
+  /**
+   * The categories an assembled double is published under, besides
+   * SAME_GAME_DOUBLE. Kept apart from `categories`, which still drives
+   * calibration: the scheduled worker generates combos under ["FEATURED"]
+   * calibration but passes only the categories the run was explicitly asked
+   * for here, so an ordinary double is not tagged FEATURED by default.
+   * Absent means "use `categories`", the admin routes' behaviour.
+   */
+  comboCategories?: string[];
 };
 
 /**
@@ -365,7 +374,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   )).filter((p): p is NonNullable<typeof p> => p !== null);
 
   const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED"
-    ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.categories)
+    ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.comboCategories ?? input.categories)
     : null;
 
   return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs, handicapRejections };
