@@ -13,8 +13,11 @@ import {
   buildNightDigest,
   lagosInstant,
   morningDigestKey,
+  nightDigestDay,
   nightDigestDecision,
   nightDigestKey,
+  digestDayLabel,
+  digestDeliverNotBefore,
   pushCopy,
   pushesImmediately,
   renderDigest,
@@ -206,49 +209,72 @@ const base = {
       },
     },
   } as never;
-  const night = buildNightDigest(slate.map((p) => ({ ...p, outcome: "WON" })), botd.id, at(23 * 60));
+  const night = buildNightDigest(slate.map((p) => ({ ...p, outcome: "WON" })), botd.id, DAY);
   for (let i = 0; i < 3; i++) {
     await createNotificationEvent({ eventKey: morningDigestKey(DAY), type: DIGEST_MORNING, title: "t", body: "b", link: "/predictions/today", data: morning }, fakeDb);
     await createNotificationEvent({ eventKey: nightDigestKey(DAY), type: DIGEST_NIGHT, title: "t", body: "b", link: "/track-record", data: night }, fakeDb);
   }
   check("three runs create one morning and one night event", creates === 2, creates);
   const dailyDigests = readFileSync("src/lib/dailyDigests.ts", "utf8");
-  check("creation is keyed on the day key, not the clock", dailyDigests.includes("morningDigestKey(day)") && dailyDigests.includes("nightDigestKey(day)"));
+  check(
+    "creation is keyed on the day key, not the clock",
+    dailyDigests.includes("morningDigestKey(day)") && dailyDigests.includes("nightDigestKey(summarised)") && dailyDigests.includes("nightDigestDay(now)"),
+  );
 
-  console.log("\nnight digest timing (completion-aware, 23:00 to 23:55 Lagos):");
+  console.log("\nnight digest timing (previous Lagos day, created 03:10 to 03:30, delivered from 07:00):");
   const settled = slate.map((p) => ({ ...p, outcome: "WON" }));
   const halfway = slate.map((p, i) => ({ ...p, outcome: i % 2 ? "LOST" : "PENDING" }));
   const nearlyAll = slate.map((p, i) => ({ ...p, outcome: i === 0 ? "PENDING" : "WON" })); // 21 of 22 settled
-  check("evaluation starts at 23:00", DIGEST_TIMING.nightFrom === 23 * 60);
-  check("hard cutoff is 23:55", DIGEST_TIMING.nightDeadline === 23 * 60 + 55);
-  check("no digest before 23:00, even fully settled", !nightDigestDecision(settled, at(21 * 60)).send && !nightDigestDecision(settled, at(22 * 60 + 59)).send);
-  check("sent at 23:00 once every pick has settled", JSON.stringify(nightDigestDecision(settled, at(23 * 60))) === JSON.stringify({ send: true, partial: false }));
+  // Minutes on the Lagos morning AFTER the summarised day.
+  const NEXT = "2026-09-23";
+  const after = (minutes: number) => lagosInstant(NEXT, minutes);
+  check("evaluation starts at 03:10, after the 03:00 settlement run", DIGEST_TIMING.nightFrom === 3 * 60 + 10);
+  check("hard cutoff is 03:30", DIGEST_TIMING.nightDeadline === 3 * 60 + 30);
+  check("no longer created from 04:00", DIGEST_TIMING.nightUntil === 4 * 60);
+  check("delivery is held until 07:00", DIGEST_TIMING.nightDeliverFrom === 7 * 60);
+  check("before midnight it points at the day before, never the day still being played", nightDigestDay(at(23 * 60 + 30)) === "2026-09-21");
+  check("after midnight it summarises the previous Lagos day", nightDigestDay(after(190)) === DAY && nightDigestDay(after(0)) === DAY && nightDigestDay(after(5 * 60 + 59)) === DAY);
+  check("...so the event key is digest:night:<summarised day>", nightDigestKey(nightDigestDay(after(190))) === "digest:night:2026-09-22");
+  check("month and year boundaries roll back correctly", nightDigestDay(lagosInstant("2026-10-01", 70)) === "2026-09-30" && nightDigestDay(lagosInstant("2027-01-01", 70)) === "2026-12-31");
+  check("the Lagos day boundary is 23:00 UTC", nightDigestDay(new Date("2026-09-22T23:10:00Z")) === DAY && nightDigestDay(new Date("2026-09-22T22:50:00Z")) === "2026-09-21");
+  check("nothing on the evening itself, even fully settled", !nightDigestDecision(settled, at(23 * 60)).send && !nightDigestDecision(settled, at(23 * 60 + 55)).send);
+  check("nothing between midnight and 03:10, even fully settled", !nightDigestDecision(settled, after(0)).send && !nightDigestDecision(settled, after(70)).send && !nightDigestDecision(settled, after(185)).send);
+  check("03:05: not yet", !nightDigestDecision(settled, after(185)).send);
+  check("created at 03:10 once every pick has settled", JSON.stringify(nightDigestDecision(settled, after(190))) === JSON.stringify({ send: true, partial: false }));
   check(
     "sent once substantially settled, labelled partial",
-    JSON.stringify(nightDigestDecision(nearlyAll, at(23 * 60 + 10))) === JSON.stringify({ send: true, partial: true }),
-    nightDigestDecision(nearlyAll, at(23 * 60 + 10)),
+    JSON.stringify(nightDigestDecision(nearlyAll, after(195))) === JSON.stringify({ send: true, partial: true }),
+    nightDigestDecision(nearlyAll, after(195)),
   );
-  check("an unresolved slate defers at 23:00", !nightDigestDecision(halfway, at(23 * 60)).send);
-  check("...and still defers at 23:50", !nightDigestDecision(halfway, at(23 * 60 + 50)).send);
-  check("the 23:55 cutoff sends it partial", JSON.stringify(nightDigestDecision(halfway, at(23 * 60 + 55))) === JSON.stringify({ send: true, partial: true }));
-  check("nothing when nothing settled, even at the cutoff", !nightDigestDecision(slate, at(23 * 60 + 55)).send);
-  const cutoff = renderDigest(buildNightDigest(halfway, botd.id, at(23 * 60 + 55)), FREE);
+  check("an unresolved slate defers at 03:10", !nightDigestDecision(halfway, after(190)).send);
+  check("...and still defers at 03:25", !nightDigestDecision(halfway, after(205)).send);
+  check("the 03:30 cutoff sends it partial", JSON.stringify(nightDigestDecision(halfway, after(210))) === JSON.stringify({ send: true, partial: true }));
+  check("nothing when nothing settled, even at the cutoff", !nightDigestDecision(slate, after(210)).send);
+  check("...or later", !nightDigestDecision(slate, after(225)).send);
+  check("not created from 04:00, even fully settled", !nightDigestDecision(settled, after(4 * 60)).send);
   check(
-    "cutoff digest is Results so far, with the unsettled count",
-    cutoff.title.startsWith("Results so far") && /11 still awaiting results/.test(cutoff.body) && !/All \d+ of today/.test(cutoff.body),
+    "delivery of the 22 Sep digest is held until 07:00 on 23 Sep",
+    digestDeliverNotBefore({ type: DIGEST_NIGHT, data: buildNightDigest(settled, botd.id, DAY) })?.getTime() === after(7 * 60).getTime(),
+  );
+  check("no other event type is held", digestDeliverNotBefore({ type: DIGEST_MORNING, data: morning }) === null && digestDeliverNotBefore({ type: "TIP_CHANGED", data: {} }) === null);
+  check("the copy never says tonight", !/tonight/i.test(JSON.stringify([renderDigest(buildNightDigest(settled, botd.id, DAY), FREE), renderDigest(buildNightDigest(halfway, botd.id, DAY), FREE)])));
+  const cutoff = renderDigest(buildNightDigest(halfway, botd.id, DAY), FREE);
+  check(
+    "cutoff digest is Results so far, dated, with the unsettled count",
+    cutoff.title.startsWith("Results so far for Tue 22 Sep") && /11 still awaiting results/.test(cutoff.body) && !/All \d+ of/.test(cutoff.body),
     cutoff,
   );
-  const lateNow = new Date(lagosInstant(DAY, 23 * 60 + 59).getTime() + 59_000);
-  check(
-    "close to midnight the digest day is still the day summarised",
-    lagosDayKeyForTest(lateNow) === DAY && buildNightDigest(settled, botd.id, lateNow).day === DAY && nightDigestKey(lagosDayKeyForTest(lateNow)) === "digest:night:2026-09-22",
-  );
-  check("just after midnight nothing is evaluated", !nightDigestDecision(settled, lagosInstant(DAY, 24 * 60 + 5)).send);
+  check("the payload's day is the day summarised, not the day it is built", buildNightDigest(settled, botd.id, DAY).day === DAY);
   const full = renderDigest(night, FREE);
-  check("a full digest says so", full.title.startsWith("Today's results") && /All \d+ of today's picks settled/.test(full.body));
+  check(
+    "a full digest says so, by date rather than 'today'",
+    full.title.startsWith("Results for Tue 22 Sep") && /All \d+ of Tue 22 Sep's picks settled/.test(full.body) && !/today/i.test(full.title + full.body),
+    full,
+  );
   check("Bet of the Day result is included", /Bet of the Day: .* WON/.test(full.body), full.body);
   check("completed categories are listed", /Completed: Banker, Genius, VIP/.test(full.body), full.body);
   check("links to the track record", full.link === "/track-record");
+  check("the date label is stable", digestDayLabel("2026-09-22") === "Tue 22 Sep" && digestDayLabel("2026-12-31") === "Thu 31 Dec");
 
   console.log("\nmorning behaviour is unchanged:");
   check(
@@ -315,7 +341,7 @@ const base = {
     "followedAlerts on but newPredictions off: no follower morning digest",
     personaliseDigest(morning, digestAudienceFor(DIGEST_MORNING, { followedAlerts: true, newPredictions: false }, followEpl), FREE) === null,
   );
-  const nightFollowed = personaliseDigest(buildNightDigest(halfway, botd.id, at(23 * 60 + 55)), digestAudienceFor(DIGEST_NIGHT, { followedAlerts: true }, followEpl), FREE);
+  const nightFollowed = personaliseDigest(buildNightDigest(halfway, botd.id, DAY), digestAudienceFor(DIGEST_NIGHT, { followedAlerts: true }, followEpl), FREE);
   check(
     "a followed-only night digest is scoped and honest",
     !!nightFollowed && /^Your follows so far: /.test(nightFollowed.title) && /awaiting results/.test(nightFollowed.body) && !/Bet of the Day|Completed:/.test(nightFollowed.body),
@@ -403,15 +429,21 @@ const base = {
   // The real createDailyDigests, run every 5 minutes against an in-memory
   // stand-in for the reads and the one write it makes.
   const db = prisma as unknown as Record<string, Record<string, unknown>>;
-  let published: { pick: DigestPick; at: number }[] = [];
+  // `settleAt`/`result`: when the settlement job resolves the pick, and to what.
+  let published: { pick: DigestPick; at: number; settleAt?: number; result?: string }[] = [];
   let taggedBotd: string | null = null;
   const events = new Map<string, { type: string; data: MorningDigestData; createdAt: Date }>();
   let eventCreates = 0;
   let clock = 0;
-  db.prediction.findMany = async () =>
+  db.prediction.findMany = async ({ where }: { where?: { kickoff?: { gte: Date; lt: Date } } } = {}) =>
     published
       .filter((p) => p.at <= clock)
-      .map(({ pick: p }) => ({ ...p, categories: p.categories.map((category) => ({ category })) }));
+      .filter(({ pick: p }) => !where?.kickoff || (!!p.kickoff && p.kickoff >= where.kickoff.gte && p.kickoff < where.kickoff.lt))
+      .map(({ pick: p, settleAt, result }) => ({
+        ...p,
+        outcome: settleAt != null && settleAt <= clock ? result ?? "WON" : p.outcome,
+        categories: p.categories.map((category) => ({ category })),
+      }));
   db.prediction.findFirst = async () => (taggedBotd && published.some((p) => p.pick.id === taggedBotd && p.at <= clock) ? { id: taggedBotd } : null);
   db.notificationEvent.findUnique = async ({ where }: { where: { eventKey: string } }) => (events.has(where.eventKey) ? { id: where.eventKey } : null);
   db.notificationEvent.upsert = async ({ where, create }: { where: { eventKey: string }; create: { type: string; data: MorningDigestData } }) => {
@@ -457,6 +489,99 @@ const base = {
   events.clear(); eventCreates = 0;
   check("an empty day creates nothing", (await runMorning()).length === 0 && eventCreates === 0);
   taggedBotd = null;
+
+  // Every reminders run (every 5 minutes) between two Lagos instants; returns
+  // the runs at which a night digest was created, as "YYYY-MM-DD HH:MM" Lagos.
+  const events2 = events as unknown as Map<string, { type: string; title: string; body: string; data: { day: string }; expiresAt: Date }>;
+  async function runNights(fromDay: string, fromMinute: number, toDay: string, toMinute: number) {
+    const created: string[] = [];
+    const reasons = new Map<string, string>();
+    for (let t = lagosInstant(fromDay, fromMinute).getTime(); t <= lagosInstant(toDay, toMinute).getTime(); t += 5 * 60_000) {
+      clock = t;
+      const r = await createDailyDigests(new Date(clock));
+      const minute = Math.round((t - lagosInstant(lagosDayKeyForTest(new Date(t)), 0).getTime()) / 60_000);
+      const label = `${lagosDayKeyForTest(new Date(t))} ${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+      reasons.set(label, r.night);
+      if (r.night.startsWith("created")) created.push(label);
+    }
+    return { created, reasons };
+  }
+  const settleRun = (day: string, minutes: number) => lagosInstant(day, minutes).getTime();
+
+  console.log("\nnight digest across midnight: the 22 Sep 2026 production pattern:");
+  // Production, 22 Sep: 89 published picks, last kickoff 23:30 Lagos. Settlement
+  // runs every three hours. Nothing had settled by 23:55, so the old 23:00-23:55
+  // window logged "nothing settled by the cutoff" and the day never got a
+  // digest. Settled counts read from production: 50 after the 00:00 run on
+  // 23 Sep, 70 after the 03:00 run, 82 only after the 18:00 run; 7 never.
+  seq = 400;
+  const SEP22 = "2026-09-22", SEP23 = "2026-09-23", SEP24 = "2026-09-24";
+  published = Array.from({ length: 89 }, (_, i) => ({
+    pick: pick({ kickoff: lagosInstant(SEP22, 12 * 60 + Math.round((i * 11.5 * 60) / 88)), categories: i === 0 ? ["BET_OF_THE_DAY"] : i % 4 ? [] : ["GENIUS"] }),
+    at: lagosInstant(SEP22, 8 * 60).getTime(),
+    settleAt: i < 50 ? settleRun(SEP23, 0) : i < 70 ? settleRun(SEP23, 3 * 60) : i < 82 ? settleRun(SEP23, 18 * 60) : undefined,
+    result: i % 3 ? "WON" : "LOST",
+  }));
+  taggedBotd = published[0].pick.id;
+  events.clear(); eventCreates = 0;
+  clock = lagosInstant(SEP22, 23 * 60 + 55).getTime();
+  const at2355 = (await prisma.prediction.findMany({ where: { kickoff: { gte: lagosInstant(SEP22, 0), lt: lagosInstant(SEP22, 24 * 60) } } } as never)) as { outcome: string }[];
+  check("22 Sep at 23:55: 0 of 89 settled, which is why the old same-evening window skipped it", at2355.length === 89 && at2355.every((p) => p.outcome === "PENDING"));
+  const sep22Run = await runNights(SEP22, 22 * 60 + 55, SEP23, 6 * 60 + 10);
+  const sep22Event = events2.get("digest:night:2026-09-22");
+  check("nothing is created on the evening of 22 Sep", ![...sep22Run.reasons.entries()].some(([k, v]) => k.startsWith(SEP22) && v.startsWith("created")));
+  check("from 00:00 to 03:05 on 23 Sep nothing is evaluated", ["00:30", "01:10", "02:00", "03:05"].every((t) => sep22Run.reasons.get(`${SEP23} ${t}`) === "outside window"));
+  check("03:10 with 70 of 89 settled (79%, under 90%): deferred", sep22Run.reasons.get(`${SEP23} 03:10`) === "deferred: 19 still unsettled", sep22Run.reasons.get(`${SEP23} 03:10`));
+  check("the 22 Sep digest is created on 23 Sep at the 03:30 cutoff", JSON.stringify(sep22Run.created) === JSON.stringify([`${SEP23} 03:30`]), sep22Run.created);
+  check("...under the 22 Sep key", !!sep22Event && sep22Event.data.day === SEP22 && events2.size === 1);
+  check(
+    "...honestly partial: Results so far, with the unsettled count",
+    !!sep22Event && sep22Event.title.startsWith("Results so far for Tue 22 Sep: ") && sep22Event.body.includes("70 of 89 settled — 19 still awaiting results."),
+    sep22Event,
+  );
+  check("...with the day's Bet of the Day result, still tagged after midnight", !!sep22Event && /^Bet of the Day: .*: LOST$/m.test(sep22Event.body), sep22Event?.body);
+  check("...expiring at 12:00 on 23 Sep", sep22Event?.expiresAt.getTime() === lagosInstant(SEP23, 12 * 60).getTime());
+  check("every later run up to 04:00 is a no-op", sep22Run.reasons.get(`${SEP23} 03:35`) === "already created" && sep22Run.reasons.get(`${SEP23} 03:55`) === "already created" && eventCreates === 1);
+  check("from 04:00 the night window is closed", sep22Run.reasons.get(`${SEP23} 04:00`) === "outside window" && sep22Run.reasons.get(`${SEP23} 06:00`) === "outside window");
+
+  console.log("\nnight digest across midnight: a day that settles by the 00:00 run (23 Sep):");
+  // Production, 23 Sep: 74 picks, last kickoff 20:00. 44 had settled by 23:55,
+  // so the old window sent a partial "Results so far" at 23:55. The 00:00 run
+  // on 24 Sep settled the other 30.
+  seq = 600;
+  published = Array.from({ length: 74 }, (_, i) => ({
+    pick: pick({ kickoff: lagosInstant(SEP23, 13 * 60 + Math.round((i * 7 * 60) / 73)) }),
+    at: lagosInstant(SEP23, 8 * 60).getTime(),
+    settleAt: i < 44 ? settleRun(SEP23, 21 * 60) : settleRun(SEP24, 0),
+    result: i % 2 ? "WON" : "LOST",
+  }));
+  taggedBotd = null;
+  events.clear(); eventCreates = 0;
+  const sep23Run = await runNights(SEP23, 22 * 60 + 55, SEP24, 6 * 60 + 10);
+  const sep23Event = events2.get("digest:night:2026-09-23");
+  check("created once, at 03:10 on 24 Sep", JSON.stringify(sep23Run.created) === JSON.stringify([`${SEP24} 03:10`]) && eventCreates === 1, sep23Run.created);
+  check(
+    "...as the completed-results recap, not Results so far",
+    !!sep23Event && sep23Event.title.startsWith("Results for Wed 23 Sep: ") && sep23Event.body.includes("All 74 of Wed 23 Sep's picks settled."),
+    sep23Event,
+  );
+
+  console.log("\nnight digest: no duplicates, and nothing for a day with no results:");
+  // Deploy night: the old code already made tonight's digest in its 23:00-23:55 window.
+  events.clear(); eventCreates = 0;
+  events.set("digest:night:2026-09-23", { type: DIGEST_NIGHT, data: {} as MorningDigestData, createdAt: lagosInstant(SEP23, 23 * 60 + 55) });
+  const dupRun = await runNights(SEP24, 0, SEP24, 6 * 60 + 10);
+  check("an existing digest for the summarised day is never repeated", dupRun.created.length === 0 && eventCreates === 0 && dupRun.reasons.get(`${SEP24} 03:10`) === "already created");
+  seq = 800;
+  published = Array.from({ length: 10 }, (_, i) => ({ pick: pick({ kickoff: lagosInstant(SEP23, 19 * 60 + i) }), at: lagosInstant(SEP23, 8 * 60).getTime() }));
+  events.clear(); eventCreates = 0;
+  const noneRun = await runNights(SEP24, 0, SEP24, 6 * 60 + 10);
+  check("zero settled: nothing created, before or after the cutoff", noneRun.created.length === 0 && eventCreates === 0, noneRun.created);
+  check("...and the run says why", noneRun.reasons.get(`${SEP24} 03:30`) === "nothing settled by the cutoff");
+  published = [];
+  events.clear(); eventCreates = 0;
+  const emptyRun = await runNights(SEP24, 0, SEP24, 6 * 60 + 10);
+  check("a day with no published picks creates nothing", emptyRun.created.length === 0 && emptyRun.reasons.get(`${SEP24} 03:10`) === "no published picks that day");
 
   console.log("\nTOP_PREDICTION push eligibility:");
   const SWEDEN = 113;

@@ -27,6 +27,7 @@
  */
 export {};
 
+import { assertIntegrationDatabase } from "./lib/dbSafety";
 const react = require("react");
 react.cache = (fn: any) => fn;
 
@@ -60,6 +61,8 @@ function oddsForHomeProbability(home: number, bookmakers = 6) {
 }
 
 async function main() {
+  // Writes rows: refuses unless the target is a separate, non-Production database.
+  await assertIntegrationDatabase();
   const { prisma } = await import("../src/lib/prisma");
   const {
     applyVipPremiumGate,

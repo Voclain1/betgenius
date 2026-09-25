@@ -256,7 +256,13 @@ check("so disabling editorial alerts suppresses the inbox entry too", prefGate <
 check("the pushEnabled gate comes after the inbox write", pushGate > inboxWrite);
 check("...so a user with push off still receives the inbox entry", pushGate > inboxWrite);
 // The editorial cap must sit alongside the global one, not replace it.
-check("the global daily cap is still enforced", /sentToday\s*>=\s*\(pref\?\.dailyCap \?\? 12\)/.test(dispatch));
+// The cap is decided by dailyCapAllows, per class; its behaviour (default 12,
+// push-class capped, history exempt) is asserted in check-inbox-history-cap.ts.
+check(
+  "the global daily cap is still enforced",
+  /if \(!dailyCapAllows\(capClass, sentToday, pref\?\.dailyCap\)\) \{\s*await skip\(row\.id, capClass === "history" \? "inbox history ceiling" : "daily cap"\);\s*continue;/.test(dispatch) &&
+    dispatch.indexOf("dailyCapAllows(capClass") < dispatch.indexOf("isEditorialEvent(row.event.type)"),
+);
 check("the editorial cap is applied only to editorial events", /isEditorialEvent\(row\.event\.type\)/.test(dispatch));
 check("quiet hours still gate the push", /inQuietHours\(/.test(dispatch));
 

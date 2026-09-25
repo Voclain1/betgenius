@@ -18,10 +18,13 @@
  */
 export {};
 
+import { assertIntegrationDatabase } from "./lib/dbSafety";
 const react = require("react");
 react.cache = (fn: any) => fn;
 
 async function main() {
+  // Writes rows: refuses unless the target is a separate, non-Production database.
+  await assertIntegrationDatabase();
   const { prisma } = await import("../src/lib/prisma");
   const {
     curateVipTips,

@@ -17,6 +17,7 @@ import {
   morningDigestDecision,
   morningDigestKey,
   nightDigestDecision,
+  nightDigestDay,
   nightDigestKey,
   renderDigest,
   type DigestPick,
@@ -45,7 +46,7 @@ const BET_OF_THE_DAY = "BET_OF_THE_DAY";
 /** A signed-in reader with no subscription — every digest recipient has at least this. */
 const FREE_MEMBER = (category: string) => canViewCategory(category as PredictionCategory, null, null, "USER");
 
-async function todaysPicks(day: string): Promise<DigestPick[]> {
+async function picksForDay(day: string): Promise<DigestPick[]> {
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", kickoff: { gte: lagosInstant(day, 0), lt: lagosInstant(day, 24 * 60) } },
     select: {
@@ -104,7 +105,7 @@ export async function createDailyDigests(now: Date = new Date()): Promise<Digest
     const key = morningDigestKey(day);
     if (await exists(key)) result.morning = "already created";
     else {
-      const [picks, botd] = await Promise.all([todaysPicks(day), taggedBetOfTheDayId()]);
+      const [picks, botd] = await Promise.all([picksForDay(day), taggedBetOfTheDayId()]);
       const data = buildMorningDigest(picks, botd, now);
       // Readiness, not "any pick": the event is immutable once created, so an
       // early run must not freeze a digest that later categories would miss.
@@ -127,15 +128,22 @@ export async function createDailyDigests(now: Date = new Date()): Promise<Digest
     }
   }
 
-  if (minute >= DIGEST_TIMING.nightFrom) {
-    const key = nightDigestKey(day);
+  // The night digest runs after midnight and summarises the PREVIOUS Lagos day,
+  // so the evening's fixtures have been through the 03:00 settlement run. The
+  // key is that day's, so a digest already created for it (including one made
+  // by the old same-evening window) is never repeated.
+  if (minute >= DIGEST_TIMING.nightFrom && minute < DIGEST_TIMING.nightUntil) {
+    const summarised = nightDigestDay(now);
+    const key = nightDigestKey(summarised);
     if (await exists(key)) result.night = "already created";
     else {
-      const [picks, botd] = await Promise.all([todaysPicks(day), taggedBetOfTheDayId()]);
+      // The Bet of the Day tag is normally only moved by the morning selection,
+      // so here it still holds the summarised day's pick when it had one.
+      const [picks, botd] = await Promise.all([picksForDay(summarised), taggedBetOfTheDayId()]);
       const decision = nightDigestDecision(picks, now);
       if (!decision.send) result.night = decision.reason;
       else {
-        const data = buildNightDigest(picks, botd, now);
+        const data = buildNightDigest(picks, botd, summarised);
         const safe = renderDigest(data, FREE_MEMBER);
         await createNotificationEvent({
           eventKey: key,
@@ -145,9 +153,9 @@ export async function createDailyDigests(now: Date = new Date()): Promise<Digest
           link: safe.link,
           data,
           availableAt: now,
-          expiresAt: lagosInstant(day, 24 * 60 + DIGEST_TIMING.nightExpiresNextDay),
+          expiresAt: lagosInstant(summarised, 24 * 60 + DIGEST_TIMING.nightExpiresNextDay),
         });
-        result.night = decision.partial ? "created (partial)" : "created";
+        result.night = `${decision.partial ? "created (partial)" : "created"} for ${summarised}`;
       }
     }
   }

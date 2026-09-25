@@ -157,11 +157,34 @@ check(
   "the admin editor cannot set SAME_GAME_DOUBLE",
   !(ADMIN_MARKET_TYPES as readonly string[]).includes("SAME_GAME_DOUBLE"),
 );
+// EUROPEAN_HANDICAP is sourced-odds-only: its line must come from a quoted
+// price (src/lib/handicapLine.ts), so neither the model's free vocabulary nor
+// a hand-typed admin form may produce one. It is still a real, settleable type.
 check(
-  "the admin editor still offers every other market type",
-  MARKET_TYPES.filter((m) => m !== "SAME_GAME_DOUBLE").every((m) =>
-    (ADMIN_MARKET_TYPES as readonly string[]).includes(m),
-  ),
+  "EUROPEAN_HANDICAP is a real market type",
+  (MARKET_TYPES as readonly string[]).includes("EUROPEAN_HANDICAP"),
+);
+check(
+  "the AI's free vocabulary never offers EUROPEAN_HANDICAP",
+  !(AUTO_MARKET_TYPES as readonly string[]).includes("EUROPEAN_HANDICAP"),
+);
+check(
+  "the admin editor cannot set EUROPEAN_HANDICAP",
+  !(ADMIN_MARKET_TYPES as readonly string[]).includes("EUROPEAN_HANDICAP"),
+);
+// Exactly the two deliberate exclusions — no more. A new market type that is
+// silently missing from the editor, or a stray extra entry, fails here.
+const ADMIN_EXCLUDED = new Set(["SAME_GAME_DOUBLE", "EUROPEAN_HANDICAP"]);
+const expectedAdmin = MARKET_TYPES.filter((m) => !ADMIN_EXCLUDED.has(m));
+const missingFromAdmin = expectedAdmin.filter((m) => !(ADMIN_MARKET_TYPES as readonly string[]).includes(m));
+const unexpectedInAdmin = ADMIN_MARKET_TYPES.filter((m) => !(expectedAdmin as readonly string[]).includes(m));
+check(
+  `the admin editor still offers every other market type${missingFromAdmin.length ? ` (missing: ${missingFromAdmin.join(", ")})` : ""}`,
+  missingFromAdmin.length === 0,
+);
+check(
+  `the admin editor offers nothing beyond those types${unexpectedInAdmin.length ? ` (unexpected: ${unexpectedInAdmin.join(", ")})` : ""}`,
+  unexpectedInAdmin.length === 0 && ADMIN_MARKET_TYPES.length === expectedAdmin.length,
 );
 // resolveMarket stays a pure scoreline resolver: a double has no scoreline
 // that settles it, so it must decline rather than guess.
