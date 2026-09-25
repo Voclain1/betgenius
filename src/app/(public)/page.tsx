@@ -25,7 +25,15 @@ import { leagueSlug } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
-import { orderForDisplay, comparePredictionsForDisplay } from "@/lib/predictionOrdering";
+import { comparePredictionsForDisplay } from "@/lib/predictionOrdering";
+import {
+  selectHomepageFeatured,
+  selectHomepageGenius,
+  featuredBarMessage,
+  comboLegIds,
+  isComboRow,
+  HOMEPAGE_FEATURED_LIMIT,
+} from "@/lib/homepageFeatured";
 import { AdLeaderboard, AdNativeBand } from "@/components/ads/AdPlacements";
 
 export const revalidate = 60;
@@ -49,28 +57,57 @@ export function generateMetadata({ searchParams }: { searchParams?: { date?: str
 }
 
 /**
- * The day's picks in one category, strongest first.
+ * Every published pick in one category for the Lagos day being browsed.
  *
- * The cap is applied AFTER ranking, not as a `take` on the query. Slicing in
- * the database would hand the ranking six arbitrary rows to sort among
- * themselves, so the homepage would show the six most recently published
- * picks in a nicer order rather than the six best picks — which is the whole
- * point of the ordering.
+ * Unranked and uncapped: the homepage excerpts rank and cap it themselves
+ * (src/lib/homepageFeatured.ts). Capping here with a `take` would hand the
+ * ranking an arbitrary subset rather than the day's best picks.
  */
-async function fetchTopOfCategory(category: string, limit: number, day: FeedDay = "today") {
-  const today = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
-  const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: today.start, lt: today.end }, categories: { some: { category } } },
+async function fetchCategoryDay(category: string, day: FeedDay) {
+  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  return prisma.prediction.findMany({
+    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
   });
-  return orderForDisplay(rows).slice(0, limit);
 }
 
-// Same caps as before — 6 featured, 3 genius — so every day renders the same
-// shape of excerpt the homepage already had.
-const fetchFeatured = (day: FeedDay) => fetchTopOfCategory("FEATURED", 6, day);
-const fetchGeniusPreview = (day: FeedDay) => fetchTopOfCategory("GENIUS", 3, day);
+/**
+ * The day's homepage Featured picks, chosen by selectHomepageFeatured rather
+ * than orderForDisplay: an outcome-blind ranking, so the same picks stay in
+ * place from before kickoff through settlement, with single-market picks
+ * ahead of any combo. See src/lib/homepageFeatured.ts.
+ *
+ * `published` is how many FEATURED rows the day has at all, which is what
+ * separates "nothing published" from "nothing cleared the homepage bar" in
+ * the empty state.
+ *
+ * Combo legs are loaded only when singles cannot fill the excerpt, since the
+ * selector never looks at them otherwise.
+ */
+async function fetchFeatured(day: FeedDay) {
+  const rows = await fetchCategoryDay("FEATURED", day);
+
+  const singles = rows.filter((r) => !isComboRow(r)).length;
+  const legIds = singles >= HOMEPAGE_FEATURED_LIMIT ? [] : rows.flatMap((r) => comboLegIds(r) ?? []);
+  const legs = legIds.length
+    ? await prisma.prediction.findMany({
+        where: { id: { in: legIds } },
+        select: {
+          id: true, status: true, marketType: true, selection: true, confidence: true,
+          contextComplete: true, homeTeamApiId: true, awayTeamApiId: true,
+        },
+      })
+    : [];
+  return { rows: selectHomepageFeatured(rows, new Map(legs.map((l) => [l.id, l]))), published: rows.length };
+}
+
+/**
+ * The day's three homepage Genius picks: the same outcome-blind ranking as
+ * Featured, so Yesterday's three do not change once results settle. No combo
+ * filter; Genius membership is curation's call.
+ */
+const fetchGeniusPreview = async (day: FeedDay) => selectHomepageGenius(await fetchCategoryDay("GENIUS", day));
 
 /**
  * The pick shown beside the hero headline.
@@ -202,7 +239,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // The Featured excerpt renders through PredictionsTable, whose Result column
   // appears only when a row carries a settled outcome. Gate it by day so the
   // default homepage keeps precisely the columns it has today.
-  const featuredRows = featured.map((r) => ({ ...r, outcome: showOutcomes ? r.outcome : null }));
+  const featuredRows = featured.rows.map((r) => ({ ...r, outcome: showOutcomes ? r.outcome : null }));
 
   const genius = geniusPreview.map((r) => {
     const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
@@ -363,10 +400,19 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             <Link href="/predictions/featured" className="whitespace-nowrap text-sm text-brand hover:underline">View all →</Link>
           </div>
         </div>
-        {featured.length === 0 ? (
+        {/* Two different empty states. With nothing tagged FEATURED for the
+            day, the original message. With FEATURED picks published but none
+            eligible for this excerpt (see src/lib/homepageFeatured.ts), say so
+            and point at the full feed, which still lists them. */}
+        {featured.rows.length === 0 && featured.published === 0 ? (
           <p className="text-gray-400">
             No featured tips published yet. Admins can publish tips from{" "}
             <Link href="/admin" className="underline">the dashboard</Link>.
+          </p>
+        ) : featured.rows.length === 0 ? (
+          <p className="text-gray-400">
+            {featuredBarMessage(day)}{" "}
+            <Link href="/predictions/featured" className="underline">Browse all Featured picks</Link>.
           </p>
         ) : (
           <PredictionsTable rows={featuredRows} />

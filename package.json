@@ -16,6 +16,7 @@
     "check:onetime-fallback": "tsx scripts/check-onetime-fallback.ts",
     "check:payment-observability": "tsx scripts/check-payment-observability.ts",
     "check:combo-bet": "tsx scripts/check-combo-bet-copy.ts",
+    "check:homepage-featured": "tsx scripts/check-homepage-featured.ts",
     "backfill:combo-leg-labels": "tsx --env-file=.env scripts/backfill-combo-leg-labels.ts",
     "check:confidence": "tsx scripts/check-confidence-consistency.ts",
     "check:feed-days": "tsx scripts/check-feed-days.ts",
