@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
+import { comboMarketEditError, isComboPrediction, mergeEditedCategories } from "@/lib/comboAdmin";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
@@ -44,7 +45,11 @@ const Patch = z.object({
       // tags with no visibility of any other row — so allowing it would let two
       // predictions hold the single slot at once. It moves only through the
       // PIN_BET_OF_THE_DAY action below, which is transactional.
-      categories: z.array(z.enum(["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"])).min(1).optional(),
+      // SAME_GAME_DOUBLE is not editable either, for the same reason: it is
+      // carried through by mergeEditedCategories. The at-least-one rule is
+      // enforced there, so a double (whose only tag may be SAME_GAME_DOUBLE)
+      // can be saved with no editorial category while ordinary rows cannot.
+      categories: z.array(z.enum(["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"])).optional(),
       leagueApiId: z.number().nullable().optional(),
       leagueName: z.string().nullable().optional(),
       homeTeam: z.string().nullable().optional(),
@@ -71,6 +76,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
+
+  const comboError = comboMarketEditError(isComboPrediction(before), { marketType, selection, otherMarket, otherPick, ouLine, ouDirection });
+  if (comboError) return NextResponse.json({ error: comboError }, { status: 400 });
+  // Resolved up front so a rejected category set writes nothing at all.
+  const nextCategories = categories ? mergeEditedCategories(before.categories.map((c) => c.category), categories) : null;
+  if (nextCategories && !nextCategories.ok) return NextResponse.json({ error: nextCategories.error }, { status: 400 });
+
   const data: any = { ...rest };
   if (rest.leagueName !== undefined) {
     const leagueName = rest.leagueName === null ? null : normalizeLeagueName(rest.leagueName);
@@ -166,16 +178,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (finalAwayScore !== undefined) data.finalAwayScore = finalAwayScore;
   }
 
-  if (categories) {
-    // The editor cannot see or send BET_OF_THE_DAY (it is not one of its
-    // checkboxes), so a plain replace would silently strip the slot off this
-    // row the next time anyone saved an unrelated field. Carry the tag through
-    // if the row already holds it — only the pin action moves it.
-    const held = await prisma.predictionCategoryLink.findFirst({
-      where: { predictionId: params.id, category: "BET_OF_THE_DAY" },
-      select: { id: true },
-    });
-    await setPredictionCategories(params.id, held ? [...categories, "BET_OF_THE_DAY"] : categories);
+  if (nextCategories?.ok) {
+    // The editor cannot see or send BET_OF_THE_DAY or SAME_GAME_DOUBLE (they
+    // are not among its checkboxes), so a plain replace would silently strip
+    // the Bet of the Day slot, or drop a double out of Combo Bets, the next
+    // time anyone saved an unrelated field. mergeEditedCategories carries both
+    // through; only the pin action moves BET_OF_THE_DAY.
+    await setPredictionCategories(params.id, nextCategories.categories);
   }
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.prediction.update({ where: { id: params.id }, data, include: { categories: true } });

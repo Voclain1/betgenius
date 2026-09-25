@@ -10,6 +10,7 @@ import {
   type IncompatibilityReason,
 } from "@/lib/sameGameDouble";
 import type { Outcome } from "@/lib/enums";
+import { comboDestinationCategories } from "@/lib/comboQuota";
 
 /**
  * Assembles same-game doubles from predictions that already exist.
@@ -176,8 +177,9 @@ function bestPair<T extends { a: CandidateLeg; b: CandidateLeg; ceiling: number 
  * Unlike the editorial backfill assembler below, these legs are deliberately
  * still PENDING_REVIEW. The compound row is also PENDING_REVIEW, so nothing is
  * published or approved by this operation. Source legs remain tagged only as
- * SAME_GAME_DOUBLE internals; the compound row receives the normal generation
- * categories and can later participate in ordinary GENIUS/VIP/PREMIUM
+ * SAME_GAME_DOUBLE internals. The compound row is tagged SAME_GAME_DOUBLE plus
+ * whichever categories the caller passed explicitly (none, for an ordinary
+ * scheduled run) and can later participate in ordinary GENIUS/VIP/PREMIUM
  * curation after a reviewer publishes it.
  */
 export async function assembleGeneratedSameGameDouble(
@@ -224,13 +226,15 @@ export async function assembleGeneratedSameGameDouble(
   const { a, b } = winner;
   const { market, pick } = describeDouble(a, b);
   const pairIds: [string, string] = [a.id, b.id];
-  const normalCategories = categories.filter((category) => category !== "SAME_GAME_DOUBLE");
-  if (normalCategories.length === 0) normalCategories.push("FEATURED");
+  // SAME_GAME_DOUBLE always, plus only the categories the caller asked for.
+  // There is no FEATURED fallback any more: an ordinary double belongs in
+  // Combo Bets, and FEATURED is an editorial choice. See comboQuota.ts.
+  const tags = comboDestinationCategories(categories);
   const row = await prisma.prediction.create({
     data: {
       fixtureId: a.fixtureId,
       fixtureApiId: a.fixtureApiId,
-      category: normalCategories[0],
+      category: tags[0],
       leagueApiId: a.leagueApiId,
       leagueName: a.leagueName,
       homeTeam: a.homeTeam,
@@ -250,7 +254,7 @@ export async function assembleGeneratedSameGameDouble(
       authorId: a.authorId,
     },
   });
-  await setPredictionCategories(row.id, [...normalCategories, "SAME_GAME_DOUBLE"]);
+  await setPredictionCategories(row.id, tags);
   return { predictionId: row.id, fixture: `${a.homeTeam} v ${a.awayTeam}`, pick, ceiling: winner.ceiling, legIds: pairIds };
 }
 

@@ -1,14 +1,20 @@
 import { prisma } from "@/lib/prisma";
-import { lagosTodayBounds } from "@/lib/lagosDate";
+import { lagosTodayBounds, lagosDateKey } from "@/lib/lagosDate";
+import { matchKey } from "@/lib/slug";
+import type { DayPoolEntry } from "@/lib/comboQuota";
 
 /**
  * Multi-market generation inside the regular prediction mix.
  *
  * The source legs are stored under SAME_GAME_DOUBLE only, keeping them out of
- * public feeds. One compatible compound row is assembled immediately and gets
- * the ordinary requested category (FEATURED by default), plus
- * SAME_GAME_DOUBLE provenance. That row follows the same review and later
- * automatic curation path as any other prediction.
+ * public feeds. One compatible compound row is assembled immediately and is
+ * tagged SAME_GAME_DOUBLE plus any category the run was explicitly asked for
+ * (none for the ordinary scheduled run; see comboQuota.ts). That row follows
+ * the same review and later automatic curation path as any other prediction.
+ *
+ * How many ordinary fixtures become combos is decided per kickoff day by
+ * adaptiveComboTarget (src/lib/comboQuota.ts). DOUBLES_DAILY_QUOTA below is
+ * the per-creation-day SPEND ceiling on top of that.
  *
  * Measured production cap: 20 x $0.0087 = about $0.17/day of model spend.
  * A fully cold digest is roughly 11 football calls, so the worst case is 220
@@ -38,8 +44,7 @@ export async function doublesGeneratedToday(now: Date = new Date()): Promise<num
   });
   return jobs.filter((j) => {
     try {
-      const input = JSON.parse(j.prompt);
-      return (input?.categories ?? []).includes(SAME_GAME_DOUBLE) || input?.intent === REGULAR_COMBO_INTENT;
+      return isComboJobInput(JSON.parse(j.prompt));
     } catch {
       // A job whose prompt is unparseable cannot be proven to be a doubles
       // job, and counting it would silently eat somebody else's slot.
@@ -51,6 +56,69 @@ export async function doublesGeneratedToday(now: Date = new Date()): Promise<num
 /** Remaining multi-market generations allowed today. */
 export async function doublesQuotaRemaining(now: Date = new Date()): Promise<number> {
   return Math.max(0, DOUBLES_DAILY_QUOTA - (await doublesGeneratedToday(now)));
+}
+
+const isComboJobInput = (input: any) =>
+  (input?.categories ?? []).includes(SAME_GAME_DOUBLE) || input?.intent === REGULAR_COMBO_INTENT;
+
+/**
+ * Per Lagos KICKOFF day: the eligible fixture pool that planComboAllocation
+ * (src/lib/comboQuota.ts) sizes the combo target from and spreads its slots
+ * across.
+ *
+ * Eligible = generation-ledger fixtures kicking off that day, not ABANDONED,
+ * and inside the run's competition scope (`excludeLeagueApiIds` is the same
+ * exclusion the worker applies, so fallback tiers held back on a strong day do
+ * not inflate the count). A fixture is `generated` once its ledger row is
+ * SUCCEEDED or any job has run for it, and `combo` when one of those jobs was a
+ * combo job. Jobs are read from AIJob.prompt, attempts rather than rows,
+ * exactly like doublesGeneratedToday. A job for a given kickoff can only have
+ * been created within the 48h generation window before it, so four days of jobs
+ * covers every day this is asked about.
+ */
+export async function loadComboDayPools(
+  now: Date,
+  excludeLeagueApiIds: readonly number[] = [],
+): Promise<Map<string, DayPoolEntry[]>> {
+  const { start } = lagosTodayBounds(now);
+  const [attempts, jobs] = await Promise.all([
+    prisma.generationAttempt.findMany({
+      where: {
+        kickoff: { gte: start },
+        status: { not: "ABANDONED" },
+        ...(excludeLeagueApiIds.length ? { leagueApiId: { notIn: [...excludeLeagueApiIds] } } : {}),
+      },
+      select: { matchKey: true, leagueApiId: true, kickoff: true, status: true },
+    }),
+    prisma.aIJob.findMany({
+      where: { createdAt: { gte: new Date(start.getTime() - 4 * 86_400_000) } },
+      select: { prompt: true },
+    }),
+  ]);
+
+  const jobbed = new Set<string>();
+  const comboKeys = new Set<string>();
+  for (const j of jobs) {
+    try {
+      const input = JSON.parse(j.prompt);
+      const key = matchKey({ homeTeamApiId: input?.homeTeamApiId, awayTeamApiId: input?.awayTeamApiId, kickoff: input?.kickoff });
+      if (!key) continue;
+      jobbed.add(key);
+      if (isComboJobInput(input)) comboKeys.add(key);
+    } catch {
+      // Same stance as doublesGeneratedToday: unparseable is not provably a combo.
+    }
+  }
+
+  const pools = new Map<string, DayPoolEntry[]>();
+  for (const a of attempts) {
+    const day = lagosDateKey(a.kickoff);
+    const generated = a.status === "SUCCEEDED" || jobbed.has(a.matchKey);
+    const pool = pools.get(day) ?? [];
+    pool.push({ matchKey: a.matchKey, leagueApiId: a.leagueApiId, kickoff: a.kickoff, generated, combo: generated && comboKeys.has(a.matchKey) });
+    pools.set(day, pool);
+  }
+  return pools;
 }
 
 /**
