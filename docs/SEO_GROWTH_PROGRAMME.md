@@ -41,7 +41,7 @@
 | SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Implemented locally: all-time outcomes, measurement dates, calculation rules, sample gates, publication-window definition and confidence/calibration limits; typecheck passed, database-backed visual and production validation pending |
 | SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Implemented locally; merged verification passes SEO checks (89/89), Adsterra checks and TypeScript; production verification pending |
 | SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (98/98), Adsterra checks and TypeScript passed; production verification pending |
-| SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Backlog |
+| SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (106/106), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-207 | Build Double Chance market hub | Live data, definition, evidence and record | Backlog |
 | SEO-208 | Upgrade EPL, UCL, NPFL, La Liga and Serie A hubs | Query-led titles, useful intros, current modules, proof and links | Backlog |
 | SEO-209 | Add named author/reviewer profiles | Credentials are factual and every editorial asset is attributable | Backlog |

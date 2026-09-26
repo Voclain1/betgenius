@@ -37,6 +37,11 @@ const marketHubs = [
     name: "Over 2.5 Goals predictions",
     desc: "Matches assessed for at least three total goals, with the supporting evidence and settled record.",
   },
+  {
+    href: "/predictions/btts",
+    name: "BTTS predictions",
+    desc: "Both Teams to Score Yes and No picks, with match evidence and the settled market record.",
+  },
 ];
 
 export default function PredictionsIndex() {
