@@ -21,7 +21,7 @@ import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { FollowButton } from "@/components/FollowButton";
-import { TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
+import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
 
@@ -226,6 +226,8 @@ export default async function CategoryPage(
           is gone rather than kept: three insertions plus a fourth underneath
           would be four ads on one feed. */}
       <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
+
+      {cat === "TODAY" && <TodayPredictionsEvidence />}
     </div>
   );
 }
