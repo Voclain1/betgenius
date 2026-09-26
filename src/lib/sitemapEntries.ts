@@ -55,6 +55,8 @@ export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
       publishedAt: true,
       settledAt: true,
       outcome: true,
+      marketType: true,
+      selection: true,
     },
   });
 
@@ -86,6 +88,23 @@ export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
     entries.push({
       url: absoluteUrl(`/predictions/${CATEGORY_TO_SLUG[cat]}`),
       lastModified: maxDate(catRows.map((r) => r.publishedAt)),
+      changeFrequency: "daily",
+      priority: 0.8,
+    });
+  }
+
+  // Market hubs follow the same inventory gate as their page metadata. The
+  // URL is listed only while its exact selection has published picks today.
+  const over25Rows = rows.filter((r) => {
+    if (!r.kickoff || !isLagosToday(r.kickoff) || r.marketType !== "OVER_UNDER") return false;
+    if (!r.selection || typeof r.selection !== "object" || Array.isArray(r.selection)) return false;
+    const selection = r.selection as { line?: unknown; direction?: unknown };
+    return selection.line === 2.5 && selection.direction === "OVER";
+  });
+  if (over25Rows.length) {
+    entries.push({
+      url: absoluteUrl("/predictions/over-2-5-goals"),
+      lastModified: maxDate(over25Rows.map((r) => r.publishedAt)),
       changeFrequency: "daily",
       priority: 0.8,
     });

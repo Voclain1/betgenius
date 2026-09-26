@@ -123,8 +123,13 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
       <section>
         <h2 className="mb-3 text-lg font-semibold">By market type</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div id="market-over-25" className="scroll-mt-24">
+            <RateCard stat={stats.over25} label="Over 2.5 Goals" />
+          </div>
           {TRACK_RECORD_MARKET_TYPES.map((mt) => (
-            <RateCard key={mt} stat={stats.byMarketType[mt]} label={MARKET_LABELS[mt] ?? mt} />
+            <div key={mt} id={`market-${mt.toLowerCase().replaceAll("_", "-")}`} className="scroll-mt-24">
+              <RateCard stat={stats.byMarketType[mt]} label={MARKET_LABELS[mt] ?? mt} />
+            </div>
           ))}
         </div>
       </section>

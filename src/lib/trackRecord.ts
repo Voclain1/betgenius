@@ -49,6 +49,7 @@ export type WindowStats = {
   headline: WinRateStat;
   byCategory: Record<string, WinRateStat>;
   byMarketType: Record<string, WinRateStat>;
+  over25: WinRateStat;
 };
 
 export type TrackRecordData = {
@@ -77,6 +78,7 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
       select: {
         outcome: true,
         marketType: true,
+        selection: true,
         category: true,
         publishedAt: true,
         categories: { select: { category: true } },
@@ -130,7 +132,13 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
       byMarketType[mt] = computeStat(windowRows.filter((r) => r.marketType === mt).map((r) => r.outcome));
     }
 
-    windows[days] = { headline: computeStat(windowRows.map((r) => r.outcome)), byCategory, byMarketType };
+    const over25 = computeStat(windowRows.filter((r) => {
+      if (r.marketType !== "OVER_UNDER" || !r.selection || typeof r.selection !== "object" || Array.isArray(r.selection)) return false;
+      const selection = r.selection as { line?: unknown; direction?: unknown };
+      return selection.line === 2.5 && selection.direction === "OVER";
+    }).map((r) => r.outcome));
+
+    windows[days] = { headline: computeStat(windowRows.map((r) => r.outcome)), byCategory, byMarketType, over25 };
   }
 
   const recentTips: RecentTip[] = recent.map((r) => ({

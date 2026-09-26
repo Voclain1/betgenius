@@ -31,6 +31,14 @@ const evidenceLinks = [
   { href: "/responsible-gambling", name: "Responsible gambling", desc: "Use predictions as information, never as a guarantee of an outcome." },
 ];
 
+const marketHubs = [
+  {
+    href: "/predictions/over-2-5-goals",
+    name: "Over 2.5 Goals predictions",
+    desc: "Matches assessed for at least three total goals, with the supporting evidence and settled record.",
+  },
+];
+
 export default function PredictionsIndex() {
   return (
     <div className="space-y-10">
@@ -52,6 +60,18 @@ export default function PredictionsIndex() {
             <Link key={c.slug} href={`/predictions/${c.slug}`} className="card hover:border-brand">
               <div className="text-lg font-semibold">{c.name}</div>
               <p className="text-sm text-gray-400">{c.desc}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="prediction-markets">
+        <h2 id="prediction-markets" className="mb-4 text-xl font-semibold">Browse predictions by market</h2>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {marketHubs.map((market) => (
+            <Link key={market.href} href={market.href} className="card hover:border-brand">
+              <div className="text-lg font-semibold">{market.name}</div>
+              <p className="text-sm text-gray-400">{market.desc}</p>
             </Link>
           ))}
         </div>
