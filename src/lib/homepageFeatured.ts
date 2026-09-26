@@ -34,8 +34,10 @@ import type { FeedDay } from "@/lib/categoryPredictions";
  * padded past that: a day with three eligible picks shows three.
  *
  * GENIUS uses the same outcome-blind ranking for its three-row excerpt
- * (selectHomepageGenius) but no combo filter. The problem there was only that
- * Yesterday's three changed once results settled.
+ * (selectHomepageGenius) and is a deliberate showcase: three different
+ * matches, and no Over/Under 2.5 call, whether a plain O/U 2.5 pick or a combo
+ * with an O/U 2.5 leg. It has no confidence bar of its own; curation already
+ * decided what is GENIUS. /predictions/genius lists every GENIUS pick as before.
  */
 
 export const HOMEPAGE_FEATURED_LIMIT = 6;
@@ -71,6 +73,7 @@ export type HomepageFeaturedCandidate = {
   selection?: unknown;
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
+  fixtureApiId?: number | null;
 };
 
 /** What the page loads for each leg a combo references. Pre-match fields only. */
@@ -180,12 +183,72 @@ export function selectHomepageFeatured<T extends HomepageFeaturedCandidate>(
   return [...singles, ...combos];
 }
 
-/** The homepage Genius excerpt: the day's GENIUS picks by the same outcome-blind ranking, capped. */
+/** A structured Over/Under 2.5 total-goals call: marketType OVER_UNDER on the 2.5 line. */
+const isOverUnder25 = (marketType: string, selection: unknown): boolean =>
+  marketType === "OVER_UNDER" &&
+  isValidSelection("OVER_UNDER", selection) &&
+  (selection as { line: number }).line === 2.5;
+
+/**
+ * May this GENIUS row appear in the homepage showcase?
+ *
+ * Read from the structured market, never from the display text. A plain pick
+ * is out when it is itself O/U 2.5. A combo is out when either leg is, and
+ * also when its legs cannot be read: without them there is no way to show it
+ * holds no O/U 2.5 leg, so it fails closed. Team goals (TEAM_TOTAL) and other
+ * total-goals lines are not O/U 2.5 and stay eligible. The legacy
+ * ouLine/ouDirection fields every row carries are side information, not the
+ * pick, so they are not read.
+ */
+export function isHomepageGeniusEligible(
+  row: HomepageFeaturedCandidate,
+  legsById: ReadonlyMap<string, Pick<HomepageComboLeg, "marketType" | "selection">>,
+): boolean {
+  if (!isComboRow(row)) return !isOverUnder25(row.marketType, row.selection);
+  const ids = comboLegIds(row);
+  if (!ids) return false;
+  const legs = ids.map((id) => legsById.get(id));
+  return legs.every((leg) => !!leg && !isOverUnder25(leg.marketType, leg.selection));
+}
+
+/**
+ * The match a row is about, for the one-pick-per-fixture rule.
+ *
+ * The provider fixture id when the row has one, else the team pair; the
+ * excerpt covers a single Lagos day, so a team pair is one match. Kickoff is
+ * deliberately not part of it: settlement rewrites kickoff on a reschedule. A
+ * row with neither falls back to its own id and is never merged with another.
+ */
+function homepageFixtureKey(row: HomepageFeaturedCandidate): string {
+  if (row.fixtureApiId != null) return `fx:${row.fixtureApiId}`;
+  if (row.homeTeamApiId != null && row.awayTeamApiId != null) return `teams:${row.homeTeamApiId}-${row.awayTeamApiId}`;
+  return `row:${row.id}`;
+}
+
+/**
+ * The homepage Genius excerpt: walk the day's GENIUS picks from strongest to
+ * weakest by the outcome-blind ranking, skip ineligible ones and any match
+ * already shown, and stop at three.
+ *
+ * `legsById` has to cover the legs of every combo in `rows`; a combo whose
+ * legs are missing is skipped.
+ */
 export function selectHomepageGenius<T extends HomepageFeaturedCandidate>(
   rows: readonly T[],
+  legsById: ReadonlyMap<string, Pick<HomepageComboLeg, "marketType" | "selection">>,
   limit: number = HOMEPAGE_GENIUS_LIMIT,
 ): T[] {
-  return [...rows].sort(compareForHomepageExcerpt).slice(0, limit);
+  const picked: T[] = [];
+  const fixtures = new Set<string>();
+  for (const row of [...rows].sort(compareForHomepageExcerpt)) {
+    if (picked.length >= limit) break;
+    if (!isHomepageGeniusEligible(row, legsById)) continue;
+    const fixture = homepageFixtureKey(row);
+    if (fixtures.has(fixture)) continue;
+    fixtures.add(fixture);
+    picked.push(row);
+  }
+  return picked;
 }
 
 /**

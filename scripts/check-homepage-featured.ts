@@ -20,6 +20,7 @@ import { join } from "node:path";
 import {
   selectHomepageFeatured,
   selectHomepageGenius,
+  isHomepageGeniusEligible,
   featuredBarMessage,
   isExceptionalHomepageCombo,
   HOMEPAGE_COMBO_MIN_CONFIDENCE,
@@ -256,14 +257,15 @@ console.log("\n8. Genius homepage excerpt: same three through settlement");
     single("g-77", 77, "19:00"),
     single("g-71", 71, "21:30"),
   ];
-  const before = ids(selectHomepageGenius(morning));
+  const noLegs = new Map<string, HomepageComboLeg>();
+  const before = ids(selectHomepageGenius(morning, noLegs));
   check("morning: the three strongest, EPL first on a tie", same(before, ["g-86", "g-83-epl", "g-83"]), before.join(","));
 
   const midday = settle(morning, { "g-86": "LOST", "g-83-epl": "WON" });
-  check("partly settled: same three, same order", same(ids(selectHomepageGenius(midday)), before));
+  check("partly settled: same three, same order", same(ids(selectHomepageGenius(midday, noLegs)), before));
 
   const night = settle(midday, { "g-83": "LOST", "g-80": "WON", "g-77": "WON", "g-71": "WON" });
-  const after = selectHomepageGenius(night);
+  const after = selectHomepageGenius(night, noLegs);
   check("all settled: same three, same order", same(ids(after), before), ids(after).join(","));
   check("all settled: only the outcomes changed", after.map((r) => r.outcome).join() === "LOST,WON,LOST");
   check("a late 71% WON cannot displace the 86% LOST", !ids(after).includes("g-71"));
@@ -272,12 +274,97 @@ console.log("\n8. Genius homepage excerpt: same three through settlement");
   check("control: orderForDisplay DOES rewrite the settled three", !same(old, before), old.join(","));
 
   const tomorrow = morning.map((r) => ({ ...r, kickoff: new Date(r.kickoff.getTime() + 86_400_000) }));
-  check("tomorrow gives the same deterministic three", same(ids(selectHomepageGenius(tomorrow)), before));
-  check("input order does not matter", same(ids(selectHomepageGenius([...night].reverse())), before));
+  check("tomorrow gives the same deterministic three", same(ids(selectHomepageGenius(tomorrow, noLegs)), before));
+  check("input order does not matter", same(ids(selectHomepageGenius([...night].reverse(), noLegs)), before));
 
-  // No combo filter on Genius: a GENIUS-tagged combo competes on confidence alone.
+  // No Featured confidence bar on Genius: a combo without an O/U 2.5 leg
+  // competes on confidence alone.
+  const cleanLegs = new Map<string, Pick<HomepageComboLeg, "marketType" | "selection">>([
+    ["x", { marketType: "MATCH_WINNER", selection: { value: "HOME" } }],
+    ["y", { marketType: "BTTS", selection: { value: "YES" } }],
+  ]);
   const geniusCombo = { ...single("g-combo", 90, "16:00"), marketType: "SAME_GAME_DOUBLE", selection: { legIds: ["x", "y"] } };
-  check("a GENIUS combo is not filtered out (no Featured combo rule here)", ids(selectHomepageGenius([...morning, geniusCombo]))[0] === "g-combo");
+  check("a GENIUS combo is not held to the Featured combo bar", ids(selectHomepageGenius([...morning, geniusCombo], cleanLegs))[0] === "g-combo");
+}
+
+// ── 8b. Genius showcase: distinct matches, no O/U 2.5 ───────────────────────
+console.log("\n8b. Genius homepage showcase: one pick per match, no Over/Under 2.5 call");
+{
+  type Legs = Map<string, Pick<HomepageComboLeg, "marketType" | "selection">>;
+  const legs: Legs = new Map();
+  const ou = (line: number, direction: "OVER" | "UNDER") => ({ line, direction });
+  /** A GENIUS row on its own fixture unless `fixture` names a shared one. */
+  function pick(id: string, confidence: number, marketType: string, selection: unknown, fixture?: number): Row {
+    const r = single(id, confidence, "15:00");
+    return fixture == null
+      ? { ...r, marketType, selection }
+      : { ...r, marketType, selection, homeTeamApiId: fixture, awayTeamApiId: fixture + 1 };
+  }
+  function combo(id: string, confidence: number, a: [string, unknown], b: [string, unknown], fixture?: number): Row {
+    legs.set(`${id}-a`, { marketType: a[0], selection: a[1] });
+    legs.set(`${id}-b`, { marketType: b[0], selection: b[1] });
+    return pick(id, confidence, "SAME_GAME_DOUBLE", { legIds: [`${id}-a`, `${id}-b`] }, fixture);
+  }
+
+  const over25 = pick("over25", 90, "OVER_UNDER", ou(2.5, "OVER"));
+  const under25 = pick("under25", 89, "OVER_UNDER", ou(2.5, "UNDER"));
+  const winOver = combo("win-over25", 88, ["MATCH_WINNER", { value: "HOME" }], ["OVER_UNDER", ou(2.5, "OVER")]);
+  const bttsOver = combo("btts-over25", 87, ["BTTS", { value: "YES" }], ["OVER_UNDER", ou(2.5, "OVER")]);
+  const dcUnder = combo("dc-under25", 86, ["DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }], ["OVER_UNDER", ou(2.5, "UNDER")]);
+  const cleanCombo = combo("win-btts", 85, ["MATCH_WINNER", { value: "HOME" }], ["BTTS", { value: "YES" }]);
+  const winner = pick("winner", 84, "MATCH_WINNER", { value: "AWAY" });
+  const dc = pick("dc", 83, "DOUBLE_CHANCE", { value: "HOME_OR_DRAW" });
+  const bttsNo = pick("btts-no", 82, "BTTS", { value: "NO" });
+  const teamGoals = pick("team-goals", 81, "TEAM_TOTAL", { side: "HOME", line: 1.5, direction: "OVER" });
+  const over15 = pick("over15", 80, "OVER_UNDER", ou(1.5, "OVER"));
+  const unreadable = pick("combo-no-legs", 95, "SAME_GAME_DOUBLE", { legIds: ["gone-a", "gone-b"] });
+
+  const excluded: Array<[string, Row]> = [
+    ["pure Over 2.5", over25],
+    ["pure Under 2.5", under25],
+    ["Team to win + Over 2.5", winOver],
+    ["BTTS Yes + Over 2.5", bttsOver],
+    ["Double Chance + Under 2.5 (combo containing Under 2.5)", dcUnder],
+    ["a combo whose legs cannot be read (fails closed)", unreadable],
+  ];
+  for (const [why, r] of excluded) check(`excluded: ${why}`, !isHomepageGeniusEligible(r, legs));
+  const included: Array<[string, Row]> = [
+    ["combo without an O/U 2.5 leg (Win + BTTS)", cleanCombo],
+    ["Match Winner", winner],
+    ["Double Chance", dc],
+    ["BTTS No", bttsNo],
+    ["team goals (TEAM_TOTAL 1.5)", teamGoals],
+    ["O/U on another line (Over 1.5)", over15],
+  ];
+  for (const [why, r] of included) check(`eligible: ${why}`, isHomepageGeniusEligible(r, legs));
+  // A plain pick's legacy side fields are not its market.
+  check("eligible: a Match Winner that also carries ouLine 2.5 side info", isHomepageGeniusEligible({ ...winner, ouLine: 2.5 } as Row, legs));
+
+  // The six strongest rows are all O/U 2.5; the selector backfills below them.
+  const day = [over25, under25, winOver, bttsOver, dcUnder, unreadable, cleanCombo, winner, dc, bttsNo, teamGoals, over15];
+  const got = ids(selectHomepageGenius(day, legs));
+  check("backfills past ineligible rows to three distinct eligible picks", same(got, ["win-btts", "winner", "dc"]), got.join(","));
+
+  // One pick per match: the highest-ranked eligible one.
+  const sameMatchStrong = pick("fx-strong", 88, "MATCH_WINNER", { value: "HOME" }, 7000);
+  const sameMatchO25 = pick("fx-over25", 92, "OVER_UNDER", ou(2.5, "OVER"), 7000);
+  const sameMatchWeak = pick("fx-weak", 80, "BTTS", { value: "YES" }, 7000);
+  const other1 = pick("other-1", 84, "DOUBLE_CHANCE", { value: "AWAY_OR_DRAW" });
+  const other2 = pick("other-2", 70, "BTTS", { value: "NO" });
+  const dup = ids(selectHomepageGenius([sameMatchWeak, other2, sameMatchO25, other1, sameMatchStrong], legs));
+  check("duplicate fixture keeps only its highest-ranked ELIGIBLE pick", same(dup, ["fx-strong", "other-1", "other-2"]), dup.join(","));
+  const byFixtureId = [
+    { ...pick("fid-a", 90, "MATCH_WINNER", { value: "HOME" }), fixtureApiId: 555 },
+    { ...pick("fid-b", 89, "BTTS", { value: "YES" }), fixtureApiId: 555 },
+  ];
+  check("the provider fixture id also identifies a match", same(ids(selectHomepageGenius(byFixtureId, legs)), ["fid-a"]));
+  check("fewer than three eligible matches shows fewer (no padding)", selectHomepageGenius([over25, sameMatchStrong, sameMatchWeak], legs).length === 1);
+
+  // Settlement does not move the selection.
+  const settled = settle(day, Object.fromEntries(day.map((r, i) => [r.id, i % 2 ? "WON" : "LOST"])) as Record<string, "WON" | "LOST">)
+    .map((r) => ({ ...r, kickoff: new Date(r.kickoff.getTime() + 3_600_000), manualSettlementOnly: true }));
+  check("settling everything (and a kickoff correction) keeps the same ids and order", same(ids(selectHomepageGenius(settled, legs)), got));
+  check("input order does not matter", same(ids(selectHomepageGenius([...day].reverse(), legs)), got));
 }
 
 // ── 9. Short days and the empty state ───────────────────────────────────────
@@ -302,7 +389,11 @@ console.log("\n9. Short days are not padded; empty-state copy");
   check("page keeps the View all link to /predictions/featured", /href="\/predictions\/featured"[^>]*>View all/.test(page));
   const pageCode = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   check("page no longer ranks either excerpt with orderForDisplay", !/orderForDisplay/.test(pageCode));
-  check("page ranks Genius with selectHomepageGenius", /selectHomepageGenius\(await fetchCategoryDay\("GENIUS"/.test(page));
+  check("page picks Genius with selectHomepageGenius and the combos' legs",
+    /fetchCategoryDay\("GENIUS", day\)/.test(page) && /selectHomepageGenius\(rows, await loadComboLegs\(rows\)\)/.test(page));
+  const feeds = readFileSync("src/lib/categoryPredictions.ts", "utf8");
+  check("/predictions/genius untouched: the category feed never uses the homepage selector",
+    !/homepageFeatured|selectHomepageGenius|isHomepageGeniusEligible/.test(feeds) && /return orderForDisplay\(rows\)/.test(feeds));
 }
 
 // ── 10. Source guards ───────────────────────────────────────────────────────
