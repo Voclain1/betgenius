@@ -22,6 +22,7 @@ import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { FollowButton } from "@/components/FollowButton";
 import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
+import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/BankerPredictionsGuide";
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
 
@@ -220,6 +221,8 @@ export default async function CategoryPage(
         <TodayPredictionsGuide dateLabel={dateLabel} />
       )}
 
+      {cat === "BANKER" && <BankerPredictionsIntro />}
+
       {/* Ads are IN the feed now, between groups of picks, rather than in a
           single band under it — see feedAdPositions in src/lib/ads.ts for the
           counts and AdPlacements.tsx for the rule they follow. The foot band
@@ -227,6 +230,7 @@ export default async function CategoryPage(
           would be four ads on one feed. */}
       <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
 
+      {cat === "BANKER" && <BankerPredictionsEvidence />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}
     </div>
   );

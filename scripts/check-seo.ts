@@ -34,6 +34,26 @@ const check = (l: string, c: boolean, got?: unknown) => {
 
 const eq = (l: string, a: unknown, b: unknown) => check(l, JSON.stringify(a) === JSON.stringify(b), a);
 
+// --- Banker hub ----------------------------------------------------------
+// Static checks keep this regression gate offline: the hub must not add a
+// production/database dependency merely to prove its public claims.
+const repoRoot = process.cwd();
+const categoryPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8");
+const bankerGuide = readFileSync(join(repoRoot, "src/components/BankerPredictionsGuide.tsx"), "utf8");
+const categoryPredictions = readFileSync(join(repoRoot, "src/lib/categoryPredictions.ts"), "utf8");
+const trackRecordView = readFileSync(join(repoRoot, "src/components/TrackRecordView.tsx"), "utf8");
+
+check("banker hub: does not claim there is only one pick", !categoryPredictions.includes("single most-confident"));
+check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to three may be published"));
+check("banker hub: explains that days can have no selection", bankerGuide.includes("some days will have none"));
+check("banker hub: intro appears before the ad-enabled feed",
+  categoryPage.indexOf("<BankerPredictionsIntro") < categoryPage.indexOf("<CategoryPredictionsList"));
+check("banker hub: evidence appears after the ad-enabled feed",
+  categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.indexOf("<CategoryPredictionsList"));
+check("banker hub: keeps the existing ad-enabled list", categoryPage.includes("<CategoryPredictionsList category={cat} rows={shaped as any} withAds />"));
+check("banker hub: links to category-specific public evidence", bankerGuide.includes("/track-record#category-banker"));
+check("banker hub: public track record exposes the Banker anchor", trackRecordView.includes('id={`category-${cat.toLowerCase().replaceAll("_", "-")}`}'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");
