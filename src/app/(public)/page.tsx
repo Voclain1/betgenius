@@ -89,7 +89,13 @@ async function fetchFeatured(day: FeedDay) {
   const rows = await fetchCategoryDay("FEATURED", day);
 
   const singles = rows.filter((r) => !isComboRow(r)).length;
-  const legIds = singles >= HOMEPAGE_FEATURED_LIMIT ? [] : rows.flatMap((r) => comboLegIds(r) ?? []);
+  const legs = await loadComboLegs(singles >= HOMEPAGE_FEATURED_LIMIT ? [] : rows);
+  return { rows: selectHomepageFeatured(rows, legs), published: rows.length };
+}
+
+/** The legs behind any combos in `rows`, keyed by id. One query, or none when there are no combos. */
+async function loadComboLegs(rows: Parameters<typeof comboLegIds>[0][]) {
+  const legIds = rows.flatMap((r) => comboLegIds(r) ?? []);
   const legs = legIds.length
     ? await prisma.prediction.findMany({
         where: { id: { in: legIds } },
@@ -99,15 +105,19 @@ async function fetchFeatured(day: FeedDay) {
         },
       })
     : [];
-  return { rows: selectHomepageFeatured(rows, new Map(legs.map((l) => [l.id, l]))), published: rows.length };
+  return new Map(legs.map((l) => [l.id, l]));
 }
 
 /**
  * The day's three homepage Genius picks: the same outcome-blind ranking as
- * Featured, so Yesterday's three do not change once results settle. No combo
- * filter; Genius membership is curation's call.
+ * Featured, so Yesterday's three do not change once results settle, and a
+ * showcase of three different matches with no Over/Under 2.5 call in it.
+ * Combo legs are loaded because a combo is judged by what its legs are.
  */
-const fetchGeniusPreview = async (day: FeedDay) => selectHomepageGenius(await fetchCategoryDay("GENIUS", day));
+async function fetchGeniusPreview(day: FeedDay) {
+  const rows = await fetchCategoryDay("GENIUS", day);
+  return selectHomepageGenius(rows, await loadComboLegs(rows));
+}
 
 /**
  * The pick shown beside the hero headline.
