@@ -21,7 +21,7 @@ import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { FollowButton } from "@/components/FollowButton";
-import { TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
+import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
 import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/BankerPredictionsGuide";
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
@@ -231,6 +231,7 @@ export default async function CategoryPage(
       <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
 
       {cat === "BANKER" && <BankerPredictionsEvidence />}
+      {cat === "TODAY" && <TodayPredictionsEvidence />}
     </div>
   );
 }

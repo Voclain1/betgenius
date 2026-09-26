@@ -22,8 +22,8 @@ import type { H2HMeeting } from "../src/lib/h2h";
 import type { LeagueStandingRow } from "../src/lib/enrichment";
 import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "../src/lib/h2hEvidence";
 import { lagosDayLabel } from "../src/lib/lagosDate";
-import fs from "node:fs";
-import path from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 let passed = 0;
 const failures: string[] = [];
@@ -37,11 +37,11 @@ const eq = (l: string, a: unknown, b: unknown) => check(l, JSON.stringify(a) ===
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
 // production/database dependency merely to prove its public claims.
-const repoRoot = path.resolve(import.meta.dirname, "..");
-const categoryPage = fs.readFileSync(path.join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8");
-const bankerGuide = fs.readFileSync(path.join(repoRoot, "src/components/BankerPredictionsGuide.tsx"), "utf8");
-const categoryPredictions = fs.readFileSync(path.join(repoRoot, "src/lib/categoryPredictions.ts"), "utf8");
-const trackRecordView = fs.readFileSync(path.join(repoRoot, "src/components/TrackRecordView.tsx"), "utf8");
+const repoRoot = process.cwd();
+const categoryPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8");
+const bankerGuide = readFileSync(join(repoRoot, "src/components/BankerPredictionsGuide.tsx"), "utf8");
+const categoryPredictions = readFileSync(join(repoRoot, "src/lib/categoryPredictions.ts"), "utf8");
+const trackRecordView = readFileSync(join(repoRoot, "src/components/TrackRecordView.tsx"), "utf8");
 
 check("banker hub: does not claim there is only one pick", !categoryPredictions.includes("single most-confident"));
 check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to three may be published"));
@@ -59,6 +59,16 @@ check("banker hub: public track record exposes the Banker anchor", trackRecordVi
 const lateUtc = new Date("2026-09-10T23:30:00Z");
 eq("Lagos date label: today crosses the UTC boundary correctly", lagosDayLabel(0, lateUtc), "Friday, 11 September 2026");
 eq("Lagos date label: yesterday stays relative to the Lagos day", lagosDayLabel(-1, lateUtc), "Thursday, 10 September 2026");
+
+// --- Daily-guide placement ------------------------------------------------
+const todayGuideSource = readFileSync(join(process.cwd(), "src/components/TodayPredictionsGuide.tsx"), "utf8");
+const categoryPageSource = readFileSync(join(process.cwd(), "src/app/(public)/predictions/[category]/page.tsx"), "utf8");
+check("today guide uses a native disclosure", todayGuideSource.includes("<details") && todayGuideSource.includes("<summary"));
+check("today evidence remains a distinct linked section", todayGuideSource.includes("export function TodayPredictionsEvidence"));
+check(
+  "today evidence renders after the prediction feed",
+  categoryPageSource.indexOf("<TodayPredictionsEvidence") > categoryPageSource.indexOf("<CategoryPredictionsList"),
+);
 
 function digest(over: Partial<TeamDigest> = {}): TeamDigest {
   return {
