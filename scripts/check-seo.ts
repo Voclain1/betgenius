@@ -82,6 +82,18 @@ check("btts hub: links to the exact market record", bttsGuide.includes("/track-r
 check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/btts"'));
 check("btts hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('r.marketType === "BTTS"'));
 
+// --- Double Chance hub ---------------------------------------------------
+const doubleChancePage = readFileSync(join(repoRoot, "src/app/(public)/predictions/double-chance/page.tsx"), "utf8");
+const doubleChanceGuide = readFileSync(join(repoRoot, "src/components/DoubleChancePredictionsGuide.tsx"), "utf8");
+check("double chance hub: query uses the structured market type", marketPredictions.includes('marketType: "DOUBLE_CHANCE"'));
+check("double chance hub: defines all three covered pairs", doubleChanceGuide.includes("Home or Draw") && doubleChanceGuide.includes("Away or Draw") && doubleChanceGuide.includes("Home or Away"));
+check("double chance hub: does not imply certainty", doubleChanceGuide.includes("does not make the pick certain"));
+check("double chance hub: evidence renders after the ad-enabled feed", doubleChancePage.indexOf("<DoubleChancePredictionsEvidence") > doubleChancePage.indexOf("<CategoryPredictionsList"));
+check("double chance hub: keeps the existing ad-enabled list", doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("double chance hub: links to the exact market record", doubleChanceGuide.includes("/track-record#market-double-chance"));
+check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/double-chance"'));
+check("double chance hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('r.marketType === "DOUBLE_CHANCE"'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");
