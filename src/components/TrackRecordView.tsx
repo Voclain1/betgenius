@@ -113,7 +113,9 @@ export function TrackRecordView({ data }: { data: TrackRecordData }) {
         <h2 className="mb-3 text-lg font-semibold">By category</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {TRACK_RECORD_CATEGORIES.map((cat) => (
-            <RateCard key={cat} stat={stats.byCategory[cat]} label={CATEGORY_LABELS[cat] ?? cat} />
+            <div key={cat} id={`category-${cat.toLowerCase().replaceAll("_", "-")}`} className="scroll-mt-24">
+              <RateCard stat={stats.byCategory[cat]} label={CATEGORY_LABELS[cat] ?? cat} />
+            </div>
           ))}
         </div>
       </section>
