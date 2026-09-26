@@ -54,6 +54,22 @@ check("banker hub: keeps the existing ad-enabled list", categoryPage.includes("<
 check("banker hub: links to category-specific public evidence", bankerGuide.includes("/track-record#category-banker"));
 check("banker hub: public track record exposes the Banker anchor", trackRecordView.includes('id={`category-${cat.toLowerCase().replaceAll("_", "-")}`}'));
 
+// --- Over 2.5 Goals hub --------------------------------------------------
+const over25Page = readFileSync(join(repoRoot, "src/app/(public)/predictions/over-2-5-goals/page.tsx"), "utf8");
+const over25Guide = readFileSync(join(repoRoot, "src/components/Over25PredictionsGuide.tsx"), "utf8");
+const marketPredictions = readFileSync(join(repoRoot, "src/lib/marketPredictions.ts"), "utf8");
+const predictionsIndex = readFileSync(join(repoRoot, "src/app/(public)/predictions/page.tsx"), "utf8");
+const sitemapEntries = readFileSync(join(repoRoot, "src/lib/sitemapEntries.ts"), "utf8");
+check("over 2.5 hub: query uses structured market fields", marketPredictions.includes('marketType: "OVER_UNDER"') && marketPredictions.includes('["line"]') && marketPredictions.includes('["direction"]'));
+check("over 2.5 hub: query stays bounded", marketPredictions.includes("take: 60"));
+check("over 2.5 hub: explains the winning threshold", over25Guide.includes("at least three total goals"));
+check("over 2.5 hub: avoids a guaranteed outcome claim", over25Guide.includes("not a guaranteed probability"));
+check("over 2.5 hub: evidence renders after the ad-enabled feed", over25Page.indexOf("<Over25PredictionsEvidence") > over25Page.indexOf("<CategoryPredictionsList"));
+check("over 2.5 hub: keeps the existing ad-enabled list", over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("over 2.5 hub: links to an exact public record", over25Guide.includes("/track-record#market-over-25") && trackRecordView.includes('id="market-over-25"'));
+check("over 2.5 hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/over-2-5-goals"'));
+check("over 2.5 hub: sitemap inclusion uses the exact structured selection", sitemapEntries.includes("const over25Rows") && sitemapEntries.includes('direction === "OVER"'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");

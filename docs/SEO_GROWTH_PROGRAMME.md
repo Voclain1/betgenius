@@ -40,7 +40,7 @@
 | SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Implemented locally: Lagos date and freshness guidance, evidence links and responsible-use copy added without new database queries or ad-placement changes; targeted SEO checks (78/78), Adsterra checks and TypeScript check passed; isolated new-content visual QA passed at 1280px and 390px with no browser errors. Full data-backed page and production verification remain pending |
 | SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Implemented locally: all-time outcomes, measurement dates, calculation rules, sample gates, publication-window definition and confidence/calibration limits; typecheck passed, database-backed visual and production validation pending |
 | SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Implemented locally; merged verification passes SEO checks (89/89), Adsterra checks and TypeScript; production verification pending |
-| SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Backlog |
+| SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (98/98), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Backlog |
 | SEO-207 | Build Double Chance market hub | Live data, definition, evidence and record | Backlog |
 | SEO-208 | Upgrade EPL, UCL, NPFL, La Liga and Serie A hubs | Query-led titles, useful intros, current modules, proof and links | Backlog |
