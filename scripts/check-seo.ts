@@ -70,6 +70,18 @@ check("over 2.5 hub: links to an exact public record", over25Guide.includes("/tr
 check("over 2.5 hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/over-2-5-goals"'));
 check("over 2.5 hub: sitemap inclusion uses the exact structured selection", sitemapEntries.includes("const over25Rows") && sitemapEntries.includes('direction === "OVER"'));
 
+// --- BTTS hub ------------------------------------------------------------
+const bttsPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/btts/page.tsx"), "utf8");
+const bttsGuide = readFileSync(join(repoRoot, "src/components/BttsPredictionsGuide.tsx"), "utf8");
+check("btts hub: query uses the structured market type", marketPredictions.includes('marketType: "BTTS"'));
+check("btts hub: defines both Yes and No outcomes", bttsGuide.includes('A “Yes” pick') && bttsGuide.includes('A “No” pick'));
+check("btts hub: does not confuse BTTS with the match winner", bttsGuide.includes("final winner of the") && bttsGuide.includes("does not decide this market"));
+check("btts hub: evidence renders after the ad-enabled feed", bttsPage.indexOf("<BttsPredictionsEvidence") > bttsPage.indexOf("<CategoryPredictionsList"));
+check("btts hub: keeps the existing ad-enabled list", bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("btts hub: links to the exact market record", bttsGuide.includes("/track-record#market-btts") && trackRecordView.includes('id={`market-${mt.toLowerCase().replaceAll("_", "-")}`}'));
+check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/btts"'));
+check("btts hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('r.marketType === "BTTS"'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");

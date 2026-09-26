@@ -109,6 +109,15 @@ export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     });
   }
+  const bttsRows = rows.filter((r) => !!r.kickoff && isLagosToday(r.kickoff) && r.marketType === "BTTS");
+  if (bttsRows.length) {
+    entries.push({
+      url: absoluteUrl("/predictions/btts"),
+      lastModified: maxDate(bttsRows.map((r) => r.publishedAt)),
+      changeFrequency: "daily",
+      priority: 0.8,
+    });
+  }
 
   // Leagues — grouped by the same leagueSlug used at read time (src/lib/slug.ts),
   // so a slug only appears here if /predictions/league/[slug] would actually
