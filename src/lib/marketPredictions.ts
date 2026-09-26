@@ -47,3 +47,22 @@ export const getBttsPredictions = cache(async (day: FeedDay = "today") => {
   });
   return orderForDisplay(rows);
 });
+
+/** One bounded read for all three structured Double Chance selections. */
+export const getDoubleChancePredictions = cache(async (day: FeedDay = "today") => {
+  const bounds = lagosDayBounds(DAY_OFFSETS[day]);
+  const rows = await prisma.prediction.findMany({
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: bounds.start, lt: bounds.end },
+      marketType: "DOUBLE_CHANCE",
+    },
+    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
+    include: {
+      categories: true,
+      fixture: { include: { homeTeam: true, awayTeam: true, league: true } },
+    },
+    take: 60,
+  });
+  return orderForDisplay(rows);
+});

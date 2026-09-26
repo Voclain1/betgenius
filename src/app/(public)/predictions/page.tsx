@@ -42,6 +42,11 @@ const marketHubs = [
     name: "BTTS predictions",
     desc: "Both Teams to Score Yes and No picks, with match evidence and the settled market record.",
   },
+  {
+    href: "/predictions/double-chance",
+    name: "Double Chance predictions",
+    desc: "Home-or-Draw, Away-or-Draw and Home-or-Away picks with supporting evidence and settled results.",
+  },
 ];
 
 export default function PredictionsIndex() {

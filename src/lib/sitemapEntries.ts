@@ -118,6 +118,15 @@ export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     });
   }
+  const doubleChanceRows = rows.filter((r) => !!r.kickoff && isLagosToday(r.kickoff) && r.marketType === "DOUBLE_CHANCE");
+  if (doubleChanceRows.length) {
+    entries.push({
+      url: absoluteUrl("/predictions/double-chance"),
+      lastModified: maxDate(doubleChanceRows.map((r) => r.publishedAt)),
+      changeFrequency: "daily",
+      priority: 0.8,
+    });
+  }
 
   // Leagues — grouped by the same leagueSlug used at read time (src/lib/slug.ts),
   // so a slug only appears here if /predictions/league/[slug] would actually
