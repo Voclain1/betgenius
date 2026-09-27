@@ -96,7 +96,27 @@ console.log("\n2. Prompt");
 const block = goalsMarketBlock();
 check("constraint offers Over 1.5 as an exact selection", block.includes('{"marketType": "OVER_UNDER", "selection": {"line": 1.5, "direction": "OVER"}}'));
 check("constraint offers Over 2.5 as an exact selection", block.includes('{"marketType": "OVER_UNDER", "selection": {"line": 2.5, "direction": "OVER"}}'));
-check("neither line is presented as the default", /neither is the default/.test(block));
+check("neither line is presented as the default or preferred", /Neither line is the default and neither is preferred\./.test(block));
+
+// Line selection: the strongest justified line, never the safer one by default.
+// Five of five live probes returned Over 1.5 under the first wording.
+{
+  const options = block.split("\n").filter((l) => l.includes('"OVER_UNDER"'));
+  const shape = (l: string) => l.replace(/\d\.5/, "N").replace(/two|three/, "K").trim();
+  check("both lines are offered in one identical, parallel form", options.length === 2 && shape(options[0]) === shape(options[1]), options);
+  check("the two options describe the goal count only (no hint of which is safer)", /two or more goals in the match$/.test(options[0].trim()) && /three or more goals in the match$/.test(options[1].trim()));
+  check("the model is told to choose the strongest justified line, not the likeliest to win", /Choose the STRONGEST line\s+the evidence justifies, not the line most likely to win\./.test(block));
+  check("being likelier to win is named as never, on its own, a reason for Over 1.5", /is never, on its own, a reason to choose it/.test(block));
+  check("it must judge three-or-more and two-or-more separately, then compare", /1\. Judge the case for THREE OR MORE goals on its own evidence/.test(block) && /2\. Judge the case for TWO OR MORE goals the same way/.test(block) && /3\. Compare the two\./.test(block));
+  check("Over 2.5 when the evidence materially supports 3+", /Choose Over 2\.5 when the evidence materially supports three\s+or more goals\./.test(block));
+  check("Over 1.5 only when 2+ is strong but a third is not sufficiently supported", /Choose Over 1\.5 when the evidence strongly supports two or\s+more goals but does not sufficiently support a third\./.test(block));
+  check("explicitly: do not choose Over 1.5 merely because it is safer", /do not choose Over 1\.5 merely because it\s+is safer/.test(block));
+  check("the shared 'conservative / cautious' guidance is scoped away from this choice", /preferring a conservative or more cautious position applies\s+to choosing between different markets/.test(block) && /the\s+lower line is not a cautious fallback/.test(block));
+  check("no pick is still allowed when neither line is supported", /If neither line is supported with real confidence, return "predictions": \[\]/.test(block));
+  check("no quota, proportion or split is imposed on either line", !/quota|proportion|split|per ?cent|%|half of|alternate|at least one of each|mix/i.test(block));
+  check("Over 2.5 is not made mandatory", !/(must|always) (choose|return|pick) Over 2\.5/i.test(block));
+  check("the block avoids phrases the house-voice scan rejects if echoed", !/confidence (band|threshold)|hedg(e|ing) (guidelines?|rules?|policy)|per (the )?(guidelines?|instructions?)|calibrat/i.test(block));
+}
 check("constraint forbids Under, team goals, BTTS, result and double-chance markets", /Do not return UNDER/.test(block) && /single team's goals/.test(block) && /both-teams-to-score/.test(block) && /double-chance/.test(block));
 check("constraint allows no pick rather than a fallback market", /"predictions": \[\]/.test(block) && /do not fall back/.test(block));
 check("constraint never names a feed, tier or category (house voice)", !/feed|tier|category|genius|premium|vip|banker/i.test(block));
@@ -414,6 +434,12 @@ async function publicationAndProbe() {
     const goals = await generatePredictionForFixture({ digest, tiers: ["GENIUS"], marketBreadth: "single", goalsOnly: true });
     const [o, g] = sent;
     check("goals prompt offers Over 1.5 as an exact choice", g.user.includes('{"line": 1.5, "direction": "OVER"}'));
+    check("goals prompt offers Over 2.5 as an exact choice", g.user.includes('{"line": 2.5, "direction": "OVER"}'));
+    check("goals prompt as sent presents both lines neutrally", g.user.includes("Neither line is the default and neither is preferred."));
+    check("goals prompt as sent asks for the strongest justified line, not the safer one",
+      /Choose the STRONGEST line\s+the evidence justifies, not the line most likely to win\./.test(g.user) && /do not choose Over 1\.5 merely because it\s+is safer/.test(g.user));
+    check("goals prompt as sent requires comparing the two lines before choosing", g.user.indexOf("THREE OR MORE goals on its own evidence") < g.user.indexOf("TWO OR MORE goals the same way") && g.user.indexOf("TWO OR MORE goals the same way") < g.user.indexOf("Compare the two."));
+    check("the line-selection instructions are in the goals prompt only", !/STRONGEST line|Compare the two\.|cautious fallback/.test(o.user) && !/STRONGEST line|cautious fallback/.test(o.system));
     check("goals prompt ends with the Goals-only instruction", g.user.trimEnd().endsWith(GOALS_MARKET_INSTRUCTION));
     check("ordinary prompt carries none of it", !o.user.includes("TOTAL GOALS CONSTRAINT") && !o.user.includes(GOALS_MARKET_INSTRUCTION) && /marketType must be one of: MATCH_WINNER, /.test(o.user));
     check("the system prompt is identical for both (the constraint lives only in the user prompt)", o.system === g.system);
