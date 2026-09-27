@@ -25,6 +25,7 @@ import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescripti
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
 import { AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
+import { EditorialAttribution } from "@/components/EditorialAttribution";
 
 /**
  * Everything both generateMetadata and the page body need, assembled once.
@@ -242,6 +243,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
           {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
         </div>
+        <EditorialAttribution />
       </div>
 
       <MatchInfoPanel
