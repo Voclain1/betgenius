@@ -32,6 +32,10 @@ export function canViewCategory(
     // variance than either leg on its own — putting it behind VIP/PREMIUM
     // would sell the least reliable picks as the most curated ones.
     case "SAME_GAME_DOUBLE":
+    // Public like Today: it is a market filter over ordinary published picks,
+    // not a separately curated product. Every row it can show is already
+    // readable in the Today feed, so gating it would protect nothing.
+    case "GOALS":
       return true;
     case "BANKER":
       // Free to view once registered — no active subscription required, just a login.

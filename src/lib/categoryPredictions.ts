@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
+import { goalsFeedRows } from "@/lib/goalsCategory";
 
 // Shared between /predictions/[category] and the account dashboard so the
 // two never end up running two slightly different queries for the same
@@ -20,6 +21,7 @@ export const CATEGORY_SLUGS: Record<string, PredictionCategory> = {
   // stored PredictionCategoryTag row still say SAME_GAME_DOUBLE. See
   // next.config.mjs for the redirect from the old slug.
   "combo-bets": "SAME_GAME_DOUBLE",
+  goals: "GOALS",
 };
 
 export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
@@ -31,6 +33,7 @@ export const CATEGORY_NAMES: Record<PredictionCategory, string> = {
   PREMIUM: "Premium tips",
   BET_OF_THE_DAY: "Bet of the Day",
   SAME_GAME_DOUBLE: "Combo Bets",
+  GOALS: "Goals",
 };
 
 /**
@@ -50,6 +53,7 @@ export const CATEGORY_BLURBS: Record<PredictionCategory, string> = {
   PREMIUM: "Top-tier tips + accumulators.",
   BET_OF_THE_DAY: "A single pick each day, taken from everything published that morning.",
   SAME_GAME_DOUBLE: "Two picks on the same match, combined into one selection.",
+  GOALS: "Over 1.5 and Over 2.5 total-goals picks, and no other market.",
 };
 
 /**
@@ -68,6 +72,7 @@ export const CATEGORY_CHIP_LABELS: Record<PredictionCategory, string> = {
   PREMIUM: "Premium",
   BET_OF_THE_DAY: "Bet of the Day",
   SAME_GAME_DOUBLE: "Combo Bet",
+  GOALS: "Goals",
 };
 
 /** Chip text for a category string that came from the database. */
@@ -126,7 +131,7 @@ export function feedDayHref(slug: string, day: FeedDay): string {
 // two keys and therefore two queries for the same rows.
 export const getCategoryPredictions = cache(async (cat: PredictionCategory, day: FeedDay = "today") => {
   const today = lagosDayBounds(DAY_OFFSETS[day]);
-  const rows = await prisma.prediction.findMany({
+  const found = await prisma.prediction.findMany({
     where: {
       status: "PUBLISHED",
       kickoff: { gte: today.start, lt: today.end },
@@ -147,6 +152,13 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
       // surface here as two loose single-market picks sitting beside the double
       // that already quotes them both.
       ...(cat === "SAME_GAME_DOUBLE" ? { marketType: "SAME_GAME_DOUBLE" } : {}),
+      // GOALS is derived from the market, so the tag and the market already
+      // agree; saying both keeps a mis-tagged row out rather than trusting
+      // every writer. Source legs never carry GOALS, but excluding them here
+      // too costs nothing. goalsFeedRows below re-checks line and direction.
+      ...(cat === "GOALS"
+        ? { marketType: "OVER_UNDER", categories: { some: { category: "GOALS" }, none: { category: "SAME_GAME_DOUBLE" } } }
+        : {}),
     },
     // Deterministic, but not the order the page renders in — the ranking in
     // orderForDisplay decides that. This clause exists so the `take` below
@@ -156,5 +168,6 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
     take: 60,
   });
+  const rows = cat === "GOALS" ? goalsFeedRows(found) : found;
   return orderForDisplay(rows);
 });

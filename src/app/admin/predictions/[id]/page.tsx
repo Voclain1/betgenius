@@ -8,6 +8,7 @@ import { MarketSelectionFields, emptyMarketFormState, type MarketFormState } fro
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { RewriteRequest } from "@/components/RewriteRequest";
 import { EDITOR_PRESERVED_TAGS, isComboPrediction } from "@/lib/comboAdmin";
+import { GOALS } from "@/lib/goalsCategory";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -99,10 +100,12 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
       // BET_OF_THE_DAY and SAME_GAME_DOUBLE are excluded from the editable set
       // on purpose: neither has a checkbox, and leaving them in this array
       // would send a value the PATCH schema rejects. The API re-attaches both
-      // on save for rows that hold them (see mergeEditedCategories).
+      // on save for rows that hold them (see mergeEditedCategories). GOALS is
+      // excluded for the same schema reason, but is never re-attached: the API
+      // re-derives it from the saved market (src/lib/goalsCategory.ts).
       categories: pred.categories
         .map((c: any) => c.category)
-        .filter((c: string) => !(EDITOR_PRESERVED_TAGS as readonly string[]).includes(c)),
+        .filter((c: string) => !(EDITOR_PRESERVED_TAGS as readonly string[]).includes(c) && c !== GOALS),
       leagueApiId: pred.leagueApiId ?? undefined,
       leagueName: pred.leagueName ?? "",
       homeTeam: pred.homeTeam ?? "",
@@ -139,7 +142,10 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
     // stays in Combo Bets, so it needs neither market fields nor a category.
     const combo = !!p && isComboPrediction(p);
     if (!combo) {
-      if (form.categories.length === 0) { setError("Select at least one category."); return; }
+      // A row filed under Goals alone may be saved with no editorial category
+      // while its market still qualifies; the API refuses the save otherwise.
+      const goalsOnlyRow = !!p?.categories?.some((c) => c.category === GOALS);
+      if (form.categories.length === 0 && !goalsOnlyRow) { setError("Select at least one category."); return; }
       if (market.marketType === "OTHER") {
         if (!market.otherMarket || !market.otherPick) { setError("Market and pick are required."); return; }
       } else if (!isValidSelection(market.marketType, market.selection)) {
@@ -394,6 +400,10 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
               </label>
             ))}
           </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {p?.categories?.some((c) => c.category === GOALS) ? "Also in Goals. " : ""}
+            Goals is set automatically: an Over 1.5 or Over 2.5 total-goals market joins it on save, and any other market leaves it.
+          </p>
         </div>
         {error && <div className="md:col-span-2 text-sm text-red-400">{error}</div>}
         <div className="md:col-span-2 flex justify-end gap-2">

@@ -32,6 +32,8 @@ export const JOB_SETTLE = "settle" as const;
 export const JOB_GENERATE = "generate-ordinary" as const;
 export const JOB_GENERATE_VIP_PREMIUM = "generate-vip-premium" as const;
 export const JOB_GENERATE_BET_OF_DAY = "generate-bet-of-the-day" as const;
+/** The dedicated Goals pass (?goals=1) — src/lib/goalsGeneration.ts. */
+export const JOB_GENERATE_GOALS = "generate-goals" as const;
 export const JOB_BET_OF_DAY_SELECT = "select-bet-of-the-day" as const;
 export const JOB_REFRESH_ODDS = "refresh-odds" as const;
 /**
@@ -62,6 +64,7 @@ export const KNOWN_JOBS = [
   JOB_GENERATION_DISCOVERY,
   JOB_REFRESH_ODDS,
   JOB_GENERATE_VIP_PREMIUM,
+  JOB_GENERATE_GOALS,
   JOB_GENERATE,
   JOB_GENERATE_BET_OF_DAY,
   JOB_BET_OF_DAY_SELECT,

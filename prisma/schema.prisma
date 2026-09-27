@@ -32,7 +32,7 @@ datasource db {
 // Role: "USER" | "ADMIN_PENDING" | "ADMIN" | "SUPER_ADMIN"
 // SubscriptionTier: "FREE" | "VIP" | "PREMIUM"
 // SubscriptionStatus: "PENDING" | "ACTIVE" | "CANCELED" | "EXPIRED"
-// PredictionCategory: "FEATURED" | "GENIUS" | "TODAY" | "BANKER" | "VIP" | "PREMIUM" | "BET_OF_THE_DAY"
+// PredictionCategory: "FEATURED" | "GENIUS" | "TODAY" | "BANKER" | "VIP" | "PREMIUM" | "BET_OF_THE_DAY" | "SAME_GAME_DOUBLE" | "GOALS"
 // PredictionStatus: "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "PUBLISHED" | "ARCHIVED"
 // Outcome: "PENDING" | "WON" | "LOST" | "VOID"
 // TaskStatus: "OPEN" | "IN_PROGRESS" | "DONE"

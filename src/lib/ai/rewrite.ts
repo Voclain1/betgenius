@@ -11,6 +11,7 @@ import { Prisma } from "@prisma/client";
 import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { parseStoredContext, buildStoredContext } from "@/lib/ai/context";
 import { setPredictionCategories } from "@/lib/predictions";
+import { GOALS_GENERATED_PROVENANCE, GOALS_MIN_CONFIDENCE, pickGoalsDraft } from "@/lib/goalsGeneration";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { buildAnalysis } from "@/lib/predictionAnalysis";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
@@ -70,10 +71,15 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     prediction.categories.map((c) => c.category),
     prediction.leagueApiId,
   );
+  // A Goals-pass row stays a Goals pick through a rewrite: same fixed market,
+  // same post-parse enforcement. Otherwise a rewrite could turn a row filed
+  // under GOALS alone into, say, BTTS — losing its only category.
+  const goalsOnly = prediction.provenance === GOALS_GENERATED_PROVENANCE;
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
+    ...(goalsOnly ? { goalsOnly: true } : {}),
     reviewerNote,
     previousDraft: {
       matchPreview: prediction.matchPreview,
@@ -83,8 +89,15 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     },
   });
 
-  const draft = output.predictions[0];
-  if (!draft) throw new RewriteError("The model returned no predictions in the rewrite", 502);
+  const draft = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []).pick : output.predictions[0];
+  if (!draft) {
+    throw new RewriteError(
+      goalsOnly
+        ? `The rewrite returned no Over 1.5 / Over 2.5 pick at ${GOALS_MIN_CONFIDENCE}% or above; the draft is unchanged`
+        : "The model returned no predictions in the rewrite",
+      502,
+    );
+  }
 
   // Same defensive derivation as generate.ts: a malformed marketType/selection
   // falls back to OTHER (manual settlement) rather than persisting a
@@ -165,10 +178,11 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     include: { categories: true },
   });
 
-  // Categories are untouched by a rewrite, but re-asserting them keeps the
-  // primary `category` column in sync with categories[0] the way generate.ts
-  // does, in case an earlier edit changed the set.
-  await setPredictionCategories(predictionId, updated.categories.map((c) => c.category));
+  // Editorial categories are untouched by a rewrite, but re-asserting them
+  // keeps the primary `category` column in sync with categories[0] the way
+  // generate.ts does, in case an earlier edit changed the set. A rewrite CAN
+  // change the market, so this is also what adds or removes GOALS.
+  await setPredictionCategories(predictionId, updated.categories.map((c) => c.category), updated);
 
   return { prediction: updated, job, archivedCount: history.length + 1 };
 }

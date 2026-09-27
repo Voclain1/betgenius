@@ -476,6 +476,47 @@ export function buildSystemPrompt(
   return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${consistencyBlock}${breadthBlock}${certaintyBlock}${voiceBlock}`;
 }
 
+/** The closing market instruction when the market is fixed to Over 1.5 / Over 2.5 total goals. */
+export const GOALS_MARKET_INSTRUCTION =
+  `Return JSON only. "predictions" holds AT MOST ONE entry. Its marketType must be exactly "OVER_UNDER" and its selection exactly {"line": 1.5, "direction": "OVER"} or {"line": 2.5, "direction": "OVER"}. If neither is justified, return "predictions": [].`;
+
+/**
+ * The market constraint for the dedicated Goals pass.
+ *
+ * Written as a fact about the task, like the handicap constraint, rather than
+ * as a feed or tier name: the house-voice scan rejects reasoning that talks
+ * about our pipeline, and naming one here invites the model to echo it.
+ *
+ * Neither line is presented as the default. The base prompt's "e.g. line 2.5"
+ * is what has kept generated O/U on 2.5; this states the choice between them
+ * as an evidence question, and says plainly that no pick is a valid answer so
+ * a thin digest does not get forced into one.
+ */
+export function goalsMarketBlock(): string {
+  return `
+TOTAL GOALS CONSTRAINT — READ BEFORE CHOOSING.
+
+This fixture is being analysed for ONE market only: total match goals, OVER.
+Return at most ONE entry in "predictions", and it must be exactly one of:
+
+  {"marketType": "OVER_UNDER", "selection": {"line": 1.5, "direction": "OVER"}}   at least two goals in the match
+  {"marketType": "OVER_UNDER", "selection": {"line": 2.5, "direction": "OVER"}}   at least three goals in the match
+
+Both lines are equally available and neither is the default. Choose the one the
+evidence supports: 2.5 when both sides' scoring and conceding records point to
+an open match; 1.5 when goals are expected but a third is not well supported.
+Over 2.5 can only win if Over 1.5 also wins, so never return both.
+
+Do not return UNDER, any other line, a single team's goals, both-teams-to-score,
+a result or double-chance market, or any other marketType. If the evidence does
+not support at least two goals with real confidence, return "predictions": [] —
+an empty list is a valid answer; do not fall back to a different market.
+
+Set "overUnderLine" and "overUnderDirection" to the same line and direction as
+the pick. Still return "matchPreview" and "keyFactors" as usual.
+`;
+}
+
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
 
@@ -511,6 +552,16 @@ export async function generatePredictionForFixture(input: {
     line: number;
     quotes: { value: string; label: string; median: number; impliedPercent: number; bookmakers: number }[];
   };
+  /**
+   * The dedicated Goals pass (src/lib/goalsGeneration.ts). Fixes the market to
+   * total goals OVER on line 1.5 or 2.5, and makes 1.5 a first-class choice —
+   * the base prompt's only O/U example is 2.5, which is why ordinary
+   * generation has produced one public Over 1.5 single ever. Absent, the
+   * prompt is byte-identical to ordinary generation's. Enforced again after
+   * parsing (pickGoalsDraft in src/lib/ai/generate.ts): a prompt is guidance,
+   * not a guarantee.
+   */
+  goalsOnly?: boolean;
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -590,9 +641,12 @@ line, and to justify it from the evidence rather than from the prices above.
 Return selection as {"value": "HOME" | "DRAW" | "AWAY", "line": ${hc.line}}.
 `
     : "";
+  const goalsBlock = input.goalsOnly && !hc ? goalsMarketBlock() : "";
   const marketInstruction = hc
     ? `Return JSON only. marketType must be exactly "EUROPEAN_HANDICAP", with the selection shape given in the handicap constraint above.`
-    : `Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
+    : input.goalsOnly
+      ? GOALS_MARKET_INSTRUCTION
+      : `Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
   const userPrompt = `Analyse this fixture and return JSON only.
 
@@ -604,7 +658,7 @@ Fixture:
 Evidence digest (JSON):
 ${JSON.stringify(d)}
 ${revisionBlock}${directionBlock}
-${handicapBlock}
+${handicapBlock}${goalsBlock}
 ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;

@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
+import { GOALS, withGoalsCategory } from "@/lib/goalsCategory";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { comboMarketEditError, isComboPrediction, mergeEditedCategories } from "@/lib/comboAdmin";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
@@ -80,7 +81,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const comboError = comboMarketEditError(isComboPrediction(before), { marketType, selection, otherMarket, otherPick, ouLine, ouDirection });
   if (comboError) return NextResponse.json({ error: comboError }, { status: 400 });
   // Resolved up front so a rejected category set writes nothing at all.
-  const nextCategories = categories ? mergeEditedCategories(before.categories.map((c) => c.category), categories) : null;
+  const held = before.categories.map((c) => c.category);
+  const merged = categories ? mergeEditedCategories(held, categories) : null;
+  // A Goals-pass row is filed under GOALS alone, which the editor never sends,
+  // so its save carries no editorial category. That is allowed here; the
+  // derived-category check below still refuses the save if the market it ends
+  // up with no longer qualifies and the row would be left with nothing.
+  const nextCategories =
+    merged && !merged.ok && categories!.length === 0 && held.includes(GOALS) ? { ok: true as const, categories: [] as string[] } : merged;
   if (nextCategories && !nextCategories.ok) return NextResponse.json({ error: nextCategories.error }, { status: 400 });
 
   const data: any = { ...rest };
@@ -118,6 +126,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data.ouLine = ouLine ?? null;
     data.ouDirection = ouDirection ?? null;
     data.overUnder = deriveOverUnderText(data.ouLine, data.ouDirection);
+  }
+
+  // The market this row will hold once the patch lands. GOALS is derived from
+  // it (src/lib/goalsCategory.ts), and the category write below runs BEFORE the
+  // field update, so reading the stored market there would see the old one.
+  // A market edit therefore rewrites categories even when the editor did not
+  // touch them: that is what adds or removes GOALS.
+  const marketEdited = data.marketType !== undefined;
+  const effectiveMarket = marketEdited
+    ? { marketType: data.marketType as string, selection: data.marketType === "OTHER" ? null : data.selection }
+    : before;
+  const heldCategories = before.categories.length ? before.categories.map((c) => c.category) : [before.category];
+  const categoriesToWrite = nextCategories?.ok ? nextCategories.categories : marketEdited ? heldCategories : null;
+  if (categoriesToWrite && withGoalsCategory(categoriesToWrite, effectiveMarket).length === 0) {
+    return NextResponse.json({ error: "At least one category is required" }, { status: 400 });
   }
 
   if (action === "NOTIFY_TOP_PREDICTION") {
@@ -178,13 +201,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (finalAwayScore !== undefined) data.finalAwayScore = finalAwayScore;
   }
 
-  if (nextCategories?.ok) {
+  if (categoriesToWrite) {
     // The editor cannot see or send BET_OF_THE_DAY or SAME_GAME_DOUBLE (they
     // are not among its checkboxes), so a plain replace would silently strip
     // the Bet of the Day slot, or drop a double out of Combo Bets, the next
     // time anyone saved an unrelated field. mergeEditedCategories carries both
-    // through; only the pin action moves BET_OF_THE_DAY.
-    await setPredictionCategories(params.id, nextCategories.categories);
+    // through; only the pin action moves BET_OF_THE_DAY. GOALS is not carried
+    // at all: it is re-derived from effectiveMarket on every write.
+    await setPredictionCategories(params.id, categoriesToWrite, effectiveMarket);
   }
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.prediction.update({ where: { id: params.id }, data, include: { categories: true } });
