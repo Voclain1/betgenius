@@ -129,6 +129,17 @@ check("competition hubs: cup proof box follows fixtures and reference data", cup
 check("competition hubs: proof links include record, method and responsible use", competitionLinks.includes('href="/track-record"') && competitionLinks.includes('href="/methodology"') && competitionLinks.includes('href="/responsible-gambling"'));
 check("competition hubs: NPFL has an explicit metadata profile", readFileSync(join(repoRoot, "src/lib/seo.tsx"), "utf8").includes('title: "NPFL Predictions — Nigeria Premier League"'));
 
+// --- Editorial attribution ------------------------------------------------
+const aboutPage = readFileSync(join(repoRoot, "src/app/(public)/about/page.tsx"), "utf8");
+const matchPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");
+const editorialTeam = readFileSync(join(repoRoot, "src/components/EditorialTeam.tsx"), "utf8");
+const editorialAttribution = readFileSync(join(repoRoot, "src/components/EditorialAttribution.tsx"), "utf8");
+check("editorial team: About page has a stable team section", aboutPage.includes('id: "team"') && aboutPage.includes("<EditorialTeam"));
+check("editorial team: match analysis links to the team and policy", matchPage.includes("<EditorialAttribution") && editorialAttribution.includes('href="/about#team"') && editorialAttribution.includes('href="/editorial-policy"'));
+check("editorial desk: does not imply multiple or independent reviewers", editorialTeam.includes("independently operated") && editorialTeam.includes("not separate people"));
+check("editorial desk: uses the existing brand identity rather than a synthetic portrait", editorialTeam.includes("editorialDesk.image") && !editorialTeam.includes("AI-generated"));
+check("editorial desk: is not presented as named Person schema", !editorialTeam.includes('"@type": "Person"'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");

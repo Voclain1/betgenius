@@ -44,7 +44,7 @@
 | SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (106/106), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-207 | Build Double Chance market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (114/114), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-208 | Upgrade top-tier domestic league, major domestic cup, UEFA and NPFL hubs | Query-led titles, useful mobile-safe intros, current modules, proof and links | Expanded locally; SEO checks (138/138), Adsterra checks and TypeScript passed; production verification pending |
-| SEO-209 | Add named author/reviewer profiles | Credentials are factual and every editorial asset is attributable | Backlog |
+| SEO-209 | Add privacy-safe editorial attribution | Every editorial asset is attributable without exposing or inventing personal identities | Implemented locally: organization-level Editorial Desk profile and attribution added; 143/143 SEO checks, Adsterra checks and TypeScript passed; production verification pending |
 
 ## Phase 3 — Editorial authority (Weeks 5–12)
 
