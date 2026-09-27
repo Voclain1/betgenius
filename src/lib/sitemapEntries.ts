@@ -8,6 +8,7 @@ import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
 import { isLagosToday } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
+import { GUIDES } from "@/content/guides";
 
 function maxDate(dates: (Date | null)[]): Date | undefined {
   const valid = dates.filter((d): d is Date => d != null);
@@ -39,6 +40,7 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/affiliate-disclosure", priority: 0.4 },
   { path: "/methodology", priority: 0.7 },
   { path: "/editorial-policy", priority: 0.6 },
+  { path: "/guides", priority: 0.7 },
 ];
 
 export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
@@ -64,6 +66,7 @@ export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl("/"), lastModified: maxDate(rows.map((r) => r.publishedAt)), changeFrequency: "daily", priority: 1 },
     ...STATIC_PAGES.map((p) => ({ url: absoluteUrl(p.path), changeFrequency: "daily" as const, priority: p.priority })),
   ];
+  entries.push(...GUIDES.map((guide) => ({ url: absoluteUrl(`/guides/${guide.slug}`), lastModified: guide.reviewedAt, changeFrequency: "monthly" as const, priority: 0.7 })));
 
   // Track record — only when it clears the same sample-size gate that makes
   // the page itself indexable (src/app/(public)/track-record/page.tsx).
