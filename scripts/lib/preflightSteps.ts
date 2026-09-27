@@ -28,6 +28,8 @@ export const PURE_STEPS = [
   "tsx scripts/check-paid-tier-grace.ts",
   "tsx scripts/check-adaptive-coverage.ts",
   "tsx scripts/check-senior-womens.ts",
+  "tsx scripts/check-goals-category.ts",
+  "tsx scripts/check-goals-generation.ts",
   "tsx scripts/check-odds-breadth.ts",
   "tsx scripts/check-install-prompt.ts",
   "tsx scripts/check-push-onboarding.ts",

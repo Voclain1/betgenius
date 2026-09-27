@@ -232,7 +232,7 @@ export default function AdminPredictions() {
         </select>
         <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
           className="rounded-md border border-brand-border bg-brand-card px-3 py-2 text-sm">
-          {["ALL", "FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"].map((c) => <option key={c}>{c}</option>)}
+          {["ALL", "FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY", "GOALS"].map((c) => <option key={c}>{c}</option>)}
           {/* Matches assembled doubles by market type, not by tag: see comboAdmin.ts. */}
           <option value={ADMIN_COMBO_FILTER}>Combo Bets</option>
         </select>

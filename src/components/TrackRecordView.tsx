@@ -21,6 +21,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   VIP: "VIP",
   PREMIUM: "Premium",
   BET_OF_THE_DAY: "Bet of the Day",
+  GOALS: "Goals",
 };
 
 const MARKET_LABELS: Record<string, string> = {

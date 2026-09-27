@@ -3,9 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { applyCategoryChanges, reviewTransition, setPredictionCategories } from "@/lib/predictions";
+import { applyCategoryChanges, applyReviewAction, setPredictionCategories } from "@/lib/predictions";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
-import { recordPredictionEvents } from "@/lib/notifications";
 import { z } from "zod";
 
 /**
@@ -63,18 +62,12 @@ export async function POST(req: Request) {
       if (action === "MANAGE_CATEGORIES") {
         const current = row.categories.length ? row.categories.map((c) => c.category) : [row.category];
         const next = applyCategoryChanges(current, parsed.data.add, parsed.data.remove);
-        await setPredictionCategories(row.id, next);
+        // The row already carries its market, so GOALS is derived without a re-read.
+        await setPredictionCategories(row.id, next, row);
       } else {
         // Same transaction and events as the single-row route: a bulk publish
         // is how most tips go live, so it must notify followers too.
-        await prisma.$transaction(async (tx) => {
-          const updated = await tx.prediction.update({
-            where: { id: row.id },
-            data: reviewTransition(action, session!.user.id, row),
-            include: { categories: true },
-          });
-          await recordPredictionEvents(tx, row, updated, action);
-        });
+        await applyReviewAction(row, action, session!.user.id);
       }
       results.push({ id: row.id, ok: true });
     } catch (err: any) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   JOB_GENERATE,
   JOB_GENERATE_BET_OF_DAY,
+  JOB_GENERATE_GOALS,
   JOB_GENERATE_VIP_PREMIUM,
   recordRouteRun,
 } from "@/lib/jobRuns";
@@ -9,7 +10,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { runGeneration } from "@/lib/generation/worker";
+import { runGeneration, runGoalsGeneration } from "@/lib/generation/worker";
+import { probeGoalsFixture } from "@/lib/goalsPipeline";
 import {
   VIP_PREMIUM_INTENT,
   VIP_PREMIUM_DAILY_QUOTA,
@@ -93,6 +95,20 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   const session = await getServerSession(authOptions);
   const authorId = await resolveAuthorId(session?.user.id);
   if (!authorId) return NextResponse.json({ error: "No admin user to attribute generated predictions to" }, { status: 500 });
+
+  // The dedicated Goals pass takes no categories or leagues: its targets are
+  // fixtures ordinary generation has already covered, chosen by
+  // selectGoalsTargets. It never reaches runGeneration's ledger path.
+  if (url.searchParams.get("goals") === "1") {
+    // ?dryRun=1 — the same switch curate-accumulators uses. Calls the live
+    // model and reports what the gates would do, writing nothing at all; see
+    // probeGoalsFixture. ?fixtureApiId= probes one specific covered fixture.
+    if (url.searchParams.get("dryRun") === "1") {
+      const fixtureApiId = Number(url.searchParams.get("fixtureApiId"));
+      return NextResponse.json(await probeGoalsFixture({ fixtureApiId: Number.isInteger(fixtureApiId) && fixtureApiId > 0 ? fixtureApiId : null }), { status: 200 });
+    }
+    return NextResponse.json(await runGoalsGeneration({ authorId, limit }), { status: 200 });
+  }
 
   const requested = categories?.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean) ?? [];
   const valid = requested.filter((c): c is (typeof FREE_CATEGORIES)[number] => FREE_CATEGORIES.includes(c as any));
@@ -359,9 +375,16 @@ export async function GET(req: Request) {
   const job =
     url.searchParams.get("vipPremium") === "1"
       ? JOB_GENERATE_VIP_PREMIUM
+      : url.searchParams.get("goals") === "1"
+        ? JOB_GENERATE_GOALS
       : categories.includes("BET_OF_THE_DAY")
         ? JOB_GENERATE_BET_OF_DAY
         : JOB_GENERATE;
+
+  // A dry run is not an execution: recording it would put a run in the
+  // generate-goals history that generated nothing (same rule as
+  // curateAccumulators' dryRun).
+  if (url.searchParams.get("goals") === "1" && url.searchParams.get("dryRun") === "1") return handleGenerationRequest(req);
 
   const startedAt = Date.now();
   const response = await handleGenerationRequest(req);
@@ -370,7 +393,8 @@ export async function GET(req: Request) {
       ? `stood down: ${p.skipped}`
       : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
         (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
-        (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : ""),
+        (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : "") +
+        (p?.goals ? (p.goals.stoodDown ? `, goals stood down: ${p.goals.stoodDown}` : `, goals: ${p.goals.considered} covered fixtures considered, published ${p.goals.published ?? 0}, held for review ${p.goals.heldForReview ?? 0}`) : ""),
   );
   return response;
 }

@@ -46,11 +46,14 @@ export async function generateMetadata(
     // Grounded in the term readers actually search, same approach as the
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
+    // The two lines the feed holds are the searched terms; "Goals" alone is not.
+    : cat === "GOALS" ? "Over 1.5 & Over 2.5 Goals Predictions"
     : name;
   const seoPhrase = cat === "TODAY" ? "today's predictions"
     : cat === "VIP" ? "VIP predictions"
     : cat === "BANKER" ? "banker predictions"
     : cat === "SAME_GAME_DOUBLE" ? "combo bet predictions — two picks on the same match"
+    : cat === "GOALS" ? "over 1.5 and over 2.5 goals predictions"
     : name.toLowerCase();
   const emptyDescription = cat === "TODAY"
     ? "Today's predictions are not published yet — check back soon for our latest football picks."

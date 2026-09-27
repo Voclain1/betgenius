@@ -35,6 +35,7 @@ const TIP_LINKS: NavLink[] = [
   // "Doubles" and "Combos", which shared no wording but described each other's
   // shape; the current pair splits on the word that actually differs.
   { href: "/predictions/combo-bets", label: "Combo Bets" },
+  { href: "/predictions/goals", label: "Goals" },
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
 ];

@@ -34,6 +34,8 @@ import {
 import { assessCoverage, selectQueuedCandidates } from "@/lib/generation/queue";
 import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage";
 import type { GenerationTier } from "@/lib/leagues";
+import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPlan } from "@/lib/goalsGeneration";
+import { autoPublishGoalsPrediction, backOffGoalsFixture, selectGoalsTargets } from "@/lib/goalsPipeline";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -396,6 +398,131 @@ export async function runGeneration(opts: {
     report.quotaRemaining = (await getUsageSnapshot()).remaining;
     report.elapsedMs = Date.now() - startedAt;
     return report;
+  } finally {
+    await releaseLock(holder);
+  }
+}
+
+export type GoalsRunReport = RunReport & {
+  goals: {
+    stoodDown: string | null;
+    considered: number;
+    skipped: GoalsPlan["skipped"];
+    spentTodayBefore: number;
+    attemptsByKickoffDay: Record<string, number>;
+    targets: Array<{ fixture: string; kickoff: string; league: string }>;
+    picks: Array<{ fixture: string; pick: string; confidence: number; published: boolean; publishBlocks: string[] }>;
+    published: number;
+    heldForReview: number;
+    rejectedDrafts: Array<{ fixture: string; marketType: string; selection: unknown; confidence: number; reason: string }>;
+  };
+};
+
+/**
+ * The dedicated Goals pass. See src/lib/goalsGeneration.ts for why it is
+ * additive: it only targets fixtures ordinary generation has already covered,
+ * so it neither competes for nor consumes the ledger's PENDING fixtures.
+ *
+ * Shares the generation-run lease, so a Goals run and an ordinary run can never
+ * overlap — whichever fires second stands down with "already in progress",
+ * exactly as two overlapping ordinary pokes do. It does NOT touch the ledger:
+ * each target's GenerationAttempt row stays as ordinary generation left it
+ * (SUCCEEDED, with ordinary generation's own predictionIds). Its attempt record
+ * is the Goals-intent AIJob, plus an AppLock backoff when a run throws before
+ * one is written.
+ */
+export async function runGoalsGeneration(opts: { authorId: string; limit?: number; now?: Date }): Promise<GoalsRunReport> {
+  const startedAt = Date.now();
+  const now = opts.now ?? new Date();
+  const goals: GoalsRunReport["goals"] = {
+    stoodDown: null, considered: 0, skipped: {}, spentTodayBefore: 0, attemptsByKickoffDay: {}, targets: [], picks: [], rejectedDrafts: [],
+    published: 0, heldForReview: 0,
+  };
+  const base: RunReport = {
+    ok: true, claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+    cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0, quotaRemaining: 0,
+    elapsedMs: 0, results: [], kickoffMismatches: [],
+  };
+
+  const holder = await acquireLock(now);
+  if (!holder) return { ...base, ok: false, reason: "another generation run is already in progress", elapsedMs: Date.now() - startedAt, goals };
+
+  try {
+    const usage = await getUsageSnapshot();
+    base.quotaRemaining = usage.remaining;
+    if (usage.remaining < MIN_QUOTA_HEADROOM) {
+      return { ...base, ok: false, reason: `api-football daily budget nearly exhausted (${usage.remaining} left)`, elapsedMs: Date.now() - startedAt, goals };
+    }
+
+    const plan = await selectGoalsTargets(now, Math.min(opts.limit ?? GOALS_RUN_LIMIT, GOALS_RUN_LIMIT));
+    Object.assign(goals, {
+      stoodDown: plan.stoodDown,
+      considered: plan.considered,
+      skipped: plan.skipped,
+      spentTodayBefore: plan.spentToday,
+      attemptsByKickoffDay: plan.attemptsByKickoffDay,
+      targets: plan.targets.map((t) => ({ fixture: `${t.homeTeam} vs ${t.awayTeam}`, kickoff: t.kickoff.toISOString(), league: t.leagueName })),
+    });
+    base.claimed = plan.targets.length;
+
+    for (const t of plan.targets) {
+      if (Date.now() - startedAt >= SOFT_DEADLINE_MS) {
+        base.reason = "soft deadline reached — remaining fixtures deferred to the next run";
+        break;
+      }
+      const label = `${t.homeTeam} vs ${t.awayTeam}`;
+      try {
+        const { predictions, sources, goalsRejections } = await generateAndPersistPrediction({
+          home: t.homeTeam,
+          away: t.awayTeam,
+          league: t.leagueName,
+          leagueApiId: t.leagueApiId,
+          kickoff: t.kickoff.toISOString(),
+          round: t.round,
+          // Drives risk calibration only; generate.ts persists GOALS alone for this intent.
+          categories: [...GOALS_PERSISTED_CATEGORIES],
+          intent: GOALS_INTENT,
+          authorId: opts.authorId,
+          homeTeamApiId: t.homeTeamApiId,
+          awayTeamApiId: t.awayTeamApiId,
+          fixtureApiId: t.fixtureApiId,
+        });
+        for (const s of [sources.homeTeam, sources.awayTeam, sources.standings, sources.h2h]) {
+          if (s === "cache") base.cacheHits++;
+          else if (s === "fetched") base.fetches++;
+        }
+        base.apiCallsSpent += sources.apiCalls;
+        base.succeeded++;
+        base.predictionsCreated += predictions.length;
+        // Publish only what clears the full Goals gate, re-checked against the
+        // row as persisted and the fixture as it stands now. Anything else
+        // stays PENDING_REVIEW for a human. Generation has already thrown on
+        // any validation failure, so a row reaching here passed those.
+        for (const p of predictions) {
+          const { published, blocks } = await autoPublishGoalsPrediction(p.id, opts.authorId);
+          if (published) goals.published++;
+          else goals.heldForReview++;
+          goals.picks.push({ fixture: label, pick: p.pick, confidence: p.confidence, published, publishBlocks: blocks });
+        }
+        for (const r of goalsRejections) goals.rejectedDrafts.push({ fixture: label, ...r });
+
+        const written = await prisma.prediction.findMany({ where: { id: { in: predictions.map((p) => p.id) } }, select: { id: true, kickoff: true } });
+        const mismatches = findKickoffMismatches(t.kickoff, written);
+        if (mismatches.length) {
+          base.kickoffMismatches.push(...mismatches);
+          console.error(formatKickoffMismatches(label, mismatches));
+        }
+        base.results.push({ fixture: label, kickoff: t.kickoff.toISOString(), ok: true, predictions: predictions.length });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        await backOffGoalsFixture(t.fixtureApiId, now);
+        base.failed++;
+        base.results.push({ fixture: label, kickoff: t.kickoff.toISOString(), ok: false, error: message });
+      }
+    }
+
+    base.quotaRemaining = (await getUsageSnapshot()).remaining;
+    return { ...base, elapsedMs: Date.now() - startedAt, goals };
   } finally {
     await releaseLock(holder);
   }

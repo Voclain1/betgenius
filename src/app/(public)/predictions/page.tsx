@@ -20,6 +20,7 @@ const cats = [
   { slug: "banker", name: "Banker", desc: CATEGORY_BLURBS.BANKER },
   { slug: "bet-of-the-day", name: "Bet of the Day", desc: CATEGORY_BLURBS.BET_OF_THE_DAY },
   { slug: "combo-bets", name: "Combo Bet predictions", desc: CATEGORY_BLURBS.SAME_GAME_DOUBLE },
+  { slug: "goals", name: "Goals", desc: CATEGORY_BLURBS.GOALS },
   { slug: "vip", name: "VIP", desc: CATEGORY_BLURBS.VIP },
   { slug: "premium", name: "Premium", desc: CATEGORY_BLURBS.PREMIUM },
 ];

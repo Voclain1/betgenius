@@ -17,6 +17,7 @@ import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyL
 import { scanDraftForInternalTerminology, type InternalTerminologyViolation } from "@/lib/houseVoice";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { VIP_ROUTE_PROVENANCE, BANKER_INTENT_PROVENANCE, STANDARD_CURATED_PROVENANCE } from "@/lib/geniusCuration";
+import { GOALS_INTENT, GOALS_GENERATED_PROVENANCE, GOALS_PERSISTED_CATEGORIES, pickGoalsDraft, type GoalsDraftRejection } from "@/lib/goalsGeneration";
 
 /**
  * Thrown when a draft asserts certainty. Carries the violations so the failure
@@ -190,8 +191,12 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
    * the paid feeds through ordinary curation like any other row — so a target
    * this pass claimed is never wasted.
    */
-  const provenance =
-    riskRoute.calibration === "legacy"
+  // The dedicated Goals pass (src/lib/goalsGeneration.ts): one market, fixed in
+  // the prompt and enforced again below by pickGoalsDraft.
+  const goalsOnly = input.intent === GOALS_INTENT;
+  const provenance = goalsOnly
+    ? GOALS_GENERATED_PROVENANCE
+    : riskRoute.calibration === "legacy"
       ? BANKER_INTENT_PROVENANCE
       : riskRoute.calibration === "vip"
         ? VIP_ROUTE_PROVENANCE
@@ -199,13 +204,14 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // A regular-combo or legacy doubles job asks for several markets so a
   // same-game double can be assembled from independently-reasoned rows.
   // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
-  const marketBreadth = marketBreadthForCategories(input.categories, input.intent);
+  const marketBreadth = goalsOnly ? "single" : marketBreadthForCategories(input.categories, input.intent);
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
     marketBreadth,
     handicapLine: input.handicapLine,
+    ...(goalsOnly ? { goalsOnly: true } : {}),
   });
   const durationMs = Date.now() - startedAt;
 
@@ -236,6 +242,14 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     },
   });
 
+  // The drafts that may be persisted. Ordinary generation: all of them, as
+  // before. Goals pass: at most one, and only an Over 1.5 / Over 2.5 at or
+  // above GOALS_MIN_CONFIDENCE — whatever the model returned. The scans below
+  // read only these, so a discarded draft's prose cannot sink the kept one.
+  const goalsSelection = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []) : null;
+  const goalsRejections: GoalsDraftRejection[] = goalsSelection?.rejected ?? [];
+  const drafts = goalsSelection ? (goalsSelection.pick ? [goalsSelection.pick] : []) : output.predictions;
+
   // Deterministic certainty scan, BEFORE anything is persisted.
   //
   // The prompt has forbidden certainty language since the beginning, with
@@ -245,7 +259,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   const certaintyViolations = scanDraftForCertainty({
     matchPreview: output.matchPreview,
     keyFactors: output.keyFactors,
-    reasoning: output.predictions.map((p) => p.reasoning).join("\n\n"),
+    reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (certaintyViolations.length > 0) {
     throw new CertaintyLanguageError(certaintyViolations);
@@ -258,7 +272,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   const voiceViolations = scanDraftForInternalTerminology({
     matchPreview: output.matchPreview,
     keyFactors: output.keyFactors,
-    reasoning: output.predictions.map((p) => p.reasoning).join("\n\n"),
+    reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (voiceViolations.length > 0) {
     throw new HouseVoiceError(voiceViolations);
@@ -270,7 +284,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   const handicapRejections: Array<{ selection: string; line: number; confidence: number; reason: string }> = [];
 
   const created = (await Promise.all(
-    output.predictions.map(async (p) => {
+    drafts.map(async (p) => {
       // Defensive: even with a schema in the prompt, the model can still emit
       // a malformed marketType/selection. Fall back to OTHER (manual-only)
       // rather than persist a settlement field that doesn't match its shape.
@@ -332,7 +346,9 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       const ouDirection = validOU ? p.overUnderDirection : null;
 
       const isolatesComboLegs = input.intent === REGULAR_COMBO_INTENT || input.categories.includes(SAME_GAME_DOUBLE);
-      const persistedCategories = isolatesComboLegs ? [SAME_GAME_DOUBLE] : input.categories;
+      // A Goals pick is filed under GOALS alone — never FEATURED — and GOALS is
+      // still derived from the market by setPredictionCategories below.
+      const persistedCategories = goalsOnly ? [...GOALS_PERSISTED_CATEGORIES] : isolatesComboLegs ? [SAME_GAME_DOUBLE] : input.categories;
       const pred = await prisma.prediction.create({
         data: {
           fixtureId: input.fixtureId,
@@ -368,7 +384,9 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
           aiJobId: job.id,
         },
       });
-      await setPredictionCategories(pred.id, persistedCategories);
+      // GOALS is derived from this market inside setPredictionCategories; the
+      // isolated combo legs above carry SAME_GAME_DOUBLE and so never get it.
+      await setPredictionCategories(pred.id, persistedCategories, { marketType, selection });
       return pred;
     }),
   )).filter((p): p is NonNullable<typeof p> => p !== null);
@@ -377,5 +395,5 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.comboCategories ?? input.categories)
     : null;
 
-  return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs, handicapRejections };
+  return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs, handicapRejections, goalsRejections };
 }

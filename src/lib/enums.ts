@@ -13,7 +13,8 @@ export type PredictionCategory =
   | "VIP"
   | "PREMIUM"
   | "BET_OF_THE_DAY"
-  | "SAME_GAME_DOUBLE";
+  | "SAME_GAME_DOUBLE"
+  | "GOALS";
 export type PredictionStatus =
   | "DRAFT"
   | "PENDING_REVIEW"
@@ -42,4 +43,8 @@ export const PREDICTION_CATEGORIES = [
   // so a double is higher-variance than either leg alone, which is the opposite
   // of what those tiers promise.
   "SAME_GAME_DOUBLE",
+  // Over 1.5 / Over 2.5 total goals, and nothing else. Never chosen by a person
+  // or a ranking: derived from the row's structured market on every category
+  // write — see src/lib/goalsCategory.ts.
+  "GOALS",
 ] as const satisfies readonly PredictionCategory[];
