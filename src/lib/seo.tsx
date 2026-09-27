@@ -240,6 +240,11 @@ const LEAGUE_SEO: Record<number, LeagueSeo> = {
     phrase: "EPL predictions",
     blurb: "Premier League picks, with the English top-flight table, upcoming fixtures and recent results beside them.",
   },
+  399: {
+    title: "NPFL Predictions — Nigeria Premier League",
+    phrase: "NPFL predictions",
+    blurb: "Nigeria Premier Football League picks, with the current table, upcoming fixtures and recent results beside them.",
+  },
 };
 
 /**

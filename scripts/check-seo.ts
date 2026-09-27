@@ -94,6 +94,41 @@ check("double chance hub: links to the exact market record", doubleChanceGuide.i
 check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/double-chance"'));
 check("double chance hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('r.marketType === "DOUBLE_CHANCE"'));
 
+// --- Priority competition hubs ------------------------------------------
+const leaguePageSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/league/[slug]/page.tsx"), "utf8");
+const cupPageSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8");
+const competitionContent = readFileSync(join(repoRoot, "src/lib/competitionHubContent.ts"), "utf8");
+const competitionLinks = readFileSync(join(repoRoot, "src/components/CompetitionHubLinks.tsx"), "utf8");
+const competitionIntro = readFileSync(join(repoRoot, "src/components/CompetitionHubIntro.tsx"), "utf8");
+for (const [id, heading] of [
+  [39, "Premier League predictions"],
+  [140, "La Liga predictions"],
+  [135, "Serie A predictions"],
+  [78, "Bundesliga predictions"],
+  [61, "Ligue 1 predictions"],
+  [399, "NPFL predictions"],
+  [2, "Champions League predictions"],
+  [3, "Europa League predictions"],
+  [848, "Conference League predictions"],
+  [45, "FA Cup predictions"],
+  [48, "EFL Cup predictions"],
+  [143, "Copa del Rey predictions"],
+  [137, "Coppa Italia predictions"],
+  [81, "DFB Pokal predictions"],
+  [66, "Coupe de France predictions"],
+] as const) {
+  check(`competition hubs: ${heading} has targeted content`, competitionContent.includes(`${id}: {`) && competitionContent.includes(`heading: "${heading}"`));
+}
+check("competition hubs: league route uses targeted H1 and intro", leaguePageSource.includes("hubContent?.heading") && leaguePageSource.includes("<CompetitionHubIntro"));
+check("competition hubs: mobile intro is folded while desktop copy stays visible", competitionIntro.includes("<details") && competitionIntro.includes("md:hidden") && competitionIntro.includes("md:block"));
+check("competition hubs: cup metadata comes from the targeted competition profile", cupPageSource.includes("hubContent.metadataTitle") && cupPageSource.includes("hubContent.metadataDescription"));
+check("competition hubs: targeted cups add dynamic published picks and a settled record", cupPageSource.includes("Published {data.cup.name} picks") && cupPageSource.includes("<RateCard stat={scoped.stat}"));
+check("competition hubs: non-target cup pages retain their query profile", cupPageSource.includes("Only targeted top-tier competition hubs add prediction/proof data"));
+check("competition hubs: league proof box follows the prediction feed", leaguePageSource.indexOf("<CompetitionHubLinks") > leaguePageSource.indexOf("{shaped.map"));
+check("competition hubs: cup proof box follows fixtures and reference data", cupPageSource.indexOf("<CompetitionHubLinks") > cupPageSource.indexOf("<TopScorersLeaderboard"));
+check("competition hubs: proof links include record, method and responsible use", competitionLinks.includes('href="/track-record"') && competitionLinks.includes('href="/methodology"') && competitionLinks.includes('href="/responsible-gambling"'));
+check("competition hubs: NPFL has an explicit metadata profile", readFileSync(join(repoRoot, "src/lib/seo.tsx"), "utf8").includes('title: "NPFL Predictions — Nigeria Premier League"'));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");
