@@ -485,12 +485,25 @@ export const GOALS_MARKET_INSTRUCTION =
  *
  * Written as a fact about the task, like the handicap constraint, rather than
  * as a feed or tier name: the house-voice scan rejects reasoning that talks
- * about our pipeline, and naming one here invites the model to echo it.
+ * about our pipeline, and naming one here invites the model to echo it. For
+ * the same reason it speaks of goal LINES, never of confidence thresholds.
  *
- * Neither line is presented as the default. The base prompt's "e.g. line 2.5"
- * is what has kept generated O/U on 2.5; this states the choice between them
- * as an evidence question, and says plainly that no pick is a valid answer so
- * a thin digest does not get forced into one.
+ * WHY IT SPELLS OUT HOW TO CHOOSE THE LINE. The first version only said
+ * "neither is the default", and 5/5 live probes returned Over 1.5 — three of
+ * them at 75-78%. Three things pull that way and none of them is evidence:
+ *
+ *   - Over 1.5 wins in every match Over 2.5 wins, so a model asked for a
+ *     confidence drifts to the line it can state most confidently;
+ *   - the shared system prompt tells the Genius/VIP routes to "choose the more
+ *     hedged" option and prefer "a conservative OVER_UNDER" — guidance written
+ *     for choosing BETWEEN markets, which here can only mean the lower line;
+ *   - the old wording asked more of 2.5 (both scoring AND conceding records)
+ *     than of 1.5 ("goals are expected").
+ *
+ * So this block has the model judge each line on its own evidence, then
+ * compare, and says in terms that being safer is not a reason. It sets no
+ * quota or proportion for either line, and still allows no pick. The shared
+ * system prompt is untouched: this lives only in Goals-intent user prompts.
  */
 export function goalsMarketBlock(): string {
   return `
@@ -499,18 +512,35 @@ TOTAL GOALS CONSTRAINT — READ BEFORE CHOOSING.
 This fixture is being analysed for ONE market only: total match goals, OVER.
 Return at most ONE entry in "predictions", and it must be exactly one of:
 
-  {"marketType": "OVER_UNDER", "selection": {"line": 1.5, "direction": "OVER"}}   at least two goals in the match
-  {"marketType": "OVER_UNDER", "selection": {"line": 2.5, "direction": "OVER"}}   at least three goals in the match
+  {"marketType": "OVER_UNDER", "selection": {"line": 1.5, "direction": "OVER"}}   two or more goals in the match
+  {"marketType": "OVER_UNDER", "selection": {"line": 2.5, "direction": "OVER"}}   three or more goals in the match
 
-Both lines are equally available and neither is the default. Choose the one the
-evidence supports: 2.5 when both sides' scoring and conceding records point to
-an open match; 1.5 when goals are expected but a third is not well supported.
+Neither line is the default and neither is preferred. Choose the STRONGEST line
+the evidence justifies, not the line most likely to win. Over 1.5 wins in every
+match that Over 2.5 wins, so being more likely to win is true of it in every
+fixture and is never, on its own, a reason to choose it.
+
+Decide in this order:
+
+1. Judge the case for THREE OR MORE goals on its own evidence: both sides'
+   scoring and conceding rates, recent match totals, the head-to-head, and any
+   absence that weakens an attack or a defence.
+2. Judge the case for TWO OR MORE goals the same way, on the same evidence.
+3. Compare the two. Choose Over 2.5 when the evidence materially supports three
+   or more goals. Choose Over 1.5 when the evidence strongly supports two or
+   more goals but does not sufficiently support a third.
+4. If neither line is supported with real confidence, return "predictions": []
+   — an empty list is a valid answer; do not fall back to a different market.
+
+Anything above about preferring a conservative or more cautious position applies
+to choosing between different markets. Here the market is already fixed, so the
+lower line is not a cautious fallback: do not choose Over 1.5 merely because it
+is safer. Report the confidence for the line you choose, and in the reasoning say
+in football terms why that line fits the match and the other one does not.
 Over 2.5 can only win if Over 1.5 also wins, so never return both.
 
 Do not return UNDER, any other line, a single team's goals, both-teams-to-score,
-a result or double-chance market, or any other marketType. If the evidence does
-not support at least two goals with real confidence, return "predictions": [] —
-an empty list is a valid answer; do not fall back to a different market.
+a result or double-chance market, or any other marketType.
 
 Set "overUnderLine" and "overUnderDirection" to the same line and direction as
 the pick. Still return "matchPreview" and "keyFactors" as usual.
