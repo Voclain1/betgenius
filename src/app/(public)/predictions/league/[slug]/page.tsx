@@ -26,6 +26,9 @@ import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
 import { AdLeaderboard, WithAdRail } from "@/components/ads/AdPlacements";
 import type { PredictionCategory } from "@/lib/enums";
+import { competitionHubContent } from "@/lib/competitionHubContent";
+import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
+import { CompetitionHubIntro } from "@/components/CompetitionHubIntro";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const { rows } = await getPublishedByLeagueSlug(params.slug);
@@ -70,6 +73,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
 
   const name = leagueDisplayName(rows[0].leagueName!, rows[0].leagueApiId);
   const leagueApiId = rows[0].leagueApiId;
+  const hubContent = competitionHubContent(leagueApiId);
 
   const [enrichment, matchIndex, session] = await Promise.all([
     getLeagueEnrichment(leagueApiId),
@@ -145,7 +149,8 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         ]}
       />
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">{name}</h1>
+          <h1 className="text-2xl font-bold">{hubContent?.heading ?? name}</h1>
+          {hubContent && <CompetitionHubIntro heading={hubContent.heading} intro={hubContent.intro} />}
         {leagueApiId != null && <FollowButton targetType="LEAGUE" targetKey={String(leagueApiId)} label={name} />}
         {/* The scoped record as a sentence, above standings and fixtures. The
             RateCard below shows the same stat broken out; this is the version
@@ -218,6 +223,8 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           ))}
         </div>
       </div>
+
+      {hubContent && <CompetitionHubLinks competition={name} />}
     </div>
     </WithAdRail>
   );
