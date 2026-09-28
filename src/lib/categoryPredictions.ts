@@ -4,6 +4,10 @@ import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { goalsFeedRows } from "@/lib/goalsCategory";
+import { tagFeedHiddenLegExclusion } from "@/lib/comboLegs";
+
+/** Tag-based feeds that must not surface hidden combo legs. TODAY, SAME_GAME_DOUBLE and GOALS handle legs in their own filters. */
+export const TAG_FEEDS_EXCLUDING_LEGS: ReadonlySet<PredictionCategory> = new Set<PredictionCategory>(["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"]);
 
 // Shared between /predictions/[category] and the account dashboard so the
 // two never end up running two slightly different queries for the same
@@ -159,6 +163,13 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
       ...(cat === "GOALS"
         ? { marketType: "OVER_UNDER", categories: { some: { category: "GOALS" }, none: { category: "SAME_GAME_DOUBLE" } } }
         : {}),
+      // Every other tag feed (Featured, Genius, Banker, VIP, Premium, Bet of the
+      // Day): a hidden combo leg is not a pick of its own and never shows here,
+      // whatever tag it carries. The one exception is a pre-cutover leg that is
+      // still live, which stays until it settles so no live pick vanishes
+      // mid-flight. Today, Combo Bets and Goals exclude legs above already. See
+      // src/lib/comboLegs.ts.
+      ...(TAG_FEEDS_EXCLUDING_LEGS.has(cat) ? tagFeedHiddenLegExclusion() : {}),
     },
     // Deterministic, but not the order the page renders in — the ranking in
     // orderForDisplay decides that. This clause exists so the `take` below
