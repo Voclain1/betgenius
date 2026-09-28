@@ -12,21 +12,45 @@ import { SITEMAP_TYPES, type SitemapType } from "@/lib/sitemapXml";
  * different region or `/sitemaps/matches.xml?anything` all reuse one build
  * instead of rebuilding per request as the CDN cache alone would allow.
  *
- * Behaviour that matters here, confirmed against
- * next/dist/server/web/spec-extension/unstable-cache.js in 14.2.15:
- *  - a stale entry is served while ONE background rebuild runs;
- *  - a background rebuild that throws is logged and the stale value is kept;
- *  - a first build that throws propagates and nothing is written, so an error
- *    can never become the cached sitemap;
- *  - entries over 2 MB are silently NOT stored (see guardSize below).
+ * Behaviour that matters here, read from the Next 14.2.15 source
+ * (server/web/spec-extension/unstable-cache.js, server/pipe-readable.js) —
+ * not observed on a real Vercel deployment:
+ *  - when the entry is stale, the stale sitemap is the body the triggering
+ *    request receives, and a rebuild is queued on that request's waitUntil;
+ *  - a route handler's waitUntil is awaited BEFORE the response is ended, so
+ *    that one request does not fully close until the rebuild finishes — this
+ *    is not a response that completes while the rebuild runs detached;
+ *  - a rebuild that throws is caught and logged, and the previous good entry
+ *    stays in place, so later requests keep receiving the good sitemap;
+ *  - with no good entry (cold), a failed build propagates and nothing is
+ *    written — the route answers 503, and an error never becomes the sitemap;
+ *  - entries over 2 MB are silently NOT stored (see guardSize below);
+ *  - the key is keyParts + the function source, never the request URL, so a
+ *    query string cannot create a separate entry.
  *
- * Keyed by type (keyParts) and tagged per type, so the seven sitemaps can never
- * share or overwrite each other's entry and can be revalidated one at a time
- * with revalidateTag(`sitemap:<type>`), or all together with "sitemap".
+ * Keyed by deployment and type (keyParts) and tagged per type: the seven
+ * sitemaps never share or overwrite each other's entry, each deployment starts
+ * from its own entries, and a type can be revalidated with
+ * revalidateTag(`sitemap:<type>`), or all together with "sitemap".
  */
 
 /** Bump when the cached shape changes, so a deploy never reads the old shape. */
 const SITEMAP_CACHE_VERSION = "v1";
+
+/**
+ * Which deployment these entries belong to.
+ *
+ * Vercel's Data Cache outlives a deployment, so without this a new deployment
+ * could keep serving a sitemap its predecessor built — for up to the refresh
+ * interval, or longer, since whether the key changed depended on the minified
+ * function source. Both values are Vercel system environment variables (the
+ * deployment id and the commit it was built from); neither is a secret or a
+ * database identifier. Outside Vercel — local runs, CI, the checks — it is the
+ * constant "local", so tests stay deterministic.
+ */
+export function sitemapCacheDeployment(env: NodeJS.ProcessEnv = process.env): string {
+  return env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || "local";
+}
 
 /** One hour — the same freshness the route's CDN headers advertise. */
 export const SITEMAP_REVALIDATE_SECONDS = 3600;
@@ -99,10 +123,12 @@ async function buildCompact(type: SitemapType): Promise<CompactSitemapEntry[]> {
   return compact;
 }
 
+const deployment = sitemapCacheDeployment();
+
 const cachedBuilders = Object.fromEntries(
   SITEMAP_TYPES.map((type) => [
     type,
-    unstable_cache(() => buildCompact(type), ["sitemap", SITEMAP_CACHE_VERSION, type], {
+    unstable_cache(() => buildCompact(type), ["sitemap", SITEMAP_CACHE_VERSION, deployment, type], {
       revalidate: SITEMAP_REVALIDATE_SECONDS,
       tags: ["sitemap", `sitemap:${type}`],
     }),

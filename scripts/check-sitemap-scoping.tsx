@@ -24,9 +24,14 @@
  *     (assessMatchEvidence / isSubstantiveH2H fed by the page getters), so a
  *     noindex URL cannot be listed and an indexable one cannot be dropped.
  *
- *  4. CACHE + ROUTE. Per-type cache keys, errors never cached, the stored value
- *     survives a failed rebuild, 503 + Retry-After on failure, the unknown-type
- *     XML 404, XML well-formedness and the sitemap index.
+ *  4. CACHE + ROUTE. Per-deployment, per-type cache keys; errors never cached;
+ *     a good stored value survives a failed rebuild; 503 + Retry-After when a
+ *     build fails with no good entry to serve (cold); the unknown-type XML 404,
+ *     XML well-formedness and the sitemap index. The in-memory incremental
+ *     cache below drives Next's no-request-store path. The App Router path
+ *     Production takes (stale body served, refresh on waitUntil, failed
+ *     refresh keeps and keeps serving the stale sitemap) was verified by
+ *     reading the Next 14.2.15 source, not on a real Vercel deployment.
  *
  *  5. CRAWLER PAGES. The match footer and league page link lookups are bounded
  *     (no whole-corpus read), constant in query count (no N+1), and give the
@@ -47,6 +52,10 @@ react.cache = (fn: unknown) => fn;
 // Next's server runtime installs this global before any request; its storage
 // modules (used by unstable_cache) refuse to load without it.
 (globalThis as any).AsyncLocalStorage ??= require("node:async_hooks").AsyncLocalStorage;
+// The sitemap cache key carries a Vercel deployment discriminator. Pin it to
+// the local fallback so key assertions do not depend on the runner's env.
+delete process.env.VERCEL_DEPLOYMENT_ID;
+delete process.env.VERCEL_GIT_COMMIT_SHA;
 
 const repoRoot = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
@@ -86,7 +95,7 @@ async function main() {
   const { SITEMAP_BUILDERS, getSitemapEntries } = await import("../src/lib/sitemapEntries");
   const { legacyGetSitemapEntries } = await import("./lib/legacySitemapEntries");
   const { SITEMAP_TYPES, sitemapType, urlsetXml, SITEMAP_RETRY_AFTER_SECONDS } = await import("../src/lib/sitemapXml");
-  const { compactEntries, expandEntries, guardSize } = await import("../src/lib/sitemapCache");
+  const { compactEntries, expandEntries, guardSize, sitemapCacheDeployment } = await import("../src/lib/sitemapCache");
   const { GET: childSitemap } = await import("../src/app/sitemaps/[type]/route");
   const { GET: sitemapIndex } = await import("../src/app/sitemap.xml/route");
   const scope = await import("../src/lib/predictionScope");
@@ -360,7 +369,14 @@ async function main() {
   for (const type of SITEMAP_TYPES) await childSitemap(new Request(`https://example.test/sitemaps/${type}.xml`), { params: { type: `${type}.xml` } });
   const keys = [...dataCache.keys()];
   check("cache: one independent entry per sitemap type", keys.length === SITEMAP_TYPES.length, keys.length);
-  check("cache: every key names its type", SITEMAP_TYPES.every((type) => keys.filter((k) => k.includes(`sitemap,v1,${type}-`)).length === 1), keys);
+  check("cache: every key names its deployment and type", SITEMAP_TYPES.every((type) => keys.filter((k) => k.includes(`sitemap,v1,local,${type}-`)).length === 1), keys);
+  check("cache: keys carry no database identifier or credential", keys.every((k) => !/postgres|neon|password|DATABASE/i.test(k)), keys);
+  check("cache: deployment id wins when Vercel provides it",
+    sitemapCacheDeployment({ VERCEL_DEPLOYMENT_ID: "dpl_abc", VERCEL_GIT_COMMIT_SHA: "0123abc" } as any) === "dpl_abc");
+  check("cache: commit SHA is the fallback discriminator",
+    sitemapCacheDeployment({ VERCEL_GIT_COMMIT_SHA: "0123abc" } as any) === "0123abc");
+  check("cache: outside Vercel the discriminator is the constant \"local\"",
+    sitemapCacheDeployment({} as any) === "local" && sitemapCacheDeployment({ VERCEL_DEPLOYMENT_ID: "", VERCEL_GIT_COMMIT_SHA: "" } as any) === "local");
 
   fake.reset();
   const cachedAgain = await childSitemap(new Request("https://example.test/sitemaps/matches.xml?bust=1"), { params: { type: "matches.xml" } });
@@ -372,7 +388,8 @@ async function main() {
     check(`cache: ${type} compact round-trip renders identical XML`, urlsetXml(expandEntries(compactEntries(built))) === urlsetXml(built));
   }
 
-  // Failure on a cold cache -> 503, nothing cached.
+  // Failure with no good entry (cold cache) -> 503, nothing cached. This is
+  // the only case the route answers 503.
   dataCache.clear();
   fake.failOn("prediction.aggregate");
   const failed = await childSitemap(new Request("https://example.test/sitemaps/static.xml"), { params: { type: "static.xml" } });
@@ -383,6 +400,17 @@ async function main() {
   check("failure: error was not cached", dataCache.size === 0, dataCache.size);
 
   // A good build, then a failing rebuild must not destroy the good value.
+  //
+  // This harness has no App Router request store, so Next 14.2.15 takes its
+  // no-store branch, which rebuilds a stale entry inline — here the rebuild's
+  // error reaches the route, which answers 503. PRODUCTION takes the App
+  // Router branch instead: the stale sitemap is returned to the triggering
+  // request, the refresh runs on waitUntil (awaited before that request fully
+  // closes), a failed refresh is caught and logged, and the good entry keeps
+  // being served. That path was verified against the Next source
+  // (unstable-cache.js, pipe-readable.js), not a real Vercel deployment. What
+  // both paths share, and what is asserted here, is that the failure never
+  // replaces the good cached sitemap.
   fake.clearFailures();
   const good = await childSitemap(new Request("https://example.test/sitemaps/static.xml"), { params: { type: "static.xml" } });
   const goodBody = await good.text();
@@ -390,7 +418,7 @@ async function main() {
   dataCacheStale = true; // force a rebuild attempt
   fake.failOn("prediction.aggregate");
   const failedRebuild = await childSitemap(new Request("https://example.test/sitemaps/static.xml"), { params: { type: "static.xml" } });
-  check("failure: failed rebuild returns 503 (no half-built sitemap)", failedRebuild.status === 503, failedRebuild.status);
+  check("failure (no-store harness path): failed inline rebuild is a 503, never a half-built sitemap", failedRebuild.status === 503, failedRebuild.status);
   check("failure: last good cached value survives a failed rebuild", JSON.stringify([...dataCache.values()]) === storedBefore);
   dataCacheStale = false;
   fake.clearFailures();

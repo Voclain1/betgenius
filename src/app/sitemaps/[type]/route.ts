@@ -13,9 +13,11 @@ export async function GET(_request: Request, { params }: { params: { type: strin
   if (!type) return xmlResponse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><error>Unknown sitemap</error>", 404);
 
   // Only this type's builder runs (see src/lib/sitemapEntries.ts), behind a
-  // per-type persistent cache (src/lib/sitemapCache.ts). A failed build is a
-  // short-lived 503, never a cached sitemap: the last good entry stays in the
-  // data cache and the crawler is told when to come back.
+  // per-type persistent cache (src/lib/sitemapCache.ts). This catch is reached
+  // only when there is no good entry to serve (a cold build that failed): it
+  // answers a short-lived 503, never cached, and tells the crawler when to come
+  // back. When a good but stale entry exists, a failed refresh is handled
+  // inside unstable_cache — the stale sitemap is served and kept.
   try {
     return xmlResponse(urlsetXml(await getCachedSitemapEntries(type)));
   } catch (error) {
