@@ -45,7 +45,29 @@ export function xmlResponse(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "application/xml; charset=utf-8",
-      "cache-control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=300",
+      // An hour fresh at the edge, then up to a day of serving the last good
+      // copy while one request refreshes it — a crawler burst after expiry
+      // costs one rebuild, not one per request.
+      "cache-control": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400",
+    },
+  });
+}
+
+/** Seconds a crawler is asked to wait after a failed sitemap build. */
+export const SITEMAP_RETRY_AFTER_SECONDS = 300;
+
+/**
+ * A failed child-sitemap build. no-store so no cache layer keeps the failure
+ * in place of the sitemap, and Retry-After so a crawler backs off instead of
+ * retrying straight into another rebuild.
+ */
+export function sitemapUnavailableResponse(): Response {
+  return new Response("<?xml version=\"1.0\" encoding=\"UTF-8\"?><error>Sitemap temporarily unavailable</error>", {
+    status: 503,
+    headers: {
+      "content-type": "application/xml; charset=utf-8",
+      "cache-control": "no-store",
+      "retry-after": String(SITEMAP_RETRY_AFTER_SECONDS),
     },
   });
 }

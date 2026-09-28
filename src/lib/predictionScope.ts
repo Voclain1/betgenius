@@ -1,4 +1,5 @@
 import { cache } from "react";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { computeStat, type WinRateStat } from "@/lib/trackRecord";
 import { leagueSlug, teamSlug, matchSlug, matchKey, h2hSlug, h2hPairKey, kickoffDay } from "@/lib/slug";
@@ -203,8 +204,12 @@ export const getPublishedByMatchSlug = cache(async (slug: string): Promise<Match
  * to the client ones that render those feeds.
  */
 export const getPublishedMatchIndex = cache(async (): Promise<Record<string, string>> => {
+  return readPublishedMatchIndex({});
+});
+
+async function readPublishedMatchIndex(scope: Prisma.PredictionWhereInput): Promise<Record<string, string>> {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null } },
+    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null }, ...scope },
     select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });
   const index: Record<string, string> = {};
@@ -214,7 +219,45 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
     if (key && slug) index[key] = slug;
   }
   return index;
-});
+}
+
+export type MatchIndexScope = {
+  /** Fixtures between these teams, both sides drawn from the list (a matchKey embeds both ids). */
+  teamIds?: number[];
+  /** Exact match slugs. */
+  slugs?: string[];
+  /** Match slugs starting with any of these — "home-vs-away-" when only names are known. */
+  slugPrefixes?: string[];
+  /** Fixtures kicking off inside this window. */
+  kickoff?: { gte: Date; lte: Date };
+};
+
+/**
+ * getPublishedMatchIndex restricted to the fixtures a caller is actually about
+ * to render links for.
+ *
+ * Same rows-to-index rule as the global index, so for any fixture the scope
+ * covers the answer is the one the global index gives. One query, whatever
+ * the number of keys, and the WHERE is bounded by the scope — crawler-hot
+ * pages (match footer, league page) used to read every published prediction
+ * to resolve a handful of links.
+ *
+ * Not cache()d: callers build a fresh scope object per render, which React's
+ * identity-keyed cache could never hit.
+ */
+export async function getPublishedMatchIndexFor(scope: MatchIndexScope): Promise<Record<string, string>> {
+  const clauses: Prisma.PredictionWhereInput[] = [];
+  const teamIds = [...new Set(scope.teamIds ?? [])];
+  if (teamIds.length) clauses.push({ homeTeamApiId: { in: teamIds }, awayTeamApiId: { in: teamIds } });
+  const slugs = [...new Set(scope.slugs ?? [])];
+  if (slugs.length) clauses.push({ matchSlugKey: { in: slugs } });
+  for (const prefix of new Set(scope.slugPrefixes ?? [])) {
+    if (prefix) clauses.push({ matchSlugKey: { startsWith: prefix } });
+  }
+  if (scope.kickoff) clauses.push({ kickoff: scope.kickoff });
+  if (clauses.length === 0) return {};
+  return readPublishedMatchIndex({ OR: clauses });
+}
 
 export type SearchIndex = {
   teams: { name: string; slug: string }[];
@@ -301,8 +344,33 @@ export type PublishedTeamIndex = {
  * so a caller can ask about a whole table at once.
  */
 export const getPublishedTeamIndex = cache(async (): Promise<PublishedTeamIndex> => {
+  return readPublishedTeamIndex({});
+});
+
+/**
+ * getPublishedTeamIndex restricted to the clubs a caller is about to link —
+ * a standings table's worth rather than every published prediction.
+ *
+ * The rows read are every published row naming one of these team ids on
+ * either side (all of them, so the newest-spelling-wins rule for byApiId sees
+ * exactly what the global index would), plus every row whose team slug key is
+ * one of their name slugs (the name-only fallback). publishedTeamHref gives
+ * the global index's answer for every club passed in. One query, whatever the
+ * size of the table.
+ */
+export async function getPublishedTeamIndexFor(teams: { teamId: number | null; teamName: string }[]): Promise<PublishedTeamIndex> {
+  const ids = [...new Set(teams.map((t) => t.teamId).filter((id): id is number => id != null))];
+  const slugs = [...new Set(teams.map((t) => teamSlug(t.teamName)).filter((slug) => !!slug))];
+  const clauses: Prisma.PredictionWhereInput[] = [];
+  if (ids.length) clauses.push({ homeTeamApiId: { in: ids } }, { awayTeamApiId: { in: ids } });
+  if (slugs.length) clauses.push({ homeSlugKey: { in: slugs } }, { awaySlugKey: { in: slugs } });
+  if (clauses.length === 0) return { byApiId: {}, slugs: [] };
+  return readPublishedTeamIndex({ AND: [{ OR: clauses }] });
+}
+
+async function readPublishedTeamIndex(scope: Prisma.PredictionWhereInput): Promise<PublishedTeamIndex> {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }] },
+    where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }], ...scope },
     orderBy: { publishedAt: "desc" },
     select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true },
   });
@@ -326,7 +394,7 @@ export const getPublishedTeamIndex = cache(async (): Promise<PublishedTeamIndex>
   }
 
   return { byApiId, slugs: [...slugs] };
-});
+}
 
 /**
  * The slug a standings/fixture-derived club should link to, or null when that
@@ -363,7 +431,9 @@ export const getLeagueClubs = cache(async (standings: { teamId: number; teamName
           select: { teamApiId: true, crestUrl: true },
         })
       : [],
-    getPublishedTeamIndex(),
+    // Bounded to this table's clubs — the global index read every published
+    // prediction to answer this for twenty teams.
+    getPublishedTeamIndexFor(standings.map((s) => ({ teamId: s.teamId, teamName: s.teamName }))),
   ]);
   const crestById = new Map(cached.map((c) => [c.teamApiId, c.crestUrl!]));
 
@@ -438,13 +508,35 @@ export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => 
   };
 });
 
+/** Split `items` into consecutive batches of at most `size`. */
+function chunked<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * How many pairs/fixtures one sitemap evidence batch covers. The corpus-wide
+ * evidence sets below are built batch by batch so peak memory is bounded by
+ * this, not by the size of the published history. Each batch is a fixed
+ * handful of IN-list queries, so this is not an N+1: the query count grows
+ * with corpus/BATCH, never with corpus.
+ */
+export const SITEMAP_EVIDENCE_BATCH = 250;
+
 /**
  * Every H2H slug whose cached record is substantial enough to ask for
- * indexing. Batched for the sitemap: one prediction read and one cache read,
- * rather than one database round-trip per pairing.
+ * indexing. isSubstantiveH2H is the rule — the same one the H2H page's robots
+ * tag applies — and this only decides how its input is fetched.
+ *
+ * Distinct (names, ids) combinations come from a GROUP BY rather than one row
+ * per published prediction, and the h2h caches are read in batches, each
+ * reduced to a yes/no before the next batch loads, so meetingsJson for the
+ * whole corpus is never held at once.
  */
 export const getSubstantiveH2HSlugs = cache(async (): Promise<Set<string>> => {
-  const rows = await prisma.prediction.findMany({
+  const pairs = await prisma.prediction.groupBy({
+    by: ["homeTeam", "awayTeam", "homeTeamApiId", "awayTeamApiId"],
     where: {
       status: "PUBLISHED",
       homeTeam: { not: null },
@@ -452,16 +544,10 @@ export const getSubstantiveH2HSlugs = cache(async (): Promise<Set<string>> => {
       homeTeamApiId: { not: null },
       awayTeamApiId: { not: null },
     },
-    select: {
-      homeTeam: true,
-      awayTeam: true,
-      homeTeamApiId: true,
-      awayTeamApiId: true,
-    },
   });
 
   const slugsByPair = new Map<string, Set<string>>();
-  for (const row of rows) {
+  for (const row of pairs) {
     const slug = h2hSlug(row.homeTeam, row.awayTeam);
     const pairKey = h2hPairKey(row.homeTeamApiId, row.awayTeamApiId);
     if (!slug || !pairKey) continue;
@@ -470,18 +556,17 @@ export const getSubstantiveH2HSlugs = cache(async (): Promise<Set<string>> => {
     else slugsByPair.set(pairKey, new Set([slug]));
   }
 
-  if (slugsByPair.size === 0) return new Set();
-
-  const caches = await prisma.h2HCache.findMany({
-    where: { pairKey: { in: [...slugsByPair.keys()] }, fetchedAt: { not: null } },
-    select: { pairKey: true, meetingsJson: true },
-  });
-
   const substantive = new Set<string>();
-  for (const cacheRow of caches) {
-    const meetings = (cacheRow.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
-    if (!isSubstantiveH2H(meetings)) continue;
-    for (const slug of slugsByPair.get(cacheRow.pairKey) ?? []) substantive.add(slug);
+  for (const batch of chunked([...slugsByPair.keys()], SITEMAP_EVIDENCE_BATCH)) {
+    const caches = await prisma.h2HCache.findMany({
+      where: { pairKey: { in: batch }, fetchedAt: { not: null } },
+      select: { pairKey: true, meetingsJson: true },
+    });
+    for (const cacheRow of caches) {
+      const meetings = (cacheRow.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
+      if (!isSubstantiveH2H(meetings)) continue;
+      for (const slug of slugsByPair.get(cacheRow.pairKey) ?? []) substantive.add(slug);
+    }
   }
 
   return substantive;
@@ -744,6 +829,25 @@ export const getTeamEnrichment = cache(async (teamApiId: number | null) => {
   return row?.fetchedAt ? row : null;
 });
 
+/**
+ * The slice of a team's cache the MATCH page reads — its digest (evidence,
+ * stats, team news) and last fixtures (form comparison) — with the same
+ * fetchedAt contract as getTeamEnrichment.
+ *
+ * A separate getter rather than a narrower getTeamEnrichment because the team
+ * page genuinely renders the rest of the row (squad, coach). The match page
+ * never does, and it is the most-crawled template, so it no longer pulls
+ * squadJson/coachJson/statsJson for both sides on every render.
+ */
+export const getTeamMatchEnrichment = cache(async (teamApiId: number | null) => {
+  if (teamApiId == null) return null;
+  const row = await prisma.teamEnrichmentCache.findUnique({
+    where: { teamApiId },
+    select: { teamApiId: true, fetchedAt: true, teamDigestJson: true, lastFixtures: true },
+  });
+  return row?.fetchedAt ? row : null;
+});
+
 /** Cached standings/upcoming fixtures for a league, or null if no successful refresh has landed yet. */
 export const getLeagueEnrichment = cache(async (leagueApiId: number | null) => {
   if (leagueApiId == null) return null;
@@ -766,7 +870,7 @@ export const getLeagueEnrichment = cache(async (leagueApiId: number | null) => {
  * degrade to the older statsJson/lastFixtures panels rather than showing gaps.
  */
 export const getTeamDigest = cache(async (teamApiId: number | null): Promise<TeamDigest | null> => {
-  const row = await getTeamEnrichment(teamApiId);
+  const row = await getTeamMatchEnrichment(teamApiId);
   if (!row?.teamDigestJson) return null;
   return row.teamDigestJson as unknown as TeamDigest;
 });
@@ -846,10 +950,33 @@ export const getH2HMeetings = cache(async (teamAApiId: number | null, teamBApiId
  * Rank/points are NOT merged into the digests here, unlike getMatchTeamDigests:
  * no evidence signal reads them (standings are scored from the league table
  * directly), so merging would cost a copy per team and change nothing.
+ *
+ * Run in batches of SITEMAP_EVIDENCE_BATCH fixtures. A fixture's evidence
+ * depends only on its own rows and its own teams/league/pair caches, so
+ * scoring batch by batch is exactly the same computation as scoring the whole
+ * corpus at once — it just never holds every preview, analysis and cache blob
+ * in memory together. That is what took this route to the 2 GB function
+ * ceiling when it ran as a single read.
  */
 export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => {
-  const rows = await prisma.prediction.findMany({
+  const distinct = await prisma.prediction.groupBy({
+    by: ["matchSlugKey"],
     where: { status: "PUBLISHED", matchSlugKey: { not: null } },
+    orderBy: { matchSlugKey: "asc" },
+  });
+  const slugs = distinct.map((d) => d.matchSlugKey).filter((slug): slug is string => !!slug);
+
+  const substantive = new Set<string>();
+  for (const batch of chunked(slugs, SITEMAP_EVIDENCE_BATCH)) {
+    for (const slug of await substantiveMatchSlugsIn(batch)) substantive.add(slug);
+  }
+  return substantive;
+});
+
+/** The evidence gate for one batch of match slugs — the body getSubstantiveMatchSlugs used to run over the whole corpus. */
+async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
+  const rows = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", matchSlugKey: { in: batch } },
     orderBy: { publishedAt: "desc" },
     select: EVIDENCE_SELECT,
   });
@@ -933,4 +1060,4 @@ export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => 
   }
 
   return substantive;
-});
+}

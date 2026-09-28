@@ -61,6 +61,42 @@ export type TrackRecordData = {
   recentTips: RecentTip[];
 };
 
+export type SettledTotals = {
+  won: number;
+  lost: number;
+  void: number;
+  /** won + lost + void — the figure MIN_SETTLED_SAMPLE_SIZE gates /track-record on. */
+  total: number;
+  /** Most recent settledAt across every published, non-PENDING prediction. */
+  lastSettledAt: Date | null;
+};
+
+/**
+ * All-time settled counts — the smallest read that answers "does /track-record
+ * clear its sample-size gate?".
+ *
+ * getTrackRecordData builds its all-time stat from this and the sitemap reads
+ * it directly, so the page's indexability and its sitemap entry come from one
+ * count definition rather than two that could drift apart.
+ */
+export const getSettledTotals = cache(async (): Promise<SettledTotals> => {
+  const groups = await prisma.prediction.groupBy({
+    by: ["outcome"],
+    where: { status: "PUBLISHED", outcome: { not: "PENDING" } },
+    _count: { _all: true },
+    _max: { settledAt: true },
+  });
+  const count = (outcome: string) => groups.find((row) => row.outcome === outcome)?._count._all ?? 0;
+  const won = count("WON");
+  const lost = count("LOST");
+  const voided = count("VOID");
+  const lastSettledAt = groups.reduce<Date | null>(
+    (latest, row) => (row._max.settledAt && (!latest || row._max.settledAt > latest) ? row._max.settledAt : latest),
+    null,
+  );
+  return { won, lost, void: voided, total: won + lost + voided, lastSettledAt };
+});
+
 /**
  * Read-only aggregation over Prediction rows already settled by A1 (auto) or
  * A2 (manual admin override) — no schema of its own. Every stat here counts
@@ -72,7 +108,7 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
   const maxCutoff = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
   const settledWhere = { status: "PUBLISHED" as const, outcome: { not: "PENDING" as const } };
 
-  const [rows, outcomeCounts, dateRange, recent] = await Promise.all([
+  const [rows, settledTotals, dateRange, recent] = await Promise.all([
     prisma.prediction.findMany({
       where: { ...settledWhere, publishedAt: { gte: maxCutoff } },
       select: {
@@ -84,11 +120,7 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
         categories: { select: { category: true } },
       },
     }),
-    prisma.prediction.groupBy({
-      by: ["outcome"],
-      where: settledWhere,
-      _count: { _all: true },
-    }),
+    getSettledTotals(),
     prisma.prediction.aggregate({
       where: settledWhere,
       _min: { publishedAt: true },
@@ -102,16 +134,13 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
     }),
   ]);
 
-  const outcomeCount = (outcome: string) => outcomeCounts.find((row) => row.outcome === outcome)?._count._all ?? 0;
-  const won = outcomeCount("WON");
-  const lost = outcomeCount("LOST");
-  const voided = outcomeCount("VOID");
+  const { won, lost, void: voided, total } = settledTotals;
   const decided = won + lost;
   const allTime: WinRateStat = {
     won,
     lost,
     void: voided,
-    total: won + lost + voided,
+    total,
     decided,
     rate: decided > 0 ? won / decided : null,
   };

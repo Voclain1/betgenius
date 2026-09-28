@@ -15,11 +15,11 @@ import {
   leagueDisplayName,
   getLeagueEnrichment,
   getLeagueClubs,
-  getPublishedMatchIndex,
+  getPublishedMatchIndexFor,
   getFixtureEventContext,
 } from "@/lib/predictionScope";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
-import { matchKey } from "@/lib/slug";
+import { matchKey, matchSlug } from "@/lib/slug";
 import { FollowButton } from "@/components/FollowButton";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fitMetadataTitle, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
@@ -29,6 +29,12 @@ import type { PredictionCategory } from "@/lib/enums";
 import { competitionHubContent } from "@/lib/competitionHubContent";
 import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
 import { CompetitionHubIntro } from "@/components/CompetitionHubIntro";
+
+// LeagueResults shows the last 36h of finished fixtures; a match link resolves
+// through matchKey, which is keyed on the kickoff's UTC day. A prediction for a
+// fixture in that window therefore kicks off within these bounds of "now".
+const RESULTS_LINK_LOOKBACK_MS = 72 * 60 * 60_000;
+const RESULTS_LINK_LOOKAHEAD_MS = 48 * 60 * 60_000;
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const { rows } = await getPublishedByLeagueSlug(params.slug);
@@ -75,14 +81,24 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   const leagueApiId = rows[0].leagueApiId;
   const hubContent = competitionHubContent(leagueApiId);
 
-  const [enrichment, matchIndex, session] = await Promise.all([
+  const [enrichment, session] = await Promise.all([
     getLeagueEnrichment(leagueApiId),
-    getPublishedMatchIndex(),
     getServerSession(authOptions),
   ]);
   const viewer = await getViewerEntitlement();
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
   const upcoming = (enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null;
+  // Only the fixtures this page can link: the upcoming list's own slugs, and
+  // anything kicking off inside the recent-results window (LeagueResults keys
+  // its links by matchKey, whose day is the kickoff's UTC day — hence the
+  // margin either side of its 36h window). This used to be the global index,
+  // i.e. every published prediction read, and then shipped to the client, on
+  // every league page render.
+  const now = Date.now();
+  const matchIndex = await getPublishedMatchIndexFor({
+    slugs: (upcoming ?? []).map((f) => matchSlug({ homeTeam: f.homeTeam, awayTeam: f.awayTeam, kickoff: f.date })).filter((s): s is string => s !== null),
+    kickoff: { gte: new Date(now - RESULTS_LINK_LOOKBACK_MS), lte: new Date(now + RESULTS_LINK_LOOKAHEAD_MS) },
+  });
   const clubs = standings?.length ? await getLeagueClubs(standings) : [];
   const scorers = (enrichment?.topScorersJson as unknown as LeaguePlayerStat[] | null) ?? [];
   const assists = (enrichment?.topAssistsJson as unknown as LeaguePlayerStat[] | null) ?? [];

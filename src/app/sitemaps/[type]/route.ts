@@ -1,5 +1,5 @@
-import { getSitemapEntries } from "@/lib/sitemapEntries";
-import { SITEMAP_TYPES, sitemapType, urlsetXml, xmlResponse, type SitemapType } from "@/lib/sitemapXml";
+import { getCachedSitemapEntries } from "@/lib/sitemapCache";
+import { SITEMAP_TYPES, sitemapUnavailableResponse, urlsetXml, xmlResponse, type SitemapType } from "@/lib/sitemapXml";
 
 export const revalidate = 3600;
 
@@ -12,6 +12,14 @@ export async function GET(_request: Request, { params }: { params: { type: strin
   const type = parseType(params.type);
   if (!type) return xmlResponse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><error>Unknown sitemap</error>", 404);
 
-  const entries = (await getSitemapEntries()).filter((entry) => sitemapType(entry.url) === type);
-  return xmlResponse(urlsetXml(entries));
+  // Only this type's builder runs (see src/lib/sitemapEntries.ts), behind a
+  // per-type persistent cache (src/lib/sitemapCache.ts). A failed build is a
+  // short-lived 503, never a cached sitemap: the last good entry stays in the
+  // data cache and the crawler is told when to come back.
+  try {
+    return xmlResponse(urlsetXml(await getCachedSitemapEntries(type)));
+  } catch (error) {
+    console.error(`[sitemap] ${type}: build failed`, error);
+    return sitemapUnavailableResponse();
+  }
 }
