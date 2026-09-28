@@ -1,14 +1,20 @@
 const LAGOS_OFFSET = "+01:00";
 
+// Built once. Constructing an Intl.DateTimeFormat costs far more than
+// formatting with one, and isLagosToday runs per row inside loops — the
+// sitemap used to construct two of these for every published row, thirteen
+// times per request.
+const LAGOS_DATE_KEY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Africa/Lagos",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 /** Calendar date (YYYY-MM-DD) in Africa/Lagos for a point in time. */
 export function lagosDateKey(date: Date | string = new Date()): string {
   const value = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Africa/Lagos",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
+  return LAGOS_DATE_KEY_FORMAT.format(value);
 }
 
 /**

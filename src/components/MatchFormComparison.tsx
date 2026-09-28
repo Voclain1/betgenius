@@ -1,4 +1,4 @@
-import { getTeamEnrichment } from "@/lib/predictionScope";
+import { getTeamMatchEnrichment } from "@/lib/predictionScope";
 import { computeFormRating } from "@/lib/form";
 import { FormComparison } from "@/components/FormRatingBadge";
 import type { TeamFixtureSummary } from "@/lib/enrichment";
@@ -20,7 +20,9 @@ export async function MatchFormComparison({
   homeTeam: string;
   awayTeam: string;
 }) {
-  const [homeRow, awayRow] = await Promise.all([getTeamEnrichment(homeTeamApiId), getTeamEnrichment(awayTeamApiId)]);
+  // The match page's narrow team read, shared through cache() with the digest
+  // lookup, so both sides cost one query each for the whole page.
+  const [homeRow, awayRow] = await Promise.all([getTeamMatchEnrichment(homeTeamApiId), getTeamMatchEnrichment(awayTeamApiId)]);
 
   const homeRating = computeFormRating((homeRow?.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null);
   const awayRating = computeFormRating((awayRow?.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null);

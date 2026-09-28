@@ -53,6 +53,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-digest.ts",
   "tsx scripts/check-insights.ts",
   "tsx scripts/check-seo.ts",
+  `${RENDER} scripts/check-sitemap-scoping.tsx`,
   "tsx scripts/check-matchfacts.ts",
   "tsx scripts/check-trend-cards.ts",
   "tsx scripts/check-theme-contrast.ts",

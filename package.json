@@ -34,6 +34,7 @@
     "check:ads": "tsx scripts/check-ad-placement.ts",
     "check:analytics": "tsx scripts/check-analytics-events.ts",
     "check:robots": "tsx scripts/check-robots-scoping.ts",
+    "check:sitemap-scoping": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-sitemap-scoping.tsx",
     "check:auth-cookies": "tsx scripts/check-auth-cookies.ts",
     "check:signup-upsell": "tsx scripts/check-signup-upsell.ts",
     "check:one-tap": "tsx scripts/check-google-one-tap.ts",
