@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { applyCategoryChanges, applyReviewAction, setPredictionCategories } from "@/lib/predictions";
+import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { z } from "zod";
 
@@ -61,6 +62,13 @@ export async function POST(req: Request) {
     try {
       if (action === "MANAGE_CATEGORIES") {
         const current = row.categories.length ? row.categories.map((c) => c.category) : [row.category];
+        // A hidden combo leg is refused outright, and said so, rather than
+        // "succeeding" while setPredictionCategories quietly keeps it
+        // SAME_GAME_DOUBLE-only. See src/lib/comboLegs.ts.
+        if (isHiddenComboLeg(row.marketType, current)) {
+          results.push({ id: row.id, ok: false, error: HIDDEN_LEG_MESSAGE });
+          continue;
+        }
         const next = applyCategoryChanges(current, parsed.data.add, parsed.data.remove);
         // The row already carries its market, so GOALS is derived without a re-read.
         await setPredictionCategories(row.id, next, row);

@@ -119,8 +119,8 @@ async function main() {
   // ── 4. Every category writer goes through the derivation ─────────────────
   console.log("\n4. One place derives the tag");
   const predictions = code("src/lib/predictions.ts");
-  check("setPredictionCategories applies withGoalsCategory", /const unique = withGoalsCategory\(categories, resolvedMarket\)/.test(predictions));
-  check("setPredictionCategories reads the stored market when none is passed", /market \?\?\s*\(await prisma\.prediction\.findUnique/.test(predictions));
+  check("setPredictionCategories applies withGoalsCategory", /const unique = withHiddenLegCategories\(withGoalsCategory\(categories, resolvedMarket\), /.test(predictions));
+  check("setPredictionCategories reads the stored market when none is passed", /const persisted = await prisma\.prediction\.findUnique\(/.test(predictions) && /const resolvedMarket = market \?\? persisted \?\? \{ marketType: null, selection: null \};/.test(predictions));
   check("generation passes the persisted market", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(code("src/lib/ai/generate.ts")));
   check("a rewrite re-derives from its new market", /setPredictionCategories\(predictionId, updated\.categories\.map\(\(c\) => c\.category\), updated\)/.test(code("src/lib/ai/rewrite.ts")));
   check("bulk category edits pass the row's market", /setPredictionCategories\(row\.id, next, row\)/.test(bulk));

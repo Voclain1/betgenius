@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { withGoalsCategory, type GoalsMarket } from "@/lib/goalsCategory";
+import { isLegacyLiveHiddenLeg, withHiddenLegCategories } from "@/lib/comboLegs";
 import { recordPredictionEvents } from "@/lib/notifications";
 
 export const CATEGORY_VALUES = PREDICTION_CATEGORIES;
@@ -23,18 +24,32 @@ export function applyCategoryChanges(
  * the legacy `category` column in sync as the first entry (primary category)
  * for display/back-compat. `categories` must be non-empty.
  *
- * GOALS is recomputed here from the row's market, whatever `categories` says
- * (see src/lib/goalsCategory.ts). Every writer of category tags goes through
- * this function, so this is the one place that keeps the tag deterministic.
+ * Every writer of category tags goes through this function, so it is the one
+ * place two derived rules are enforced:
+ *
+ *   - GOALS is recomputed from the row's market, whatever `categories` says
+ *     (src/lib/goalsCategory.ts);
+ *   - a hidden combo leg resolves to exactly ["SAME_GAME_DOUBLE"]
+ *     (src/lib/comboLegs.ts). Leg status is read from the links the row
+ *     ALREADY has as well as from `categories`, so dropping SAME_GAME_DOUBLE
+ *     cannot turn a leg into a public single.
+ *
+ * A pre-cutover leg that is still live is left exactly as it is — no link and
+ * no primary-category change — until it settles (isLegacyLiveHiddenLeg).
+ *
  * Pass `market` when the caller holds the row's market already, or is about to
- * change it and has not written it yet; otherwise the stored market is read.
+ * change it and has not written it yet; otherwise the stored market is used.
  */
 export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket) {
-  const resolvedMarket =
-    market ??
-    (await prisma.prediction.findUnique({ where: { id: predictionId }, select: { marketType: true, selection: true } })) ??
-    { marketType: null, selection: null };
-  const unique = withGoalsCategory(categories, resolvedMarket);
+  const persisted = await prisma.prediction.findUnique({
+    where: { id: predictionId },
+    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, categories: { select: { category: true } } },
+  });
+  const resolvedMarket = market ?? persisted ?? { marketType: null, selection: null };
+  const held = persisted?.categories.map((c) => c.category) ?? [];
+  if (persisted && isLegacyLiveHiddenLeg(resolvedMarket.marketType, { ...persisted, categories: held })) return;
+
+  const unique = withHiddenLegCategories(withGoalsCategory(categories, resolvedMarket), resolvedMarket.marketType, held);
   if (unique.length === 0) throw new Error("At least one category is required");
 
   await prisma.$transaction([

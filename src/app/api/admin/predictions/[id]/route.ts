@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
 import { GOALS, withGoalsCategory } from "@/lib/goalsCategory";
+import { hiddenLegCategoryEditError, HiddenComboLegError } from "@/lib/comboLegs";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { comboMarketEditError, isComboPrediction, mergeEditedCategories } from "@/lib/comboAdmin";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
@@ -82,6 +83,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (comboError) return NextResponse.json({ error: comboError }, { status: 400 });
   // Resolved up front so a rejected category set writes nothing at all.
   const held = before.categories.map((c) => c.category);
+  // A hidden combo leg takes no category edit: its only category is
+  // SAME_GAME_DOUBLE (src/lib/comboLegs.ts). Refused before anything is written.
+  const legEditError = categories ? hiddenLegCategoryEditError(before.marketType, held, categories) : null;
+  if (legEditError) return NextResponse.json({ error: legEditError }, { status: 400 });
   const merged = categories ? mergeEditedCategories(held, categories) : null;
   // A Goals-pass row is filed under GOALS alone, which the editor never sends,
   // so its save carries no editorial category. That is allowed here; the
@@ -182,8 +187,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (target.status !== "PUBLISHED") {
       return NextResponse.json({ error: "Only a PUBLISHED prediction can be pinned as Bet of the Day" }, { status: 400 });
     }
-    const pinned = await setBetOfTheDay(params.id, session!.user.id);
-    return NextResponse.json({ prediction: pinned, pinned: true });
+    try {
+      const pinned = await setBetOfTheDay(params.id, session!.user.id);
+      return NextResponse.json({ prediction: pinned, pinned: true });
+    } catch (error) {
+      if (error instanceof HiddenComboLegError) return NextResponse.json({ error: error.message }, { status: 400 });
+      throw error;
+    }
   }
 
   if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {

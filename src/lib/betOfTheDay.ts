@@ -7,6 +7,7 @@ import { matchKey } from "@/lib/slug";
 import { qualifiesForBetOfDay, affordsBetOfDayPrice, MIN_ODDS, MAX_ODDS, type FixtureOdds, type OddsGateResult } from "@/lib/odds";
 import { leaguePriorityRank } from "@/lib/leagues";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/selector";
+import { HIDDEN_LEG_EXCLUSION, HiddenComboLegError, isHiddenComboLeg } from "@/lib/comboLegs";
 
 /**
  * Bet of the Day — the single pinned pick.
@@ -148,6 +149,15 @@ export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<Bet
  * never claims to be an editorial decision.
  */
 export async function setBetOfTheDay(predictionId: string, pinnedById: string | null, now: Date = new Date()) {
+  // A hidden combo leg is never a standalone pick, so it can never take the
+  // slot — pinned by an admin or chosen by auto-selection. Checked here, not
+  // only in the candidate query, so no caller can route around it.
+  const target = await prisma.prediction.findUnique({
+    where: { id: predictionId },
+    select: { marketType: true, categories: { select: { category: true } } },
+  });
+  if (target && isHiddenComboLeg(target.marketType, target.categories.map((c) => c.category))) throw new HiddenComboLegError();
+
   const [, , updated] = await prisma.$transaction([
     prisma.predictionCategoryLink.deleteMany({ where: { category: BET_OF_THE_DAY } }),
     // Clearing the pin metadata everywhere, not just on the outgoing pick,
@@ -213,6 +223,9 @@ export async function getBetOfTheDayCandidates(now: Date = new Date()): Promise<
       status: "PUBLISHED",
       outcome: "PENDING",
       kickoff: { gte: now, lt: end },
+      // Hidden combo legs are settlement inputs for a Combo Bet, never picks of
+      // their own. One took the slot on 25 Sep 2026. See src/lib/comboLegs.ts.
+      ...HIDDEN_LEG_EXCLUSION,
       // `start` still bounds the query below via the kickoff filter above; the
       // lower bound is `now` because a pick whose kickoff has passed cannot be
       // tipped, even though it is still part of today.

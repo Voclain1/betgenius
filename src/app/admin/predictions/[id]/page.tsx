@@ -9,6 +9,7 @@ import { isValidSelection, type MarketType } from "@/lib/markets";
 import { RewriteRequest } from "@/components/RewriteRequest";
 import { EDITOR_PRESERVED_TAGS, isComboPrediction } from "@/lib/comboAdmin";
 import { GOALS } from "@/lib/goalsCategory";
+import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -141,11 +142,14 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
     // A Combo Bet's market is its two legs, fixed at assembly, and it always
     // stays in Combo Bets, so it needs neither market fields nor a category.
     const combo = !!p && isComboPrediction(p);
+    // A hidden combo leg has no editable categories (src/lib/comboLegs.ts):
+    // none are required and none are sent.
+    const hiddenLeg = !!p && isHiddenComboLeg(p.marketType, p.categories.map((c) => c.category));
     if (!combo) {
       // A row filed under Goals alone may be saved with no editorial category
       // while its market still qualifies; the API refuses the save otherwise.
       const goalsOnlyRow = !!p?.categories?.some((c) => c.category === GOALS);
-      if (form.categories.length === 0 && !goalsOnlyRow) { setError("Select at least one category."); return; }
+      if (form.categories.length === 0 && !goalsOnlyRow && !hiddenLeg) { setError("Select at least one category."); return; }
       if (market.marketType === "OTHER") {
         if (!market.otherMarket || !market.otherPick) { setError("Market and pick are required."); return; }
       } else if (!isValidSelection(market.marketType, market.selection)) {
@@ -167,7 +171,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             confidence: form.confidence,
             reasoning: form.reasoning,
             matchPreview: form.matchPreview,
-            categories: form.categories,
+            ...(hiddenLeg ? {} : { categories: form.categories }),
             leagueApiId: form.leagueApiId ?? null,
             leagueName: form.leagueName || null,
             homeTeam: form.homeTeam || null,
@@ -296,6 +300,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
 
   const isBetOfTheDay = !!p?.categories?.some((c) => c.category === "BET_OF_THE_DAY");
   const isCombo = !!p && isComboPrediction(p);
+  const isHiddenLeg = !!p && isHiddenComboLeg(p.marketType, p.categories.map((c) => c.category));
 
   if (error && !p) return <div className="card text-red-400">{error}</div>;
   if (!p || !form || !market) return <div className="text-gray-400">Loading…</div>;
@@ -390,6 +395,12 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
           <textarea rows={4} value={form.matchPreview} onChange={(e) => setForm({ ...form, matchPreview: e.target.value })}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
         </label>
+        {isHiddenLeg ? (
+          <div className="md:col-span-2">
+            <div className="mb-1 text-sm">Categories</div>
+            <p className="text-sm text-gray-400">{HIDDEN_LEG_MESSAGE}</p>
+          </div>
+        ) : (
         <div className="md:col-span-2">
           <div className="mb-1 text-sm">Categories <span className="text-gray-500">(show this tip in multiple feeds at once)</span></div>
           <div className="flex flex-wrap gap-3">
@@ -405,6 +416,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             Goals is set automatically: an Over 1.5 or Over 2.5 total-goals market joins it on save, and any other market leaves it.
           </p>
         </div>
+        )}
         {error && <div className="md:col-span-2 text-sm text-red-400">{error}</div>}
         <div className="md:col-span-2 flex justify-end gap-2">
           <button disabled={busy} onClick={save} className="btn btn-primary disabled:opacity-50">
