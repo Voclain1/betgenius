@@ -4,6 +4,7 @@ import { verifyPaystackSignature } from "@/lib/paystack/verifySignature";
 import { verifyTransaction } from "@/lib/paystack/paystack";
 import { validateRenewal } from "@/lib/paystack/entitlement";
 import { applyCheckoutPayment } from "@/lib/paystack/applyCheckoutPayment";
+import { recordPaymentAttempt } from "@/lib/paystack/recordPaymentAttempt";
 
 /**
  * Paystack webhook.
@@ -69,11 +70,18 @@ export async function POST(req: Request) {
       });
       return NextResponse.json({ error: "Transaction does not match pending checkout" }, { status: 409 });
     }
+    if (applied.outcome === "RETRY_LATER") {
+      // Another payment for the same subscription was being written at the
+      // same moment. Non-200 makes Paystack redeliver; nothing was granted.
+      console.error("Paystack entitlement deferred", { code: "CONCURRENT_WRITE", reference: webhookReference });
+      return NextResponse.json({ error: "Busy, retry" }, { status: 503 });
+    }
 
-    // NOT_A_CHECKOUT falls through to the recurring path below. That path is
-    // dormant while checkouts are one-time — Paystack mints its own reference
-    // for a recurring invoice and we are issuing none — but it is left intact
-    // and verified so restoring plans does not require rebuilding it.
+    // NOT_A_CHECKOUT falls through to the recurring path below. Our own
+    // bg_<TIER>_ references never reach it — a superseded one is resolved to
+    // its owner inside applyCheckoutPayment — so only a Paystack-minted
+    // reference does. The path is dormant while checkouts are one-time, but
+    // left intact and verified so restoring plans does not mean rebuilding it.
     let verified;
     try {
       verified = await verifyTransaction(webhookReference);
@@ -84,6 +92,11 @@ export async function POST(req: Request) {
       });
       return NextResponse.json({ error: "Transaction verification failed" }, { status: 502 });
     }
+
+    // Every verified charge.success is recorded, ours or not, so the admin
+    // view can show that webhooks are arriving at all. Before this, a success
+    // that matched no checkout left no trace outside a function log.
+    await recordPaymentAttempt(verified.data, "WEBHOOK", { reference: webhookReference });
 
     // Otherwise a recurring charge: Paystack's own reference against a
     // subscription we already granted. Matched by the verified customer email.

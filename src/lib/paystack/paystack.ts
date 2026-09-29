@@ -78,7 +78,10 @@ export function listTransactions(perPage = 100) {
       amount?: number;
       currency?: string;
       created_at?: string;
+      paid_at?: string | null;
       metadata?: { userId?: string; tier?: string } | null;
+      // Summarised by summariseSessionLog; never stored whole.
+      log?: import("@/lib/paystack/recordPaymentAttempt").PaystackSessionLog | null;
     }>;
   }>(`/transaction?perPage=${encodeURIComponent(String(perPage))}`);
 }

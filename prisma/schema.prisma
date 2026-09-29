@@ -1040,6 +1040,35 @@ model PaymentAttempt {
   source          String
   updatedAt       DateTime  @updatedAt
 
+  // How far the payer got, summarised from Paystack's checkout session log.
+  // Only counts, method names and error text are kept — never the raw log,
+  // which can carry what the payer typed. Null means not observed yet (rows
+  // recorded before this existed), which is NOT the same as false.
+  /// Whether Paystack recorded any checkout-page activity at all.
+  sessionLogged   Boolean?
+  /// Payment methods the payer selected, in order, e.g. "bank_transfer,ussd".
+  methodsTried    String?
+  /// Authorization attempts Paystack counted. 0 means nothing was ever charged.
+  authAttempts    Int?
+  /// The first error Paystack's session log shows, e.g. "Denied by Fraud System."
+  sessionError    String?
+  timeSpentSec    Int?
+  paidAt          DateTime?
+
+  // Our side of the attempt.
+  /// Last time a webhook / the payer's callback reached our verification.
+  webhookAt       DateTime?
+  callbackAt      DateTime?
+  /// Why server-side verification with Paystack last failed, if it did.
+  verifyError     String?
+  /// Why a Paystack-successful payment was refused entitlement, e.g.
+  /// "AMOUNT_MISMATCH". Set only when Paystack reported success.
+  entitlementError String?
+  /// THE EXACTLY-ONCE LEDGER. Set in the same transaction as the grant, and
+  /// claimed with a compare-and-set on null, so a reference buys one period
+  /// however many times the webhook, callback or reconcile presents it.
+  entitlementGrantedAt DateTime?
+
   @@index([occurredAt])
   @@index([category])
   @@index([userId])
