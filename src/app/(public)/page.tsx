@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HOME_CATEGORY_LINKS } from "@/lib/homeCategoryLinks";
 import type { Metadata } from "next";
 import { Lock } from "lucide-react";
 import { getServerSession } from "next-auth";
@@ -214,14 +215,6 @@ async function fetchDaySlate(day: FeedDay) {
   return { pickCount: rows.length, leagueCount: leagues.size, topLeagues, bankerCount };
 }
 
-const CATEGORY_LINKS: { label: string; href: string }[] = [
-  { label: "Banker", href: "/predictions/banker" },
-  { label: "Today", href: "/predictions/today" },
-  { label: "Premium", href: "/predictions/premium" },
-  { label: "VIP", href: "/predictions/vip" },
-  { label: "Multi Bets", href: "/multi-bets" },
-];
-
 export default async function HomePage({ searchParams }: { searchParams?: { date?: string } }) {
   // Reading searchParams does NOT change this page's render mode: it already
   // renders dynamically on every request because getServerSession below reads
@@ -371,7 +364,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         )}
 
         <div className="flex flex-wrap gap-3">
-          {CATEGORY_LINKS.map((c) => (
+          {HOME_CATEGORY_LINKS.map((c) => (
             <Link key={c.href} href={c.href} className="btn btn-ghost">
               {c.label}
             </Link>

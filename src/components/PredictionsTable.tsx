@@ -102,7 +102,10 @@ export function PredictionsTable({
                     )}
                   </td>
                 )}
-                <td className="hidden px-3 py-2 sm:table-cell">{p.overUnder ?? "—"}</td>
+                {/* Masked with the pick: the line is generated from the pick
+                    itself ("Over 2.5"), so showing it on a locked row would
+                    hand over the tip the lock is withholding. */}
+                <td className="hidden px-3 py-2 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
                 <td className="hidden px-3 py-2 text-right md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-2 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}

@@ -19,6 +19,7 @@
     "reconcile:payments": "tsx --env-file=.env scripts/reconcile-payments.ts",
     "check:combo-bet": "tsx scripts/check-combo-bet-copy.ts",
     "check:homepage-featured": "tsx scripts/check-homepage-featured.ts",
+    "check:prediction-view": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-prediction-view.tsx",
     "check:adaptive-combo": "tsx scripts/check-adaptive-combo.ts",
     "backfill:combo-leg-labels": "tsx --env-file=.env scripts/backfill-combo-leg-labels.ts",
     "check:confidence": "tsx scripts/check-confidence-consistency.ts",

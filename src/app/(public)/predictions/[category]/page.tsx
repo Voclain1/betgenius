@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import {
   CATEGORY_SLUGS as SLUGS,
   CATEGORY_NAMES as NAMES,
@@ -127,6 +128,7 @@ export default async function CategoryPage(
           matchPreview: null,
           confidence: null,
           odds: null,
+          overUnder: null,
           locked: true,
         },
   );
@@ -218,20 +220,28 @@ export default async function CategoryPage(
         })}
       />
 
-      <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
-
-      {cat === "TODAY" && (
-        <TodayPredictionsGuide dateLabel={dateLabel} />
-      )}
-
-      {cat === "BANKER" && <BankerPredictionsIntro />}
-
       {/* Ads are IN the feed now, between groups of picks, rather than in a
           single band under it — see feedAdPositions in src/lib/ads.ts for the
           counts and AdPlacements.tsx for the rule they follow. The foot band
           is gone rather than kept: three insertions plus a fourth underneath
           would be four ads on one feed. */}
-      <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
+      {cat === "TODAY" ? (
+        <>
+          <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
+          <TodayPredictionsGuide dateLabel={dateLabel} />
+          <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
+        </>
+      ) : (
+        // Every other feed offers Detailed (the card grid) and Compact (the
+        // Today table). Both are rendered here, on the server, from the same
+        // shaped rows; the client switch only chooses which one to mount.
+        <PredictionViewSwitch
+          tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
+          intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}
+          detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
+          compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
+        />
+      )}
 
       {cat === "BANKER" && <BankerPredictionsEvidence />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}

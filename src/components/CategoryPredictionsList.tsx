@@ -4,11 +4,18 @@ import { PredictionsTable, type PredictionTableRow } from "@/components/Predicti
 import { AdInFeed } from "@/components/ads/AdPlacements";
 import { feedAdPositions } from "@/lib/ads";
 import type { PredictionCategory } from "@/lib/enums";
+import type { PredictionView } from "@/lib/predictionView";
 
 /**
  * Rendering shared between /predictions/[category] and the account dashboard
  * once each has already resolved which rows a viewer is allowed to see —
  * TODAY renders as a table, every other category as a card grid.
+ *
+ * `view` lets a non-TODAY feed render as the same table instead ("compact"):
+ * no reasoning, one row per pick, same rows in the same order and the same
+ * in-feed ad positions. TODAY ignores it and is always the table. The default
+ * is "detailed", so callers that pass nothing — the dashboard included — get
+ * exactly the markup they had before the option existed.
  *
  * `withAds` IS OPT-IN AND MUST STAY THAT WAY. The account dashboard renders
  * this same component, and /dashboard is one of the routes that carries no
@@ -21,10 +28,12 @@ export function CategoryPredictionsList({
   category,
   rows,
   withAds = false,
+  view = "detailed",
 }: {
   category: PredictionCategory;
   rows: (PredictionRow & PredictionTableRow)[];
   withAds?: boolean;
+  view?: PredictionView;
 }) {
   if (rows.length === 0) {
     return <div className="card text-gray-400">No published tips in this category yet.</div>;
@@ -33,7 +42,7 @@ export function CategoryPredictionsList({
   // Empty on the dashboard, and on any feed too short to interrupt.
   const positions = withAds ? feedAdPositions(rows.length) : [];
 
-  if (category === "TODAY") {
+  if (category === "TODAY" || view === "compact") {
     return (
       <PredictionsTable
         rows={rows}
