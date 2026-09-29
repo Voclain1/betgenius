@@ -10,13 +10,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { runGeneration, runGoalsGeneration } from "@/lib/generation/worker";
+import { runGeneration, runGoalsGeneration, runVipPremiumGeneration } from "@/lib/generation/worker";
 import { probeGoalsFixture } from "@/lib/goalsPipeline";
 import {
-  VIP_PREMIUM_INTENT,
   VIP_PREMIUM_DAILY_QUOTA,
   vipPremiumQuotaRemaining,
-  selectVipPremiumTargets,
   applyVipPremiumGate,
   VIP_MARKET_FLOOR,
   PREMIUM_MARKET_FLOOR,
@@ -110,6 +108,71 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
     return NextResponse.json(await runGoalsGeneration({ authorId, limit }), { status: 200 });
   }
 
+  /**
+   * The dedicated VIP/PREMIUM pass.
+   *
+   * Requested with ?vipPremium=1 rather than a category, because its rows are
+   * not VIP/PREMIUM picks until they pass the odds gate — tagging them up front
+   * would put ungated picks straight into the paid feeds.
+   *
+   * An OVERLAY on fixtures ordinary generation has already covered (see
+   * src/lib/vipPremiumOverlay.ts), so, like ?goals=1, it takes no categories or
+   * leagues and never reaches runGeneration's ledger path. It no longer has to
+   * run before ordinary generation: its pool is the same whenever it fires.
+   */
+  if (url.searchParams.get("vipPremium") === "1") {
+    const remaining = await vipPremiumQuotaRemaining();
+    if (remaining <= 0) {
+      return NextResponse.json({
+        ok: true,
+        skipped: "daily VIP/PREMIUM generation quota already spent",
+        quota: VIP_PREMIUM_DAILY_QUOTA,
+        generatedToday: VIP_PREMIUM_DAILY_QUOTA,
+        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+      });
+    }
+    const report = await runVipPremiumGeneration({ authorId, limit: Math.min(remaining, limit) });
+    // The gate runs in the SAME request, immediately after generation, so a
+    // passing pick is promoted before anything else can look at the feeds and
+    // while the odds quote is still inside its two-hour freshness window.
+    // A promoted pick that clears the full publish-time gate is published here,
+    // through the shared review transition, attributed to the run's author.
+    const gate = await applyVipPremiumGate({ actorId: authorId });
+    const describe = (p: (typeof gate.promotedVip)[number]) => ({
+      fixture: p.fixture, pick: p.pick, tier: p.tier,
+      model: p.verdict.modelProbability,
+      market: p.verdict.marketProbability,
+      gapPP: p.verdict.gapPP,
+      bookmakers: p.verdict.bookmakers,
+    });
+    return NextResponse.json({
+      ...report,
+      vipPremium: {
+        quota: VIP_PREMIUM_DAILY_QUOTA,
+        remainingBeforeRun: remaining,
+        vipMarketFloor: VIP_MARKET_FLOOR,
+        premiumMarketFloor: PREMIUM_MARKET_FLOOR,
+        ...report.vipPremium,
+        evaluated: gate.evaluated,
+        fixtures: gate.fixtures,
+        promotedVip: gate.promotedVip.map(describe),
+        promotedPremium: gate.promotedPremium.map(describe),
+        rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
+          const k = r.verdict.reason ?? "BELOW_TIER_FLOOR";
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {}),
+        runnersUp: gate.runnersUp.length,
+        duplicateFixture: gate.duplicateFixture.length,
+        archivedDrafts: gate.archived,
+        heldForRequote: gate.heldForRequote,
+        published: gate.published.length,
+        publishHeld: gate.publishHeld,
+        ordinaryPaidTagsRemoved: gate.ordinaryPaidTagsRemoved,
+      },
+    }, { status: 200 });
+  }
+
   const requested = categories?.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean) ?? [];
   const valid = requested.filter((c): c is (typeof FREE_CATEGORIES)[number] => FREE_CATEGORIES.includes(c as any));
   const leagueApiIds = leagues?.split(",").map((l) => Number(l.trim())).filter((n) => Number.isFinite(n));
@@ -125,7 +188,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
    * same ledger; only the candidate set differs.
    */
   const wantsBetOfTheDay = valid.includes("BET_OF_THE_DAY");
-  const wantsVipPremium = url.searchParams.get("vipPremium") === "1";
   /**
    * The dedicated BANKER pass.
    *
@@ -196,67 +258,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   }
 
   /**
-   * The dedicated VIP/PREMIUM pass.
-   *
-   * Requested with ?vipPremium=1 rather than a category, because its rows are
-   * not VIP/PREMIUM picks until they pass the odds gate — tagging them up front
-   * would put ungated picks straight into the paid feeds.
-   *
-   * MARKET-FIRST, like Bet of the Day and unlike the Market-Confirmed pass this
-   * replaces: the pass prices its own candidates, then hands the worker only
-   * those the market puts at or above the VIP bar, via its matchKeys allow-list.
-   * That is what guarantees a fresh quote exists when the gate runs — the
-   * previous pass had none on any of its 168 drafts.
-   *
-   * SCHEDULE THIS BEFORE THE ORDINARY GENERATION RUN. It is not optional and it
-   * is the one thing that will silently reduce this pass to nothing if it is got
-   * wrong. Targeting can only select fixtures the worker can still CLAIM, and a
-   * fixture stays PENDING for a median of 23 minutes (p10 8, p90 113) before
-   * ordinary generation takes it. Run this second and the candidate pool is
-   * empty every time — measured: every in-scope fixture in the next 72 hours was
-   * already SUCCEEDED. Run it first and it takes the few market-qualified
-   * fixtures it wants; ordinary generation then covers the rest as usual.
-   */
-  let vipPremiumTargeting: Record<string, unknown> | undefined;
-
-  if (wantsVipPremium) {
-    const remaining = await vipPremiumQuotaRemaining();
-    if (remaining <= 0) {
-      return NextResponse.json({
-        ok: true,
-        skipped: "daily VIP/PREMIUM generation quota already spent",
-        quota: VIP_PREMIUM_DAILY_QUOTA,
-        generatedToday: VIP_PREMIUM_DAILY_QUOTA,
-        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
-      });
-    }
-    const selection = await selectVipPremiumTargets(new Date(), Math.min(remaining, limit), { warmOdds: true });
-    matchKeys = selection.targets.map((t) => t.matchKey);
-    effectiveLimit = Math.min(remaining, effectiveLimit);
-    vipPremiumTargeting = {
-      quota: VIP_PREMIUM_DAILY_QUOTA,
-      remainingBeforeRun: remaining,
-      limitApplied: effectiveLimit,
-      vipMarketFloor: VIP_MARKET_FLOOR,
-      premiumMarketFloor: PREMIUM_MARKET_FLOOR,
-      candidatesConsidered: selection.considered,
-      inLeagueScope: selection.inScope,
-      oddsWarmed: selection.warmed,
-      freshlyPriced: selection.freshlyPriced,
-      marketQualified: selection.qualified,
-      targets: selection.targets.map((t) => ({
-        match: `${t.homeTeam} v ${t.awayTeam}`,
-        kickoff: t.kickoff.toISOString(),
-        market: t.market,
-        selection: t.selection,
-        marketProbability: Number(t.marketProbability.toFixed(1)),
-        bookmakers: t.bookmakers,
-        quoteAgeMinutes: Math.round(t.quoteAgeMs / 60000),
-      })),
-    };
-  }
-
-  /**
    * For the fixtures ordinary scheduled generation takes as combos (see the
    * adaptive rule below), it produces an internally isolated set of legs and
    * one compatible compound pick. The legs remain available for independent
@@ -294,10 +295,10 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   // named explicitly. The ["FEATURED"] default below is generation
   // calibration, not a destination: an ordinary double is no longer put in
   // FEATURED by default.
-  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsVipPremium && !wantsBanker;
+  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsBanker;
   let regularComboTargeting: Record<string, unknown> | undefined;
   let adaptiveCombo: { dailyRemaining: number; comboCategories: string[] } | undefined;
-  const generationIntent: string | undefined = wantsVipPremium ? VIP_PREMIUM_INTENT : wantsBanker ? BANKER_INTENT : undefined;
+  const generationIntent: string | undefined = wantsBanker ? BANKER_INTENT : undefined;
   if (wantsRegularCombo) {
     const remaining = await doublesQuotaRemaining();
     adaptiveCombo = { dailyRemaining: remaining, comboCategories: valid.filter((c) => c !== SAME_GAME_DOUBLE) };
@@ -320,35 +321,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   if (regularComboTargeting && report.comboPlan) regularComboTargeting.plan = report.comboPlan;
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
-  if (vipPremiumTargeting) {
-    // The gate runs in the SAME request, immediately after generation, so a
-    // passing pick is promoted before anything else can look at the feeds and
-    // so the odds quote is still inside its two-hour freshness window.
-    const gate = await applyVipPremiumGate();
-    const describe = (p: (typeof gate.promotedVip)[number]) => ({
-      fixture: p.fixture, pick: p.pick, tier: p.tier,
-      model: p.verdict.modelProbability,
-      market: p.verdict.marketProbability,
-      gapPP: p.verdict.gapPP,
-      bookmakers: p.verdict.bookmakers,
-    });
-    return NextResponse.json({
-      ...report,
-      vipPremium: {
-        ...vipPremiumTargeting,
-        evaluated: gate.evaluated,
-        fixtures: gate.fixtures,
-        promotedVip: gate.promotedVip.map(describe),
-        promotedPremium: gate.promotedPremium.map(describe),
-        rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
-          const k = r.verdict.reason ?? "?";
-          acc[k] = (acc[k] ?? 0) + 1;
-          return acc;
-        }, {}),
-        runnersUp: gate.runnersUp.length,
-      },
-    }, { status: 200 });
-  }
   if (bankerTargeting) return NextResponse.json({ ...report, banker: bankerTargeting }, { status: 200 });
   if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
   if (regularComboTargeting) return NextResponse.json({ ...report, regularCombo: regularComboTargeting }, { status: 200 });
@@ -394,6 +366,7 @@ export async function GET(req: Request) {
       : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
         (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
         (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : "") +
+        (p?.vipPremium ? `, paid overlay: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
         (p?.goals ? (p.goals.stoodDown ? `, goals stood down: ${p.goals.stoodDown}` : `, goals: ${p.goals.considered} covered fixtures considered, published ${p.goals.published ?? 0}, held for review ${p.goals.heldForReview ?? 0}`) : ""),
   );
   return response;

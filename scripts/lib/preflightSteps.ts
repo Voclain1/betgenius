@@ -26,6 +26,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-admin-jobs.ts",
   "tsx scripts/check-enrichment-report.ts",
   "tsx scripts/check-paid-tier-grace.ts",
+  "tsx scripts/check-vip-premium-overlay.ts",
   "tsx scripts/check-adaptive-coverage.ts",
   "tsx scripts/check-senior-womens.ts",
   "tsx scripts/check-goals-category.ts",
@@ -74,6 +75,7 @@ export const DB_READONLY_STEPS = [
   "tsx scripts/check-feed-days.ts",
   "tsx scripts/check-prediction-slugs.ts",
   "tsx scripts/check-hidden-leg-categories.ts",
+  "tsx scripts/check-paid-tier-invariant.ts",
 ];
 
 /** Insert and delete their own rows. Each also calls assertIntegrationDatabase itself. */

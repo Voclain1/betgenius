@@ -51,10 +51,9 @@ async function main() {
     selectVipPremiumTargets,
     vipPremiumQuotaRemaining,
     applyVipPremiumGate,
-    VIP_PREMIUM_INTENT,
     VIP_PREMIUM_DAILY_QUOTA,
   } = await import("../src/lib/vipPremiumPipeline");
-  const { runGeneration } = await import("../src/lib/generation/worker");
+  const { runVipPremiumGeneration } = await import("../src/lib/generation/worker");
 
   const author = await prisma.user.findFirst({
     where: { role: { in: ["SUPER_ADMIN", "ADMIN"] } },
@@ -133,13 +132,8 @@ async function main() {
       }
 
       try {
-        const report = await runGeneration({
-          authorId: author.id,
-          intent: VIP_PREMIUM_INTENT,
-          categories: ["FEATURED"],
-          matchKeys: selection.targets.map((t) => t.matchKey),
-          limit: Math.min(remaining, selection.targets.length),
-        });
+        // The overlay run re-selects under the generation lease, one fixture per run.
+        const report = await runVipPremiumGeneration({ authorId: author.id, limit: remaining });
         firedRuns++;
         totalAttempts += report.succeeded;
         console.log(

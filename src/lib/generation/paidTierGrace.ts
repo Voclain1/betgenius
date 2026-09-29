@@ -6,6 +6,12 @@ import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/wind
  * First refusal on paid-tier fixtures, so the VIP/PREMIUM pass cannot be
  * out-raced by ordinary generation.
  *
+ * INERT, AND KEPT ONLY UNTIL A CLEANUP PR REMOVES IT. The paid pass no longer
+ * reads PENDING rows at all — it is an overlay on fixtures ordinary generation
+ * has already covered (src/lib/vipPremiumOverlay.ts). This reservation never
+ * worked anyway: the ordinary queue (selectQueuedCandidates) takes PENDING rows
+ * whatever their nextAttemptAt, so no reservation was ever honoured.
+ *
  * THE RACE, precisely. Both passes draw from the same pool. Ordinary generation
  * discovers fixtures from api-football, writes a ledger row and completes in one
  * run, so a fixture goes from "absent from the ledger" to `SUCCEEDED` without

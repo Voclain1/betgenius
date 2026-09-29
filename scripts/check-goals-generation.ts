@@ -369,7 +369,11 @@ async function publicationAndProbe() {
   const callers = walk("src").filter((f) => /autoPublishGoalsPrediction\(/.test(read(f)) && !f.endsWith("goalsPipeline.ts"));
   check("auto-publish is reachable only from the Goals run", callers.length === 1 && callers[0].endsWith("generation/worker.ts"), callers);
   const reviewCallers = walk("src").filter((f) => /applyReviewAction\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
-  check("applyReviewAction is used only by the bulk route and the Goals auto-publish", reviewCallers.length === 2 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$/.test(f)), reviewCallers);
+  check(
+    "applyReviewAction is used only by the bulk route and the two gated auto-publishes (Goals, dedicated VIP/PREMIUM)",
+    reviewCallers.length === 3 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$|vipPremiumPipeline\.ts$/.test(f)),
+    reviewCallers,
+  );
   check("generation still persists every row PENDING_REVIEW (the gate publishes afterwards)", /status: "PENDING_REVIEW"/.test(code("src/lib/ai/generate.ts")));
   check("a draft failing the market/confidence gate is never persisted (pickGoalsDraft runs before any create)", code("src/lib/ai/generate.ts").indexOf("pickGoalsDraft(") < code("src/lib/ai/generate.ts").indexOf(PERSIST_CALL));
 

@@ -67,12 +67,18 @@ async function main() {
     const { start } = lagosTodayBounds(NOW);
     const kickoff = new Date(start.getTime() + 10 * 3_600_000);
 
+    // Each row on its OWN fixture (its own team ids), because the paid tiers
+    // hold at most one pick per fixture: rows sharing one would compete rather
+    // than test independently. `sameFixtureAs` opts a row into sharing.
+    let nextTeam = -55601;
     const make = async (
       label: string,
       confidence: number,
       provenance: string,
-      opts: { tag?: boolean; createdAt?: Date; marketType?: string } = {},
+      opts: { tag?: boolean; createdAt?: Date; marketType?: string; sameFixtureAs?: { homeTeamApiId: number | null; awayTeamApiId: number | null } } = {},
     ) => {
+      const homeTeamApiId = opts.sameFixtureAs?.homeTeamApiId ?? nextTeam--;
+      const awayTeamApiId = opts.sameFixtureAs?.awayTeamApiId ?? nextTeam--;
       const row = await prisma.prediction.create({
         data: {
           category: "VIP",
@@ -80,8 +86,8 @@ async function main() {
           kickoff,
           homeTeam: `ZZ TP ${label} A`,
           awayTeam: `ZZ TP ${label} B`,
-          homeTeamApiId: -55601,
-          awayTeamApiId: -55602,
+          homeTeamApiId,
+          awayTeamApiId,
           leagueApiId: 39,
           leagueName: "Premier League",
           marketType: opts.marketType ?? "MATCH_WINNER",
@@ -115,6 +121,9 @@ async function main() {
     // Between the two floors: clears VIP's 75, fails PREMIUM's 80. This is the
     // row that makes the tiers different rather than two names for one set.
     const vipOnly = await make("viponly", 77, VIP_ROUTE_PROVENANCE, { tag: false });
+    // Same fixture as `routed`, one point less confident: that fixture's one
+    // paid pick is `routed`.
+    const sameFixture = await make("samefixture", 87, VIP_ROUTE_PROVENANCE, { tag: false, sameFixtureAs: routed });
 
     console.log(`floors: VIP ${VIP_CONFIDENCE_FLOOR}, PREMIUM ${PREMIUM_CONFIDENCE_FLOOR}`);
     console.log(`cutover: ${VIP_ROUTE_CUTOVER.toISOString()}\n`);
@@ -135,8 +144,14 @@ async function main() {
     check("a MORE confident wrong-route row is NOT selected into PREMIUM", !(await tagged(wrongRoute.id, "PREMIUM")));
     check("curation reports the exclusion rather than hiding it", vip.routeExcluded >= 1, `routeExcluded=${vip.routeExcluded}`);
 
-    console.log("\ncarve-out — assembled doubles have no generation route by design:");
-    check("an assembled SAME_GAME_DOUBLE is still selectable", await tagged(assembledDouble.id, "VIP"));
+    console.log("\ndoubles — a SAME_GAME_DOUBLE is never a paid pick:");
+    check("an assembled SAME_GAME_DOUBLE is NOT selected into VIP", !(await tagged(assembledDouble.id, "VIP")));
+    check("...nor into PREMIUM", !(await tagged(assembledDouble.id, "PREMIUM")));
+    check("curation reports it as a double", vip.doublesExcluded >= 1, `doublesExcluded=${vip.doublesExcluded}`);
+
+    console.log("\none paid pick per fixture:");
+    check("the less confident VIP-route row on the same fixture is NOT selected", !(await tagged(sameFixture.id, "VIP")) && (await tagged(routed.id, "VIP")));
+    check("curation reports the duplicate", vip.fixtureDuplicatesExcluded >= 1, `fixtureDuplicatesExcluded=${vip.fixtureDuplicatesExcluded}`);
 
     console.log("\ngrandfathering — the cutover does not strip rows tagged before it:");
     check("a pre-cutover tagged row keeps VIP", await tagged(grandfathered.id, "VIP"));
@@ -246,7 +261,7 @@ async function main() {
         console.log("  FAIL  test rows still present");
       }
     }
-    const strays = await prisma.prediction.count({ where: { homeTeamApiId: -55601 } });
+    const strays = await prisma.prediction.count({ where: { homeTeamApiId: { lte: -55601, gte: -55699 } } });
     if (strays !== 0) {
       failures++;
       console.log(`  FAIL  ${strays} stray row(s)`);

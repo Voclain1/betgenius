@@ -118,8 +118,9 @@ async function loadFixtureState(row: { fixtureApiId: number | null }) {
  *
  * Publication goes through applyReviewAction, the same transition and
  * NEW_PREDICTION event a bulk publish uses, attributed to `actorId` (the admin
- * the generation run is attributed to). This is the ONLY automatic publish in
- * the app, and it is reachable only from runGoalsGeneration.
+ * the generation run is attributed to). One of the app's two automatic
+ * publishes, reachable only from runGoalsGeneration; the other is the dedicated
+ * VIP/PREMIUM pick (autoPublishVipPremiumPrediction in vipPremiumPipeline.ts).
  */
 export async function autoPublishGoalsPrediction(
   predictionId: string,
