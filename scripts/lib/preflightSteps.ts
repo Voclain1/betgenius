@@ -67,6 +67,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-settlement-time-basis.ts",
   `${RENDER} scripts/check-match-insights-render.tsx`,
   `${RENDER} scripts/check-match-render.tsx`,
+  `${RENDER} scripts/check-prediction-view.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 

@@ -46,11 +46,20 @@ const trackRecordView = readFileSync(join(repoRoot, "src/components/TrackRecordV
 check("banker hub: does not claim there is only one pick", !categoryPredictions.includes("single most-confident"));
 check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to three may be published"));
 check("banker hub: explains that days can have no selection", bankerGuide.includes("some days will have none"));
+// Banker renders through PredictionViewSwitch (Detailed / Compact), which
+// places `intro` above whichever list is showing — that rendered order is
+// asserted in scripts/check-prediction-view.tsx. Here: the intro is handed to
+// the switch as `intro`, ahead of both lists, and both lists keep their ads.
+const bankerFeed = categoryPage.slice(categoryPage.indexOf("<PredictionViewSwitch"));
 check("banker hub: intro appears before the ad-enabled feed",
-  categoryPage.indexOf("<BankerPredictionsIntro") < categoryPage.indexOf("<CategoryPredictionsList"));
+  categoryPage.includes("<PredictionViewSwitch") &&
+    bankerFeed.includes('intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}') &&
+    bankerFeed.indexOf("<BankerPredictionsIntro") < bankerFeed.indexOf("<CategoryPredictionsList"));
 check("banker hub: evidence appears after the ad-enabled feed",
-  categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.indexOf("<CategoryPredictionsList"));
-check("banker hub: keeps the existing ad-enabled list", categoryPage.includes("<CategoryPredictionsList category={cat} rows={shaped as any} withAds />"));
+  categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.lastIndexOf("<CategoryPredictionsList"));
+check("banker hub: keeps the existing ad-enabled list",
+  bankerFeed.includes('<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />') &&
+    bankerFeed.includes('<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />'));
 check("banker hub: links to category-specific public evidence", bankerGuide.includes("/track-record#category-banker"));
 check("banker hub: public track record exposes the Banker anchor", trackRecordView.includes('id={`category-${cat.toLowerCase().replaceAll("_", "-")}`}'));
 
