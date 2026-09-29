@@ -188,6 +188,9 @@ async function main() {
     // Model confidence is kept within MC_MAX_GAP_PP of the market in both
     // promotion cases, so the ONLY thing deciding the tier is the market.
     const vipCase = await seed({ label: "vip", confidence: 78, marketHomeProbability: 77 });
+    // Market clears PREMIUM's 80, the model does not: PREMIUM needs BOTH at 80.
+    // 84, not 86: the model must stay within MC_MAX_GAP_PP of the de-vigged market.
+    const marketOnlyPremium = await seed({ label: "mkt84model76", confidence: 76, marketHomeProbability: 84 });
     const premiumCase = await seed({ label: "prem", confidence: 84, marketHomeProbability: 86 });
     const belowModel = await seed({ label: "lowmodel", confidence: MC_MIN_MODEL_CONFIDENCE - 1, marketHomeProbability: 86 });
     const belowMarket = await seed({ label: "lowmarket", confidence: 78, marketHomeProbability: 60 });
@@ -266,6 +269,12 @@ async function main() {
       `${await prov(belowModel.id)} / ${await prov(belowMarket.id)}`,
     );
 
+    // The pass runs on fixtures ordinary generation already covered, so a
+    // finally-rejected draft would only duplicate the ordinary picks there.
+    const status = async (id: string) => (await prisma.prediction.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+    check("a finally-rejected draft is archived, not left for review", (await status(belowModel.id)) === "ARCHIVED", await status(belowModel.id));
+    check("a stale-quote draft stays in review to be re-judged", (await status(staleQuote.id)) === "PENDING_REVIEW", await status(staleQuote.id));
+
     console.log("\nintent — agreeing with the market is not enough:");
     check("a draft from another intent is not evaluated", !gate.rejected.some((r) => r.predictionId === wrongIntent.id));
     check(
@@ -274,6 +283,30 @@ async function main() {
       `${await prov(wrongIntent.id)}`,
     );
     check("...and gains no paid-tier tag", (await tags(wrongIntent.id)).length === 0);
+
+    console.log("\nPREMIUM needs model >= 80 AND market >= 80:");
+    check("market 84 / model 76 is promoted to VIP", gate.promotedVip.some((p) => p.predictionId === marketOnlyPremium.id), reasonFor(marketOnlyPremium.id) ?? "");
+    check("...NOT to PREMIUM", !gate.promotedPremium.some((p) => p.predictionId === marketOnlyPremium.id));
+    check("...stamped VIP_GENERATED", (await prov(marketOnlyPremium.id)) === VIP_GENERATED_PROVENANCE, `${await prov(marketOnlyPremium.id)}`);
+    check("...tagged VIP only", JSON.stringify(await tags(marketOnlyPremium.id)) === JSON.stringify(["VIP"]), `${JSON.stringify(await tags(marketOnlyPremium.id))}`);
+
+    console.log("\npublication — only through the full publish gate:");
+    // A real actor this time, so the publish path runs. These seeded fixtures
+    // have no ledger row and no ordinary coverage, so the full gate must hold
+    // every one of them in review — and the other-intent row is never eligible.
+    const withActor = await applyVipPremiumGate({ actorId: author.id });
+    const statusOf = async (id: string) => (await prisma.prediction.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+    check("no promoted pick without ordinary coverage is published", withActor.published.length === 0, `${withActor.published.length}`);
+    // Every promoted pick is held (they may also exceed the day's quota: this
+    // test seeds more paid-pass jobs on one day than VIP_PREMIUM_DAILY_QUOTA).
+    check(
+      "...every promoted pick is held, with NOT_ORDINARY_COVERED",
+      withActor.publishHeld.length === gate.promotedVip.length + gate.promotedPremium.length && withActor.publishHeld.every((h) => h.blocks.includes("NOT_ORDINARY_COVERED")),
+      JSON.stringify(withActor.publishHeld.map((h) => h.blocks)),
+    );
+    check("the promoted rows are still in review", (await statusOf(premiumCase.id)) === "PENDING_REVIEW" && (await statusOf(vipCase.id)) === "PENDING_REVIEW");
+    check("the other-intent (ordinary) row is never published", (await statusOf(wrongIntent.id)) === "PENDING_REVIEW", await statusOf(wrongIntent.id));
+    check("no seeded row was published at all", (await prisma.prediction.count({ where: { id: { in: predictionIds }, status: "PUBLISHED" } })) === 0);
 
     console.log("\nidempotence — a second run must not re-promote or churn:");
     const again = await applyVipPremiumGate();

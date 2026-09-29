@@ -187,9 +187,9 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
    * A row from the dedicated VIP/PREMIUM pass may be re-stamped VIP_GENERATED
    * or PREMIUM_GENERATED later by its odds gate. That is a stricter, more
    * specific classification of the same row and is meant to win. A draft that
-   * FAILS the gate keeps the VIP_ROUTE_CONFIRMED stamped here and competes for
-   * the paid feeds through ordinary curation like any other row — so a target
-   * this pass claimed is never wasted.
+   * is not promoted is archived by the gate: that pass now runs on fixtures
+   * ordinary generation already covered, so its other drafts would only
+   * duplicate the ordinary picks (see src/lib/vipPremiumOverlay.ts).
    */
   // The dedicated Goals pass (src/lib/goalsGeneration.ts): one market, fixed in
   // the prompt and enforced again below by pickGoalsDraft.
@@ -391,7 +391,11 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     }),
   )).filter((p): p is NonNullable<typeof p> => p !== null);
 
-  const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED"
+  // The dedicated paid passes ask for several markets so their odds gate has
+  // more than one selection to judge, not so a double can be built: their
+  // fixture already carries ordinary coverage, and a double is never a paid
+  // pick. Regular-combo and doubles jobs assemble exactly as before.
+  const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED" && input.intent !== "VIP_PREMIUM"
     ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.comboCategories ?? input.categories)
     : null;
 

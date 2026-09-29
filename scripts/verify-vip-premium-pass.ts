@@ -81,9 +81,9 @@ async function main() {
   );
   console.log(`--- Targeting funnel (right now) ---`);
   console.log(`  quota ${VIP_PREMIUM_DAILY_QUOTA}/day, remaining today: ${remaining}`);
-  console.log(`  un-generated fixtures in the odds horizon: ${selection.considered}`);
-  console.log(`  ...claimable, in window${ANY_LEAGUE ? ", ANY league" : ", paid-tier leagues"}: ${String(selection.inScope).padStart(3)}`);
-  console.log(`  ...this run priced itself just now:         ${selection.warmed}`);
+  console.log(`  covered fixtures in the paid window:       ${selection.considered}`);
+  console.log(`  ...eligible (context, no paid pick yet${ANY_LEAGUE ? ", ANY league" : ", paid-tier leagues"}): ${String(selection.inScope).padStart(3)}`);
+  console.log(`  ...this run priced itself just now:         ${selection.warmed} of ${selection.oddsCalls} odds call(s)`);
   console.log(`  ...carrying a quote fresh enough to read:  ${selection.freshlyPriced}`);
   console.log(`  ...the market already prices >= ${VIP_MARKET_FLOOR}:       ${selection.qualified}`);
   console.log(`  targets this run would take:               ${selection.targets.length}`);
@@ -104,7 +104,7 @@ async function main() {
     } else if (remaining <= 0) {
       console.log(`\n--- Live run skipped: daily quota already spent ---`);
     } else {
-      const { runGeneration } = await import("../src/lib/generation/worker");
+      const { runVipPremiumGeneration } = await import("../src/lib/generation/worker");
       const author = await prisma.user.findFirst({
         where: { role: { in: ["SUPER_ADMIN", "ADMIN"] } },
         orderBy: { createdAt: "asc" },
@@ -112,14 +112,10 @@ async function main() {
       });
       if (!author) throw new Error("no admin user to attribute generated predictions to");
 
-      console.log(`\n--- Live run: generating over ${selection.targets.length} market-selected target(s) ---`);
-      const report = await runGeneration({
-        authorId: author.id,
-        intent: VIP_PREMIUM_INTENT,
-        categories: ["FEATURED"],
-        matchKeys: selection.targets.map((t) => t.matchKey),
-        limit: Math.min(remaining, selection.targets.length),
-      });
+      // The overlay run re-selects under the generation lease (paid scope
+      // always; --any-league only widens the preview above).
+      console.log(`\n--- Live run: the scheduled overlay run, one fixture ---`);
+      const report = await runVipPremiumGeneration({ authorId: author.id, limit: remaining });
       console.log(`  claimed ${report.claimed}, succeeded ${report.succeeded}, failed ${report.failed}, predictions ${report.predictionsCreated}`);
 
       const gate = await applyVipPremiumGate();

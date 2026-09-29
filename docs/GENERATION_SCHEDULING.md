@@ -1,6 +1,19 @@
 # Generation scheduling
 
-How the scheduled generation passes are ordered, and why the order is load-bearing.
+How the scheduled generation passes are ordered.
+
+> **Update, Sep 2026: the ordering constraint below no longer applies.** The
+> dedicated VIP/PREMIUM pass is now an overlay on fixtures ordinary generation has
+> already covered (`src/lib/vipPremiumOverlay.ts`), exactly like the Goals pass. It
+> never reads or writes a `PENDING` ledger row, so it cannot race ordinary
+> generation and its pool is the same whenever it fires. The schedule in the table
+> needs no change.
+>
+> Going first never worked in practice: from its first scheduled run on 19 Sep to
+> 28 Sep the pass made **0** model calls in 871 runs. Ordinary generation claimed paid-scope fixtures a median
+> 8 minutes after discovery, about 44 hours before kickoff, when no bookmaker
+> quotes paid-scope fixtures yet (0 of 225 fetches 24–48h out returned a quote).
+> The sections below are kept as the record of why the old design starved.
 
 Scheduling for this app lives in **cron-job.org**, not in the repository —
 `vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,
@@ -58,7 +71,7 @@ All entries: **GET**, header `Authorization: Bearer <CRON_SECRET>`, timezone
 
 | Order | Endpoint | Schedule | Notes |
 |---|---|---|---|
-| 1 | `/api/admin/generate/run?vipPremium=1` | `5,20,35,50 * * * *` | **Must stay ahead of row 2.** |
+| 1 | `/api/admin/generate/run?vipPremium=1` | `5,20,35,50 * * * *` | Overlay; order no longer matters (see the update above). |
 | 2 | `/api/admin/generate/run` | `10,25,40,55 * * * *` | Ordinary generation. Pre-existing; do not move. |
 
 The 5-minute lead is the whole mechanism. `10,25,40,55` is not a proposal — it is
@@ -77,10 +90,10 @@ from generation by two minutes.
   single working session, one of which killed a long-running poller outright. The
   route already treats a held lock as a non-error for the same reason.
 - **Most pokes are no-ops, and they are cheap.** The pass is capped at
-  `VIP_PREMIUM_DAILY_QUOTA` (6) attempts per day, so the large majority of its 96
-  daily runs do nothing. A run with no claimable in-scope fixture returns before
-  any odds warming, so an empty tick spends **zero** api-football calls — only
-  database reads.
+  `VIP_PREMIUM_DAILY_QUOTA` (6) attempts per day and one fixture per run, so the
+  large majority of its 96 daily runs do nothing. It prices a fixture only inside
+  24h of kickoff and only when no quote under 2h old exists, so an empty tick
+  spends **zero** api-football calls — only database reads.
 - **The pass prices its own candidates.** It does not depend on the enrichment odds
   workload having run first, so it carries no ordering constraint against that job.
   This is deliberate: depending on an external scheduler to have warmed odds is

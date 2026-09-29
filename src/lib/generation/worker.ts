@@ -36,6 +36,8 @@ import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage"
 import type { GenerationTier } from "@/lib/leagues";
 import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPlan } from "@/lib/goalsGeneration";
 import { autoPublishGoalsPrediction, backOffGoalsFixture, selectGoalsTargets } from "@/lib/goalsPipeline";
+import { VIP_PREMIUM_INTENT, VIP_PREMIUM_RUN_LIMIT } from "@/lib/vipPremiumOverlay";
+import { backOffVipPremiumFixture, selectVipPremiumTargets, type TargetSelection } from "@/lib/vipPremiumPipeline";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -523,6 +525,114 @@ export async function runGoalsGeneration(opts: { authorId: string; limit?: numbe
 
     base.quotaRemaining = (await getUsageSnapshot()).remaining;
     return { ...base, elapsedMs: Date.now() - startedAt, goals };
+  } finally {
+    await releaseLock(holder);
+  }
+}
+
+export type VipPremiumRunReport = RunReport & { vipPremium: Omit<TargetSelection, "targets"> & { targets: VipPremiumRunTarget[] } };
+type VipPremiumRunTarget = { fixture: string; kickoff: string; market: string; selection: string; marketProbability: number; bookmakers: number; quoteAgeMinutes: number };
+
+/**
+ * The dedicated VIP/PREMIUM pass, as an overlay on covered fixtures. See
+ * src/lib/vipPremiumOverlay.ts for why it no longer claims PENDING ledger rows.
+ *
+ * Shares the generation-run lease, so it can never overlap an ordinary or
+ * Goals run. Odds are warmed inside the lease, before targeting. It does NOT
+ * touch the ledger: each target's GenerationAttempt row stays exactly as
+ * ordinary generation left it. Its attempt record is the VIP_PREMIUM-intent
+ * AIJob, plus an AppLock backoff when a run throws before one is written.
+ *
+ * Generates drafts only. The odds gate (applyVipPremiumGate) runs after this,
+ * in the same request, and decides what is promoted.
+ */
+export async function runVipPremiumGeneration(opts: { authorId: string; limit?: number; now?: Date }): Promise<VipPremiumRunReport> {
+  const startedAt = Date.now();
+  const now = opts.now ?? new Date();
+  const vipPremium: VipPremiumRunReport["vipPremium"] = {
+    targets: [], considered: 0, inScope: 0, freshlyPriced: 0, qualified: 0, oddsCalls: 0, warmed: 0, skipped: {},
+  };
+  const base: RunReport = {
+    ok: true, claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+    cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0, quotaRemaining: 0,
+    elapsedMs: 0, results: [], kickoffMismatches: [],
+  };
+
+  const holder = await acquireLock(now);
+  if (!holder) return { ...base, ok: false, reason: "another generation run is already in progress", elapsedMs: Date.now() - startedAt, vipPremium };
+
+  try {
+    const usage = await getUsageSnapshot();
+    base.quotaRemaining = usage.remaining;
+    if (usage.remaining < MIN_QUOTA_HEADROOM) {
+      return { ...base, ok: false, reason: `api-football daily budget nearly exhausted (${usage.remaining} left)`, elapsedMs: Date.now() - startedAt, vipPremium };
+    }
+
+    const selection = await selectVipPremiumTargets(now, Math.min(opts.limit ?? VIP_PREMIUM_RUN_LIMIT, VIP_PREMIUM_RUN_LIMIT), { warmOdds: true });
+    Object.assign(vipPremium, {
+      ...selection,
+      targets: selection.targets.map((t) => ({
+        fixture: `${t.homeTeam} vs ${t.awayTeam}`,
+        kickoff: t.kickoff.toISOString(),
+        market: t.market,
+        selection: t.selection,
+        marketProbability: Number(t.marketProbability.toFixed(1)),
+        bookmakers: t.bookmakers,
+        quoteAgeMinutes: Math.round(t.quoteAgeMs / 60000),
+      })),
+    });
+    base.claimed = selection.targets.length;
+    base.apiCallsSpent += selection.oddsCalls;
+
+    for (const t of selection.targets) {
+      if (Date.now() - startedAt >= startCutoffMsForCategories(["FEATURED"], SOFT_DEADLINE_MS, VIP_PREMIUM_INTENT)) {
+        base.reason = "soft deadline reached — remaining fixtures deferred to the next run";
+        break;
+      }
+      const label = `${t.homeTeam} vs ${t.awayTeam}`;
+      try {
+        const { predictions, sources } = await generateAndPersistPrediction({
+          home: t.homeTeam,
+          away: t.awayTeam,
+          league: t.leagueName ?? "",
+          leagueApiId: t.leagueApiId,
+          kickoff: t.kickoff.toISOString(),
+          round: t.round,
+          // Calibration only, exactly as the pass always generated: FEATURED
+          // under a paid-scope league routes to the VIP calibration. The gate
+          // re-tags the one row it promotes and archives the rest.
+          categories: ["FEATURED"],
+          intent: VIP_PREMIUM_INTENT,
+          authorId: opts.authorId,
+          homeTeamApiId: t.homeTeamApiId,
+          awayTeamApiId: t.awayTeamApiId,
+          fixtureApiId: t.fixtureApiId,
+        });
+        for (const s of [sources.homeTeam, sources.awayTeam, sources.standings, sources.h2h]) {
+          if (s === "cache") base.cacheHits++;
+          else if (s === "fetched") base.fetches++;
+        }
+        base.apiCallsSpent += sources.apiCalls;
+        base.succeeded++;
+        base.predictionsCreated += predictions.length;
+
+        const written = await prisma.prediction.findMany({ where: { id: { in: predictions.map((p) => p.id) } }, select: { id: true, kickoff: true } });
+        const mismatches = findKickoffMismatches(t.kickoff, written);
+        if (mismatches.length) {
+          base.kickoffMismatches.push(...mismatches);
+          console.error(formatKickoffMismatches(label, mismatches));
+        }
+        base.results.push({ fixture: label, kickoff: t.kickoff.toISOString(), ok: true, predictions: predictions.length });
+      } catch (err: any) {
+        const message = err?.message ?? String(err);
+        await backOffVipPremiumFixture(t.fixtureApiId, now);
+        base.failed++;
+        base.results.push({ fixture: label, kickoff: t.kickoff.toISOString(), ok: false, error: message });
+      }
+    }
+
+    base.quotaRemaining = (await getUsageSnapshot()).remaining;
+    return { ...base, elapsedMs: Date.now() - startedAt, vipPremium };
   } finally {
     await releaseLock(holder);
   }
