@@ -33,6 +33,7 @@ import { toSafePaymentAttempt } from "../src/lib/paystack/recordPaymentAttempt";
 import { newCheckoutReference } from "../src/lib/paystack/checkoutReference";
 import { PAID_PERIOD_MS } from "../src/lib/paystack/entitlement";
 import { planReconciliation } from "../src/lib/paystack/reconcile";
+import { recordCheckoutStart } from "../src/lib/paystack/recordCheckoutStart";
 import { verifyPaystackSignature } from "../src/lib/paystack/verifySignature";
 import { koboFor } from "../src/lib/pricing";
 import { classifyPaymentAttempt } from "../src/lib/paystack/failureCategory";
@@ -60,18 +61,51 @@ const same = (a: unknown, b: unknown) =>
     ? (a as Date | null)?.getTime?.() === (b as Date | null)?.getTime?.()
     : a === b;
 
-function matches(row: Record<string, unknown>, where: Record<string, unknown>) {
-  return Object.entries(where).every(([key, value]) => same(row[key] ?? null, value ?? null));
+// The subset of Prisma's filter language the payment code uses: equality
+// (null means IS NULL), in, gt, lte, not, and nested OR / AND / NOT.
+function cond(value: unknown, condition: unknown): boolean {
+  if (condition && typeof condition === "object" && !(condition instanceof Date)) {
+    const c = condition as Record<string, any>;
+    if ("in" in c) return c.in.includes(value);
+    if ("gt" in c) return value instanceof Date && value.getTime() > c.gt.getTime();
+    if ("lte" in c) return value instanceof Date && value.getTime() <= c.lte.getTime();
+    if ("not" in c) return !same(value ?? null, c.not ?? null);
+  }
+  return same(value ?? null, condition ?? null);
 }
 
+function matches(row: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  return Object.entries(where).every(([key, value]) => {
+    if (key === "OR") return (value as Record<string, unknown>[]).some((w) => matches(row, w));
+    if (key === "AND") return (value as Record<string, unknown>[]).every((w) => matches(row, w));
+    if (key === "NOT") return !matches(row, value as Record<string, unknown>);
+    return cond(row[key], value);
+  });
+}
+
+/**
+ * An in-memory stand-in with the concurrency semantics that matter here.
+ *
+ * Every single statement is atomic. Writes outside a transaction are
+ * serialised against transactions, as a Postgres row lock would make them —
+ * without that, a write could land in the middle of a transaction and then be
+ * erased by its rollback, which no real database does. Reads never wait.
+ * A transaction that throws is rolled back to the state it started from.
+ */
 class FakeDb {
   subs = new Map<string, Sub>();
   attempts = new Map<string, Record<string, any>>();
   private queue: Promise<unknown> = Promise.resolve();
 
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   private project = (s: Sub) => ({ ...s, user: { email: s.email } });
 
-  subscription = {
+  private rawSubscription = {
     findMany: async ({ where, take }: any) => {
       await tick();
       return [...this.subs.values()].filter((s) => matches(s, where)).slice(0, take ?? Infinity).map(this.project);
@@ -97,9 +131,34 @@ class FakeDb {
       }
       return { count };
     },
+    create: async ({ data }: any) => {
+      await tick();
+      if (this.subs.has(data.userId)) throw Object.assign(new Error("Unique constraint"), { code: "P2002" });
+      const row: Sub = {
+        email: `${data.userId}@example.com`,
+        tier: "FREE",
+        status: "PENDING",
+        paystackRef: null,
+        lastPaymentRef: null,
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        ...data,
+      };
+      this.subs.set(data.userId, row);
+      return this.project(row);
+    },
+    upsert: async ({ where, update, create }: any) => {
+      await tick();
+      const found = this.subs.get(where.userId);
+      if (found) {
+        Object.assign(found, update);
+        return this.project(found);
+      }
+      return this.rawSubscription.create({ data: create });
+    },
   };
 
-  paymentAttempt = {
+  private rawPaymentAttempt = {
     findUnique: async ({ where }: any) => {
       await tick();
       return this.attempts.get(where.reference) ?? null;
@@ -119,22 +178,51 @@ class FakeDb {
     },
   };
 
+  private locked<T extends Record<string, (...args: any[]) => Promise<any>>>(raw: T, writes: (keyof T)[]): T {
+    return Object.fromEntries(
+      Object.entries(raw).map(([name, fn]) => [
+        name,
+        writes.includes(name as keyof T) ? (...args: any[]) => this.serial(() => fn(...args)) : fn,
+      ]),
+    ) as T;
+  }
+
+  subscription = this.locked(this.rawSubscription, ["updateMany", "create", "upsert"]);
+  paymentAttempt = this.locked(this.rawPaymentAttempt, ["updateMany", "create"]);
+
   // One transaction at a time, and a throw restores the state it started from.
-  $transaction = (fn: (tx: FakeDb) => Promise<unknown>) => {
-    const run = this.queue.then(async () => {
+  $transaction = (fn: (tx: any) => Promise<unknown>) =>
+    this.serial(async () => {
       const subs = new Map([...this.subs].map(([k, v]) => [k, { ...v }]));
       const attempts = new Map([...this.attempts].map(([k, v]) => [k, { ...v }]));
       try {
-        return await fn(this);
+        return await fn({ subscription: this.rawSubscription, paymentAttempt: this.rawPaymentAttempt });
       } catch (error) {
         this.subs = subs;
         this.attempts = attempts;
         throw error;
       }
     });
-    this.queue = run.catch(() => undefined);
-    return run;
-  };
+}
+
+/**
+ * The same database, except that after this caller's Nth subscription
+ * statement completes it waits for `gate` before continuing. Used to hold one
+ * party exactly between two of its statements while another commits.
+ */
+function pausedAfter(db: FakeDb, statement: number, gate: Promise<void>) {
+  let seen = 0;
+  const subscription = Object.fromEntries(
+    Object.entries(db.subscription).map(([name, fn]) => [
+      name,
+      async (...args: any[]) => {
+        const result = await (fn as (...a: any[]) => Promise<any>)(...args);
+        if (++seen === statement) await gate;
+        return result;
+      },
+    ]),
+  );
+  return new Proxy(db, { get: (target, key) => (key === "subscription" ? subscription : (target as any)[key]) });
 }
 
 type Txn = Record<string, any>;
@@ -512,7 +600,114 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 8. Webhook signatures.
+  // 8. CHECKOUT START vs. A GRANT. Starting a checkout must never cost access
+  //    a payment has just granted, nor shorten or remove access already held,
+  //    in any interleaving. The real recordCheckoutStart (what the initialize
+  //    route runs) is held between its statements while a real grant commits.
+  // -------------------------------------------------------------------------
+  const DAY10 = new Date(NOW.getTime() + 10 * DAY);
+  const startStates: [string, Partial<Sub>, number][] = [
+    // label, row before, the period end the grant must extend from
+    ["a new customer", {}, NOW.getTime()],
+    ["a lapsed VIP", { tier: "VIP", status: "ACTIVE", currentPeriodEnd: new Date(NOW.getTime() - DAY) }, NOW.getTime()],
+    ["an active VIP renewing early", { tier: "VIP", status: "ACTIVE", currentPeriodStart: NOW, currentPeriodEnd: DAY10 }, DAY10.getTime()],
+  ];
+  for (const [label, before, extendsFrom] of startStates) {
+    // 0 = the grant commits before the checkout start begins; N = the checkout
+    // start is paused right after its Nth subscription statement.
+    for (const pauseAfter of [0, 1, 2, 3]) {
+      const w = world();
+      w.addUser("u1", before);
+      const paying = w.startCheckout("u1", "VIP"); // the checkout being paid for
+      w.paystackSays(paying, "u1", "VIP");
+      const next = newCheckoutReference("VIP"); // a second checkout starting now
+
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const startDb = pauseAfter === 0 ? w.db : pausedAfter(w.db, pauseAfter, gate);
+      if (pauseAfter === 0) {
+        assert.equal((await applyCheckoutPayment(paying, undefined, "WEBHOOK", w.deps)).outcome, "GRANTED");
+      }
+      const starting = recordCheckoutStart(startDb as any, "u1", "VIP", next, NOW);
+      if (pauseAfter > 0) {
+        // Let the checkout start reach its pause point (or finish, if it has
+        // fewer statements than that), then commit the grant inside the gap.
+        for (let i = 0; i < 20; i++) await tick();
+        const granted = await applyCheckoutPayment(paying, undefined, "WEBHOOK", w.deps);
+        assert.equal(granted.outcome, "GRANTED", `${label}, pause ${pauseAfter}: the payment is granted`);
+        release();
+      }
+      await starting;
+
+      const sub = w.db.subs.get("u1")!;
+      const where = `${label}, checkout start paused after statement ${pauseAfter}`;
+      assert.equal(sub.status, "ACTIVE", `${where}: the checkout start must not overwrite the grant`);
+      assert.equal(sub.tier, "VIP", `${where}: the paid tier survives`);
+      assert.equal(sub.currentPeriodEnd?.getTime(), extendsFrom + PAID_PERIOD_MS, `${where}: the granted period is intact`);
+      assert.equal(sub.lastPaymentRef, paying, `${where}: the grant is recorded`);
+      assert.equal(sub.paystackRef, next, `${where}: the new checkout is still recorded`);
+    }
+  }
+
+  // The other order: the checkout start lands between the grant's read and
+  // its write. The grant's compare-and-set notices, re-reads, and grants the
+  // payment as superseded — without disturbing the new checkout.
+  {
+    const w = world();
+    w.addUser("u1");
+    const paying = w.startCheckout("u1", "VIP");
+    w.paystackSays(paying, "u1", "VIP");
+    w.slow.set(paying, 40); // the grant has read the row and is waiting on Paystack
+    const granting = applyCheckoutPayment(paying, undefined, "WEBHOOK", w.deps);
+    for (let i = 0; i < 5; i++) await tick();
+    const next = newCheckoutReference("PREMIUM");
+    await recordCheckoutStart(w.db as any, "u1", "PREMIUM", next, NOW);
+    assert.equal((await granting).outcome, "GRANTED", "a grant racing a checkout start is still granted");
+    const sub = w.db.subs.get("u1")!;
+    assert.equal(sub.status, "ACTIVE");
+    assert.equal(sub.tier, "VIP", "for the tier that was paid, not the one being started");
+    assert.equal(sub.currentPeriodEnd!.getTime(), NOW.getTime() + PAID_PERIOD_MS);
+    assert.equal(sub.paystackRef, next, "the new checkout stays in flight");
+  }
+
+  // Existing checkout-start behaviour, unchanged, on its own.
+  {
+    const w = world();
+    const ref = () => newCheckoutReference("PREMIUM");
+    const cases: [string, Partial<Sub> | null, Partial<Sub>][] = [
+      ["no row yet", null, { tier: "PREMIUM", status: "PENDING" }],
+      ["a free account", { tier: "FREE", status: "PENDING" }, { tier: "PREMIUM", status: "PENDING" }],
+      ["an ACTIVE row on a free tier", { tier: "FREE", status: "ACTIVE" }, { tier: "PREMIUM", status: "PENDING" }],
+      ["an expired paid period", { tier: "VIP", status: "ACTIVE", currentPeriodEnd: new Date(NOW.getTime() - 1) }, { tier: "PREMIUM", status: "PENDING" }],
+      ["a cancelled row", { tier: "VIP", status: "CANCELED" }, { tier: "PREMIUM", status: "PENDING" }],
+      ["live paid access", { tier: "VIP", status: "ACTIVE", currentPeriodEnd: DAY10 }, { tier: "VIP", status: "ACTIVE", currentPeriodEnd: DAY10 }],
+      ["comped access (no expiry)", { tier: "PREMIUM", status: "ACTIVE", currentPeriodEnd: null }, { tier: "PREMIUM", status: "ACTIVE", currentPeriodEnd: null }],
+    ];
+    for (const [i, [label, before, after]] of cases.entries()) {
+      const userId = `s${i}`;
+      if (before) w.addUser(userId, before);
+      const reference = ref();
+      await recordCheckoutStart(w.db as any, userId, "PREMIUM", reference, NOW);
+      const sub = w.db.subs.get(userId)!;
+      for (const [key, value] of Object.entries(after)) {
+        assert(same((sub as any)[key] ?? null, value ?? null), `${label}: ${key} should be ${String(value)}, got ${String((sub as any)[key])}`);
+      }
+      assert.equal(sub.paystackRef, reference, `${label}: the checkout reference is recorded`);
+    }
+
+    // Two checkout starts at once for an account with no row: one row, and it
+    // holds one of the two references.
+    const a = ref();
+    const b = ref();
+    await Promise.all([
+      recordCheckoutStart(w.db as any, "double", "PREMIUM", a, NOW),
+      recordCheckoutStart(w.db as any, "double", "PREMIUM", b, NOW),
+    ]);
+    assert([a, b].includes(w.db.subs.get("double")!.paystackRef!), "a double click leaves one row with one of its references");
+  }
+
+  // -------------------------------------------------------------------------
+  // 9. Webhook signatures.
   // -------------------------------------------------------------------------
   const body = JSON.stringify({ event: "charge.success", data: { reference: "bg_VIP_" + "a".repeat(32) } });
   const good = crypto.createHmac("sha512", process.env.PAYSTACK_SECRET_KEY!).update(body).digest("hex");
@@ -524,7 +719,7 @@ async function main() {
   assert.equal(verifyPaystackSignature(body, wrongKey), false, "a body signed with another key is refused");
 
   // -------------------------------------------------------------------------
-  // 9. The one-time fallback's initialisation, read from source: no plan (so
+  // 10. The one-time fallback's initialisation, read from source: no plan (so
   //    Paystack does not narrow channels to recurring-capable ones), the
   //    server's price, our reference, and a way back for a payer who cancels.
   // -------------------------------------------------------------------------
@@ -543,7 +738,7 @@ async function main() {
       "duplicate and concurrent webhook/callback grant once; amount, currency, customer and tier mismatches, " +
       "abandoned, fraud-blocked, declined and pending payments grant nothing; unknown references fail closed; " +
       "a superseded checkout paid late is granted without disturbing the newer one and can never re-grant; " +
-      "concurrent payments each buy a period; reconciliation flags paid-without-access, ignores external " +
+      "concurrent payments each buy a period; a checkout start never overwrites a concurrent grant or shortens existing access; reconciliation flags paid-without-access, ignores external " +
       "transactions, recovers through the verified path and never double-grants; signatures are enforced; " +
       "the one-time initialisation sends no plan and gives a cancel path.",
   );
