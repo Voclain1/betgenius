@@ -13,6 +13,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-subscription-entitlement.ts",
   "tsx scripts/check-onetime-fallback.ts",
   "tsx scripts/check-payment-observability.ts",
+  "tsx scripts/check-payment-reliability.ts",
   "tsx scripts/check-combo-bet-copy.ts",
   "tsx scripts/check-homepage-featured.ts",
   "tsx scripts/check-adaptive-combo.ts",

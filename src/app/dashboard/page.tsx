@@ -220,6 +220,21 @@ export default async function AccountDashboard({
   const paymentReference = searchParams.reference ?? searchParams.trxref ?? null;
   const paymentTier = tierFromCheckoutReference(paymentReference) ??
     (sub?.tier === "VIP" || sub?.tier === "PREMIUM" ? sub.tier as PaidTier : null);
+  // Whether THIS payment landed — not whether the viewer has access. The two
+  // used to be the same test, so a subscriber who already had access and
+  // abandoned a renewal or upgrade came back to "Payment received", and the
+  // purchase event fired for money that never moved. With a reference, the
+  // answer is whether that reference bought a period for this user.
+  const paymentApplied =
+    searchParams.paid !== "1"
+      ? false
+      : paymentReference
+        ? sub?.lastPaymentRef === paymentReference ||
+          !!(await prisma.paymentAttempt.findFirst({
+            where: { reference: paymentReference, userId: session.user.id, entitlementGrantedAt: { not: null } },
+            select: { id: true },
+          }))
+        : hasActivePaidAccess(sub);
 
   const navItems: DashboardNavItem[] = [
     { key: "overview", href: "/dashboard?section=overview", label: "Overview" },
@@ -263,7 +278,7 @@ export default async function AccountDashboard({
           // it — a reference in the URL grants nothing by itself.
           searchParams.paid === "1" ? (
             <PaymentConfirmation
-              activated={hasActivePaidAccess(sub)}
+              activated={paymentApplied}
               reference={paymentReference}
               tier={paymentTier}
               value={paymentTier ? PLAN_PRICING[paymentTier].ngn : null}

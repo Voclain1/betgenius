@@ -15,6 +15,8 @@
     "check:subscription-entitlement": "tsx scripts/check-subscription-entitlement.ts",
     "check:onetime-fallback": "tsx scripts/check-onetime-fallback.ts",
     "check:payment-observability": "tsx scripts/check-payment-observability.ts",
+    "check:payment-reliability": "tsx scripts/check-payment-reliability.ts",
+    "reconcile:payments": "tsx --env-file=.env scripts/reconcile-payments.ts",
     "check:combo-bet": "tsx scripts/check-combo-bet-copy.ts",
     "check:homepage-featured": "tsx scripts/check-homepage-featured.ts",
     "check:adaptive-combo": "tsx scripts/check-adaptive-combo.ts",

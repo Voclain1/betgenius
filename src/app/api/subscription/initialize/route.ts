@@ -66,7 +66,16 @@ export async function POST(req: Request) {
       // NO `plan` — see the block comment at the top of this file.
       reference,
       callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
-      metadata: { userId: session.user.id, tier: parsed.data.tier },
+      // cancel_action is Paystack's documented redirect for the "Cancel
+      // payment" link on its hosted page. Without it a payer who cancels is
+      // left on Paystack with nowhere to go. It lands on the plans with a
+      // notice, and grants nothing — the page only reads it to say so.
+      // userId and tier are the fields verification checks; this one is not.
+      metadata: {
+        userId: session.user.id,
+        tier: parsed.data.tier,
+        cancel_action: `${process.env.NEXTAUTH_URL}/pricing?checkout=cancelled`,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Paystack error";

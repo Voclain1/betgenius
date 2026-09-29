@@ -29,6 +29,20 @@ const Body = z.object({
   reference: z.string().min(1).max(200),
 });
 
+/**
+ * Paystack's status reduced to what the payment page needs to say. `failed`
+ * covers a fraud block and a bank decline alike; the page offers the same
+ * retry for both and the reason is in the admin view.
+ */
+export type CallbackPaymentStatus = "not_completed" | "failed" | "pending" | "unconfirmed";
+
+function paymentStatusFor(status: string | null): CallbackPaymentStatus {
+  if (status === "abandoned") return "not_completed";
+  if (status === "failed" || status === "reversed") return "failed";
+  if (status === "pending" || status === "ongoing" || status === "queued" || status === "processing") return "pending";
+  return "unconfirmed";
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
@@ -52,8 +66,20 @@ export async function POST(req: Request) {
       });
       return NextResponse.json({ activated: false, error: "Could not reach Paystack" }, { status: 502 });
     case "REJECTED":
-      console.error("Paystack callback entitlement rejected", { mismatches: result.mismatches });
-      return NextResponse.json({ activated: false }, { status: 409 });
+      // Almost always the ordinary case: the payer came back without paying.
+      // Paystack's status is returned — to the owner of the reference only —
+      // so the page can offer a retry instead of waiting on a webhook that
+      // will never come. It is the verified status, not anything the browser
+      // said, and it grants nothing.
+      if (result.paystackStatus === "success") {
+        console.error("Paystack callback entitlement rejected", { mismatches: result.mismatches });
+      }
+      return NextResponse.json(
+        { activated: false, paymentStatus: paymentStatusFor(result.paystackStatus) },
+        { status: result.paystackStatus === "success" ? 409 : 200 },
+      );
+    case "RETRY_LATER":
+      return NextResponse.json({ activated: false, paymentStatus: "pending" });
     default:
       // NOT_A_CHECKOUT / AMBIGUOUS. Nothing to apply, and deliberately not an
       // error the payer sees: an unpaid or abandoned checkout lands here, and
