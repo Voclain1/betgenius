@@ -36,7 +36,7 @@ export function CategoryPredictionsList({
   view?: PredictionView;
 }) {
   if (rows.length === 0) {
-    return <div className="card text-gray-400">No published tips in this category yet.</div>;
+    return <div className="card text-gray-400">{emptyFeedMessage(category)}</div>;
   }
 
   // Empty on the dashboard, and on any feed too short to interrupt.
@@ -89,4 +89,20 @@ export function CategoryPredictionsList({
       ))}
     </div>
   );
+}
+
+/**
+ * What an empty feed says. The paid tiers explain their bar instead of looking
+ * broken: a day with no qualifying pick is a normal day for them (the floors
+ * are hard and never relaxed to fill the feed), and readers paying for the
+ * tier deserve to know that is why, not to wonder whether it stopped working.
+ * The numbers are VIP_CONFIDENCE_FLOOR and PREMIUM_CONFIDENCE_FLOOR (src/lib/geniusCuration.ts).
+ */
+export function emptyFeedMessage(category: PredictionCategory): string {
+  if (category === "VIP" || category === "PREMIUM") {
+    const bar = category === "PREMIUM" ? "80%" : "75%";
+    const name = category === "PREMIUM" ? "Premium" : "VIP";
+    return `No ${name} pick has cleared the bar for this day yet. Every ${name} pick needs a confidence of ${bar} or better, and that floor is never lowered to fill the feed, so on quiet days, such as international breaks, there may be none. Picks are added through the day as bookmakers open their markets.`;
+  }
+  return "No published tips in this category yet.";
 }

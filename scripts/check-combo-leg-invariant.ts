@@ -86,7 +86,7 @@ async function main() {
   const setFn = preds.slice(preds.indexOf("export async function setPredictionCategories"), preds.indexOf("export type ReviewAction"));
   check("reads the row's persisted links (stickiness)", /categories: \{ select: \{ category: true \} \}/.test(setFn) && /const held = persisted\?\.categories\.map/.test(setFn));
   check("a legacy live leg returns before any write", /if \(persisted && isLegacyLiveHiddenLeg\(resolvedMarket\.marketType, \{ \.\.\.persisted, categories: held \}\)\) return;/.test(setFn) && setFn.indexOf("isLegacyLiveHiddenLeg(") < setFn.indexOf("$transaction"));
-  check("the invariant is applied after Goals derivation, before the write", /const unique = withHiddenLegCategories\(withGoalsCategory\(categories, resolvedMarket\), resolvedMarket\.marketType, held\);/.test(setFn) && setFn.indexOf("withHiddenLegCategories(") < setFn.indexOf("$transaction"));
+  check("the invariant is applied after Goals derivation, before the write", /const derived = [^;]*withGoalsCategory\(categories, resolvedMarket\);/.test(setFn) && /const unique = withHiddenLegCategories\(derived, resolvedMarket\.marketType, held\);/.test(setFn) && setFn.indexOf("withHiddenLegCategories(") < setFn.indexOf("$transaction"));
 
   // Every category-link writer goes through setPredictionCategories, except
   // curation (which excludes legs) and Bet of the Day (guarded below).

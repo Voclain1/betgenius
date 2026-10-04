@@ -164,6 +164,7 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
         }, {}),
         runnersUp: gate.runnersUp.length,
         duplicateFixture: gate.duplicateFixture.length,
+        repeatsExistingPick: gate.repeatsExisting.length,
         archivedDrafts: gate.archived,
         heldForRequote: gate.heldForRequote,
         published: gate.published.length,
@@ -366,7 +367,7 @@ export async function GET(req: Request) {
       : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
         (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
         (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : "") +
-        (p?.vipPremium ? `, paid overlay: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
+        (p?.vipPremium ? `, paid overlay${p.vipPremium.widened ? ` (widened: ${p.vipPremium.coreFixtures ?? 0} core)` : ""}: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
         (p?.goals ? (p.goals.stoodDown ? `, goals stood down: ${p.goals.stoodDown}` : `, goals: ${p.goals.considered} covered fixtures considered, published ${p.goals.published ?? 0}, held for review ${p.goals.heldForReview ?? 0}`) : ""),
   );
   return response;

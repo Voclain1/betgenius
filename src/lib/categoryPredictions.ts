@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
@@ -7,6 +8,9 @@ import { goalsFeedRows } from "@/lib/goalsCategory";
 import { tagFeedHiddenLegExclusion } from "@/lib/comboLegs";
 
 /** Tag-based feeds that must not surface hidden combo legs. TODAY, SAME_GAME_DOUBLE and GOALS handle legs in their own filters. */
+/** The feeds a paid-only pick may appear in. */
+const PAID_FEEDS: ReadonlySet<PredictionCategory> = new Set<PredictionCategory>(["VIP", "PREMIUM"]);
+
 export const TAG_FEEDS_EXCLUDING_LEGS: ReadonlySet<PredictionCategory> = new Set<PredictionCategory>(["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY"]);
 
 // Shared between /predictions/[category] and the account dashboard so the
@@ -170,6 +174,11 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
       // mid-flight. Today, Combo Bets and Goals exclude legs above already. See
       // src/lib/comboLegs.ts.
       ...(TAG_FEEDS_EXCLUDING_LEGS.has(cat) ? tagFeedHiddenLegExclusion() : {}),
+      // A paid-only pick is shown in VIP/PREMIUM and nowhere else. Without
+      // this, Today (which ignores tags) and any feed whose tag a writer added
+      // would show it unlocked: those pages decide the padlock by the FEED's
+      // category, not the row's.
+      ...(PAID_FEEDS.has(cat) ? {} : NOT_PAID_ONLY),
     },
     // Deterministic, but not the order the page renders in — the ranking in
     // orderForDisplay decides that. This clause exists so the `take` below

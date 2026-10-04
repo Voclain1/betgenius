@@ -26,6 +26,7 @@ import {
   paidPublishFixture,
   paidTierFor,
   planVipPremiumCandidates,
+  repeatsExistingPick,
   qualifyVipPremiumTargets,
   readVipPremiumAttempt,
   vipPremiumOddsToWarm,
@@ -176,6 +177,10 @@ export type TargetSelection = {
   warmed: number;
   /** Why each considered fixture was not targeted. */
   skipped: Partial<Record<OverlaySkipReason | OddsSkipReason, number>>;
+  /** The core was thin, so this run also looked at the widened competitions. */
+  widened: boolean;
+  /** Covered core fixtures inside the window. */
+  coreFixtures: number;
 };
 
 /**
@@ -268,6 +273,8 @@ export async function selectVipPremiumTargets(
     oddsCalls,
     warmed,
     skipped: { ...plan.skipped, ...odds.skipped },
+    widened: plan.widened,
+    coreFixtures: plan.coreFixtures,
   };
 }
 
@@ -305,6 +312,8 @@ export type GateRunResult = {
   runnersUp: GateOutcome[];
   /** Passing selections not promoted because the fixture already has a live dedicated paid pick. */
   duplicateFixture: GateOutcome[];
+  /** Drafts refused because the fixture already carries the same selection as a non-paid pick. */
+  repeatsExisting: GateOutcome[];
   /** This pass's own drafts archived: a final rejection, a runner-up, or a fixture already decided. */
   archived: number;
   /** Drafts left in review because the quote was missing or stale when the gate read it. */
@@ -346,10 +355,27 @@ async function liveRowsOnFixture(ref: FixtureRef) {
     },
     select: {
       id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, provenance: true, status: true,
+      marketType: true, selection: true, market: true, pick: true,
       categories: { select: { category: true } },
     },
   });
   return candidates.filter((r) => paidFixtureKey(r) === key || (ref.fixtureApiId != null && r.fixtureApiId === ref.fixtureApiId));
+}
+
+/**
+ * The selections already live on a target's fixture, as "Market: Pick" labels
+ * for the prompt (lowerRiskPickBlock). Every non-archived row counts, hidden
+ * combo legs included: a paid pick that repeats a leg would still be a pick the
+ * reader can already see inside a free double.
+ */
+export async function existingPicksOnFixture(target: {
+  fixtureApiId: number;
+  homeTeamApiId: number;
+  awayTeamApiId: number;
+  kickoff: Date;
+}): Promise<string[]> {
+  const rows = await liveRowsOnFixture({ id: "", ...target });
+  return [...new Set(rows.filter((r) => r.marketType !== "SAME_GAME_DOUBLE").map((r) => `${r.market}: ${r.pick}`))];
 }
 
 const isDedicated = (provenance: string | null) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(provenance ?? "");
@@ -501,7 +527,7 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
 
   const result: GateRunResult = {
     evaluated: mine.length, fixtures: byFixture.size,
-    promotedVip: [], promotedPremium: [], rejected: [], runnersUp: [], duplicateFixture: [],
+    promotedVip: [], promotedPremium: [], rejected: [], runnersUp: [], duplicateFixture: [], repeatsExisting: [],
     archived: 0, heldForRequote: 0, published: [], publishHeld: [], ordinaryPaidTagsRemoved: 0,
   };
 
@@ -540,15 +566,27 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
       verdict: s.verdict,
     });
 
-    const tierOf = (s: (typeof scored)[number]) => paidTierFor(s.verdict, s.row.confidence);
-    for (const s of scored) if (!tierOf(s)) result.rejected.push(describe(s));
+    // A paid pick is its own pick. A draft that repeats a selection the
+    // fixture already carries (a free pick, a Banker, a leg of a free double)
+    // is refused outright, whatever the market says: re-selling a pick a
+    // reader can already see is not a paid pick.
+    const onFixture = await liveRowsOnFixture(group[0]);
+    const groupIds = new Set(group.map((d) => d.id));
+    const others = onFixture.filter((r) => !groupIds.has(r.id));
+    const repeats = new Set(scored.filter((s) => repeatsExistingPick(s.row, others)).map((s) => s.id));
+    for (const s of scored) if (repeats.has(s.id)) result.repeatsExisting.push(describe(s));
+
+    const tierOf = (s: (typeof scored)[number]) => (repeats.has(s.id) ? null : paidTierFor(s.verdict, s.row.confidence));
+    for (const s of scored) if (!repeats.has(s.id) && !tierOf(s)) result.rejected.push(describe(s));
 
     // At most ONE passing selection per fixture. Two picks on one match, both
     // sold as market-confirmed, would read as two independent confirmations of
     // the same thing.
     const passing = scored.filter((s) => tierOf(s)).sort(compareMarketConfirmed);
     if (passing.length === 0) {
-      const retryable = scored.filter((s) => (RETRYABLE_GATE_REASONS as readonly string[]).includes(s.verdict.reason ?? ""));
+      const retryable = scored.filter(
+        (s) => !repeats.has(s.id) && (RETRYABLE_GATE_REASONS as readonly string[]).includes(s.verdict.reason ?? ""),
+      );
       result.heldForRequote += retryable.length;
       await archive(scored.filter((s) => !retryable.includes(s)).map((s) => s.id));
       continue;
@@ -556,8 +594,6 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
 
     const winner = passing[0];
     const tier = tierOf(winner)!;
-    const onFixture = await liveRowsOnFixture(winner.row);
-    const groupIds = new Set(group.map((d) => d.id));
     const existingDedicated = onFixture.find(
       (r) => !groupIds.has(r.id) && (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? ""),
     );

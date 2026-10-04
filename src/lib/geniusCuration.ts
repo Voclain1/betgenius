@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
+import { VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE, isPaidOnlyProvenance } from "@/lib/paidOnly";
 
 export const CURATION_MIN = 5;
 export const CURATION_MAX = 15;
@@ -98,8 +99,9 @@ export const VIP_ROUTE_PROVENANCE = "VIP_ROUTE_CONFIRMED" as const;
  * 86.5% (n=37) against >= 75's 84.2%. The market separates the tiers; the
  * confidence floor barely does.
  */
-export const VIP_GENERATED_PROVENANCE = "VIP_GENERATED" as const;
-export const PREMIUM_GENERATED_PROVENANCE = "PREMIUM_GENERATED" as const;
+// Defined in paidOnly.ts, which has no imports, so pure modules can reason
+// about paid-only rows without loading this one (it imports Prisma).
+export { VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE, PAID_ONLY_PROVENANCES, isPaidOnlyProvenance, NOT_PAID_ONLY } from "@/lib/paidOnly";
 
 /**
  * Every marker that means "a dedicated pass produced this and something
@@ -338,9 +340,17 @@ export function planCuration(
   // cleared only the VIP bar is protected in VIP's feed and is simply absent
   // from PREMIUM's, which is exactly what makes PREMIUM a strict subset rather
   // than a relabelling of VIP.
+  //
+  // Only in the paid feeds for a paid-only pick: one that strayed into a free
+  // feed is not a fixed point there, it is removed (see belongsHere below).
   const dedicatedIds = new Set(
     rows
-      .filter((r) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") && tagged.has(r.id))
+      .filter(
+        (r) =>
+          (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") &&
+          tagged.has(r.id) &&
+          (rule.paid || !isPaidOnlyProvenance(r.provenance)),
+      )
       .map((r) => r.id),
   );
 
@@ -402,7 +412,10 @@ export function planCuration(
   const claimed = new Set<string>(rule.paid ? paidClaimedFixtures : []);
   if (rule.paid) for (const r of rows) if (protectedIds.has(r.id)) claimed.add(paidFixtureKey(r));
 
-  const open = rows.filter((r) => !protectedIds.has(r.id));
+  // A paid-only pick belongs to VIP/PREMIUM alone: the free tiers never select
+  // it, and if one somehow carries a free tag, it is removed below.
+  const belongsHere = (r: CurationRow) => rule.paid || !isPaidOnlyProvenance(r.provenance);
+  const open = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r));
   const doublesExcluded = open.filter((r) => !isPaidEligible(r)).length;
   const routeExcluded = open.filter((r) => isPaidEligible(r) && !hasRequiredRoute(r)).length;
   let curatable = open.filter((r) => hasRequiredRoute(r) && isPaidEligible(r));

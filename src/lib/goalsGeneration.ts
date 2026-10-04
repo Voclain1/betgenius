@@ -4,6 +4,7 @@ import { scanDraftForInternalTerminology } from "@/lib/houseVoice";
 import { LEAGUE_CATALOGUE, leaguePriorityRank, normalizeLeagueName } from "@/lib/leagues";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { matchKey } from "@/lib/slug";
+import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
 
 /**
@@ -255,6 +256,10 @@ export function planGoalsTargets(input: {
   const byFixture = new Map<string, GoalsExistingRow[]>();
   for (const r of input.rows) {
     if (!LIVE_STATUSES.has(r.status)) continue;
+    // A paid-only VIP/PREMIUM pick is invisible here: it is neither coverage
+    // nor a public total-goals pick, so a paid Over 1.5 never stops the free
+    // Goals pick on the same fixture (see PAID_ONLY_PROVENANCES).
+    if (isPaidOnlyProvenance(r.provenance)) continue;
     const keys = [r.fixtureApiId != null ? `f${r.fixtureApiId}` : null, matchKey(r)].filter((k): k is string => !!k);
     for (const k of keys) (byFixture.get(k) ?? byFixture.set(k, []).get(k)!).push(r);
   }
@@ -397,7 +402,7 @@ export function goalsPublishFixture(
   ledgerStatus: string | null,
   rows: ReadonlyArray<{ id: string; status: string; marketType: string; provenance: string | null; categories: string[] }>,
 ): GoalsPublishFixture {
-  const others = rows.filter((r) => r.id !== self.id && LIVE_STATUSES.has(r.status));
+  const others = rows.filter((r) => r.id !== self.id && LIVE_STATUSES.has(r.status) && !isPaidOnlyProvenance(r.provenance));
   return {
     ordinaryCovered: ledgerStatus === "SUCCEEDED" && others.some((r) => r.provenance !== GOALS_GENERATED_PROVENANCE),
     // An O/U row carrying SAME_GAME_DOUBLE is a hidden leg: not public supply.
