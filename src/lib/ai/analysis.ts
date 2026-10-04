@@ -547,6 +547,55 @@ the pick. Still return "matchPreview" and "keyFactors" as usual.
 `;
 }
 
+/**
+ * The market guidance for the dedicated VIP/PREMIUM pass.
+ *
+ * Its fixture already carries ordinary picks; the paid pick has to be a
+ * DIFFERENT selection, and the one the evidence makes most likely to land. So
+ * the model is shown what is already there and steered to the low-variance
+ * markets the odds check can price: double chance, draw no bet, a conservative
+ * total-goals line, BTTS, and the straight result only for a clear favourite.
+ *
+ * Team totals and handicaps are not offered. The odds feed holds no team-total
+ * prices, and a handicap needs a sourced line, so neither could be checked
+ * against the market and both would be thrown away after the model call.
+ *
+ * Worded as a fact about the task, like the Goals and handicap blocks: no
+ * product, tier or pipeline names, which the house-voice scan rejects if the
+ * model echoes them. It does not mention prices either — the model is never
+ * shown the market, so the agreement measured afterwards stays independent.
+ */
+export function lowerRiskPickBlock(avoidPicks: readonly string[]): string {
+  const existing = avoidPicks.length
+    ? `These selections are ALREADY on this fixture. Do not return any of them again —
+not the same market with the same selection:
+${avoidPicks.map((p) => `  - ${p}`).join("\n")}
+`
+    : "";
+  return `
+LOWER-RISK SELECTION — READ BEFORE CHOOSING.
+
+${existing}Return several entries in "predictions", each a different market, and order them
+from the most likely to land to the least. The aim is the selection the evidence
+makes MOST likely to win, not the most interesting one. Consider, in this order:
+
+  - DOUBLE_CHANCE on the side the evidence favours (HOME_OR_DRAW / AWAY_OR_DRAW)
+  - DRAW_NO_BET on the stronger side
+  - OVER_UNDER on a conservative line (OVER 1.5, or UNDER 3.5 for a tight match)
+  - BTTS, only when both attacks and both defences point the same way
+  - MATCH_WINNER, only for a clearly stronger side
+
+Do not settle for a near-formality: double chance on an overwhelming favourite,
+or OVER 0.5 goals, is likely but pays almost nothing. Choose the safest selection
+that is still a real bet. On a mismatch that usually means the favourite to win,
+or OVER 1.5 / OVER 2.5 goals, rather than double chance.
+
+Use only DOUBLE_CHANCE, DRAW_NO_BET, OVER_UNDER, BTTS and MATCH_WINNER here. Give
+each entry the confidence the evidence actually supports. A cautious market is not
+a reason to inflate it, and if nothing is genuinely likely, return fewer entries.
+`;
+}
+
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
 
@@ -592,6 +641,12 @@ export async function generatePredictionForFixture(input: {
    * not a guarantee.
    */
   goalsOnly?: boolean;
+  /**
+   * The dedicated VIP/PREMIUM pass: a different, lower-risk selection than the
+   * picks already on the fixture. See lowerRiskPickBlock. Absent, the prompt is
+   * byte-identical to ordinary generation's.
+   */
+  lowerRisk?: { avoidPicks: readonly string[] };
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -671,7 +726,7 @@ line, and to justify it from the evidence rather than from the prices above.
 Return selection as {"value": "HOME" | "DRAW" | "AWAY", "line": ${hc.line}}.
 `
     : "";
-  const goalsBlock = input.goalsOnly && !hc ? goalsMarketBlock() : "";
+  const goalsBlock = input.goalsOnly && !hc ? goalsMarketBlock() : input.lowerRisk && !hc ? lowerRiskPickBlock(input.lowerRisk.avoidPicks) : "";
   const marketInstruction = hc
     ? `Return JSON only. marketType must be exactly "EUROPEAN_HANDICAP", with the selection shape given in the handicap constraint above.`
     : input.goalsOnly

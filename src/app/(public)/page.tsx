@@ -5,7 +5,7 @@ import { Lock } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueBadge } from "@/components/LeagueBadge";
@@ -245,8 +245,10 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   const featuredRows = featured.rows.map((r) => ({ ...r, outcome: showOutcomes ? r.outcome : null }));
 
   const genius = geniusPreview.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
-    return canView ? { ...r, locked: false } : { ...r, pick: "LOCKED", confidence: null, locked: true };
+    // Fetched by its GENIUS tag, so GENIUS is a category it may present under.
+    const category = presentedCategory(r.category, ["GENIUS"]);
+    const canView = canViewCategory(category, viewer.tier, viewer.status, viewer.role);
+    return canView ? { ...r, category, locked: false } : { ...r, category, pick: "LOCKED", confidence: null, locked: true };
   });
 
   return (

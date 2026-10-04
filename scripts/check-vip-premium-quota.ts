@@ -38,7 +38,9 @@ const check = (label: string, ok: boolean, got?: unknown) => {
 
 function stub(request: string, exports: Record<string, unknown>) {
   const resolved = require.resolve(request);
-  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports } as unknown as NodeJS.Module;
+  // __esModule: production loads some of these through a dynamic import(), which
+  // only sees a stub's named exports when it is marked as an ES module.
+  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports: { __esModule: true, ...exports } } as unknown as NodeJS.Module;
 }
 
 // The reservation path writes through prisma; capture the writes instead.

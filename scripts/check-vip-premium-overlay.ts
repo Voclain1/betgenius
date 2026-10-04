@@ -34,7 +34,9 @@ const eq = (label: string, got: unknown, want: unknown) => check(label, JSON.str
 
 function stub(request: string, exports: Record<string, unknown>) {
   const resolved = require.resolve(request);
-  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports } as unknown as NodeJS.Module;
+  // __esModule: production loads some of these through a dynamic import(), which
+  // only sees a stub's named exports when it is marked as an ES module.
+  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports: { __esModule: true, ...exports } } as unknown as NodeJS.Module;
 }
 
 // ── In-memory Prisma: reads from `db`, records every write ─────────────────
@@ -189,8 +191,25 @@ async function main() {
     eq("overlay: accepts a fixture ordinary generation already covered (ledger SUCCEEDED)", plan([ok]).candidates.map((c: Any) => c.matchKey), [ok.key]);
     const pending = fixture(2, { status: "PENDING" });
     eq("overlay: does not depend on PENDING — an unclaimed PENDING fixture is not its to take", plan([pending]).skipped, { NOT_YET_GENERATED: 1 });
-    eq("overlay: refuses an out-of-scope competition (Eredivisie)", plan([fixture(3, { league: 88 })]).skipped, { OUT_OF_SCOPE: 1 });
-    eq("overlay: ...unless the verification-only anyLeague flag is set", plan([fixture(3, { league: 88 })], { anyLeague: true }).candidates.length, 1);
+    // Scope: the explicit core always; the widened competitions only when the core is thin.
+    const core3 = [fixture(31), fixture(32), fixture(33)];
+    const healthy = plan([...core3, fixture(3, { league: 88 })]);
+    eq("overlay: a healthy core day refuses a widened competition (Eredivisie)", [healthy.skipped, healthy.widened, healthy.coreFixtures], [{ OUT_OF_SCOPE: 1 }, false, 3]);
+    const thin = plan([fixture(3, { league: 88 })]);
+    eq("overlay: ...a thin core day takes it, and says it widened", [thin.candidates.length, thin.widened, thin.coreFixtures], [1, true, 0]);
+    eq("overlay: a thin day takes the Nations League", plan([fixture(34, { league: 5 })]).candidates.length, 1);
+    eq("overlay: a thin day still refuses a lower division (2. Bundesliga)", plan([fixture(35, { league: 79 })]).skipped, { OUT_OF_SCOPE: 1 });
+    eq("overlay: ...and a senior women's league (WSL)", plan([fixture(36, { league: 44 })]).skipped, { OUT_OF_SCOPE: 1 });
+    eq("overlay: ...and friendlies", plan([fixture(37, { league: 10 })]).skipped, { OUT_OF_SCOPE: 1 });
+    eq("overlay: ...unless the verification-only anyLeague flag is set", plan([fixture(35, { league: 79 })], { anyLeague: true }).candidates.length, 1);
+    eq("scope: the core adds UCL, UEL, UECL, World Cup and Euros to the twelve",
+      [...overlay.PAID_CORE_LEAGUE_IDS].filter((id: number) => !(VIP_PROXY_LEAGUE_IDS as number[]).includes(id)).sort((a: number, b: number) => a - b), [1, 2, 3, 4, 848]);
+    const ucl = [fixture(41, { league: 2 }), fixture(42, { league: 3 }), fixture(43, { league: 848 })];
+    eq("scope: a European club night is a healthy core, not a thin one", overlay.paidScopeFor(ucl.map((f) => f.ledger), NOW).widened, false);
+    eq("scope: covered core fixtures outside the window do not count", overlay.paidScopeFor([fixture(44, { kickoffIn: 60 }).ledger, fixture(45, { kickoffIn: 60 }).ledger, fixture(46, { kickoffIn: 60 }).ledger], NOW).widened, true);
+    eq("scope: unclaimed (PENDING) core fixtures do not count", overlay.paidScopeFor([fixture(47, { status: "PENDING" }).ledger, fixture(48, { status: "PENDING" }).ledger, fixture(49, { status: "PENDING" }).ledger], NOW).widened, true);
+    check("scope: the widened set holds no core league and no women's league",
+      overlay.PAID_WIDENED_LEAGUE_IDS.every((id: number) => !overlay.PAID_CORE_LEAGUE_IDS.includes(id) && ![44, 82, 142, 254].includes(id)));
     eq("overlay: paid scope is still the same 12 competitions",
       [...VIP_PROXY_LEAGUE_IDS].sort((a: number, b: number) => a - b), [39, 40, 45, 48, 61, 66, 78, 81, 135, 137, 140, 143]);
     eq("overlay: under 12h to kickoff is outside the window", plan([fixture(4, { kickoffIn: 6 })]).skipped, { OUTSIDE_WINDOW: 1 });
@@ -254,6 +273,22 @@ async function main() {
     eq("tier: an unconfirmed verdict is nothing", overlay.paidTierFor({ confirmed: false, marketProbability: 90 }, 90), null);
   }
 
+  // ── 3b. Draw No Bet at the gate ─────────────────────────────────────────
+  {
+    const mc = require("../src/lib/marketConfirmed");
+    const odds = oddsFor(70); // Home 70, Draw 16.5, Away 13.5 (de-vigged)
+    const dnbHome = mc.drawNoBetProbability(odds, "Home");
+    check("dnb: the side's share of the non-draw outcomes", Math.abs(dnbHome.probability - (70 / (70 + 13.5)) * 100) < 0.01, dnbHome);
+    const v = (confidence: number, o: Any = odds, fetchedAt: Date | null = new Date(NOW.getTime() - 20 * 60_000)) =>
+      mc.evaluateMarketConfirmed({ marketType: "DRAW_NO_BET", selection: { value: "HOME" }, confidence, odds: o, fetchedAt, now: NOW });
+    check("dnb: confirmed when the model agrees with the derived price", v(80).confirmed === true && v(80).value === "Home (draw no bet)", v(80));
+    eq("dnb: still held to the gap (market ~90, model 76)", v(76, oddsFor(80)).reason, "GAP_TOO_WIDE");
+    eq("dnb: still held to a fresh quote", v(84, odds, new Date(NOW.getTime() - 3 * H)).reason, "STALE_QUOTE");
+    eq("dnb: still held to the book depth", v(84, oddsFor(70, 3)).reason, "THIN_COVERAGE");
+    eq("dnb: an away DNB on a home favourite is below the floor", mc.evaluateMarketConfirmed({ marketType: "DRAW_NO_BET", selection: { value: "AWAY" }, confidence: 80, odds, fetchedAt: new Date(NOW.getTime() - 20 * 60_000), now: NOW }).reason, "MARKET_BELOW_FLOOR");
+    eq("dnb: team totals stay out — no bookmaker market to check them against", mc.evaluateMarketConfirmed({ marketType: "TEAM_TOTAL", selection: { side: "HOME", line: 0.5, direction: "OVER" }, confidence: 85, odds, fetchedAt: NOW, now: NOW }).reason, "INELIGIBLE_MARKET");
+  }
+
   // ── 4. Curation ─────────────────────────────────────────────────────────
   {
     const TODAY = new Date("2026-10-10T18:00:00.000Z");
@@ -265,6 +300,52 @@ async function main() {
       kickoff: o.kickoff ?? TODAY, fixtureApiId: 5000 + (o.fx ?? ++seq), homeTeamApiId: 100 + (o.fx ?? seq), awayTeamApiId: 200 + (o.fx ?? seq), categories: o.tags ?? [],
     });
     const plan = (cat: string, rows: Any[], claimed: string[] = []) => curation.planCuration(cat, rows, new Set(claimed));
+
+    // A paid-only pick belongs to VIP/PREMIUM alone.
+    const paidOnly = row("paid88", 88, { prov: "VIP_GENERATED", tags: ["VIP"] });
+    check("isolation: GENIUS never selects a paid-only pick", !plan("GENIUS", [paidOnly, row("g72", 72)]).selectedIds.includes("paid88"));
+    eq("isolation: ...and removes it if something tagged it GENIUS", plan("GENIUS", [{ ...paidOnly, categories: ["VIP", "GENIUS"] }, row("g72", 72)]).removed, ["paid88"]);
+    check("isolation: VIP keeps it", plan("VIP", [paidOnly], [curation.paidFixtureKey(paidOnly)]).selectedIds.includes("paid88"));
+
+    // Ordinary picks fill a paid slot only as a fallback.
+    {
+      const at = (h: number) => new Date(NOW.getTime() + h * H);
+      const r = (id: string, kickoffIn: number, o: Any = {}) => ({ id, leagueApiId: o.league ?? 39, kickoff: at(kickoffIn), fixtureApiId: o.fx ?? 7000 + kickoffIn, homeTeamApiId: 70 + kickoffIn, awayTeamApiId: 80 + kickoffIn });
+      const awaiting = (rows: Any[], attempted: number[] = [], open: string[] = []) =>
+        overlay.fixturesAwaitingDedicated({ rows, attemptedFixtureApiIds: new Set(attempted), openDraftKeys: new Set(open), now: NOW });
+      const far = r("far", 20), near = r("near", 6), farBig = r("fb", 20, { league: 79 });
+      eq("fallback: an unattempted core fixture still inside the pass's window waits for it", [...awaiting([far])], [curation.paidFixtureKey(far)]);
+      eq("fallback: ...once attempted, ordinary curation may fill it", [...awaiting([far], [far.fixtureApiId])], []);
+      eq("fallback: ...or once the window closed with no qualifying market (under 12h)", [...awaiting([near])], []);
+      eq("fallback: a dedicated draft still in review keeps it waiting, even when near", [...awaiting([near], [near.fixtureApiId], [curation.paidFixtureKey(near)])], [curation.paidFixtureKey(near)]);
+      eq("fallback: ...but never inside the last 2h", [...awaiting([r("last", 1)], [], [curation.paidFixtureKey(r("last", 1))])], []);
+      eq("fallback: outside the paid core nothing waits", [...awaiting([farBig])], []);
+      const ord = row("ord90", 90, { fx: 77 });
+      const ded = row("ded82", 82, { fx: 77, prov: "VIP_GENERATED", tags: ["VIP"] });
+      const p = curation.planCuration("VIP", [ord], new Set(), new Set([curation.paidFixtureKey(ord)]));
+      check("fallback: curation holds an ordinary pick back while its fixture awaits the pass", !p.selectedIds.includes("ord90") && p.awaitingDedicatedExcluded === 1, p);
+      check("fallback: ...a dedicated pick on such a fixture is never held back", curation.planCuration("VIP", [ded], new Set(), new Set([curation.paidFixtureKey(ded)])).selectedIds.includes("ded82"));
+      check("fallback: GENIUS ignores the rule entirely", curation.planCuration("GENIUS", [ord], new Set(), new Set([curation.paidFixtureKey(ord)])).selectedIds.includes("ord90"));
+    }
+
+    // A free copy of a paid pick never presents as paid.
+    {
+      const { presentedCategory } = require("../src/lib/access");
+      eq("presented: a free primary stays", presentedCategory("BANKER", ["BANKER", "PREMIUM"]), "BANKER");
+      eq("presented: a VIP primary on a row also in Today's mix shows as the free category", presentedCategory("VIP", [{ category: "VIP" }, { category: "FEATURED" }]), "FEATURED");
+      eq("presented: PREMIUM + BANKER presents as BANKER", presentedCategory("PREMIUM", ["VIP", "PREMIUM", "BANKER"]), "BANKER");
+      eq("presented: a paid-only row presents as paid", presentedCategory("VIP", ["VIP", "PREMIUM"]), "VIP");
+      eq("presented: with no links, the primary", presentedCategory("VIP", null), "VIP");
+      const root = join(__dirname, "..");
+      const src = (p: string) => readFileSync(join(root, p), "utf8");
+      check("presented: the stored primary is always the free category when one exists",
+        /data: \{ category: presentedCategory\(unique\[0\], unique\) \}/.test(src("src/lib/predictions.ts")));
+      const pages = ["src/app/(public)/predictions/match/[slug]/page.tsx", "src/app/(public)/predictions/team/[slug]/page.tsx", "src/app/(public)/predictions/cup/[slug]/page.tsx",
+        "src/app/(public)/following/page.tsx", "src/app/(public)/page.tsx", "src/app/(public)/predictions/btts/page.tsx", "src/app/(public)/predictions/double-chance/page.tsx",
+        "src/app/(public)/predictions/over-2-5-goals/page.tsx", "src/app/api/predictions/route.ts"];
+      const bare = pages.filter((p) => /canViewCategory\((r|row|p)\.category as PredictionCategory/.test(src(p)));
+      eq("presented: no page gates on the bare stored primary any more", bare, []);
+    }
 
     const pool = [row("c90", 90), row("c78", 78), row("c70", 70), row("c68", 68), row("c65", 65), row("c60", 60)];
     eq("curation: VIP selects only rows at or above 75 — no top-up to five", plan("VIP", pool).selectedIds, ["c90", "c78"]);
@@ -445,6 +526,26 @@ async function main() {
     check("publish: legacy day — publishes, but leaves the old day's ordinary paid tags alone", published("l84") && r9.ordinaryPaidTagsRemoved === 0 && !writes.some((w) => w.startsWith("link.strip")), { r9, writes });
     eq("gate: never writes the generation ledger", writes.filter((w) => w.startsWith("generationAttempt")), []);
 
+    // A paid pick is its own pick: a repeat of a selection already on the
+    // fixture is refused, and a different, safer market on it is promoted.
+    const banker = { ...g.row, id: "bank", marketType: "MATCH_WINNER", selection: { value: "HOME" }, status: "PUBLISHED", provenance: "BANKER_GENERATED", categories: [{ category: "BANKER" }] };
+    const dnb = { ...draft("dnb84", 84, g), marketType: "DRAW_NO_BET", selection: { value: "HOME" }, market: "Draw No Bet" };
+    // A 72% favourite: DNB on it is ~85% (fair ~1.18), inside the paid band.
+    const rRep = await gate(g, [draft("mw84", 84, g), dnb], 72, [banker]);
+    eq("distinct: the straight win the Banker already carries is refused", rRep.repeatsExisting.map((o: Any) => o.predictionId), ["mw84"]);
+    eq("distinct: ...and the draw-no-bet on the same side is promoted instead", [...rRep.promotedVip, ...rRep.promotedPremium].map((o: Any) => o.predictionId), ["dnb84"]);
+    check("distinct: ...the repeat is archived, never left for review", writes.includes("prediction.archive:mw84"), writes);
+    check("distinct: ...and the Banker keeps every tag — nothing on it is stripped", !writes.some((w) => w.startsWith("link.strip:bank")), writes);
+    const rOnly = await gate(g, [draft("only84", 84, g)], 86, [banker]);
+
+    check("distinct: a fixture whose only draft repeats an existing pick promotes nothing", rOnly.promotedVip.length + rOnly.promotedPremium.length === 0 && rOnly.heldForRequote === 0 && writes.includes("prediction.archive:only84"), { rOnly, writes });
+    // Significant odds: a selection the market prices as a near-formality is not a paid pick.
+    eq("odds floor: fair odds of at least 1.15, i.e. a market of at most ~87%", [overlay.PAID_MIN_FAIR_ODDS, Number(overlay.PAID_MAX_MARKET_PROBABILITY.toFixed(2))], [1.15, 86.96]);
+    eq("odds floor: a confirmed 90% market earns no tier", overlay.paidTierFor({ confirmed: true, marketProbability: 90 }, 88), null);
+    eq("odds floor: ...86% still earns PREMIUM", overlay.paidTierFor({ confirmed: true, marketProbability: 86 }, 84), "PREMIUM");
+    const rShort = await gate(g, [draft("short88", 88, g)], 90, [ordinaryVip]);
+    check("odds floor: the gate promotes nothing on a 90% favourite's straight win, and archives it", rShort.promotedVip.length + rShort.promotedPremium.length === 0 && writes.includes("prediction.archive:short88"), { rShort, writes });
+
     // The publish verdict itself, rule by rule.
     const pubRow = { provenance: "PREMIUM_GENERATED", intent: "VIP_PREMIUM", status: "PENDING_REVIEW", rewriteCount: 0, marketType: "MATCH_WINNER", confidence: 84, contextComplete: true, leagueApiId: 39, categories: ["VIP", "PREMIUM"] };
     const okFx = { ordinaryCovered: true, conflictingDedicated: false, withinDailyQuota: true };
@@ -461,16 +562,30 @@ async function main() {
     eq("verdict: never a rewritten row", blocks({ rewriteCount: 1 }), ["REWRITTEN"]);
     eq("verdict: never a double", blocks({ marketType: "SAME_GAME_DOUBLE" }), ["COMBO"]);
     eq("verdict: never a hidden leg", blocks({ categories: ["VIP", "PREMIUM", "SAME_GAME_DOUBLE"] }), ["HIDDEN_LEG"]);
-    eq("verdict: only in the paid competitions", blocks({ leagueApiId: 88 }), ["OUT_OF_SCOPE"]);
+    eq("verdict: only in the paid competitions", blocks({ leagueApiId: 79 }), ["OUT_OF_SCOPE"]);
+    eq("verdict: a widened competition publishes whatever the core did since", blocks({ leagueApiId: 88 }), []);
+    eq("verdict: never a repeat of a pick already on the fixture", blocks({}, pass, { repeatsExisting: true }), ["REPEATS_EXISTING_PICK"]);
     eq("verdict: only with live match context", blocks({ contextComplete: false }), ["NO_MATCH_CONTEXT"]);
     eq("verdict: only on an ordinary-covered fixture", blocks({}, pass, { ordinaryCovered: false }), ["NOT_ORDINARY_COVERED"]);
     eq("verdict: never beside another dedicated pick", blocks({}, pass, { conflictingDedicated: true }), ["CONFLICTING_DEDICATED_PICK"]);
     eq("verdict: never beyond the daily quota", blocks({}, pass, { withinDailyQuota: false }), ["OVER_DAILY_QUOTA"]);
     eq("verdict: must carry the VIP tag", blocks({ categories: ["PREMIUM"] }), ["NOT_TAGGED_VIP"]);
-    const me = { id: "me", provenance: "VIP_GENERATED" };
-    eq("fixture: an ordinary row on a SUCCEEDED fixture is coverage", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "o", provenance: "VIP_ROUTE_CONFIRMED" }], true), { ordinaryCovered: true, conflictingDedicated: false, withinDailyQuota: true });
-    eq("fixture: a Goals row alone is not coverage", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "g", provenance: "GOALS_GENERATED" }], true).ordinaryCovered, false);
-    eq("fixture: another dedicated row conflicts", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "d", provenance: "PREMIUM_GENERATED" }], true).conflictingDedicated, true);
+    const dc = { value: "HOME_OR_DRAW" };
+    const me = { id: "me", provenance: "VIP_GENERATED", marketType: "DOUBLE_CHANCE", selection: dc };
+    const mw = { marketType: "MATCH_WINNER", selection: { value: "HOME" } };
+    eq("fixture: an ordinary row on a SUCCEEDED fixture is coverage", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "o", provenance: "VIP_ROUTE_CONFIRMED", ...mw }], true), { ordinaryCovered: true, conflictingDedicated: false, repeatsExisting: false, withinDailyQuota: true });
+    eq("fixture: a Goals row alone is not coverage", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "g", provenance: "GOALS_GENERATED", marketType: "OVER_UNDER", selection: { line: 2.5, direction: "OVER" } }], true).ordinaryCovered, false);
+    eq("fixture: another dedicated row conflicts", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "d", provenance: "PREMIUM_GENERATED", ...mw }], true).conflictingDedicated, true);
+    eq("fixture: an ordinary row with the same selection is a repeat", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "b", provenance: "BANKER_GENERATED", marketType: "DOUBLE_CHANCE", selection: { value: "HOME_OR_DRAW" } }], true).repeatsExisting, true);
+    eq("fixture: ...a different side of the same market is not", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "b", provenance: "STANDARD_CURATED", marketType: "DOUBLE_CHANCE", selection: { value: "AWAY_OR_DRAW" } }], true).repeatsExisting, false);
+
+    // Distinct picks: the same bet, whatever the key order; a different line or market is not.
+    check("distinct: key order does not make a different bet", overlay.sameSelection({ marketType: "OVER_UNDER", selection: { line: 1.5, direction: "OVER" } }, { marketType: "OVER_UNDER", selection: { direction: "OVER", line: 1.5 } }));
+    check("distinct: another line is another bet", !overlay.sameSelection({ marketType: "OVER_UNDER", selection: { line: 1.5, direction: "OVER" } }, { marketType: "OVER_UNDER", selection: { line: 2.5, direction: "OVER" } }));
+    check("distinct: DNB home is not the straight home win", !overlay.sameSelection({ marketType: "DRAW_NO_BET", selection: { value: "HOME" } }, mw));
+    check("distinct: a hidden combo leg with the same selection counts as a repeat",
+      overlay.repeatsExistingPick({ id: "x", ...mw }, [{ id: "leg", provenance: "STANDARD_CURATED", ...mw }]));
+    check("distinct: a draft is never a repeat of itself", !overlay.repeatsExistingPick({ id: "x", ...mw }, [{ id: "x", provenance: "STANDARD_CURATED", ...mw }]));
   }
 
   // ── 6b. An unpublished dedicated draft claims nothing ──────────────────
@@ -508,6 +623,25 @@ async function main() {
 
     const workerSrc = code("src/lib/generation/worker.ts");
     const paidRun = workerSrc.slice(workerSrc.indexOf("export async function runVipPremiumGeneration"));
+    check("distinct: the paid run tells the model what the fixture already carries",
+      /const avoidPicks = await existingPicksOnFixture\(t\);/.test(paidRun) && /intent: VIP_PREMIUM_INTENT,[\s\S]*avoidPicks,/.test(paidRun));
+    const { lowerRiskPickBlock } = require("../src/lib/ai/analysis");
+    const block = lowerRiskPickBlock(["Match Winner: Arsenal", "Goals Over/Under: Over 2.5"]);
+    check("distinct: the prompt lists each existing pick and forbids repeating it", block.includes("  - Match Winner: Arsenal") && block.includes("  - Goals Over/Under: Over 2.5") && /Do not return any of them/.test(block));
+    check("distinct: ...steers to the lower-risk markets the odds check can price, not team totals or handicaps",
+      ["DOUBLE_CHANCE", "DRAW_NO_BET", "OVER_UNDER", "BTTS", "MATCH_WINNER"].every((m) => block.includes(m)) && !/TEAM_TOTAL|EUROPEAN_HANDICAP/.test(block));
+    check("distinct: ...and never names the product, a tier or the market price to the model", !/VIP|PREMIUM|tier|odds|price|bookmaker/i.test(block));
+    check("distinct: with nothing on the fixture, there is no list", !/ALREADY on this fixture/.test(lowerRiskPickBlock([])));
+
+    const feeds = code("src/lib/categoryPredictions.ts");
+    check("isolation: every feed but VIP/PREMIUM excludes paid-only picks (Today unlocks by the feed's category)",
+      /\.\.\.\(PAID_FEEDS\.has\(cat\) \? \{\} : NOT_PAID_ONLY\)/.test(feeds) && /new Set<PredictionCategory>\(\["VIP", "PREMIUM"\]\)/.test(feeds));
+    check("isolation: free accumulators never take a paid-only leg", /\.\.\.NOT_PAID_ONLY \}/.test(code("src/lib/accumulatorPipeline.ts")));
+    const { NOT_PAID_ONLY, PAID_ONLY_PROVENANCES } = require("../src/lib/paidOnly");
+    eq("isolation: the filter excludes exactly the two dedicated markers", [NOT_PAID_ONLY, [...PAID_ONLY_PROVENANCES]], [{ provenance: { notIn: ["VIP_GENERATED", "PREMIUM_GENERATED"] } }, ["VIP_GENERATED", "PREMIUM_GENERATED"]]);
+    const list = code("src/components/CategoryPredictionsList.tsx");
+    check("empty state: the paid feeds quote their real floors",
+      list.includes(`category === "PREMIUM" ? "${curation.PREMIUM_CONFIDENCE_FLOOR}%" : "${curation.VIP_CONFIDENCE_FLOOR}%"`));
     check("worker: the overlay run never records a ledger attempt or reads the queue", !/recordAttempt\(|selectQueuedCandidates\(|generationAttempt\./.test(paidRun));
     const ordinaryRun = workerSrc.slice(workerSrc.indexOf("export async function runGeneration"), workerSrc.indexOf("export type GoalsRunReport"));
     check("worker: ordinary generation still claims from the queue and records attempts", /selectQueuedCandidates\(/.test(ordinaryRun) && /recordAttempt\(c, \{ ok: true/.test(ordinaryRun));

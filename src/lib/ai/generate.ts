@@ -102,6 +102,13 @@ export type GenerateFixtureInput = {
    * Absent means "use `categories`", the admin routes' behaviour.
    */
   comboCategories?: string[];
+  /**
+   * Dedicated VIP/PREMIUM pass only: the selections already live on this
+   * fixture, as "Market: Pick" labels. The model is told not to repeat them
+   * and to look for a lower-risk market instead (lowerRiskPickBlock), and the
+   * odds gate refuses a repeat regardless (src/lib/vipPremiumOverlay.ts).
+   */
+  avoidPicks?: string[];
 };
 
 /**
@@ -212,6 +219,7 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     marketBreadth,
     handicapLine: input.handicapLine,
     ...(goalsOnly ? { goalsOnly: true } : {}),
+    ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
   });
   const durationMs = Date.now() - startedAt;
 

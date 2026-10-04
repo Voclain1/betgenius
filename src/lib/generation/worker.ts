@@ -37,7 +37,7 @@ import type { GenerationTier } from "@/lib/leagues";
 import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPlan } from "@/lib/goalsGeneration";
 import { autoPublishGoalsPrediction, backOffGoalsFixture, selectGoalsTargets } from "@/lib/goalsPipeline";
 import { VIP_PREMIUM_INTENT, VIP_PREMIUM_RUN_LIMIT } from "@/lib/vipPremiumOverlay";
-import { backOffVipPremiumFixture, selectVipPremiumTargets, type TargetSelection } from "@/lib/vipPremiumPipeline";
+import { backOffVipPremiumFixture, existingPicksOnFixture, selectVipPremiumTargets, type TargetSelection } from "@/lib/vipPremiumPipeline";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -551,6 +551,7 @@ export async function runVipPremiumGeneration(opts: { authorId: string; limit?: 
   const now = opts.now ?? new Date();
   const vipPremium: VipPremiumRunReport["vipPremium"] = {
     targets: [], considered: 0, inScope: 0, freshlyPriced: 0, qualified: 0, oddsCalls: 0, warmed: 0, skipped: {},
+    widened: false, coreFixtures: 0,
   };
   const base: RunReport = {
     ok: true, claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
@@ -591,6 +592,7 @@ export async function runVipPremiumGeneration(opts: { authorId: string; limit?: 
       }
       const label = `${t.homeTeam} vs ${t.awayTeam}`;
       try {
+        const avoidPicks = await existingPicksOnFixture(t);
         const { predictions, sources } = await generateAndPersistPrediction({
           home: t.homeTeam,
           away: t.awayTeam,
@@ -603,6 +605,9 @@ export async function runVipPremiumGeneration(opts: { authorId: string; limit?: 
           // re-tags the one row it promotes and archives the rest.
           categories: ["FEATURED"],
           intent: VIP_PREMIUM_INTENT,
+          // A different, lower-risk selection than what the fixture already
+          // carries; the gate refuses a repeat whatever the model returns.
+          avoidPicks,
           authorId: opts.authorId,
           homeTeamApiId: t.homeTeamApiId,
           awayTeamApiId: t.awayTeamApiId,

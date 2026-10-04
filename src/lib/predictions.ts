@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { presentedCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { withGoalsCategory, type GoalsMarket } from "@/lib/goalsCategory";
 import { isLegacyLiveHiddenLeg, withHiddenLegCategories } from "@/lib/comboLegs";
@@ -43,13 +45,16 @@ export function applyCategoryChanges(
 export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket) {
   const persisted = await prisma.prediction.findUnique({
     where: { id: predictionId },
-    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, categories: { select: { category: true } } },
+    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, provenance: true, categories: { select: { category: true } } },
   });
   const resolvedMarket = market ?? persisted ?? { marketType: null, selection: null };
   const held = persisted?.categories.map((c) => c.category) ?? [];
   if (persisted && isLegacyLiveHiddenLeg(resolvedMarket.marketType, { ...persisted, categories: held })) return;
 
-  const unique = withHiddenLegCategories(withGoalsCategory(categories, resolvedMarket), resolvedMarket.marketType, held);
+  // A paid-only pick belongs to VIP/PREMIUM alone, so its market never files
+  // it into the free Goals feed as well (see PAID_ONLY_PROVENANCES).
+  const derived = isPaidOnlyProvenance(persisted?.provenance) ? [...new Set(categories)] : withGoalsCategory(categories, resolvedMarket);
+  const unique = withHiddenLegCategories(derived, resolvedMarket.marketType, held);
   if (unique.length === 0) throw new Error("At least one category is required");
 
   await prisma.$transaction([
@@ -57,7 +62,9 @@ export async function setPredictionCategories(predictionId: string, categories: 
     prisma.predictionCategoryLink.createMany({
       data: unique.map((category) => ({ predictionId, category })),
     }),
-    prisma.prediction.update({ where: { id: predictionId }, data: { category: unique[0] } }),
+    // A row in any free category is primarily that free category, so no
+    // surface that labels or locks by the primary shows it as VIP/PREMIUM.
+    prisma.prediction.update({ where: { id: predictionId }, data: { category: presentedCategory(unique[0], unique) } }),
   ]);
 }
 

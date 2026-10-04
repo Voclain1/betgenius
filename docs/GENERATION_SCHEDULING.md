@@ -15,6 +15,36 @@ How the scheduled generation passes are ordered.
 > quotes paid-scope fixtures yet (0 of 225 fetches 24–48h out returned a quote).
 > The sections below are kept as the record of why the old design starved.
 
+> **Update, Oct 2026: paid scope widens on thin days, and paid picks are their own.**
+> VIP/PREMIUM were empty through FIFA's merged autumn window (21 Sep – 6 Oct), because
+> the pass only looked at twelve club competitions and none were playing. Now:
+>
+> - **Scope.** `PAID_CORE_LEAGUE_IDS` (the twelve, plus UCL/UEL/UECL, World Cup, Euros)
+>   always; `PAID_WIDENED_LEAGUE_IDS` (men's SECONDARY + national-team competitions) only
+>   when fewer than `PAID_THIN_CORE_MIN` (3) covered core fixtures sit in the window.
+>   Re-decided every run. The gate's bars are unchanged for widened fixtures. The run
+>   summary on `/admin/jobs` says `(widened: N core)` when it widened.
+> - **A different, lower-risk pick.** The paid job is shown the selections already on
+>   the fixture and steered to double chance, draw no bet, conservative goal lines, BTTS
+>   or a clear favourite. The gate refuses a draft that repeats an existing selection
+>   (`REPEATS_EXISTING_PICK`) and can now confirm draw no bet from the de-vigged 1X2.
+>   Team totals and handicaps are not used: there is no team-total market in the odds
+>   feed to check them against.
+> - **Paid-only.** A `VIP_GENERATED`/`PREMIUM_GENERATED` row (`src/lib/paidOnly.ts`) is
+>   shown only in VIP/PREMIUM: never in Today, Genius, Goals or the accumulators, and it
+>   never blocks another category's pick (the Goals pass ignores it).
+> - **Significant odds.** A dedicated pick needs fair odds of at least 1.15
+>   (`PAID_MIN_FAIR_ODDS`, market ≤ ~87%): a near-formality is not a paid pick. Gate
+>   rejections for it are reported as `TOO_SHORT_TO_SELL`.
+> - **Overlap only as a fallback.** Ordinary curation may put a free pick into
+>   VIP/PREMIUM only once the dedicated pass has had its chance at that fixture: it
+>   attempted it, or kickoff is inside 12h with nothing qualifying, and no dedicated
+>   draft is still in review (`fixturesAwaitingDedicated`).
+> - **A free copy never presents as paid.** A row in any free category is stored with
+>   that free category as its primary, and every page that labels or locks by
+>   category goes through `presentedCategory` (`src/lib/access.ts`), so a Banker or
+>   Today pick that is also in VIP shows as Banker/Today, unlocked, with no VIP chip.
+
 Scheduling for this app lives in **cron-job.org**, not in the repository —
 `vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,
 because this plan's own crons are capped at once per day. Everything else is

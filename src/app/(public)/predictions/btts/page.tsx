@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import type { PredictionCategory } from "@/lib/enums";
 import { getBttsPredictions } from "@/lib/marketPredictions";
 import { dayShowsOutcomes, feedDayHref, parseFeedDay } from "@/lib/categoryPredictions";
@@ -42,12 +42,15 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
   const shaped = rows.map((row) => {
     const categories = row.categories.map((item) => item.category as PredictionCategory);
     const gateCategory = categories.find((category) => canViewCategory(category, viewer.tier, viewer.status, viewer.role))
-      ?? (row.category as PredictionCategory);
+      ?? presentedCategory(row.category, categories);
     const canView = canViewCategory(gateCategory, viewer.tier, viewer.status, viewer.role);
-    if (canView) return { ...row, outcome: showOutcomes ? row.outcome : null };
+    // The chip shows a free category whenever the row has one (presentedCategory).
+    const category = presentedCategory(row.category, categories);
+    if (canView) return { ...row, category, outcome: showOutcomes ? row.outcome : null };
     const needsRegistration = gateCategory === "BANKER" && !session?.user;
     return {
       ...row,
+      category,
       outcome: showOutcomes ? row.outcome : null,
       pick: "LOCKED",
       reasoning: needsRegistration
@@ -66,7 +69,7 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
     if (!homeTeam || !awayTeam) return null;
     const categories = row.categories.map((item) => item.category as PredictionCategory);
     const publiclyReadable = categories.some((category) => canViewCategory(category))
-      || canViewCategory(row.category as PredictionCategory);
+      || canViewCategory(presentedCategory(row.category, categories));
     return {
       homeTeam,
       awayTeam,

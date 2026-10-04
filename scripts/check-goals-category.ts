@@ -119,7 +119,8 @@ async function main() {
   // ── 4. Every category writer goes through the derivation ─────────────────
   console.log("\n4. One place derives the tag");
   const predictions = code("src/lib/predictions.ts");
-  check("setPredictionCategories applies withGoalsCategory", /const unique = withHiddenLegCategories\(withGoalsCategory\(categories, resolvedMarket\), /.test(predictions));
+  check("setPredictionCategories applies withGoalsCategory", /const derived = isPaidOnlyProvenance\(persisted\?\.provenance\) \? \[\.\.\.new Set\(categories\)\] : withGoalsCategory\(categories, resolvedMarket\);/.test(predictions) && /const unique = withHiddenLegCategories\(derived, /.test(predictions));
+  check("...except on a paid-only VIP/PREMIUM pick, which never joins the free Goals feed", /provenance: true/.test(predictions) && /isPaidOnlyProvenance\(persisted\?\.provenance\) \? \[\.\.\.new Set\(categories\)\]/.test(predictions));
   check("setPredictionCategories reads the stored market when none is passed", /const persisted = await prisma\.prediction\.findUnique\(/.test(predictions) && /const resolvedMarket = market \?\? persisted \?\? \{ marketType: null, selection: null \};/.test(predictions));
   check("generation passes the persisted market", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(code("src/lib/ai/generate.ts")));
   check("a rewrite re-derives from its new market", /setPredictionCategories\(predictionId, updated\.categories\.map\(\(c\) => c\.category\), updated\)/.test(code("src/lib/ai/rewrite.ts")));

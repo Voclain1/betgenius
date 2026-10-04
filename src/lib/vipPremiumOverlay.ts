@@ -1,6 +1,6 @@
-import { leaguePriorityRank } from "@/lib/leagues";
+import { GENERATION_TIERS, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
 import { VIP_PROXY_LEAGUE_IDS } from "@/lib/ai/generationRisk";
-import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
+import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
 import type { FixtureOdds } from "@/lib/odds";
 import {
   lopsidednessSignal,
@@ -10,9 +10,8 @@ import {
 } from "@/lib/marketConfirmed";
 import {
   DEDICATED_PAID_PROVENANCES,
+  PAID_ONLY_PROVENANCES,
   PREMIUM_CONFIDENCE_FLOOR,
-  PREMIUM_GENERATED_PROVENANCE,
-  VIP_GENERATED_PROVENANCE,
   VIP_CONFIDENCE_FLOOR,
   paidFixtureKey,
 } from "@/lib/geniusCuration";
@@ -39,6 +38,67 @@ import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
  * consume a fixture, and sees each fixture on every run until it is priced.
  * Ordinary generation is unchanged. The overlay adds at most one paid pick.
  */
+
+// ── Scope ────────────────────────────────────────────────────────────────────
+
+/**
+ * The competitions this pass always considers.
+ *
+ * Stated explicitly rather than read as "the first twelve of the priority
+ * order" (VIP_PROXY_LEAGUE_IDS). That proxy still decides ordinary
+ * generation's calibration route and ordinary VIP curation, unchanged. But the
+ * comment beside it promised the European club competitions, and the slice
+ * actually holds the big five's domestic cups instead, so a Champions League
+ * night never reached this pass. Here the proxy twelve are joined by UCL, UEL,
+ * UECL, the World Cup and the Euros.
+ */
+export const PAID_CORE_LEAGUE_IDS: readonly number[] = [...new Set([...VIP_PROXY_LEAGUE_IDS, 2, 3, 848, 1, 4])];
+
+/**
+ * National-team competitions: the Nations League and the World Cup / Euro
+ * qualifiers (GENERATION_TIERS.FALLBACK's international-break slate, minus
+ * friendlies, which field experimental sides the books price loosely).
+ */
+export const PAID_NATIONAL_TEAM_LEAGUE_IDS: readonly number[] = [5, 32, 960, 34, 29, 36];
+
+/**
+ * Where the pass may look when the core is thin: the men's SECONDARY leagues
+ * plus national-team competitions. Senior women's leagues are left out — their
+ * books are thinner and their quotes rarely reach MC_MIN_BOOKMAKERS.
+ *
+ * WHY. Under FIFA's merged autumn window (21 Sep – 6 Oct 2026) the core had no
+ * fixtures for two weeks and VIP/PREMIUM carried nothing, while ordinary
+ * generation had already widened (generation/coverage.ts). Nothing about the
+ * BAR changes for these fixtures: the same fresh quote, books, market floors,
+ * model floors and gap apply. The league list was only ever a proxy for "the
+ * market prices this well"; the gate checks that directly.
+ */
+export const PAID_WIDENED_LEAGUE_IDS: readonly number[] = [
+  ...(GENERATION_TIERS.SECONDARY as readonly number[]).filter((id) => !isSeniorWomensCompetition(id)),
+  ...PAID_NATIONAL_TEAM_LEAGUE_IDS,
+].filter((id) => !PAID_CORE_LEAGUE_IDS.includes(id));
+
+/** Every competition a dedicated paid pick may come from, core or widened. */
+export const PAID_ANY_LEAGUE_IDS: readonly number[] = [...PAID_CORE_LEAGUE_IDS, ...PAID_WIDENED_LEAGUE_IDS];
+
+/**
+ * Fewer covered core fixtures than this inside the window and the pass widens.
+ * Re-decided on every run from the ledger, like adaptive coverage, so there is
+ * no break mode to switch off: once the core is back it stops widening.
+ * 3 is half the measured ~6.4 paid-eligible fixtures on a normal day.
+ */
+export const PAID_THIN_CORE_MIN = 3;
+
+export type PaidScope = { leagueIds: ReadonlySet<number>; widened: boolean; coreFixtures: number };
+
+/** Which competitions this run may target, from the covered ledger rows inside the window. Pure. */
+export function paidScopeFor(ledger: ReadonlyArray<{ leagueApiId: number | null; kickoff: Date; status: string }>, now: Date): PaidScope {
+  const coreFixtures = ledger.filter(
+    (l) => l.status === "SUCCEEDED" && inVipPremiumWindow(l.kickoff, now) && PAID_CORE_LEAGUE_IDS.includes(l.leagueApiId ?? -1),
+  ).length;
+  const widened = coreFixtures < PAID_THIN_CORE_MIN;
+  return { leagueIds: new Set(widened ? PAID_ANY_LEAGUE_IDS : PAID_CORE_LEAGUE_IDS), widened, coreFixtures };
+}
 
 /** Label recorded on AIJob.prompt.intent. It is also how attempts and the daily quota are counted. */
 export const VIP_PREMIUM_INTENT = "VIP_PREMIUM" as const;
@@ -145,7 +205,7 @@ export type OverlayCandidate = {
 
 export type OverlaySkipReason =
   | "OUTSIDE_WINDOW"
-  | "OUT_OF_SCOPE" // not one of the paid competitions (VIP_PROXY_LEAGUE_IDS) — unchanged
+  | "OUT_OF_SCOPE" // not in this run's paid scope (paidScopeFor)
   | "NOT_YET_GENERATED" // the ledger row is not SUCCEEDED, or no ordinary row exists yet
   | "NO_MATCH_CONTEXT"
   | "HAS_DEDICATED_PAID" // a live dedicated paid row already exists: one paid pick per fixture
@@ -156,6 +216,10 @@ export type OverlayPlan = {
   candidates: OverlayCandidate[];
   considered: number;
   skipped: Partial<Record<OverlaySkipReason, number>>;
+  /** The core was thin, so this run also looked at PAID_WIDENED_LEAGUE_IDS. */
+  widened: boolean;
+  /** Covered core fixtures inside the window — what decided `widened`. */
+  coreFixtures: number;
 };
 
 const LIVE_STATUSES = new Set(["DRAFT", "PENDING_REVIEW", "APPROVED", "PUBLISHED"]);
@@ -184,12 +248,15 @@ export function planVipPremiumCandidates(input: {
   attempts: readonly OverlayAttempt[];
   backingOff?: ReadonlySet<number>;
   now: Date;
+  /** This run's competitions. Defaults to paidScopeFor(ledger, now). */
+  scope?: PaidScope;
   /** VERIFICATION ONLY (scripts/verify-vip-premium-pass.ts): drops the paid-scope restriction. */
   anyLeague?: boolean;
 }): OverlayPlan {
   const skipped: OverlayPlan["skipped"] = {};
   const skip = (r: OverlaySkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
 
+  const scope = input.scope ?? paidScopeFor(input.ledger, input.now);
   const attempted = new Set(input.attempts.map((a) => a.fixtureApiId).filter((id): id is number => id != null));
   // Live rows per fixture, by provider id and by the team/day key, so a row
   // that predates fixtureApiId is still found.
@@ -203,7 +270,7 @@ export function planVipPremiumCandidates(input: {
   const candidates: OverlayCandidate[] = [];
   for (const l of input.ledger) {
     if (!inVipPremiumWindow(l.kickoff, input.now)) { skip("OUTSIDE_WINDOW"); continue; }
-    if (!input.anyLeague && !(VIP_PROXY_LEAGUE_IDS as readonly number[]).includes(l.leagueApiId ?? -1)) { skip("OUT_OF_SCOPE"); continue; }
+    if (!input.anyLeague && !scope.leagueIds.has(l.leagueApiId ?? -1)) { skip("OUT_OF_SCOPE"); continue; }
     const rows = [...new Set([...(l.fixtureApiId != null ? byFixture.get(`f${l.fixtureApiId}`) ?? [] : []), ...(byFixture.get(l.matchKey) ?? [])])];
     const ordinary = rows.filter(isOrdinary);
     const [homeId, awayId] = l.matchKey.split("-").map(Number);
@@ -222,7 +289,7 @@ export function planVipPremiumCandidates(input: {
     });
   }
   candidates.sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey));
-  return { candidates, considered: input.ledger.length, skipped };
+  return { candidates, considered: input.ledger.length, skipped, widened: scope.widened, coreFixtures: scope.coreFixtures };
 }
 
 // ── Odds ─────────────────────────────────────────────────────────────────────
@@ -330,7 +397,96 @@ export function qualifyVipPremiumTargets(
   return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped };
 }
 
+// ── Ordinary picks as a fallback ─────────────────────────────────────────────
+
+/**
+ * Fixtures whose paid slot still belongs to the dedicated pass, so ordinary
+ * curation must not fill it yet. Pure.
+ *
+ * An ordinary pick in VIP/PREMIUM is a pick a free reader can also see. That
+ * overlap is allowed only as a FALLBACK: once the dedicated pass has had its
+ * chance at the fixture and found no distinct, lower-risk pick worth carrying.
+ * Until then the slot waits. A fixture is still the pass's when it is in the
+ * paid core and either
+ *
+ *   - it has not been attempted and is still more than GENERATE_FROM_HOURS
+ *     from kickoff, i.e. inside (or ahead of) the pass's window; or
+ *   - a dedicated draft for it is still in review (held for a fresh quote, or
+ *     promoted and waiting to publish) and kickoff is more than
+ *     SAME_DAY_GENERATE_FROM_HOURS away.
+ *
+ * After that — attempted with nothing promoted, or the window simply closed
+ * because the market never priced a qualifying selection — ordinary curation
+ * may fill the slot under its own floors, as before.
+ */
+export function fixturesAwaitingDedicated(input: {
+  rows: ReadonlyArray<{ id: string; leagueApiId: number | null; kickoff: Date | null; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null }>;
+  attemptedFixtureApiIds: ReadonlySet<number>;
+  /** paidFixtureKey()s with a dedicated draft still in review. */
+  openDraftKeys: ReadonlySet<string>;
+  now: Date;
+}): Set<string> {
+  const awaiting = new Set<string>();
+  for (const r of input.rows) {
+    if (!r.kickoff || !PAID_CORE_LEAGUE_IDS.includes(r.leagueApiId ?? -1)) continue;
+    const key = paidFixtureKey(r);
+    const untilKickoff = r.kickoff.getTime() - input.now.getTime();
+    const attempted = r.fixtureApiId != null && input.attemptedFixtureApiIds.has(r.fixtureApiId);
+    if (!attempted && untilKickoff > GENERATE_FROM_HOURS * 3_600_000) awaiting.add(key);
+    else if (input.openDraftKeys.has(key) && untilKickoff > SAME_DAY_GENERATE_FROM_HOURS * 3_600_000) awaiting.add(key);
+  }
+  return awaiting;
+}
+
+// ── Distinct picks ───────────────────────────────────────────────────────────
+
+const stable = (v: unknown): string =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${stable((v as Record<string, unknown>)[k])}`).join(",")}}`
+    : JSON.stringify(v ?? null);
+
+/** The same bet: same market type and the same structured selection (key order ignored). Pure. */
+export function sameSelection(
+  a: { marketType: string; selection: unknown },
+  b: { marketType: string; selection: unknown },
+): boolean {
+  return a.marketType === b.marketType && stable(a.selection) === stable(b.selection);
+}
+
+/**
+ * Does this paid draft repeat a selection another row on its fixture already
+ * carries? A paid pick is its own pick: it never re-sells a selection a reader
+ * can already see in a free feed, a Banker or inside a free double. Dedicated
+ * paid rows are ignored here; one-paid-pick-per-fixture handles those.
+ */
+export function repeatsExistingPick(
+  draft: { id: string; marketType: string; selection: unknown },
+  onFixture: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown }>,
+): boolean {
+  return onFixture.some((r) => r.id !== draft.id && !isDedicatedPaid(r.provenance) && sameSelection(r, draft));
+}
+
 // ── Tiering ──────────────────────────────────────────────────────────────────
+
+/**
+ * A paid pick must still be worth backing: its fair odds (100 / the de-vigged
+ * market probability) must be at least this. 1.15 fair is a bookmaker price of
+ * about 1.10 after the margin. Above ~87% the market calls it a near-formality —
+ * double chance on an overwhelming favourite at 1.03 — and selling that as a
+ * paid pick would be safety with nothing in it for the subscriber.
+ *
+ * It narrows the tiers to a band: VIP 75–87% market, PREMIUM 80–87%. A fixture
+ * whose only confirmable selections are shorter than this gets no dedicated
+ * pick, which is exactly the case where an ordinary pick may stand in for it
+ * (see the fallback rule in geniusCuration.ts).
+ */
+export const PAID_MIN_FAIR_ODDS = 1.15;
+export const PAID_MAX_MARKET_PROBABILITY = 100 / PAID_MIN_FAIR_ODDS;
+
+/** True when the market prices this selection too short to carry as a paid pick. */
+export function tooShortForPaid(marketProbability: number | null | undefined): boolean {
+  return (marketProbability ?? 0) > PAID_MAX_MARKET_PROBABILITY;
+}
 
 export type PaidTier = "VIP" | "PREMIUM";
 
@@ -346,6 +502,7 @@ export type PaidTier = "VIP" | "PREMIUM";
  */
 export function paidTierFor(verdict: { confirmed: boolean; marketProbability?: number | null }, confidence: number): PaidTier | null {
   if (!verdict.confirmed || confidence < VIP_CONFIDENCE_FLOOR || confidence < MC_MIN_MODEL_CONFIDENCE) return null;
+  if (tooShortForPaid(verdict.marketProbability)) return null;
   return (verdict.marketProbability ?? 0) >= PREMIUM_MARKET_FLOOR && confidence >= PREMIUM_CONFIDENCE_FLOOR ? "PREMIUM" : "VIP";
 }
 
@@ -379,6 +536,7 @@ export type PaidPublishBlock =
   | "BELOW_VIP_FLOOR"
   | "PREMIUM_NOT_EARNED" // tagged PREMIUM without model >= 80 AND market >= 80
   | "CONFLICTING_DEDICATED_PICK" // another live dedicated paid row is on the fixture
+  | "REPEATS_EXISTING_PICK" // the same selection is already live on the fixture as a non-paid pick
   | "OVER_DAILY_QUOTA";
 
 export type PaidPublishRow = {
@@ -399,6 +557,8 @@ export type PaidPublishFixture = {
   ordinaryCovered: boolean;
   /** Another live (not archived) dedicated paid row exists on the fixture. */
   conflictingDedicated: boolean;
+  /** A live non-paid row on the fixture already carries this exact selection. */
+  repeatsExisting: boolean;
   /** This row's attempt was within VIP_PREMIUM_DAILY_QUOTA for its Lagos day. */
   withinDailyQuota: boolean;
 };
@@ -428,7 +588,10 @@ export function paidAutoPublishVerdict(
   if (row.marketType === "SAME_GAME_DOUBLE") blocks.push("COMBO");
   if (row.marketType !== "SAME_GAME_DOUBLE" && row.categories.includes("SAME_GAME_DOUBLE")) blocks.push("HIDDEN_LEG");
   if (!fixture.ordinaryCovered) blocks.push("NOT_ORDINARY_COVERED");
-  if (!(VIP_PROXY_LEAGUE_IDS as readonly number[]).includes(row.leagueApiId ?? -1)) blocks.push("OUT_OF_SCOPE");
+  // The widest scope the pass can ever target. Whether THIS day was thin is a
+  // targeting decision, already taken; a pick generated on a thin day is not
+  // un-published because the core filled up before its publish ran.
+  if (!PAID_ANY_LEAGUE_IDS.includes(row.leagueApiId ?? -1)) blocks.push("OUT_OF_SCOPE");
   if (!row.contextComplete) blocks.push("NO_MATCH_CONTEXT");
   if (!row.categories.includes("VIP")) blocks.push("NOT_TAGGED_VIP");
   const tier = paidTierFor(verdict, row.confidence);
@@ -436,6 +599,7 @@ export function paidAutoPublishVerdict(
   else if (!tier) blocks.push("BELOW_VIP_FLOOR");
   if (row.categories.includes("PREMIUM") && tier !== "PREMIUM") blocks.push("PREMIUM_NOT_EARNED");
   if (fixture.conflictingDedicated) blocks.push("CONFLICTING_DEDICATED_PICK");
+  if (fixture.repeatsExisting) blocks.push("REPEATS_EXISTING_PICK");
   if (!fixture.withinDailyQuota) blocks.push("OVER_DAILY_QUOTA");
   return { publish: blocks.length === 0, blocks };
 }
@@ -446,21 +610,22 @@ export function paidAutoPublishVerdict(
  * rows are not ordinary coverage.
  */
 export function paidPublishFixture(
-  self: { id: string },
+  self: { id: string; marketType: string; selection: unknown },
   ledgerStatus: string | null,
-  rows: ReadonlyArray<{ id: string; provenance: string | null }>,
+  rows: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown }>,
   withinDailyQuota: boolean,
 ): PaidPublishFixture {
   const others = rows.filter((r) => r.id !== self.id);
   return {
     ordinaryCovered: ledgerStatus === "SUCCEEDED" && others.some((r) => r.provenance !== GOALS_GENERATED_PROVENANCE && !isDedicatedPaid(r.provenance)),
     conflictingDedicated: others.some((r) => isDedicatedPaid(r.provenance)),
+    repeatsExisting: repeatsExistingPick(self, others),
     withinDailyQuota,
   };
 }
 
 /** Provenances only this pass stamps (MARKET_CONFIRMED is the retired pass's, never auto-published). */
-export const DEDICATED_GENERATED_PROVENANCES = [VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE] as const;
+export const DEDICATED_GENERATED_PROVENANCES = PAID_ONLY_PROVENANCES;
 
 /** The VIP_PREMIUM-intent fields of a stored AIJob prompt, or null for any other job. */
 export function readVipPremiumAttempt(prompt: string, createdAt: Date): OverlayAttempt | null {

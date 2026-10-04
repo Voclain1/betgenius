@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { runGeneration, runGoalsGeneration, runVipPremiumGeneration } from "@/lib/generation/worker";
+import { tooShortForPaid } from "@/lib/vipPremiumOverlay";
 import { probeGoalsFixture } from "@/lib/goalsPipeline";
 import {
   VIP_PREMIUM_DAILY_QUOTA,
@@ -158,12 +159,13 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
         promotedVip: gate.promotedVip.map(describe),
         promotedPremium: gate.promotedPremium.map(describe),
         rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
-          const k = r.verdict.reason ?? "BELOW_TIER_FLOOR";
+          const k = r.verdict.reason ?? (tooShortForPaid(r.verdict.marketProbability) ? "TOO_SHORT_TO_SELL" : "BELOW_TIER_FLOOR");
           acc[k] = (acc[k] ?? 0) + 1;
           return acc;
         }, {}),
         runnersUp: gate.runnersUp.length,
         duplicateFixture: gate.duplicateFixture.length,
+        repeatsExistingPick: gate.repeatsExisting.length,
         archivedDrafts: gate.archived,
         heldForRequote: gate.heldForRequote,
         published: gate.published.length,
@@ -366,7 +368,7 @@ export async function GET(req: Request) {
       : `claimed ${p?.claimed ?? 0}, succeeded ${p?.succeeded ?? 0}, failed ${p?.failed ?? 0}, predictions ${p?.predictionsCreated ?? 0}` +
         (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
         (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : "") +
-        (p?.vipPremium ? `, paid overlay: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
+        (p?.vipPremium ? `, paid overlay${p.vipPremium.widened ? ` (widened: ${p.vipPremium.coreFixtures ?? 0} core)` : ""}: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
         (p?.goals ? (p.goals.stoodDown ? `, goals stood down: ${p.goals.stoodDown}` : `, goals: ${p.goals.considered} covered fixtures considered, published ${p.goals.published ?? 0}, held for review ${p.goals.heldForReview ?? 0}`) : ""),
   );
   return response;
