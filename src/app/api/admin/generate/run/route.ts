@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { runGeneration, runGoalsGeneration, runVipPremiumGeneration } from "@/lib/generation/worker";
+import { tooShortForPaid } from "@/lib/vipPremiumOverlay";
 import { probeGoalsFixture } from "@/lib/goalsPipeline";
 import {
   VIP_PREMIUM_DAILY_QUOTA,
@@ -158,7 +159,7 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
         promotedVip: gate.promotedVip.map(describe),
         promotedPremium: gate.promotedPremium.map(describe),
         rejectedReasons: gate.rejected.reduce<Record<string, number>>((acc, r) => {
-          const k = r.verdict.reason ?? "BELOW_TIER_FLOOR";
+          const k = r.verdict.reason ?? (tooShortForPaid(r.verdict.marketProbability) ? "TOO_SHORT_TO_SELL" : "BELOW_TIER_FLOOR");
           acc[k] = (acc[k] ?? 0) + 1;
           return acc;
         }, {}),

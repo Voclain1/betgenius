@@ -312,6 +312,8 @@ export type CurationPlan = {
   doublesExcluded: number;
   /** Paid tiers: rows refused because their fixture already has a paid pick (dedicated, frozen legacy, or a better-ranked row). */
   fixtureDuplicatesExcluded: number;
+  /** Paid tiers: ordinary rows held back because the dedicated pass may still find a distinct pick for the fixture. */
+  awaitingDedicatedExcluded: number;
 };
 
 /**
@@ -328,6 +330,13 @@ export function planCuration(
   category: AutoCategory,
   rows: readonly CurationRow[],
   paidClaimedFixtures: ReadonlySet<string> = new Set(),
+  /**
+   * paidFixtureKey()s whose paid slot still belongs to the dedicated pass
+   * (fixturesAwaitingDedicated in vipPremiumOverlay.ts). Paid tiers only: an
+   * ordinary pick there is a pick free readers also see, so it may fill the
+   * slot only once the dedicated pass has found nothing distinct to carry.
+   */
+  awaitingDedicatedFixtures: ReadonlySet<string> = new Set(),
 ): CurationPlan {
   const rule = CURATION_RULES[category];
   const tagged = new Set(rows.filter((r) => r.categories.includes(category)).map((r) => r.id));
@@ -430,6 +439,7 @@ export function planCuration(
   // the claim is that pick's own, so an untagged dedicated row on it must stay
   // selectable (a dedicated row that lost its tag is re-selected, not exiled).
   let fixtureDuplicatesExcluded = 0;
+  let awaitingDedicatedExcluded = 0;
   if (rule.paid) {
     const protectedKeys = new Set(rows.filter((r) => protectedIds.has(r.id)).map(paidFixtureKey));
     const isDedicatedRow = (r: CurationRow) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "");
@@ -439,6 +449,10 @@ export function planCuration(
       const key = paidFixtureKey(r);
       if (taken.has(key) || protectedKeys.has(key) || (claimed.has(key) && !isDedicatedRow(r))) {
         fixtureDuplicatesExcluded++;
+        continue;
+      }
+      if (awaitingDedicatedFixtures.has(key) && !isDedicatedRow(r)) {
+        awaitingDedicatedExcluded++;
         continue;
       }
       taken.add(key);
@@ -469,6 +483,7 @@ export function planCuration(
     routeExcluded,
     doublesExcluded,
     fixtureDuplicatesExcluded,
+    awaitingDedicatedExcluded,
   };
 }
 
@@ -531,7 +546,11 @@ async function curateCategory(category: AutoCategory, now: Date) {
   ]);
   const rows: CurationRow[] = raw.map((r) => ({ ...r, categories: r.categories.map((c) => c.category) }));
 
-  const plan = planCuration(category, rows, paidClaimed);
+  // Deferred import: vipPremiumPipeline imports this module.
+  const awaiting = CURATION_RULES[category].paid
+    ? await (await import("@/lib/vipPremiumPipeline")).loadFixturesAwaitingDedicated(rows, now)
+    : new Set<string>();
+  const plan = planCuration(category, rows, paidClaimed, awaiting);
   await prisma.$transaction([
     ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category })), skipDuplicates: true })] : []),
     ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category } })] : []),

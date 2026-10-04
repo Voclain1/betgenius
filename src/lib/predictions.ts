@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { presentedCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { withGoalsCategory, type GoalsMarket } from "@/lib/goalsCategory";
 import { isLegacyLiveHiddenLeg, withHiddenLegCategories } from "@/lib/comboLegs";
@@ -61,7 +62,9 @@ export async function setPredictionCategories(predictionId: string, categories: 
     prisma.predictionCategoryLink.createMany({
       data: unique.map((category) => ({ predictionId, category })),
     }),
-    prisma.prediction.update({ where: { id: predictionId }, data: { category: unique[0] } }),
+    // A row in any free category is primarily that free category, so no
+    // surface that labels or locks by the primary shows it as VIP/PREMIUM.
+    prisma.prediction.update({ where: { id: predictionId }, data: { category: presentedCategory(unique[0], unique) } }),
   ]);
 }
 

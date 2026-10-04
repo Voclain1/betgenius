@@ -82,6 +82,8 @@ export type ScopedResult = {
   rows: {
     id: string;
     category: string;
+    /** Every category link, so pages can present a free category over a paid primary (presentedCategory). */
+    categories: { category: string }[];
     leagueApiId: number | null;
     leagueName: string | null;
     homeTeam: string | null;

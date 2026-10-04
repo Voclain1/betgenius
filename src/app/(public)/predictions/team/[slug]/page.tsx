@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
@@ -76,8 +76,9 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
   const session = await getServerSession(authOptions);
   const viewer = await getViewerEntitlement();
-  const shaped = rows.map((r) => {
-    const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
+  const shaped = rows.map((row) => {
+    const r = { ...row, category: presentedCategory(row.category, row.categories) };
+    const canView = canViewCategory(r.category, viewer.tier, viewer.status, viewer.role);
     return canView
       ? r
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
@@ -95,7 +96,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       leagueApiId: r.leagueApiId,
       homeTeamApiId: r.homeTeamApiId,
       awayTeamApiId: r.awayTeamApiId,
-      category: r.category,
+      category: presentedCategory(r.category, r.categories),
       market: r.market,
       pick: r.pick,
       confidence: r.confidence,

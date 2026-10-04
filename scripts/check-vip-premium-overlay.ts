@@ -307,6 +307,46 @@ async function main() {
     eq("isolation: ...and removes it if something tagged it GENIUS", plan("GENIUS", [{ ...paidOnly, categories: ["VIP", "GENIUS"] }, row("g72", 72)]).removed, ["paid88"]);
     check("isolation: VIP keeps it", plan("VIP", [paidOnly], [curation.paidFixtureKey(paidOnly)]).selectedIds.includes("paid88"));
 
+    // Ordinary picks fill a paid slot only as a fallback.
+    {
+      const at = (h: number) => new Date(NOW.getTime() + h * H);
+      const r = (id: string, kickoffIn: number, o: Any = {}) => ({ id, leagueApiId: o.league ?? 39, kickoff: at(kickoffIn), fixtureApiId: o.fx ?? 7000 + kickoffIn, homeTeamApiId: 70 + kickoffIn, awayTeamApiId: 80 + kickoffIn });
+      const awaiting = (rows: Any[], attempted: number[] = [], open: string[] = []) =>
+        overlay.fixturesAwaitingDedicated({ rows, attemptedFixtureApiIds: new Set(attempted), openDraftKeys: new Set(open), now: NOW });
+      const far = r("far", 20), near = r("near", 6), farBig = r("fb", 20, { league: 79 });
+      eq("fallback: an unattempted core fixture still inside the pass's window waits for it", [...awaiting([far])], [curation.paidFixtureKey(far)]);
+      eq("fallback: ...once attempted, ordinary curation may fill it", [...awaiting([far], [far.fixtureApiId])], []);
+      eq("fallback: ...or once the window closed with no qualifying market (under 12h)", [...awaiting([near])], []);
+      eq("fallback: a dedicated draft still in review keeps it waiting, even when near", [...awaiting([near], [near.fixtureApiId], [curation.paidFixtureKey(near)])], [curation.paidFixtureKey(near)]);
+      eq("fallback: ...but never inside the last 2h", [...awaiting([r("last", 1)], [], [curation.paidFixtureKey(r("last", 1))])], []);
+      eq("fallback: outside the paid core nothing waits", [...awaiting([farBig])], []);
+      const ord = row("ord90", 90, { fx: 77 });
+      const ded = row("ded82", 82, { fx: 77, prov: "VIP_GENERATED", tags: ["VIP"] });
+      const p = curation.planCuration("VIP", [ord], new Set(), new Set([curation.paidFixtureKey(ord)]));
+      check("fallback: curation holds an ordinary pick back while its fixture awaits the pass", !p.selectedIds.includes("ord90") && p.awaitingDedicatedExcluded === 1, p);
+      check("fallback: ...a dedicated pick on such a fixture is never held back", curation.planCuration("VIP", [ded], new Set(), new Set([curation.paidFixtureKey(ded)])).selectedIds.includes("ded82"));
+      check("fallback: GENIUS ignores the rule entirely", curation.planCuration("GENIUS", [ord], new Set(), new Set([curation.paidFixtureKey(ord)])).selectedIds.includes("ord90"));
+    }
+
+    // A free copy of a paid pick never presents as paid.
+    {
+      const { presentedCategory } = require("../src/lib/access");
+      eq("presented: a free primary stays", presentedCategory("BANKER", ["BANKER", "PREMIUM"]), "BANKER");
+      eq("presented: a VIP primary on a row also in Today's mix shows as the free category", presentedCategory("VIP", [{ category: "VIP" }, { category: "FEATURED" }]), "FEATURED");
+      eq("presented: PREMIUM + BANKER presents as BANKER", presentedCategory("PREMIUM", ["VIP", "PREMIUM", "BANKER"]), "BANKER");
+      eq("presented: a paid-only row presents as paid", presentedCategory("VIP", ["VIP", "PREMIUM"]), "VIP");
+      eq("presented: with no links, the primary", presentedCategory("VIP", null), "VIP");
+      const root = join(__dirname, "..");
+      const src = (p: string) => readFileSync(join(root, p), "utf8");
+      check("presented: the stored primary is always the free category when one exists",
+        /data: \{ category: presentedCategory\(unique\[0\], unique\) \}/.test(src("src/lib/predictions.ts")));
+      const pages = ["src/app/(public)/predictions/match/[slug]/page.tsx", "src/app/(public)/predictions/team/[slug]/page.tsx", "src/app/(public)/predictions/cup/[slug]/page.tsx",
+        "src/app/(public)/following/page.tsx", "src/app/(public)/page.tsx", "src/app/(public)/predictions/btts/page.tsx", "src/app/(public)/predictions/double-chance/page.tsx",
+        "src/app/(public)/predictions/over-2-5-goals/page.tsx", "src/app/api/predictions/route.ts"];
+      const bare = pages.filter((p) => /canViewCategory\((r|row|p)\.category as PredictionCategory/.test(src(p)));
+      eq("presented: no page gates on the bare stored primary any more", bare, []);
+    }
+
     const pool = [row("c90", 90), row("c78", 78), row("c70", 70), row("c68", 68), row("c65", 65), row("c60", 60)];
     eq("curation: VIP selects only rows at or above 75 — no top-up to five", plan("VIP", pool).selectedIds, ["c90", "c78"]);
     eq("curation: PREMIUM selects only rows at or above 80", plan("PREMIUM", pool).selectedIds, ["c90"]);
@@ -490,13 +530,21 @@ async function main() {
     // fixture is refused, and a different, safer market on it is promoted.
     const banker = { ...g.row, id: "bank", marketType: "MATCH_WINNER", selection: { value: "HOME" }, status: "PUBLISHED", provenance: "BANKER_GENERATED", categories: [{ category: "BANKER" }] };
     const dnb = { ...draft("dnb84", 84, g), marketType: "DRAW_NO_BET", selection: { value: "HOME" }, market: "Draw No Bet" };
-    const rRep = await gate(g, [draft("mw84", 84, g), dnb], 86, [banker]);
+    // A 72% favourite: DNB on it is ~85% (fair ~1.18), inside the paid band.
+    const rRep = await gate(g, [draft("mw84", 84, g), dnb], 72, [banker]);
     eq("distinct: the straight win the Banker already carries is refused", rRep.repeatsExisting.map((o: Any) => o.predictionId), ["mw84"]);
     eq("distinct: ...and the draw-no-bet on the same side is promoted instead", [...rRep.promotedVip, ...rRep.promotedPremium].map((o: Any) => o.predictionId), ["dnb84"]);
     check("distinct: ...the repeat is archived, never left for review", writes.includes("prediction.archive:mw84"), writes);
     check("distinct: ...and the Banker keeps every tag — nothing on it is stripped", !writes.some((w) => w.startsWith("link.strip:bank")), writes);
     const rOnly = await gate(g, [draft("only84", 84, g)], 86, [banker]);
+
     check("distinct: a fixture whose only draft repeats an existing pick promotes nothing", rOnly.promotedVip.length + rOnly.promotedPremium.length === 0 && rOnly.heldForRequote === 0 && writes.includes("prediction.archive:only84"), { rOnly, writes });
+    // Significant odds: a selection the market prices as a near-formality is not a paid pick.
+    eq("odds floor: fair odds of at least 1.15, i.e. a market of at most ~87%", [overlay.PAID_MIN_FAIR_ODDS, Number(overlay.PAID_MAX_MARKET_PROBABILITY.toFixed(2))], [1.15, 86.96]);
+    eq("odds floor: a confirmed 90% market earns no tier", overlay.paidTierFor({ confirmed: true, marketProbability: 90 }, 88), null);
+    eq("odds floor: ...86% still earns PREMIUM", overlay.paidTierFor({ confirmed: true, marketProbability: 86 }, 84), "PREMIUM");
+    const rShort = await gate(g, [draft("short88", 88, g)], 90, [ordinaryVip]);
+    check("odds floor: the gate promotes nothing on a 90% favourite's straight win, and archives it", rShort.promotedVip.length + rShort.promotedPremium.length === 0 && writes.includes("prediction.archive:short88"), { rShort, writes });
 
     // The publish verdict itself, rule by rule.
     const pubRow = { provenance: "PREMIUM_GENERATED", intent: "VIP_PREMIUM", status: "PENDING_REVIEW", rewriteCount: 0, marketType: "MATCH_WINNER", confidence: 84, contextComplete: true, leagueApiId: 39, categories: ["VIP", "PREMIUM"] };

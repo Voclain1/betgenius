@@ -585,6 +585,11 @@ makes MOST likely to win, not the most interesting one. Consider, in this order:
   - BTTS, only when both attacks and both defences point the same way
   - MATCH_WINNER, only for a clearly stronger side
 
+Do not settle for a near-formality: double chance on an overwhelming favourite,
+or OVER 0.5 goals, is likely but pays almost nothing. Choose the safest selection
+that is still a real bet. On a mismatch that usually means the favourite to win,
+or OVER 1.5 / OVER 2.5 goals, rather than double chance.
+
 Use only DOUBLE_CHANCE, DRAW_NO_BET, OVER_UNDER, BTTS and MATCH_WINNER here. Give
 each entry the confidence the evidence actually supports. A cautious market is not
 a reason to inflate it, and if nothing is genuinely likely, return fewer entries.

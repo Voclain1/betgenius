@@ -1,6 +1,6 @@
 import { GENERATION_TIERS, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
 import { VIP_PROXY_LEAGUE_IDS } from "@/lib/ai/generationRisk";
-import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
+import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
 import type { FixtureOdds } from "@/lib/odds";
 import {
   lopsidednessSignal,
@@ -397,6 +397,47 @@ export function qualifyVipPremiumTargets(
   return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped };
 }
 
+// ── Ordinary picks as a fallback ─────────────────────────────────────────────
+
+/**
+ * Fixtures whose paid slot still belongs to the dedicated pass, so ordinary
+ * curation must not fill it yet. Pure.
+ *
+ * An ordinary pick in VIP/PREMIUM is a pick a free reader can also see. That
+ * overlap is allowed only as a FALLBACK: once the dedicated pass has had its
+ * chance at the fixture and found no distinct, lower-risk pick worth carrying.
+ * Until then the slot waits. A fixture is still the pass's when it is in the
+ * paid core and either
+ *
+ *   - it has not been attempted and is still more than GENERATE_FROM_HOURS
+ *     from kickoff, i.e. inside (or ahead of) the pass's window; or
+ *   - a dedicated draft for it is still in review (held for a fresh quote, or
+ *     promoted and waiting to publish) and kickoff is more than
+ *     SAME_DAY_GENERATE_FROM_HOURS away.
+ *
+ * After that — attempted with nothing promoted, or the window simply closed
+ * because the market never priced a qualifying selection — ordinary curation
+ * may fill the slot under its own floors, as before.
+ */
+export function fixturesAwaitingDedicated(input: {
+  rows: ReadonlyArray<{ id: string; leagueApiId: number | null; kickoff: Date | null; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null }>;
+  attemptedFixtureApiIds: ReadonlySet<number>;
+  /** paidFixtureKey()s with a dedicated draft still in review. */
+  openDraftKeys: ReadonlySet<string>;
+  now: Date;
+}): Set<string> {
+  const awaiting = new Set<string>();
+  for (const r of input.rows) {
+    if (!r.kickoff || !PAID_CORE_LEAGUE_IDS.includes(r.leagueApiId ?? -1)) continue;
+    const key = paidFixtureKey(r);
+    const untilKickoff = r.kickoff.getTime() - input.now.getTime();
+    const attempted = r.fixtureApiId != null && input.attemptedFixtureApiIds.has(r.fixtureApiId);
+    if (!attempted && untilKickoff > GENERATE_FROM_HOURS * 3_600_000) awaiting.add(key);
+    else if (input.openDraftKeys.has(key) && untilKickoff > SAME_DAY_GENERATE_FROM_HOURS * 3_600_000) awaiting.add(key);
+  }
+  return awaiting;
+}
+
 // ── Distinct picks ───────────────────────────────────────────────────────────
 
 const stable = (v: unknown): string =>
@@ -427,6 +468,26 @@ export function repeatsExistingPick(
 
 // ── Tiering ──────────────────────────────────────────────────────────────────
 
+/**
+ * A paid pick must still be worth backing: its fair odds (100 / the de-vigged
+ * market probability) must be at least this. 1.15 fair is a bookmaker price of
+ * about 1.10 after the margin. Above ~87% the market calls it a near-formality —
+ * double chance on an overwhelming favourite at 1.03 — and selling that as a
+ * paid pick would be safety with nothing in it for the subscriber.
+ *
+ * It narrows the tiers to a band: VIP 75–87% market, PREMIUM 80–87%. A fixture
+ * whose only confirmable selections are shorter than this gets no dedicated
+ * pick, which is exactly the case where an ordinary pick may stand in for it
+ * (see the fallback rule in geniusCuration.ts).
+ */
+export const PAID_MIN_FAIR_ODDS = 1.15;
+export const PAID_MAX_MARKET_PROBABILITY = 100 / PAID_MIN_FAIR_ODDS;
+
+/** True when the market prices this selection too short to carry as a paid pick. */
+export function tooShortForPaid(marketProbability: number | null | undefined): boolean {
+  return (marketProbability ?? 0) > PAID_MAX_MARKET_PROBABILITY;
+}
+
 export type PaidTier = "VIP" | "PREMIUM";
 
 /**
@@ -441,6 +502,7 @@ export type PaidTier = "VIP" | "PREMIUM";
  */
 export function paidTierFor(verdict: { confirmed: boolean; marketProbability?: number | null }, confidence: number): PaidTier | null {
   if (!verdict.confirmed || confidence < VIP_CONFIDENCE_FLOOR || confidence < MC_MIN_MODEL_CONFIDENCE) return null;
+  if (tooShortForPaid(verdict.marketProbability)) return null;
   return (verdict.marketProbability ?? 0) >= PREMIUM_MARKET_FLOOR && confidence >= PREMIUM_CONFIDENCE_FLOOR ? "PREMIUM" : "VIP";
 }
 

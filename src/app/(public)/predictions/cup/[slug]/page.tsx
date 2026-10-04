@@ -16,7 +16,7 @@ import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
 import { RateCard } from "@/components/TrackRecordView";
 import { PredictionCard } from "@/components/PredictionCard";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import type { PredictionCategory } from "@/lib/enums";
 import { CompetitionHubIntro } from "@/components/CompetitionHubIntro";
 
@@ -52,7 +52,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
   const [scoped, viewer] = hubContent
     ? await Promise.all([getPublishedByLeagueSlug(leagueSlug(cup.name, cup.id)), getViewerEntitlement()])
     : [null, null] as const;
-  const shaped = scoped && viewer ? scoped.rows.map((row) => canViewCategory(row.category as PredictionCategory, viewer.tier, viewer.status, viewer.role)
+  const shaped = scoped && viewer ? scoped.rows.map((r) => ({ ...r, category: presentedCategory(r.category, r.categories) })).map((row) => canViewCategory(row.category, viewer.tier, viewer.status, viewer.role)
     ? row
     : { ...row, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true }) : [];
 

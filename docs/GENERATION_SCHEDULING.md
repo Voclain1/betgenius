@@ -33,6 +33,17 @@ How the scheduled generation passes are ordered.
 > - **Paid-only.** A `VIP_GENERATED`/`PREMIUM_GENERATED` row (`src/lib/paidOnly.ts`) is
 >   shown only in VIP/PREMIUM: never in Today, Genius, Goals or the accumulators, and it
 >   never blocks another category's pick (the Goals pass ignores it).
+> - **Significant odds.** A dedicated pick needs fair odds of at least 1.15
+>   (`PAID_MIN_FAIR_ODDS`, market ≤ ~87%): a near-formality is not a paid pick. Gate
+>   rejections for it are reported as `TOO_SHORT_TO_SELL`.
+> - **Overlap only as a fallback.** Ordinary curation may put a free pick into
+>   VIP/PREMIUM only once the dedicated pass has had its chance at that fixture: it
+>   attempted it, or kickoff is inside 12h with nothing qualifying, and no dedicated
+>   draft is still in review (`fixturesAwaitingDedicated`).
+> - **A free copy never presents as paid.** A row in any free category is stored with
+>   that free category as its primary, and every page that labels or locks by
+>   category goes through `presentedCategory` (`src/lib/access.ts`), so a Banker or
+>   Today pick that is also in VIP shows as Banker/Today, unlocked, with no VIP chip.
 
 Scheduling for this app lives in **cron-job.org**, not in the repository —
 `vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,

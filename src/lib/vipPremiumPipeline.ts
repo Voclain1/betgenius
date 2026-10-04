@@ -24,6 +24,7 @@ import {
   VIP_PREMIUM_RETRY_BACKOFF_MS,
   paidAutoPublishVerdict,
   paidPublishFixture,
+  fixturesAwaitingDedicated,
   paidTierFor,
   planVipPremiumCandidates,
   repeatsExistingPick,
@@ -159,6 +160,38 @@ export async function loadVipPremiumAttempts(now: Date = new Date()): Promise<Ov
     select: { prompt: true, createdAt: true },
   });
   return jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+}
+
+/**
+ * fixturesAwaitingDedicated, loaded: this pass's attempts and its drafts still
+ * in review. Called by ordinary curation (geniusCuration.ts) through a dynamic
+ * import, because this module imports that one.
+ */
+export async function loadFixturesAwaitingDedicated(
+  rows: Parameters<typeof fixturesAwaitingDedicated>[0]["rows"],
+  now: Date = new Date(),
+): Promise<Set<string>> {
+  if (rows.length === 0) return new Set();
+  const [attempts, drafts] = await Promise.all([
+    loadVipPremiumAttempts(now),
+    prisma.prediction.findMany({
+      where: {
+        status: "PENDING_REVIEW",
+        kickoff: { gt: now },
+        OR: [
+          { provenance: { in: [VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE] } },
+          { aiJob: { prompt: { contains: `"intent":"${VIP_PREMIUM_INTENT}"` } } },
+        ],
+      },
+      select: { id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+    }),
+  ]);
+  return fixturesAwaitingDedicated({
+    rows,
+    attemptedFixtureApiIds: new Set(attempts.map((a) => a.fixtureApiId).filter((id): id is number => id != null)),
+    openDraftKeys: new Set(drafts.map(paidFixtureKey)),
+    now,
+  });
 }
 
 export type TargetSelection = {
