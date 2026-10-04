@@ -42,6 +42,13 @@ const f1 = (n: number) => (Number.isFinite(n) ? n.toFixed(1).padStart(6) : "    
 const pad = (v: unknown, w = 6) => String(v).padStart(w);
 
 async function main() {
+  // Fail closed when run unattended (the diagnose-generation workflow): the
+  // session must be one Postgres itself refuses to write on.
+  if (process.env.REQUIRE_READ_ONLY === "1") {
+    const [ro] = await prisma.$queryRawUnsafe<{ transaction_read_only: string }[]>("SHOW transaction_read_only");
+    if (ro?.transaction_read_only !== "on") throw new Error(`refusing: session is not read-only (transaction_read_only = ${ro?.transaction_read_only})`);
+    console.log("session verified read-only (transaction_read_only = on)");
+  }
   const days = Math.max(1, Number(process.argv[2]) || 7);
   const now = new Date();
   const from = new Date(now.getTime() - days * 24 * H);
