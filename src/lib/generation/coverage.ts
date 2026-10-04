@@ -43,7 +43,7 @@ import {
   isSeniorWomensCompetition,
 } from "@/lib/leagues";
 import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
-import { GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
+import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 
 /**
  * The tunables. One object so they are changed together and in one place.
@@ -77,13 +77,22 @@ export type TierCounts = Record<GenerationTier, number>;
 export const emptyTierCounts = (): TierCounts => ({ CORE: 0, SECONDARY: 0, FALLBACK: 0, DEEP_FALLBACK: 0 });
 
 /**
- * The horizon a slate is counted over: the generation window, from the
- * earliest a same-day fixture may still be generated to the latest any fixture
- * may be. A fixture already kicking off does not make the slate healthy.
+ * The horizon a slate is counted over: fixtures GENERATE_FROM_HOURS (12h) to
+ * GENERATE_UNTIL_HOURS (48h) away — the ones that can still be generated AND
+ * reviewed in good time.
+ *
+ * It used to start 2h out. Measured on production (4 Oct 2026): today's
+ * already-generated fixtures then kept the slate "full" for the whole day, so
+ * nothing was added for ~31 hours, and every time one kicked off its slot was
+ * refilled with whatever ranked highest across the 2-3 swept dates — usually a
+ * fixture a few hours away. 20 of that day's 45 fixtures were generated inside
+ * 12h of kickoff, every one of them discovered that late, and 8 were published
+ * after kickoff. Counting only what is still 12h+ away makes a short slate
+ * refill tomorrow's fixtures while there is time to review them.
  */
 export function coverageHorizon(now: Date): { from: Date; until: Date } {
   return {
-    from: new Date(now.getTime() + SAME_DAY_GENERATE_FROM_HOURS * 3_600_000),
+    from: new Date(now.getTime() + GENERATE_FROM_HOURS * 3_600_000),
     until: new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000),
   };
 }
@@ -227,7 +236,8 @@ export type GateRejection =
   | "missing_team_names"
   | "non_senior_side"
   | "unpriced_cup"
-  | "no_bookmakers";
+  | "no_bookmakers"
+  | "inside_lead_time";
 
 export type OddsKnowledge = { bookmakerCount: number | null; fetchedAt: Date | null };
 
@@ -242,7 +252,7 @@ export type OddsKnowledge = { bookmakerCount: number | null; fetchedAt: Date | n
  */
 export function fallbackQualityGate(
   row: FixtureRow,
-  ctx: { odds?: OddsKnowledge | null } = {},
+  ctx: { odds?: OddsKnowledge | null; now?: Date } = {},
 ): { ok: true; tier: GenerationTier } | { ok: false; reason: GateRejection } {
   const isPositiveInt = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v > 0;
   const home = row.teams?.home;
@@ -256,6 +266,11 @@ export function fallbackQualityGate(
 
   if (row.fixture.status?.short !== "NS") return { ok: false, reason: "not_scheduled" };
   if (Number.isNaN(new Date(row.fixture.date).getTime())) return { ok: false, reason: "bad_kickoff" };
+  // A top-up fixture is only worth adding while it can still be generated AND
+  // reviewed: never inside GENERATE_FROM_HOURS of kickoff (see coverageHorizon).
+  if (ctx.now && new Date(row.fixture.date).getTime() < ctx.now.getTime() + GENERATE_FROM_HOURS * 3_600_000) {
+    return { ok: false, reason: "inside_lead_time" };
+  }
 
   if (!home.name?.trim() || !away.name?.trim()) return { ok: false, reason: "missing_team_names" };
   if (isNonSeniorSide(home.name, row.league.id) || isNonSeniorSide(away.name, row.league.id)) return { ok: false, reason: "non_senior_side" };
@@ -292,6 +307,8 @@ export function planFallback(
   decision: Pick<CoverageDecision, "allowedTiers" | "widened">,
   oddsByMatchKey: Map<string, OddsKnowledge> = new Map(),
   keyOf: (row: FixtureRow) => string | null = () => null,
+  /** When set, fixtures inside GENERATE_FROM_HOURS of kickoff are refused (inside_lead_time). */
+  now?: Date,
 ): FallbackPlan {
   const plan: FallbackPlan = { eligible: { FALLBACK: [], DEEP_FALLBACK: [] }, leaguesSeenByTier: emptyTierCounts(), rejected: {}, considered: 0 };
   const leaguesSeen = new Set<number>();
@@ -310,7 +327,7 @@ export function planFallback(
     if ((tier !== "FALLBACK" && tier !== "DEEP_FALLBACK") || !decision.allowedTiers.includes(tier)) continue;
     plan.considered++;
     const key = keyOf(row);
-    const verdict = fallbackQualityGate(row, { odds: key ? oddsByMatchKey.get(key) : null });
+    const verdict = fallbackQualityGate(row, { odds: key ? oddsByMatchKey.get(key) : null, now });
     if (!verdict.ok) {
       plan.rejected[verdict.reason] = (plan.rejected[verdict.reason] ?? 0) + 1;
       continue;

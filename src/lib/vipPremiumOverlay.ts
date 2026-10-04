@@ -55,9 +55,9 @@ import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 export const PAID_CORE_LEAGUE_IDS: readonly number[] = [...new Set([...VIP_PROXY_LEAGUE_IDS, 2, 3, 848, 1, 4])];
 
 /**
- * National-team competitions: the Nations League and the World Cup / Euro
- * qualifiers (GENERATION_TIERS.FALLBACK's international-break slate, minus
- * friendlies, which field experimental sides the books price loosely).
+ * National-team competitions: the Nations League and the World Cup / Euro /
+ * AFCON qualifiers (now at the head of GENERATION_TIERS.SECONDARY; friendlies,
+ * which field experimental sides the books price loosely, stay out).
  */
 export const PAID_NATIONAL_TEAM_LEAGUE_IDS: readonly number[] = [5, 32, 960, 34, 29, 36];
 
@@ -73,10 +73,10 @@ export const PAID_NATIONAL_TEAM_LEAGUE_IDS: readonly number[] = [5, 32, 960, 34,
  * model floors and gap apply. The league list was only ever a proxy for "the
  * market prices this well"; the gate checks that directly.
  */
-export const PAID_WIDENED_LEAGUE_IDS: readonly number[] = [
+export const PAID_WIDENED_LEAGUE_IDS: readonly number[] = [...new Set([
   ...(GENERATION_TIERS.SECONDARY as readonly number[]).filter((id) => !isSeniorWomensCompetition(id)),
   ...PAID_NATIONAL_TEAM_LEAGUE_IDS,
-].filter((id) => !PAID_CORE_LEAGUE_IDS.includes(id));
+])].filter((id) => !PAID_CORE_LEAGUE_IDS.includes(id));
 
 /** Every competition a dedicated paid pick may come from, core or widened. */
 export const PAID_ANY_LEAGUE_IDS: readonly number[] = [...PAID_CORE_LEAGUE_IDS, ...PAID_WIDENED_LEAGUE_IDS];
@@ -537,7 +537,8 @@ export type PaidPublishBlock =
   | "PREMIUM_NOT_EARNED" // tagged PREMIUM without model >= 80 AND market >= 80
   | "CONFLICTING_DEDICATED_PICK" // another live dedicated paid row is on the fixture
   | "REPEATS_EXISTING_PICK" // the same selection is already live on the fixture as a non-paid pick
-  | "OVER_DAILY_QUOTA";
+  | "OVER_DAILY_QUOTA"
+  | "KICKED_OFF"; // the match started before publication could complete
 
 export type PaidPublishRow = {
   provenance: string | null;

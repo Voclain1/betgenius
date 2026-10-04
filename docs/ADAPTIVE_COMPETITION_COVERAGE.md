@@ -8,6 +8,17 @@ Code: `src/lib/leagues.ts` (`GENERATION_TIERS`), `src/lib/generation/coverage.ts
 `src/lib/generation/worker.ts` (ordinary-run scope). Tests:
 `npm run check:adaptive-coverage`.
 
+> **Update, Oct 2026: lead time.** Production on 4 Oct showed 20 of 45 fixtures
+> generated inside 12h of kickoff (8 published after kickoff), every one of them
+> *discovered* that late by the fallback sweep. The slate is now counted only over
+> fixtures 12–48h away (`coverageHorizon`), the sweep refuses fixtures inside 12h
+> (`inside_lead_time`), and the national-team competitions (Nations League; WC, Euro
+> and AFCON qualifiers) moved from FALLBACK to the head of SECONDARY, so the
+> discovery cursor finds them ~48h out every day. Approval and publication are
+> refused once a match has kicked off (`reviewBlockedByKickoff`). To measure lead
+> time on production without a terminal: Actions → `diagnose-generation` → Run
+> workflow (read-only).
+
 ## Why
 
 On 21 September 2026 API-Football listed 160 fixtures, 4 of them in scope, and

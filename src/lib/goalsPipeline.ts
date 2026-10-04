@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
-import { applyReviewAction } from "@/lib/predictions";
+import { applyReviewAction, KickoffPassedError } from "@/lib/predictions";
 import { GOALS } from "@/lib/goalsCategory";
 import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { parseStoredContext } from "@/lib/ai/context";
@@ -134,7 +134,13 @@ export async function autoPublishGoalsPrediction(
     goalsPublishFixture(row, fixture.ledgerStatus, fixture.rows),
   );
   if (!verdict.publish) return { published: false, blocks: verdict.blocks };
-  await applyReviewAction(row, "PUBLISH", actorId);
+  try {
+    await applyReviewAction(row, "PUBLISH", actorId);
+  } catch (error) {
+    // Kickoff passed between the read and the publish: not published, not a failed run.
+    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"] };
+    throw error;
+  }
   return { published: true, blocks: [] };
 }
 

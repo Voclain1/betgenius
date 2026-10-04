@@ -282,7 +282,7 @@ export async function discoverGenerationCandidates(opts: {
         : [];
       const odds = new Map<string, OddsKnowledge>(oddsRows.map((o) => [o.matchKey, { bookmakerCount: o.bookmakerCount, fetchedAt: o.fetchedAt }]));
 
-      const plan = planFallback(rows, decision, odds, keyOf);
+      const plan = planFallback(rows, decision, odds, keyOf, now);
       sweepByTier = plan.leaguesSeenByTier;
       sweep.fallbackConsidered = plan.considered;
       sweep.gateRejected = plan.rejected;
