@@ -227,11 +227,12 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   };
 
   const act = async (action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
-    await fetch(`/api/admin/predictions/${params.id}`, {
+    const res = await fetch(`/api/admin/predictions/${params.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
+    if (!res.ok) alert((await res.json().catch(() => null))?.error ?? `${action.toLowerCase()} failed`);
     load();
   };
 
@@ -299,6 +300,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   };
 
   const isBetOfTheDay = !!p?.categories?.some((c) => c.category === "BET_OF_THE_DAY");
+  const kickedOff = !!p?.kickoff && new Date(p.kickoff).getTime() <= Date.now();
   const isCombo = !!p && isComboPrediction(p);
   const isHiddenLeg = !!p && isHiddenComboLeg(p.marketType, p.categories.map((c) => c.category));
 
@@ -519,8 +521,10 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
 
       <div className="card flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-ghost text-sm" onClick={() => act("APPROVE")}>Approve</button>
-          <button className="btn btn-primary text-sm" onClick={() => act("PUBLISH")}>Publish</button>
+          {/* Refused by the API once the match has started (reviewBlockedByKickoff). */}
+          <button className="btn btn-ghost text-sm disabled:opacity-40" disabled={kickedOff} title={kickedOff ? "The match has started: archive it instead" : undefined} onClick={() => act("APPROVE")}>Approve</button>
+          <button className="btn btn-primary text-sm disabled:opacity-40" disabled={kickedOff} title={kickedOff ? "The match has started: archive it instead" : undefined} onClick={() => act("PUBLISH")}>Publish</button>
+          {kickedOff && <span className="text-xs text-gray-500">Kicked off — can no longer be approved or published</span>}
           <button className="btn btn-ghost text-sm" onClick={() => act("ARCHIVE")}>Archive</button>
           {/* Only a published pick can hold the slot — the API enforces this
               too; disabling here just avoids offering an action that will be

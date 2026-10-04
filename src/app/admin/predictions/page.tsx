@@ -54,6 +54,9 @@ type SortKey = keyof typeof SORTS;
 /** Inside this many hours, a still-unreviewed candidate is flagged as about to be wasted. */
 const EXPIRY_WARNING_HOURS = 12;
 
+/** Approval and publication are refused once the match has started. */
+const kickedOff = (kickoff: string | null) => !!kickoff && new Date(kickoff).getTime() <= Date.now();
+
 export default function AdminPredictions() {
   const [rows, setRows] = useState<Row[]>([]);
   // Defaults to the review queue rather than ALL: at generation volume this
@@ -85,11 +88,13 @@ export default function AdminPredictions() {
   useEffect(() => { load(); }, [comboView]);
 
   const act = async (id: string, action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
-    await fetch(`/api/admin/predictions/${id}`, {
+    const res = await fetch(`/api/admin/predictions/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),
     });
+    // Refusals (a kicked-off match, say) were silently swallowed before.
+    if (!res.ok) alert((await res.json().catch(() => null))?.error ?? `${action.toLowerCase()} failed`);
     load();
   };
 
@@ -369,8 +374,15 @@ export default function AdminPredictions() {
                 </td>
                 <td className="space-x-2 whitespace-nowrap px-3 py-2 text-right">
                   <Link href={`/admin/predictions/${r.id}`} className="text-xs text-gray-300 hover:underline">Edit</Link>
-                  <button className="text-xs text-blue-400 hover:underline" onClick={() => act(r.id, "APPROVE")}>Approve</button>
-                  <button className="text-xs text-brand hover:underline" onClick={() => act(r.id, "PUBLISH")}>Publish</button>
+                  {kickedOff(r.kickoff) ? (
+                    // The API refuses these too (reviewBlockedByKickoff); not offering them is the courtesy.
+                    <span className="text-xs text-gray-500" title="The match has started: archive it instead">Kicked off</span>
+                  ) : (
+                    <>
+                      <button className="text-xs text-blue-400 hover:underline" onClick={() => act(r.id, "APPROVE")}>Approve</button>
+                      <button className="text-xs text-brand hover:underline" onClick={() => act(r.id, "PUBLISH")}>Publish</button>
+                    </>
+                  )}
                   <button className="text-xs text-gray-400 hover:underline" onClick={() => act(r.id, "ARCHIVE")}>Archive</button>
                   <button className="text-xs text-red-400 hover:underline" onClick={() => remove(r.id)}>Delete</button>
                 </td>

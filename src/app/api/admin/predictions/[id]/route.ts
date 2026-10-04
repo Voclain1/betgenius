@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
+import { setPredictionCategories, reviewTransition, reviewBlockedByKickoff } from "@/lib/predictions";
 import { GOALS, withGoalsCategory } from "@/lib/goalsCategory";
 import { hiddenLegCategoryEditError, HiddenComboLegError } from "@/lib/comboLegs";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
@@ -195,6 +195,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       throw error;
     }
   }
+
+  // Kicked off: no approval or publication. The same save may be correcting the
+  // kickoff itself, so the edited value wins over the stored one.
+  const kickoffBlock = reviewBlockedByKickoff(action, rest.kickoff !== undefined ? rest.kickoff : before.kickoff);
+  if (kickoffBlock) return NextResponse.json({ error: kickoffBlock }, { status: 409 });
 
   if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {
     // Shared with the bulk endpoint so the two can't drift — see

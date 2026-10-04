@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { applyReviewAction, setPredictionCategories } from "@/lib/predictions";
+import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
 import type { FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
@@ -479,7 +479,13 @@ export async function autoPublishVipPremiumPrediction(
   );
   if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
 
-  await applyReviewAction(row, "PUBLISH", actorId);
+  try {
+    await applyReviewAction(row, "PUBLISH", actorId);
+  } catch (error) {
+    // Kickoff passed between the read and the publish: not published, not a failed run.
+    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
+    throw error;
+  }
 
   // The fixture's one paid pick is now this one.
   const ordinaryPaid = isLegacyPaidTierDay(row.kickoff)

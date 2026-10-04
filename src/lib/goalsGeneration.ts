@@ -344,7 +344,8 @@ export type GoalsPublishBlock =
   | "NO_MATCH_CONTEXT"
   | "NO_COMPETITION"
   | "NOT_ORDINARY_COVERED"
-  | "DUPLICATE_TOTAL_GOALS";
+  | "DUPLICATE_TOTAL_GOALS"
+  | "KICKED_OFF"; // the match started before publication could complete
 
 export type GoalsPublishRow = {
   status: string;

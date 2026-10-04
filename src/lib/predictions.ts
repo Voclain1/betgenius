@@ -109,11 +109,38 @@ export function reviewTransition(
  * PATCH keeps its own transaction only because it merges field edits into the
  * same update.
  */
+/**
+ * A pick whose match has started can no longer be approved or published.
+ *
+ * On 4 Oct 2026 eight picks were published after their own kickoff: they were
+ * generated hours late and reviewed later still, and once a match is under way
+ * a "prediction" is a guess with the answer half-visible. Archiving stays
+ * allowed. Null kickoff (a manual row with no date) is not blocked: there is
+ * no kickoff to be past.
+ */
+export const KICKOFF_PASSED_MESSAGE = "This match has already kicked off, so the pick can no longer be approved or published. Archive it instead.";
+
+export function reviewBlockedByKickoff(action: string, kickoff: Date | null | undefined, now: Date = new Date()): string | null {
+  if (action !== "APPROVE" && action !== "PUBLISH") return null;
+  return kickoff && kickoff.getTime() <= now.getTime() ? KICKOFF_PASSED_MESSAGE : null;
+}
+
+export class KickoffPassedError extends Error {
+  constructor() {
+    super(KICKOFF_PASSED_MESSAGE);
+    this.name = "KickoffPassedError";
+  }
+}
+
 export async function applyReviewAction(
   row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null },
   action: ReviewAction,
   actorId: string,
 ) {
+  // Every review path goes through here or the single-row route, which makes
+  // the same check. The kickoff is re-read, never trusted from the caller.
+  const current = await prisma.prediction.findUnique({ where: { id: row.id }, select: { kickoff: true } });
+  if (reviewBlockedByKickoff(action, current?.kickoff)) throw new KickoffPassedError();
   return prisma.$transaction(async (tx) => {
     const updated = await tx.prediction.update({
       where: { id: row.id },
