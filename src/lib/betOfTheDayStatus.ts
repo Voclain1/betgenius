@@ -13,6 +13,7 @@
  *
  * Pure and React-free so scripts/check-betofday-lifecycle.ts can assert it.
  */
+import { lagosDateKey } from "@/lib/lagosDate";
 export type BetOfTheDayState = "LIVE" | "STARTED" | "SETTLED" | "WITHDRAWN";
 
 export function betOfTheDayState(
@@ -28,4 +29,21 @@ export function betOfTheDayState(
 
 export function isCurrentBetOfTheDay(row: { outcome: string; kickoff: Date | null; status?: string }, now: Date = new Date()) {
   return betOfTheDayState(row, now) === "LIVE";
+}
+
+/**
+ * Whether the homepage shows the tagged pick at all.
+ *
+ * Not only while it is LIVE: through the rest of its kickoff day (Lagos) it
+ * stays, in play and then with its result, so a reader who comes back in the
+ * evening sees how the day's pick went instead of an empty slot. It leaves when
+ * the next pick takes the tag, or at Lagos midnight after its match. A
+ * withdrawn pick never shows. The card itself says which state it is in, and
+ * offers no price once the match has started.
+ */
+export function showBetOfTheDayOnHomepage(row: { outcome: string; kickoff: Date | null; status?: string }, now: Date = new Date()): boolean {
+  const state = betOfTheDayState(row, now);
+  if (state === "WITHDRAWN") return false;
+  if (state === "LIVE") return true;
+  return !!row.kickoff && lagosDateKey(row.kickoff) === lagosDateKey(now);
 }
