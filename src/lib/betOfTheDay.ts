@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { isCurrentBetOfTheDay } from "@/lib/betOfTheDayStatus";
+import { betOfTheDayState, isCurrentBetOfTheDay, showBetOfTheDayOnHomepage, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { qualifiesForBetOfDay, affordsBetOfDayPrice, MIN_ODDS, MAX_ODDS, type FixtureOdds, type OddsGateResult } from "@/lib/odds";
@@ -58,6 +58,9 @@ export type BetOfTheDayRow = {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   betOfDayPinnedAt: Date | null;
+  /** Final score once settled; shown on the card beside each team. Optional so older fixtures and stubs still type. */
+  finalHomeScore?: number | null;
+  finalAwayScore?: number | null;
 };
 
 const ROW_SELECT = {
@@ -79,6 +82,8 @@ const ROW_SELECT = {
   homeTeamApiId: true,
   awayTeamApiId: true,
   betOfDayPinnedAt: true,
+  finalHomeScore: true,
+  finalAwayScore: true,
 } as const;
 
 export type BetOfTheDayView = {
@@ -134,6 +139,16 @@ export const getBetOfTheDay = cache(async (): Promise<BetOfTheDayView | null> =>
 export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<BetOfTheDayView | null> {
   const view = await getBetOfTheDay();
   return view && isCurrentBetOfTheDay(view.row, now) ? view : null;
+}
+
+/**
+ * The homepage slot: the tagged pick from before kickoff until the end of its
+ * kickoff day, in play and settled included (showBetOfTheDayOnHomepage), with
+ * its state so the card can present it as upcoming, in play or a result.
+ */
+export async function getHomepageBetOfTheDay(now: Date = new Date()): Promise<(BetOfTheDayView & { state: BetOfTheDayState }) | null> {
+  const view = await getBetOfTheDay();
+  return view && showBetOfTheDayOnHomepage(view.row, now) ? { ...view, state: betOfTheDayState(view.row, now) } : null;
 }
 
 /**

@@ -18,8 +18,9 @@ import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { homeSummary, homeHeadline } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
-import { getCurrentBetOfTheDay } from "@/lib/betOfTheDay";
-import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex } from "@/lib/predictionScope";
+import { getHomepageBetOfTheDay } from "@/lib/betOfTheDay";
+import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex, getFixtureEventContext } from "@/lib/predictionScope";
+import { matchKey } from "@/lib/slug";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME, JsonLd, websiteJsonLd } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
@@ -229,9 +230,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getLeaguesWithPublishedPredictions(),
     getPublishedMatchIndex(),
     fetchHeroPick(),
-    getCurrentBetOfTheDay(),
+    getHomepageBetOfTheDay(),
     fetchDaySlate(day),
   ]);
+  // Crests for the Bet of the Day card: one batched read, only when a pick holds the slot.
+  const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;
   const viewer = await getViewerEntitlement();
   const popular = popularLeagues(leagues);
 
@@ -376,7 +379,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
 
       {/* Directly above Featured, and rendered only when a pick actually holds
           the slot — an empty "Bet of the Day" heading would advertise a
-          promise the page is not keeping. */}
+          promise the page is not keeping. It stays through the rest of its
+          kickoff day, in play and then with its result (getHomepageBetOfTheDay). */}
       {betOfTheDay && (
         <section>
           <div className="mb-4 flex items-center justify-between">
@@ -385,7 +389,12 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               Full reasoning →
             </Link>
           </div>
-          <BetOfTheDayCard data={betOfTheDay} variant="hero" />
+          <BetOfTheDayCard
+            data={betOfTheDay}
+            variant="hero"
+            state={betOfTheDay.state}
+            crests={{ home: botdContext?.homeTeamLogo, away: botdContext?.awayTeamLogo }}
+          />
         </section>
       )}
 

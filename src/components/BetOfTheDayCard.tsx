@@ -1,92 +1,179 @@
 import Link from "next/link";
+import Image from "next/image";
 import { LeagueBadge } from "@/components/LeagueBadge";
-import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { matchSlug } from "@/lib/slug";
 import { quoteAge } from "@/lib/odds";
 import type { BetOfTheDayView } from "@/lib/betOfTheDay";
+import { betOfTheDayState, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { Prose } from "@/components/Prose";
 
 /**
  * The Bet of the Day pick, with its bookmaker price.
  *
- * Shared between the homepage slot (`variant="hero"`, above Featured) and the
- * dedicated /predictions/bet-of-the-day page (`variant="page"`, which adds the
+ * Shared between the homepage slot (`variant="hero"`) and the dedicated
+ * /predictions/bet-of-the-day page (`variant="page"`, which adds the
  * reasoning), so the two can never disagree about the price they quote.
  *
- * The price block degrades in one direction only. Odds come from a cron-filled
- * cache with the usual `fetchedAt` contract, so "no price yet" is a normal
- * state (the refresh hasn't reached this fixture, or no book has opened it) —
- * the card renders the pick without a price rather than a placeholder number.
- * Nothing here ever invents or estimates a price.
+ * LAYOUT, phone first. A header line (competition and kickoff, with the match
+ * state on the right), the two teams stacked one per row with their crests (and
+ * the score once settled), then ONE pick panel: market and pick on the left,
+ * and on the right whatever matters now — the price before kickoff, "In play"
+ * after it, the result once settled. Confidence and the market's view sit in
+ * a quiet footer. There is no "★ Bet of the Day" chip: the section heading and
+ * the page title already say what this is.
+ *
+ * The price degrades in one direction only. Odds come from a cron-filled cache
+ * with the usual `fetchedAt` contract, so "no price yet" is a normal state; the
+ * card says so rather than inventing a number. Once the match has started the
+ * pre-match price is withheld: it is no longer a price anyone can take.
  */
+const KICKOFF_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Africa/Lagos",
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+function kickoffLabel(kickoff: Date | string | null): string | null {
+  if (!kickoff) return null;
+  const d = new Date(kickoff);
+  if (Number.isNaN(d.getTime())) return null;
+  // "Tue 7 Oct, 19:00" -> "Tue 7 Oct · 19:00" (West Africa Time, the site's day)
+  return KICKOFF_FORMAT.format(d).replace(",", " ·");
+}
+
+const RESULT_STYLE: Record<string, { label: string; className: string }> = {
+  WON: { label: "Won", className: "text-emerald-400" },
+  LOST: { label: "Lost", className: "text-red-400" },
+  VOID: { label: "Void", className: "text-gray-300" },
+};
+
+function TeamRow({ name, crest, score }: { name: string | null; crest?: string | null; score?: number | null }) {
+  const initials = (name ?? "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <div className="flex items-center gap-3">
+      {crest ? (
+        <Image src={crest} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />
+      ) : (
+        <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-border text-[10px] font-semibold text-gray-300">
+          {initials}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate text-base font-semibold">{name}</span>
+      {score != null && <span className="text-lg font-bold tabular-nums">{score}</span>}
+    </div>
+  );
+}
+
 export function BetOfTheDayCard({
   data,
   variant = "page",
-  inactive = false,
+  inactive,
+  state: stateProp,
+  crests,
 }: {
   data: BetOfTheDayView;
   variant?: "hero" | "page";
-  /** Kicked off or settled: shown as history, so the pre-match price is withheld rather than offered. */
+  /** Kicked off or settled. Derived from the row when omitted; kept for callers that already know. */
   inactive?: boolean;
+  /** The pick's lifecycle state; derived from the row when omitted. */
+  state?: BetOfTheDayState;
+  /** Team crests, when the caller has them. Initials stand in otherwise. */
+  crests?: { home?: string | null; away?: string | null };
 }) {
   const { row, gate, oddsFetchedAt } = data;
+  const state = stateProp ?? betOfTheDayState(row);
+  const live = inactive === undefined ? state === "LIVE" : !inactive;
+  const settled = row.outcome !== "PENDING";
   const slug = matchSlug({ homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoff: row.kickoff });
   const href = slug ? `/predictions/match/${slug}` : null;
   const age = quoteAge(oddsFetchedAt);
-  const settled = row.outcome !== "PENDING";
+  const when = kickoffLabel(row.kickoff);
+  const result = settled ? RESULT_STYLE[row.outcome] : null;
+  const showScore = settled && row.finalHomeScore != null && row.finalAwayScore != null;
+  const confidence = Math.max(0, Math.min(100, row.confidence));
+
+  // One pill, never wrapping: when it kicks off, that it is in play, or that it has finished.
+  const pill = "shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold";
+  const statusPill = settled ? (
+    <span className={`${pill} bg-brand-border uppercase tracking-wide text-gray-300`}>Full time</span>
+  ) : !live ? (
+    <span className={`${pill} inline-flex items-center gap-1.5 bg-red-500/15 uppercase tracking-wide text-red-300`}>
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" aria-hidden />
+      In play
+    </span>
+  ) : when ? (
+    <span className={`${pill} bg-brand-border tabular-nums text-gray-200`}>{when}</span>
+  ) : null;
 
   const body = (
     <div className="card space-y-4 border-brand/40">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="chip bg-brand/20 text-brand">★ Bet of the Day</span>
-          <LeagueBadge leagueApiId={row.leagueApiId} leagueName={row.leagueName} showName={false} />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <LeagueBadge leagueApiId={row.leagueApiId} leagueName={row.leagueName} showName={false} size={16} />
+          <span className="truncate text-xs font-medium text-gray-400">{row.leagueName}</span>
         </div>
-        {settled && <span className={`chip ${OUTCOME_STYLES[row.outcome] ?? "bg-brand-border"}`}>{row.outcome}</span>}
+        {statusPill}
       </div>
 
-      <div>
-        <div className="text-lg font-semibold">
-          {row.homeTeam} vs {row.awayTeam}
+      <div className="space-y-2">
+        <TeamRow name={row.homeTeam} crest={crests?.home} score={showScore ? row.finalHomeScore : null} />
+        <TeamRow name={row.awayTeam} crest={crests?.away} score={showScore ? row.finalAwayScore : null} />
+      </div>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-brand/30 bg-brand/10 p-3">
+        <div className="min-w-0">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{row.market}</div>
+          <div className="break-words text-lg font-bold leading-snug text-brand">{row.pick}</div>
         </div>
-        {row.kickoff && (
-          <div className="text-xs text-gray-400">
-            {new Date(row.kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+        <div className="text-right">
+          {result ? (
+            <>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Result</div>
+              <div className={`text-xl font-bold ${result.className}`}>{result.label}</div>
+            </>
+          ) : !live ? (
+            <>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Status</div>
+              <div className="text-sm font-semibold text-gray-300">In play</div>
+            </>
+          ) : gate?.price != null ? (
+            <>
+              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Odds</div>
+              <div className="text-2xl font-bold tabular-nums">{gate.price.toFixed(2)}</div>
+            </>
+          ) : (
+            <div className="max-w-[7rem] text-xs text-gray-500">Price not available yet</div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400">Confidence</span>
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-brand-border" aria-hidden>
+            <div className="h-full rounded-full bg-brand" style={{ width: `${confidence}%` }} />
           </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="text-xs uppercase text-gray-400">{row.market}</div>
-          <div className="text-xl font-bold text-brand">{row.pick}</div>
+          <span className="text-xs font-semibold tabular-nums">{row.confidence}%</span>
         </div>
-
-        {inactive ? (
-          <div className="text-right text-xs text-gray-500">{settled ? "Settled" : "In play — no longer an active pick"}</div>
-        ) : gate?.price != null ? (
-          <div className="text-right">
-            <div className="text-2xl font-bold tabular-nums">{gate.price.toFixed(2)}</div>
-            <div className="text-xs text-gray-400">
-              best of {gate.bookmakers} bookmaker{gate.bookmakers === 1 ? "" : "s"}
-              {/* The quote's age, always shown when a price is. A price with no
-                  staleness signal is the one number on this page a reader could
-                  act on directly, and act on wrongly. */}
+        {live && gate?.price != null && (
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-gray-500">
+            <span>
+              Best of {gate.bookmakers} bookmaker{gate.bookmakers === 1 ? "" : "s"}
+              {/* The quote's age, always shown when a price is: a price with no
+                  staleness signal is the one number here a reader could act on wrongly. */}
               {age ? ` · ${age}` : ""}
-            </div>
+            </span>
+            {gate.impliedProbability != null && (
+              <span className="tabular-nums">
+                Market {gate.impliedProbability}%
+                {gate.edgePP != null && gate.edgePP > 0 ? ` · +${gate.edgePP}pp edge` : ""}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="text-right text-xs text-gray-500">Price not available yet</div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-t border-brand-border pt-3 text-xs text-gray-400">
-        <span>{row.confidence}% confidence</span>
-        {!inactive && gate?.impliedProbability != null && (
-          <span className="tabular-nums">
-            market implies {gate.impliedProbability}%
-            {gate.edgePP != null && gate.edgePP > 0 ? ` · +${gate.edgePP}pp edge` : ""}
-          </span>
         )}
       </div>
 
