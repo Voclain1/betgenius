@@ -264,7 +264,7 @@ async function main() {
     eq("gate: market-confirmation constants unchanged (model 75, market 75, gap 10, books 5, quote 2h)",
       [mc.MC_MIN_MODEL_CONFIDENCE, mc.MC_MIN_MARKET_PROBABILITY, mc.MC_MAX_GAP_PP, mc.MC_MIN_BOOKMAKERS, mc.MC_MAX_QUOTE_AGE_MS], [75, 75, 10, 5, 2 * H]);
     eq("gate: VIP market bar 75, PREMIUM market bar 80", [overlay.VIP_MARKET_FLOOR, overlay.PREMIUM_MARKET_FLOOR], [75, 80]);
-    eq("quota: still 6 attempts a day", pipeline.VIP_PREMIUM_DAILY_QUOTA, 6);
+    eq("quota: 8 attempts a day (raised from 6, Oct 2026)", pipeline.VIP_PREMIUM_DAILY_QUOTA, 8);
     eq("quota: one fixture per run", overlay.VIP_PREMIUM_RUN_LIMIT, 1);
     eq("tier: market 86 and confidence 84 is PREMIUM", overlay.paidTierFor({ confirmed: true, marketProbability: 86 }, 84), "PREMIUM");
     eq("tier: market 82 but confidence 78 is VIP — PREMIUM's floor holds", overlay.paidTierFor({ confirmed: true, marketProbability: 82 }, 78), "VIP");
@@ -508,8 +508,10 @@ async function main() {
     check("publish: promoted but not publishable (ordinary coverage not confirmed) stays in review", r5.promotedPremium.length === 1 && !published("n84") && r5.publishHeld.some((h: Any) => h.predictionId === "n84" && h.blocks.includes("NOT_ORDINARY_COVERED")), r5.publishHeld);
     check("publish: ...and leaves the ordinary paid pick's tags alone", !writes.some((w) => w.startsWith("link.strip")) && r5.ordinaryPaidTagsRemoved === 0, writes);
 
-    const r6 = await gate(g, [draft("q84", 84, g)], 86, [ordinaryVip], { priorAttempts: 6 });
-    check("publish: a 7th attempt of the day is not published (daily quota)", !published("q84") && r6.publishHeld.some((h: Any) => h.blocks.includes("OVER_DAILY_QUOTA")), r6.publishHeld);
+    const r6 = await gate(g, [draft("q84", 84, g)], 86, [ordinaryVip], { priorAttempts: 8 });
+    check("publish: a 9th attempt of the day is not published (daily quota)", !published("q84") && r6.publishHeld.some((h: Any) => h.blocks.includes("OVER_DAILY_QUOTA")), r6.publishHeld);
+    const r6b = await gate(g, [draft("q85", 84, g)], 86, [ordinaryVip], { priorAttempts: 7 });
+    check("publish: ...the 8th still is", published("q85") && r6b.published.includes("q85"), r6b.publishHeld);
 
     const r7 = await gate(g, [draft("x84", 84, g)], 86, [ordinaryVip], { actor: null });
     check("publish: with no actor (dry runs, scripts) nothing is published", r7.promotedPremium.length === 1 && !writes.some((w) => w.startsWith("review:")) && r7.published.length === 0);

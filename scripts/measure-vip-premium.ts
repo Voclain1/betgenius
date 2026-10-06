@@ -25,6 +25,7 @@ import { lagosDateKey } from "../src/lib/lagosDate";
 import { JOB_GENERATE_VIP_PREMIUM } from "../src/lib/jobRuns";
 import { PAID_ONLY_PROVENANCES } from "../src/lib/paidOnly";
 import { PAID_TIER_CUTOVER } from "../src/lib/geniusCuration";
+import { VIP_PREMIUM_DAILY_QUOTA } from "../src/lib/vipPremiumPipeline";
 
 const H = 3_600_000;
 const pad = (v: unknown, w = 5) => String(v).padStart(w);
@@ -94,7 +95,7 @@ async function main() {
     try { add(e.leagues, JSON.parse(j.prompt).league ?? "?"); } catch { /* unparseable */ }
     perDay.set(day, e);
   }
-  console.log(`\n2. Dedicated attempts per Lagos day (quota 6):`);
+  console.log(`\n2. Dedicated attempts per Lagos day (quota ${VIP_PREMIUM_DAILY_QUOTA}):`);
   for (const [day, e] of [...perDay.entries()].sort()) console.log(`   ${day}  attempts ${pad(e.attempts, 2)}  drafts ${pad(e.drafts, 3)}  promoted ${pad(e.promoted, 2)}  — ${show(e.leagues)}`);
   if (!perDay.size) console.log("   none");
 
