@@ -288,7 +288,7 @@ async function main() {
   console.log("\nfallback does not alter prediction thresholds or rules:");
   eq("confidence floors unchanged", [curation.GENIUS_CONFIDENCE_FLOOR, curation.VIP_CONFIDENCE_FLOOR, curation.PREMIUM_CONFIDENCE_FLOOR], [70, 75, 80]);
   eq("market-confirmation floors unchanged", [mc.MC_MIN_MODEL_CONFIDENCE, mc.MC_MIN_MARKET_PROBABILITY, mc.MC_MIN_BOOKMAKERS, vip.VIP_MARKET_FLOOR, vip.PREMIUM_MARKET_FLOOR], [75, 75, 5, 75, 80]);
-  eq("paid-tier quota unchanged", vip.VIP_PREMIUM_DAILY_QUOTA, 6);
+  eq("paid-tier quota unchanged by coverage (8 since Oct 2026)", vip.VIP_PREMIUM_DAILY_QUOTA, 8);
   // A fallback fixture gets the same generation route as any non-top-12
   // league: no special prompt tier, no special calibration.
   const routeOf = (id: number) => JSON.stringify(resolveGenerationRisk(["FEATURED"], id));

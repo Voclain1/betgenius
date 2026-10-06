@@ -91,13 +91,17 @@ export {
  * still spent api-football budget, a model call and real money, and counting
  * only successes would let a bad day retry without limit.
  *
- * 6 is sized against the measured candidate supply, not chosen for feel. Over
- * 31 days there were ~6.4 paid-tier-eligible fixtures a day; modelled yield at
- * the VIP bar is 1.65 picks/day and at the PREMIUM bar 1.00/day. The recorded
- * attempt-to-promotion ratio is what should revise it — see
- * scripts/verify-vip-premium-pass.ts.
+ * Raised from 6 to 8 (Oct 2026). 6 was sized against the measured candidate
+ * supply (~6.4 paid-tier-eligible fixtures a day over 31 days; modelled yield
+ * 1.65 VIP and 1.00 PREMIUM picks a day). The recorded attempt-to-promotion
+ * ratio then showed the cap was what bound: over 4-6 Oct the pass used 5 of
+ * its 6 attempts every day, and 17 of 30 gate rejections were the model below
+ * its floor, a draft the next attempt could have replaced. Two more attempts a
+ * day cost two model calls and their api-football fetches. The tier floors are
+ * unchanged. scripts/measure-vip-premium.ts reports whether the extra attempts
+ * convert.
  */
-export const VIP_PREMIUM_DAILY_QUOTA = 6;
+export const VIP_PREMIUM_DAILY_QUOTA = 8;
 
 /**
  * NOT tightened, on purpose. Agreement is non-monotonic against outcome in the

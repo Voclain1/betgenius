@@ -120,7 +120,7 @@ from generation by two minutes.
   single working session, one of which killed a long-running poller outright. The
   route already treats a held lock as a non-error for the same reason.
 - **Most pokes are no-ops, and they are cheap.** The pass is capped at
-  `VIP_PREMIUM_DAILY_QUOTA` (6) attempts per day and one fixture per run, so the
+  `VIP_PREMIUM_DAILY_QUOTA` (8; 6 until Oct 2026) attempts per day and one fixture per run, so the
   large majority of its 96 daily runs do nothing. It prices a fixture only inside
   24h of kickoff and only when no quote under 2h old exists, so an empty tick
   spends **zero** api-football calls — only database reads.
