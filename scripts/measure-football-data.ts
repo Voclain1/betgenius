@@ -29,6 +29,13 @@ async function main() {
     );
   }
 
+  for (const id of [39, 140, 135]) {
+    const l = leagues.find((x) => x.leagueApiId === id);
+    const sc = ((l?.topScorersJson as any[] | null) ?? []).slice(0, 3).map((r) => `${r.name} ${r.value}g/${r.appearances}apps`).join(", ");
+    const up = ((l?.upcomingJson as any[] | null) ?? []).slice(0, 2).map((f) => `${f.date?.slice(0, 10)} ${f.homeTeam}-${f.awayTeam}`).join("; ");
+    console.log(`   league ${id}: scorers ${sc || "-"} | upcoming ${up || "-"}`);
+  }
+
   console.log("\n2. Team caches:");
   const teams = await prisma.teamEnrichmentCache.findMany({
     select: { teamApiId: true, teamName: true, leagueApiId: true, season: true, crestUrl: true, fetchedAt: true, squadFetchedAt: true, coachJson: true, squadJson: true, lastError: true },
