@@ -203,12 +203,12 @@ export function TeamCompetitions({ competitions }: { competitions: TeamCompetiti
 }
 
 /** "Know more about": the feature article, set in a serif with a drop cap. */
-export function TeamAbout({ name, paragraphs }: { name: string; paragraphs: string[] }) {
+export function TeamAbout({ name, paragraphs, kicker = "Club profile" }: { name: string; paragraphs: string[]; kicker?: string }) {
   return (
     <article className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card p-5 sm:p-8">
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-brand/10 blur-3xl" />
       <div className="relative">
-        <SectionHead kicker="Club profile" title={`Know more about ${name}`} />
+        <SectionHead kicker={kicker} title={`Know more about ${name}`} />
         <div className="space-y-4 font-serif text-[16px] leading-[1.75] text-gray-300 sm:text-[17px]">
           {paragraphs.map((p, i) => (
             <p
@@ -288,34 +288,47 @@ export function TeamFixtureList({ fixtures, teamApiId }: { fixtures: TeamNextMat
 
 const MEDAL = ["bg-amber-300 text-black", "bg-gray-300 text-black", "bg-[#cd7f32] text-black"];
 
-/** One leaderboard inside the Top players tab. */
-function Leaders({ title, rows, format }: { title: string; rows: { p: SquadPlayer; value: number }[]; format: (v: number) => string }) {
+/** A ranked player board (medal badges, photo, one big number); shared by the team and competition pages. */
+export type RankedRow = { key: string | number; name: string; photo: string | null; sub: string; value: string };
+export function RankedList({ title, rows }: { title: string; rows: RankedRow[] }) {
   if (!rows.length) return null;
   return (
     <div className="rounded-2xl border border-brand-border bg-brand-bg/40 p-3">
       <h3 className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">{title}</h3>
       <ol className="space-y-2">
-        {rows.map(({ p, value }, i) => (
-          <li key={p.id} className="flex items-center gap-3">
+        {rows.map((r, i) => (
+          <li key={r.key} className="flex items-center gap-3">
             <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${MEDAL[i] ?? "bg-brand-border text-gray-300"}`}>{i + 1}</span>
-            {p.photo ? (
+            {r.photo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.photo} alt="" width={36} height={36} loading="lazy" className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-brand-border" />
+              <img src={r.photo} alt="" width={36} height={36} loading="lazy" className="h-9 w-9 shrink-0 rounded-full object-cover ring-2 ring-brand-border" />
             ) : (
               <span className="h-9 w-9 shrink-0 rounded-full bg-brand-border" />
             )}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-bold text-gray-100">{p.name}</div>
-              <div className="text-[10px] text-gray-500">
-                {p.position ?? ""}
-                {p.stats ? ` · ${p.stats.appearances} app${p.stats.appearances === 1 ? "" : "s"}` : ""}
-              </div>
+              <div className="truncate text-sm font-bold text-gray-100">{r.name}</div>
+              <div className="truncate text-[10px] text-gray-500">{r.sub}</div>
             </div>
-            <span className="text-xl font-black tabular-nums text-brand">{format(value)}</span>
+            <span className="text-xl font-black tabular-nums text-brand">{r.value}</span>
           </li>
         ))}
       </ol>
     </div>
+  );
+}
+
+function Leaders({ title, rows, format }: { title: string; rows: { p: SquadPlayer; value: number }[]; format: (v: number) => string }) {
+  return (
+    <RankedList
+      title={title}
+      rows={rows.map(({ p, value }) => ({
+        key: p.id,
+        name: p.name,
+        photo: p.photo,
+        sub: `${p.position ?? ""}${p.stats ? ` · ${p.stats.appearances} app${p.stats.appearances === 1 ? "" : "s"}` : ""}`,
+        value: format(value),
+      }))}
+    />
   );
 }
 

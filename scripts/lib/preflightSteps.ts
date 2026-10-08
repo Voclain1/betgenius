@@ -11,6 +11,7 @@ const RENDER = "tsx --tsconfig scripts/tsconfig.render.json";
 export const PURE_STEPS = [
   "tsx scripts/check-season-resolution.ts",
   "tsx scripts/check-team-profile.ts",
+  "tsx scripts/check-competition-profile.ts",
   "tsx scripts/check-paystack-entitlement.ts",
   "tsx scripts/check-subscription-entitlement.ts",
   "tsx scripts/check-onetime-fallback.ts",
