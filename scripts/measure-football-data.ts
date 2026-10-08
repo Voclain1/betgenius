@@ -6,6 +6,11 @@
  */
 export {};
 
+// teamProfile wraps its loader in React's cache(), which only exists under
+// the server build; outside Next it is a pass-through.
+const react = require("react");
+if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
+
 import { prisma } from "../src/lib/prisma";
 
 const DAY = 86_400_000;
