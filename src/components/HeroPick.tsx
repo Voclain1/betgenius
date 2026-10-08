@@ -1,10 +1,13 @@
 import Link from "next/link";
+import { TeamCrest } from "@/components/TeamCrest";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { matchSlug } from "@/lib/slug";
 
 export type HeroPickData = {
   homeTeam: string;
   awayTeam: string;
+  homeTeamApiId?: number | null;
+  awayTeamApiId?: number | null;
   kickoff: Date | null;
   leagueName: string | null;
   leagueApiId: number | null;
@@ -43,7 +46,9 @@ export function HeroPick({ pick }: { pick: HeroPickData }) {
       </div>
 
       <div className="text-base font-semibold leading-snug">
-        {pick.homeTeam} <span className="text-gray-500">vs</span> {pick.awayTeam}
+        <TeamCrest teamApiId={pick.homeTeamApiId} className="mr-1.5" />
+        {pick.homeTeam} <span className="text-gray-500">vs</span> <TeamCrest teamApiId={pick.awayTeamApiId} className="mr-1.5" />
+        {pick.awayTeam}
       </div>
 
       <div>

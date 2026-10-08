@@ -437,6 +437,11 @@ export function leagueLogoUrl(id: number): string {
   return `https://media.api-sports.io/football/leagues/${id}.png`;
 }
 
+/** Team crest by API-Football team id. Same media CDN as the league crests; no API call. */
+export function teamCrestUrl(teamApiId: number): string {
+  return `https://media.api-sports.io/football/teams/${teamApiId}.png`;
+}
+
 /**
  * Resolves the image to show for a league: a country flag for domestic
  * leagues, or the competition's own crest for cups/internationals (World

@@ -152,7 +152,7 @@ async function fetchHeroPick(): Promise<HeroPickData | null> {
     categories: { some: { category: { in: ["FEATURED", "GENIUS"] } } },
   };
   const select = {
-    homeTeam: true, awayTeam: true, kickoff: true, leagueName: true, leagueApiId: true,
+    homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, leagueName: true, leagueApiId: true,
     market: true, pick: true, confidence: true,
   };
   // `id` is selected only so the ranking has its stable tiebreaker; it is not

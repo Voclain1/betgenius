@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TeamCrest } from "@/components/TeamCrest";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -226,10 +227,12 @@ export default async function MatchPage({ params }: { params: { slug: string } }
             looks first. */}
         <h1 className="text-2xl font-bold md:text-3xl">
           <Link href={`/predictions/team/${teamSlug(match.homeTeam)}`} className="hover:underline">
+            <TeamCrest teamApiId={match.homeTeamApiId} size={28} className="mr-2" />
             {match.homeTeam}
           </Link>{" "}
           <span className="text-gray-500">vs</span>{" "}
           <Link href={`/predictions/team/${teamSlug(match.awayTeam)}`} className="hover:underline">
+            <TeamCrest teamApiId={match.awayTeamApiId} size={28} className="mr-2" />
             {match.awayTeam}
           </Link>{" "}
           <span className="text-gray-400">prediction</span>
