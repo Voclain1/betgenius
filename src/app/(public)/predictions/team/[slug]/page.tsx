@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TeamCrest } from "@/components/TeamCrest";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -132,7 +133,10 @@ export default async function TeamPage({ params }: { params: { slug: string } })
         ]}
       />
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">{name}</h1>
+        <h1 className="flex items-center gap-3 text-2xl font-bold">
+          <TeamCrest teamApiId={teamApiId} size={36} />
+          {name}
+        </h1>
         {teamApiId != null && <FollowButton targetType="TEAM" targetKey={String(teamApiId)} label={name} />}
         {/* Answers "what is this site's record on this team" in one line,
             above the form panel and the RateCard that break it down. */}

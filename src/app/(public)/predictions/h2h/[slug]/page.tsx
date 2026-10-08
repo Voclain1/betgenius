@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TeamCrest } from "@/components/TeamCrest";
 import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
@@ -126,10 +127,12 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
       <div className="space-y-1">
         <h1 className="text-2xl font-bold md:text-3xl">
           <Link href={`/predictions/team/${teamSlug(pair.teamAName)}`} className="hover:underline">
+            <TeamCrest teamApiId={pair.teamAApiId} size={28} className="mr-2" />
             {pair.teamAName}
           </Link>{" "}
           <span className="text-gray-500">vs</span>{" "}
           <Link href={`/predictions/team/${teamSlug(pair.teamBName)}`} className="hover:underline">
+            <TeamCrest teamApiId={pair.teamBApiId} size={28} className="mr-2" />
             {pair.teamBName}
           </Link>
         </h1>

@@ -32,17 +32,8 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
+        {/* The crest sits in the page heading now (TeamCrest), not here twice. */}
         <div className="flex items-center gap-2">
-          {row.crestUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={row.crestUrl}
-              alt=""
-              width={28}
-              height={28}
-              className="shrink-0 rounded-sm object-contain"
-            />
-          )}
           <span className="text-sm font-medium text-gray-300">Team form</span>
         </div>
       </div>

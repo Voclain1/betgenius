@@ -32,6 +32,9 @@ export type PredictionRow = {
   leagueName?: string | null;
   homeTeam?: string | null;
   awayTeam?: string | null;
+  /** API-Football team ids; when present, each team name shows its crest. */
+  homeTeamApiId?: number | null;
+  awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
   fixture?: {
     kickoff: string | Date;
@@ -86,7 +89,7 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
           {!leagueName && <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />}
           {home && (
             <div className="text-lg font-semibold">
-              <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
+              <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} />
             </div>
           )}
         </div>

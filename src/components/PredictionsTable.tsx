@@ -12,6 +12,9 @@ export type PredictionTableRow = {
   leagueName?: string | null;
   homeTeam?: string | null;
   awayTeam?: string | null;
+  /** API-Football team ids; when present, each team name shows its crest. */
+  homeTeamApiId?: number | null;
+  awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
   pick: string;
   overUnder?: string | null;
@@ -90,7 +93,7 @@ export function PredictionsTable({
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
+                  <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} />
                 </td>
                 <td className="px-3 py-2 font-semibold text-brand">{p.locked ? "LOCKED" : p.pick}</td>
                 {showOutcome && (

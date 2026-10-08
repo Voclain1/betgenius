@@ -9,6 +9,7 @@ const RENDER = "tsx --tsconfig scripts/tsconfig.render.json";
 
 /** Pure: in-memory stubs or no database access at all. Proven by running with NO_DATABASE_URL. */
 export const PURE_STEPS = [
+  "tsx scripts/check-season-resolution.ts",
   "tsx scripts/check-paystack-entitlement.ts",
   "tsx scripts/check-subscription-entitlement.ts",
   "tsx scripts/check-onetime-fallback.ts",

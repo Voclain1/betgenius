@@ -206,7 +206,16 @@ export function trimSquad(rows: Array<{ players: SquadEntryLike[] }> | null): Sq
 }
 type SquadEntryLike = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };
 
-/** Teams whose squad/coach cache is older than the 7-day TTL, stalest first. */
+/**
+ * Teams whose squad/coach cache is older than the 7-day TTL: teams with a
+ * fixture coming up first, then stalest first.
+ *
+ * The scoped set is every team ever predicted (~1,900), and one run refreshes
+ * a slice of 25, so a full cycle takes over a week. Pure staleness order spent
+ * that budget evenly on clubs nobody is about to read about while a team
+ * playing this weekend waited its turn with a departed coach or last
+ * season's players on its page.
+ */
 export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<TeamTarget[]> {
   const existing = await prisma.teamEnrichmentCache.findMany({
     where: { teamApiId: { in: targets.map((t) => t.teamApiId) } },
@@ -219,7 +228,11 @@ export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<Te
       const at = byId.get(t.teamApiId);
       return !at || at.getTime() < cutoff;
     })
-    .sort((a, b) => (byId.get(a.teamApiId)?.getTime() ?? -Infinity) - (byId.get(b.teamApiId)?.getTime() ?? -Infinity));
+    .sort(
+      (a, b) =>
+        Number(!a.nextKickoff) - Number(!b.nextKickoff) ||
+        (byId.get(a.teamApiId)?.getTime() ?? -Infinity) - (byId.get(b.teamApiId)?.getTime() ?? -Infinity),
+    );
 }
 
 /**
@@ -613,7 +626,7 @@ function trimLastFixtures(teamApiId: number, fixtures: FixtureRow[] | null): Tea
 export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId: number; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   try {
-    const season = target.leagueApiId ? await resolveSeason(target.leagueApiId, target.kickoff ?? new Date()) : new Date().getFullYear();
+    const season = target.leagueApiId ? await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff)) : new Date().getFullYear();
 
     const [teamInfo, context] = await Promise.all([
       getTeamById(target.teamApiId),
@@ -791,7 +804,7 @@ export async function refreshLeaguePlayerStats(
 ): Promise<{ leagueApiId: number; result: "ok" | "failed" | "error"; counts?: string; detail?: string }> {
   const now = new Date();
   try {
-    const season = await resolveSeason(target.leagueApiId, target.kickoff ?? new Date());
+    const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
     const [scorersRaw, assistsRaw, cardsRaw] = await Promise.all([
       getTopScorers(target.leagueApiId, season),
       getTopAssists(target.leagueApiId, season),
@@ -875,11 +888,24 @@ function trimUpcoming(fixtures: FixtureRow[] | null): LeagueUpcomingFixture[] | 
     }));
 }
 
+/**
+ * The date to resolve a league's season by when refreshing what a page shows
+ * NOW: today, or the target's kickoff when that is still ahead.
+ *
+ * Never a past kickoff. Targets carry the kickoff of some earlier prediction in
+ * the league, and an old one resolved to last season: the Premier League cache
+ * held the finished 2025/26 table (38 played) and a stale fixture list into
+ * October 2026, and the AI was reading that table when writing predictions.
+ */
+export function currentSeasonDate(kickoff: Date | null | undefined, now: Date = new Date()): Date {
+  return kickoff && kickoff.getTime() > now.getTime() ? kickoff : now;
+}
+
 /** Same shape/invariants as refreshTeamCache — see its comment. */
 export async function refreshLeagueCache(target: LeagueTarget): Promise<{ leagueApiId: number; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   try {
-    const season = await resolveSeason(target.leagueApiId, target.kickoff ?? new Date());
+    const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
     const today = new Date().toISOString().slice(0, 10);
     const to = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -889,7 +915,10 @@ export async function refreshLeagueCache(target: LeagueTarget): Promise<{ league
     ]);
 
     const standingsJson = trimStandings(standingsRaw);
-    const upcomingJson = trimUpcoming(fixturesRaw);
+    // A successful fetch with nothing in the next fortnight (an international
+    // break) is written as an empty list. Leaving the old list in place kept
+    // already-played fixtures on the page as "upcoming".
+    const upcomingJson = fixturesRaw ? trimUpcoming(fixturesRaw) ?? [] : null;
     const succeeded = !!standingsJson || !!upcomingJson;
 
     if (!succeeded) {
