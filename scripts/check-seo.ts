@@ -131,10 +131,10 @@ for (const [id, heading] of [
 check("competition hubs: league route uses targeted H1 and intro", leaguePageSource.includes("hubContent?.heading") && leaguePageSource.includes("<CompetitionHubIntro"));
 check("competition hubs: mobile intro is folded while desktop copy stays visible", competitionIntro.includes("<details") && competitionIntro.includes("md:hidden") && competitionIntro.includes("md:block"));
 check("competition hubs: cup metadata comes from the targeted competition profile", cupPageSource.includes("hubContent.metadataTitle") && cupPageSource.includes("hubContent.metadataDescription"));
-check("competition hubs: targeted cups add dynamic published picks and a settled record", cupPageSource.includes("Published {data.cup.name} picks") && cupPageSource.includes("<RateCard stat={scoped.stat}"));
+check("competition hubs: targeted cups add dynamic published picks and a settled record", cupPageSource.includes("Published ${data.cup.name} picks") && cupPageSource.includes("<RateCard stat={scoped.stat}"));
 check("competition hubs: non-target cup pages retain their query profile", cupPageSource.includes("Only targeted top-tier competition hubs add prediction/proof data"));
 check("competition hubs: league proof box follows the prediction feed", leaguePageSource.indexOf("<CompetitionHubLinks") > leaguePageSource.indexOf("{shaped.map"));
-check("competition hubs: cup proof box follows fixtures and reference data", cupPageSource.indexOf("<CompetitionHubLinks") > cupPageSource.indexOf("<TopScorersLeaderboard"));
+check("competition hubs: cup proof box follows fixtures and reference data", cupPageSource.indexOf("<CompetitionHubLinks") > cupPageSource.indexOf("<CompetitionTopPlayers"));
 check("competition hubs: proof links include record, method and responsible use", competitionLinks.includes('href="/track-record"') && competitionLinks.includes('href="/methodology"') && competitionLinks.includes('href="/responsible-gambling"'));
 check("competition hubs: NPFL has an explicit metadata profile", readFileSync(join(repoRoot, "src/lib/seo.tsx"), "utf8").includes('title: "NPFL Predictions — Nigeria Premier League"'));
 

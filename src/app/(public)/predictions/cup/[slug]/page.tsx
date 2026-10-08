@@ -4,11 +4,9 @@ import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { notFound } from "next/navigation";
 import { CupRounds } from "@/components/CupRounds";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
-import { TopScorersLeaderboard } from "@/components/LeaguePlayerStats";
 import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { getCupPageData, cupBySlug } from "@/lib/cups";
 import { getPublishedMatchIndex } from "@/lib/predictionScope";
-import { leagueLogoUrl } from "@/lib/leagues";
 import { fitMetadataTitleWithSuffix, fitMetaDescription } from "@/lib/seo";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { getPublishedByLeagueSlug } from "@/lib/predictionScope";
@@ -20,6 +18,11 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import type { PredictionCategory } from "@/lib/enums";
 import { CompetitionHubIntro } from "@/components/CompetitionHubIntro";
+import { CompetitionChampions, CompetitionMasthead, CompetitionStatsFacts, CompetitionTopPlayers, FeaturedMatches } from "@/components/CompetitionProfile";
+import { SectionHead, TeamAbout } from "@/components/TeamProfile";
+import { competitionStats, featuredMatches, seasonParagraph } from "@/lib/competitionProfile";
+import { competitionInSentence } from "@/lib/teamProfile";
+import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +60,28 @@ export default async function CupPage({ params, searchParams }: { params: { slug
     ? row
     : { ...row, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true }) : [];
 
+  const history = COMPETITION_HISTORY[data.cup.id] ?? null;
+  const stats = data.cup.capabilities.standings ? competitionStats(data.standings) : null;
+  // The cup's own fixture list, shaped like a league's upcoming list so the
+  // same featured-match selection applies (published picks first).
+  const upcomingCup = data.fixtures
+    .filter((f) => f.fixture.status.short === "NS")
+    .map((f) => ({
+      id: f.fixture.id,
+      date: f.fixture.date,
+      homeTeam: f.teams.home.name,
+      awayTeam: f.teams.away.name,
+      homeLogo: f.teams.home.logo ?? null,
+      awayLogo: f.teams.away.logo ?? null,
+      homeId: f.teams.home.id,
+      awayId: f.teams.away.id,
+    }));
+  const featured = featuredMatches(upcomingCup, data.standings, Object.values(matchIndex), data.cup.id, data.cup.name);
+  const about = [
+    ...(history?.profile ?? []),
+    ...[seasonParagraph({ name: data.cup.name, stats, table: data.standings, scorers: data.scorers, pickCount: scoped?.rows.length ?? 0 })].filter((p): p is string => !!p),
+  ];
+
   return (
     <div className="space-y-8">
       <JsonLd data={breadcrumbJsonLd([
@@ -64,57 +89,83 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         { name: "Predictions", path: "/predictions" },
         { name: data.cup.name, path: `/predictions/cup/${data.cup.slug}` },
       ])} />
-      <header className="flex items-center gap-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={leagueLogoUrl(data.cup.id)} alt="" width={56} height={56} className="h-14 w-14 object-contain" />
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-brand">{data.cup.country} · Cup</p>
-          <h1 className="text-3xl font-bold">{hubContent?.heading ?? data.cup.name}</h1>
-          <p className="text-sm text-gray-400">{data.season}/{String(data.season + 1).slice(-2)} · {data.cup.scopeNote}</p>
-        </div>
-      </header>
+      <CompetitionMasthead
+        name={hubContent?.heading ?? data.cup.name}
+        leagueApiId={data.cup.id}
+        country={data.cup.country}
+        flagCode={null}
+        seasonLabel={`${data.season}/${String(data.season + 1).slice(-2)}`}
+        stats={stats}
+      >
+        <p className="text-sm text-gray-400">{data.cup.scopeNote}</p>
+      </CompetitionMasthead>
 
       {hubContent && <CompetitionHubIntro heading={hubContent.heading} intro={hubContent.intro} />}
 
+      {featured.length > 0 && (
+        <section aria-labelledby="featured">
+          <SectionHead kicker="Coming up" title="Featured matches" id="featured" />
+          <FeaturedMatches matches={featured} />
+        </section>
+      )}
+
+      {data.cup.capabilities.standings && data.standings.length > 0 && (
+        <section aria-labelledby="standings">
+          <SectionHead kicker="Table" title="Standings" id="standings" />
+          <div className="overflow-hidden rounded-3xl border border-brand-border bg-brand-card p-4">
+            <LeagueStandingsTable rows={data.standings} />
+          </div>
+        </section>
+      )}
+
+      {stats && (
+        <section aria-labelledby="facts">
+          <SectionHead kicker="Season so far" title="Stats and facts" id="facts" />
+          <CompetitionStatsFacts stats={stats} />
+        </section>
+      )}
+
+      <section aria-labelledby="rounds" className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <SectionHead kicker="Rounds" title="Fixtures and results" id="rounds" />
+          <span className="mb-4 text-sm font-semibold text-gray-400">{data.fixtures.length} matches</span>
+        </div>
+        <CupRounds rounds={data.rounds} fixtures={data.fixtures} linkIndex={matchIndex} />
+      </section>
+
+      {data.cup.capabilities.playerStats && (
+        <section aria-labelledby="top-players">
+          <SectionHead kicker="Players" title="Top players this season" id="top-players" />
+          <CompetitionTopPlayers scorers={data.scorers} assists={[]} />
+        </section>
+      )}
+
+      <section aria-labelledby="clubs">
+        <SectionHead kicker="Clubs" title={`Participating teams (${data.clubs.length})`} id="clubs" />
+        <LeagueClubGrid clubs={data.clubs} />
+      </section>
+
       {hubContent && (
-        <section className="space-y-3" aria-labelledby="competition-picks-heading">
-          <h2 id="competition-picks-heading" className="text-xl font-semibold">Published {data.cup.name} picks</h2>
-          {scoped && <div className="max-w-xs"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
+        <section aria-labelledby="predictions" className="space-y-4">
+          <SectionHead kicker="Predictions" title={`Published ${data.cup.name} picks`} id="predictions" />
+          {scoped && <div className="max-w-sm"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
           {shaped.length > 0 ? (
             <PredictionViewSwitch
-              detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" />}
+              detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" reasoningExcerpt />}
               compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
             />
           ) : <div className="card text-sm text-gray-400">No {data.cup.name} predictions are published yet.</div>}
         </section>
       )}
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div><h2 className="text-xl font-semibold">Fixtures and results</h2><p className="text-sm text-gray-400">Browse the knockout competition round by round.</p></div>
-          <span className="chip bg-brand-card text-gray-300">{data.fixtures.length} matches</span>
-        </div>
-        <CupRounds rounds={data.rounds} fixtures={data.fixtures} linkIndex={matchIndex} />
-      </section>
-
-      {data.cup.capabilities.standings && data.standings.length > 0 && (
-        <section className="card space-y-3">
-          <h2 className="text-xl font-semibold">Standings</h2>
-          <LeagueStandingsTable rows={data.standings} />
+      {history && (
+        <section aria-labelledby="champions">
+          <SectionHead kicker="Roll of honour" title="Winners" id="champions" />
+          <CompetitionChampions champions={history.champions} />
         </section>
       )}
 
-      <section className="space-y-3">
-        <div className="flex items-end justify-between gap-2"><h2 className="text-xl font-semibold">Participating teams</h2><span className="text-sm text-gray-400">{data.clubs.length} clubs</span></div>
-        <LeagueClubGrid clubs={data.clubs} />
-      </section>
-
-      {data.cup.capabilities.playerStats && (
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold">Top scorers</h2>
-          <TopScorersLeaderboard scorers={data.scorers} />
-        </section>
-      )}
+      {about.length > 0 && <TeamAbout name={competitionInSentence(data.cup.name)} paragraphs={about} kicker="Competition profile" />}
 
       {hubContent && <CompetitionHubLinks competition={data.cup.name} />}
     </div>
