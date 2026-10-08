@@ -20,7 +20,8 @@
 export const HONOURS_AS_OF = "2024/25";
 
 export type Honour = { title: string; count: number; /** Year of the most recent win (the year the final or title race ended). */ last: number };
-type ClubHonours = { match: string; honours: Honour[] };
+/** `asOf` overrides HONOURS_AS_OF for a club updated with a later season. */
+type ClubHonours = { match: string; honours: Honour[]; asOf?: string };
 
 const UCL = "European Cup / Champions League";
 const UEL = "UEFA Cup / Europa League";
@@ -37,8 +38,8 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
     { title: "League titles", count: 20, last: 2025 }, { title: "FA Cup", count: 8, last: 2022 }, { title: "League Cup", count: 10, last: 2024 },
     { title: UCL, count: 6, last: 2019 }, { title: UEL, count: 3, last: 2001 },
   ] },
-  42: { match: "arsenal", honours: [
-    { title: "League titles", count: 13, last: 2004 }, { title: "FA Cup", count: 14, last: 2020 }, { title: "League Cup", count: 2, last: 1993 },
+  42: { match: "arsenal", asOf: "2025/26", honours: [
+    { title: "League titles", count: 14, last: 2026 }, { title: "FA Cup", count: 14, last: 2020 }, { title: "League Cup", count: 2, last: 1993 },
     { title: CWC, count: 1, last: 1994 },
   ] },
   49: { match: "chelsea", honours: [
@@ -147,9 +148,18 @@ const normalise = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLo
 
 /** A club's honours, or null when none are curated or the id does not match the name shown. */
 export function clubHonours(teamApiId: number | null | undefined, teamName: string): Honour[] | null {
+  return clubHonoursEntry(teamApiId, teamName)?.honours ?? null;
+}
+
+/** The season a club's honours are complete to. */
+export function clubHonoursAsOf(teamApiId: number | null | undefined, teamName: string): string {
+  return clubHonoursEntry(teamApiId, teamName)?.asOf ?? HONOURS_AS_OF;
+}
+
+function clubHonoursEntry(teamApiId: number | null | undefined, teamName: string): ClubHonours | null {
   if (teamApiId == null) return null;
   const entry = CLUB_HONOURS[teamApiId];
   if (!entry) return null;
   if (!normalise(teamName).includes(entry.match)) return null;
-  return entry.honours;
+  return entry;
 }

@@ -39,10 +39,10 @@ export function CompetitionMasthead({
           aria-hidden
           src={leagueLogoUrl(leagueApiId)}
           alt=""
-          className="pointer-events-none absolute -right-10 -top-8 h-56 w-56 select-none object-contain opacity-[0.07] blur-[1px] sm:h-72 sm:w-72"
+          className="pointer-events-none absolute -right-10 -top-8 h-56 w-56 select-none object-contain opacity-[0.07] sm:h-72 sm:w-72"
         />
       )}
-      <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-brand/20 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
 
       <div className="relative flex items-center gap-4 p-5 sm:gap-6 sm:p-8">
         <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white shadow-inner ring-1 ring-brand-border sm:h-28 sm:w-28">
@@ -190,14 +190,15 @@ function ChampionRow({ c }: { c: Champion }) {
  * tiles, then the season-by-season list (latest ten shown, the rest behind a
  * native disclosure so it is in the HTML without a client bundle).
  */
-export function CompetitionChampions({ champions, asOf }: { champions: Champion[]; asOf: string }) {
+export function CompetitionChampions({ champions }: { champions: Champion[]; asOf?: string }) {
+  const asOf = champions[0]?.season;
   const leaders = titlesSince(champions).slice(0, 3);
   const first = champions[champions.length - 1]?.season;
   return (
     <div className="space-y-4">
       <ul className="grid grid-cols-3 gap-2.5">
         {leaders.map((l) => (
-          <li key={l.winner} className="rounded-2xl border border-amber-300/25 bg-gradient-to-b from-amber-300/[0.12] to-brand-card p-3 text-center">
+          <li key={l.winner} className="rounded-2xl border border-brand-border bg-brand-card p-3 text-center">
             <div className="text-3xl font-black tabular-nums leading-none text-amber-300">{l.count}</div>
             <div className="mt-2 flex flex-col items-center gap-1.5">
               {l.teamId != null && <TeamCrest teamApiId={l.teamId} size={20} />}

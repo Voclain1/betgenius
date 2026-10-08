@@ -22,7 +22,7 @@ import { CompetitionChampions, CompetitionMasthead, CompetitionStatsFacts, Compe
 import { SectionHead, TeamAbout } from "@/components/TeamProfile";
 import { competitionStats, featuredMatches, seasonParagraph } from "@/lib/competitionProfile";
 import { competitionInSentence } from "@/lib/teamProfile";
-import { COMPETITION_HISTORY, HISTORY_AS_OF } from "@/lib/competitionHistory";
+import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
 
 export const dynamic = "force-dynamic";
 
@@ -161,7 +161,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
       {history && (
         <section aria-labelledby="champions">
           <SectionHead kicker="Roll of honour" title="Winners" id="champions" />
-          <CompetitionChampions champions={history.champions} asOf={HISTORY_AS_OF} />
+          <CompetitionChampions champions={history.champions} />
         </section>
       )}
 

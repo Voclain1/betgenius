@@ -14,7 +14,7 @@ import { CompetitionChampions, CompetitionMasthead, CompetitionStatsFacts, Compe
 import { SectionHead, TeamAbout } from "@/components/TeamProfile";
 import { competitionStats, featuredMatches, seasonParagraph } from "@/lib/competitionProfile";
 import { competitionInSentence } from "@/lib/teamProfile";
-import { COMPETITION_HISTORY, HISTORY_AS_OF } from "@/lib/competitionHistory";
+import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import {
   getPublishedByLeagueSlug,
@@ -280,7 +280,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
       {history && (
         <section aria-labelledby="champions">
           <SectionHead kicker="Roll of honour" title="Title winners" id="champions" />
-          <CompetitionChampions champions={history.champions} asOf={HISTORY_AS_OF} />
+          <CompetitionChampions champions={history.champions} />
         </section>
       )}
 

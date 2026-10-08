@@ -55,10 +55,11 @@ async function main() {
   check("nothing to say yields null", seasonParagraph({ name: "X", stats: null, table: [], scorers: [], pickCount: 0 }) === null);
 
   for (const [id, h] of Object.entries(COMPETITION_HISTORY)) {
-    check(`competition ${id}: 21 seasons, newest 2024/25`, h.champions.length === 21 && h.champions[0].season === "2024/25" && h.champions[20].season === "2004/05");
+    check(`competition ${id}: every season from 2004/05, newest first, no gaps`, h.champions.at(-1)!.season === "2004/05" && h.champions.every((c, i) => i === 0 || Number(h.champions[i - 1].season.slice(0, 4)) - Number(c.season.slice(0, 4)) === 1));
     check(`competition ${id}: profile has text`, h.profile.length >= 2 && h.profile.every((t) => t.length > 80));
   }
   const epl = titlesSince(COMPETITION_HISTORY[39].champions);
+  check("Premier League 2025/26: Arsenal", COMPETITION_HISTORY[39].champions[0].season === "2025/26" && COMPETITION_HISTORY[39].champions[0].winner === "Arsenal");
   check("Premier League since 2004/05: Man City 8, Chelsea 5, Man United 5", epl[0].winner === "Manchester City" && epl[0].count === 8 && epl.find((e) => e.winner === "Chelsea")?.count === 5 && epl.find((e) => e.winner === "Manchester United")?.count === 5);
   check("Bundesliga: Bayern 16 of 21", titlesSince(COMPETITION_HISTORY[78].champions)[0].count === 16);
   check("Serie A: the revoked 2004/05 title counts for nobody", titlesSince(COMPETITION_HISTORY[135].champions).every((t) => t.winner !== "Not assigned"));

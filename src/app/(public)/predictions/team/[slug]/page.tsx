@@ -20,7 +20,7 @@ import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton } from "@/components/FollowButton";
 import { NextMatchCard, SectionHead, TeamAbout, TeamCompetitions, TeamFixtureList, TeamHonours, TeamMasthead, TeamTopPlayers } from "@/components/TeamProfile";
 import { TeamTabs } from "@/components/TeamTabs";
-import { clubHonours, HONOURS_AS_OF } from "@/lib/clubHonours";
+import { clubHonours, clubHonoursAsOf } from "@/lib/clubHonours";
 import { buildTeamAbout, getTeamProfile } from "@/lib/teamProfile";
 import type { TeamCoach, TeamFixtureSummary } from "@/lib/enrichment";
 import { absoluteUrl } from "@/lib/seo";
@@ -184,18 +184,19 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       {/* Answers "what is this site's record on this team" in one line. */}
       <AnswerSummary text={teamSummary({ name, pickCount: rows.length, stat })} />
 
-      <div className={profile?.nextMatch ? "grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : "max-w-sm"}>
-        {profile?.nextMatch && (
-          <section aria-labelledby="next-match">
-            <SectionHead kicker="Fixture" title="Next match" id="next-match" />
-            <NextMatchCard match={profile.nextMatch} />
-          </section>
-        )}
-        <section aria-labelledby="our-record">
-          <SectionHead kicker="BetGenius" title="Our record" id="our-record" />
-          <RateCard stat={stat} label={`All-time for ${name}`} big />
+      {profile?.nextMatch && (
+        <section aria-labelledby="next-match" className="max-w-2xl">
+          <SectionHead kicker="Fixture" title="Next match" id="next-match" />
+          <NextMatchCard match={profile.nextMatch} />
         </section>
-      </div>
+      )}
+
+      {honours && (
+        <section aria-labelledby="honours">
+          <SectionHead kicker="Trophy cabinet" title="Major honours" id="honours" />
+          <TeamHonours honours={honours} asOf={clubHonoursAsOf(teamApiId, name)} />
+        </section>
+      )}
 
       {enrichment && (
         <section aria-labelledby="form">
@@ -224,6 +225,11 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
       {/* Predictions sit after the reference sections. Cards show a short
           excerpt of the reasoning; the switch gets its own breathing room. */}
+      <section aria-labelledby="our-record" className="max-w-sm">
+        <SectionHead kicker="BetGenius" title="Our record" id="our-record" />
+        <RateCard stat={stat} label={`All-time for ${name}`} big />
+      </section>
+
       <section aria-labelledby="predictions" className="space-y-4">
         <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
         <PredictionViewSwitch
@@ -232,12 +238,6 @@ export default async function TeamPage({ params }: { params: { slug: string } })
         />
       </section>
 
-      {honours && (
-        <section aria-labelledby="honours">
-          <SectionHead kicker="Trophy cabinet" title="Major honours" id="honours" />
-          <TeamHonours honours={honours} asOf={HONOURS_AS_OF} />
-        </section>
-      )}
 
       {about.length > 0 && <TeamAbout name={name} paragraphs={about} />}
 
