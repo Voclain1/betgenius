@@ -97,7 +97,10 @@ async function main() {
   }
 
   console.log("\n7. Team pages as they would render (read-only), for a few clubs:");
-  const { getTeamProfile, buildTeamAbout } = await import("../src/lib/teamProfile");
+  // require, not import(): on the runner a dynamic import goes through the ESM
+  // loader, which does not see the react.cache stub patched in above.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getTeamProfile, buildTeamAbout } = require("../src/lib/teamProfile") as typeof import("../src/lib/teamProfile");
   for (const id of [49, 165, 529, 42]) {
     const team = await prisma.teamEnrichmentCache.findUnique({ where: { teamApiId: id } });
     const name = team?.teamName ?? String(id);
