@@ -21,6 +21,7 @@ import {
   getTopYellowCards,
   getSquad,
   getCoaches,
+  getTeamPlayerStats,
   resolveSeason,
   getOdds,
   type FixtureRow,
@@ -30,7 +31,7 @@ import {
   type CoachEntry,
 } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
-import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
+import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER, LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { trimH2H } from "@/lib/h2h";
 import { trimOdds } from "@/lib/odds";
 import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
@@ -142,8 +143,58 @@ export function upcomingTeamIds(f: LeagueUpcomingFixture): { home: number | null
  */
 export type FixtureDetail = { venue: string | null; city: string | null; referee: string | null; round: string | null };
 
-/** A squad member. Deliberately no stats — listing a squad is the scope, player profiles are not. */
-export type SquadPlayer = { id: number; name: string; age: number | null; number: number | null; position: string | null; photo: string | null };
+/**
+ * A squad member, with this season's numbers across every competition when
+ * they were fetched (top and mid-tier leagues only; see playerStatsWanted).
+ */
+export type SquadPlayer = {
+  id: number;
+  name: string;
+  age: number | null;
+  number: number | null;
+  position: string | null;
+  photo: string | null;
+  stats?: PlayerSeasonStats | null;
+};
+export type PlayerSeasonStats = { appearances: number; goals: number; assists: number; minutes: number; rating: number | null };
+
+/**
+ * Whether a team's player statistics are worth fetching: clubs from the top
+ * and mid-tier leagues. It is two to three extra calls per team a week, so it
+ * is limited to the clubs most readers look at.
+ */
+export function playerStatsWanted(leagueApiId: number | null | undefined): boolean {
+  const tier = LEAGUE_CATALOGUE.find((l) => l.id === leagueApiId)?.tier;
+  return tier === "top" || tier === "mid";
+}
+
+/**
+ * Season totals per player from /players, across every competition the
+ * player appeared in. Rating is the appearance-weighted mean of the
+ * per-competition ratings, so a cup cameo does not outweigh a league season.
+ * Pure, so it is unit-checked.
+ */
+export function aggregatePlayerStats(rows: PlayerStatEntry[], teamApiId: number): Map<number, PlayerSeasonStats> {
+  const out = new Map<number, PlayerSeasonStats>();
+  for (const r of rows) {
+    let appearances = 0, goals = 0, assists = 0, minutes = 0, ratingSum = 0, ratingApps = 0;
+    for (const s of r.statistics ?? []) {
+      if (s.team?.id !== teamApiId) continue;
+      const apps = s.games?.appearences ?? 0;
+      appearances += apps;
+      goals += s.goals?.total ?? 0;
+      assists += s.goals?.assists ?? 0;
+      minutes += s.games?.minutes ?? 0;
+      const rating = s.games?.rating ? Number(s.games.rating) : NaN;
+      if (Number.isFinite(rating) && apps > 0) {
+        ratingSum += rating * apps;
+        ratingApps += apps;
+      }
+    }
+    out.set(r.player.id, { appearances, goals, assists, minutes, rating: ratingApps ? Math.round((ratingSum / ratingApps) * 100) / 100 : null });
+  }
+  return out;
+}
 
 /** `since` is null when the record exists but its start date isn't trustworthy enough to assert — see resolveCurrentCoach. */
 export type TeamCoach = { name: string; nationality: string | null; since: string | null };
@@ -242,10 +293,25 @@ export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<Te
   });
   const byId = new Map(existing.map((r) => [r.teamApiId, r.squadFetchedAt]));
   const cutoff = Date.now() - SQUAD_TTL_MS;
+  // Clubs that should carry player stats but were refreshed before stats
+  // existed are due now, not at their next weekly turn. Only those clubs'
+  // squads are read, and only once: after the refresh they carry `stats`.
+  const wanted = targets.filter((t) => playerStatsWanted(t.leagueApiId)).map((t) => t.teamApiId);
+  const withoutStats = new Set<number>();
+  if (wanted.length) {
+    const rows = await prisma.teamEnrichmentCache.findMany({
+      where: { teamApiId: { in: wanted }, squadFetchedAt: { gte: new Date(cutoff) } },
+      select: { teamApiId: true, squadJson: true },
+    });
+    for (const r of rows) {
+      const squad = (r.squadJson as unknown as SquadPlayer[] | null) ?? [];
+      if (squad.length && !squad.some((p) => p.stats !== undefined)) withoutStats.add(r.teamApiId);
+    }
+  }
   return targets
     .filter((t) => {
       const at = byId.get(t.teamApiId);
-      return !at || at.getTime() < cutoff;
+      return !at || at.getTime() < cutoff || withoutStats.has(t.teamApiId);
     })
     .sort(
       (a, b) =>
@@ -281,6 +347,25 @@ export async function refreshTeamSquad(target: TeamTarget): Promise<{ teamApiId:
 
     const squad = trimSquad(squadRaw);
     const coach = resolveCurrentCoach(coachRaw, target.teamApiId);
+
+    // Season numbers for the top-players view. Best effort: a failure here
+    // leaves the squad without stats rather than failing the refresh.
+    if (squad.length && target.leagueApiId != null && playerStatsWanted(target.leagueApiId)) {
+      try {
+        const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
+        const rows: PlayerStatEntry[] = [];
+        for (let page = 1; page <= 3; page++) {
+          const batch = await getTeamPlayerStats(target.teamApiId, season, page);
+          if (!batch?.length) break;
+          rows.push(...batch);
+          if (batch.length < 20) break;
+        }
+        const stats = aggregatePlayerStats(rows, target.teamApiId);
+        for (const p of squad) p.stats = stats.get(p.id) ?? null;
+      } catch (err) {
+        console.error("[enrichment] player stats failed for team", target.teamApiId, err);
+      }
+    }
 
     await prisma.teamEnrichmentCache.upsert({
       where: { teamApiId: target.teamApiId },

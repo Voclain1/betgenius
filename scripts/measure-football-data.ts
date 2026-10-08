@@ -6,6 +6,11 @@
  */
 export {};
 
+// teamProfile wraps its loader in React's cache(), which only exists under
+// the server build; outside Next it is a pass-through.
+const react = require("react");
+if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
+
 import { prisma } from "../src/lib/prisma";
 
 const DAY = 86_400_000;
@@ -77,6 +82,52 @@ async function main() {
     }
   }
   console.log(`   ${drift.size}${drift.size ? ": " + [...drift.keys()].slice(0, 15).join("; ") : ""}`);
+
+  console.log("\n6. Curated honours: each team id against the name stored for it:");
+  const { CLUB_HONOURS, clubHonours } = await import("../src/lib/clubHonours");
+  const ids = Object.keys(CLUB_HONOURS).map(Number);
+  const stored = await prisma.prediction.findMany({
+    where: { OR: [{ homeTeamApiId: { in: ids } }, { awayTeamApiId: { in: ids } }] },
+    distinct: ["homeTeamApiId"],
+    select: { homeTeamApiId: true, homeTeam: true, awayTeamApiId: true, awayTeam: true },
+  });
+  const seen = new Map<number, string>();
+  for (const r of stored) {
+    if (r.homeTeamApiId != null && ids.includes(r.homeTeamApiId)) seen.set(r.homeTeamApiId, r.homeTeam ?? "");
+    if (r.awayTeamApiId != null && ids.includes(r.awayTeamApiId) && !seen.has(r.awayTeamApiId)) seen.set(r.awayTeamApiId, r.awayTeam ?? "");
+  }
+  for (const id of ids) {
+    const name = seen.get(id) ?? nameById.get(id) ?? null;
+    console.log(`   ${String(id).padStart(4)} ${String(name).padEnd(26)} ${name == null ? "NO NAME ON FILE" : clubHonours(id, name) ? "ok" : "MISMATCH (honours hidden)"}`);
+  }
+
+  console.log("\n7. Team pages as they would render (read-only), for a few clubs:");
+  // require, not import(): on the runner a dynamic import goes through the ESM
+  // loader, which does not see the react.cache stub patched in above.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getTeamProfile, buildTeamAbout } = require("../src/lib/teamProfile") as typeof import("../src/lib/teamProfile");
+  for (const id of [49, 165, 529, 42]) {
+    const team = await prisma.teamEnrichmentCache.findUnique({ where: { teamApiId: id } });
+    const name = team?.teamName ?? String(id);
+    const profile = await getTeamProfile(id);
+    const squad = ((team?.squadJson as any[]) ?? []);
+    const picks = await prisma.prediction.count({ where: { status: "PUBLISHED", OR: [{ homeTeamApiId: id }, { awayTeamApiId: id }] } });
+    console.log(`\n   == ${name} (${id}) ==  country ${profile?.country}  published picks ${picks}`);
+    console.log(`   standing: ${profile?.standing ? `${profile.standing.leagueName} ${profile.standing.row.rank}/${profile.standing.size}, ${profile.standing.row.points} pts from ${profile.standing.row.played}` : "-"}`);
+    console.log(`   competitions: ${profile?.competitions.map((c) => `${c.name}${c.href ? "" : " (no link)"}`).join(", ") || "-"}`);
+    console.log(`   upcoming (${profile?.upcoming.length ?? 0}):`);
+    for (const f of profile?.upcoming ?? []) console.log(`     ${f.kickoff.toISOString().slice(0, 16)} ${f.homeTeam} v ${f.awayTeam} [${f.leagueName}]${f.href ? " -> " + f.href : ""}`);
+    console.log(`   squad ${squad.length}, with season stats ${squad.filter((p) => p.stats).length}`);
+    console.log(`   team cache: fetched ${age(team?.fetchedAt)} ago, attempt ${age(team?.lastAttemptAt)}, squad ${age(team?.squadFetchedAt)}${team?.lastError ? `, ERR ${team.lastError.slice(0, 100)}` : ""}`);
+    console.log(`   lastFixtures: ${(((team?.lastFixtures as any[]) ?? []).map((f) => `${String(f.date).slice(0, 10)} ${f.result} v ${f.opponent}`)).join("; ")}`);
+    console.log(`   honours: ${(clubHonours(id, name) ?? []).map((h) => `${h.count} ${h.title}`).join("; ") || "-"}`);
+    const about = buildTeamAbout({
+      name, profile,
+      venue: { name: team?.venueName ?? null, city: team?.venueCity ?? null, capacity: team?.venueCapacity ?? null },
+      coach: (team?.coachJson as any) ?? null, lastFixtures: (team?.lastFixtures as any) ?? null, squad: squad as any, pickCount: picks,
+    });
+    for (const p of about) console.log(`   | ${p}`);
+  }
 }
 
 main()
