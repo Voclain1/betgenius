@@ -17,7 +17,9 @@ import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton } from "@/components/FollowButton";
-import { NextMatchCard, SectionHead, TeamAbout, TeamCompetitions, TeamMasthead } from "@/components/TeamProfile";
+import { NextMatchCard, SectionHead, TeamAbout, TeamCompetitions, TeamFixtureList, TeamHonours, TeamMasthead, TeamTopPlayers } from "@/components/TeamProfile";
+import { TeamTabs } from "@/components/TeamTabs";
+import { clubHonours, HONOURS_AS_OF } from "@/lib/clubHonours";
 import { buildTeamAbout, getTeamProfile } from "@/lib/teamProfile";
 import type { TeamCoach, TeamFixtureSummary } from "@/lib/enrichment";
 import { absoluteUrl } from "@/lib/seo";
@@ -87,6 +89,14 @@ export default async function TeamPage({ params }: { params: { slug: string } })
     squad,
     pickCount: rows.length,
   });
+
+  const honours = clubHonours(teamApiId, name);
+  const hasPlayerStats = squad.some((p) => p.stats && p.stats.appearances > 0);
+  const tabs = [
+    ...(profile?.upcoming.length ? [{ id: "fixtures", label: "Fixtures", content: <TeamFixtureList fixtures={profile.upcoming} teamApiId={teamApiId} /> }] : []),
+    ...(squad.length ? [{ id: "squad", label: `Squad (${squad.length})`, content: <TeamSquad squad={squad} /> }] : []),
+    ...(hasPlayerStats ? [{ id: "top", label: "Top players", content: <TeamTopPlayers squad={squad} /> }] : []),
+  ];
 
   // The club itself as structured data, beside the events: name, crest,
   // ground, coach and the competitions it plays in, all from stored facts.
@@ -204,6 +214,21 @@ export default async function TeamPage({ params }: { params: { slug: string } })
         </div>
       </section>
 
+      {/* Reference sections in tabs: everything is in the HTML, one shown at a time. */}
+      {tabs.length > 0 && (
+        <section aria-labelledby="team-sections">
+          <SectionHead kicker="Season" title="Fixtures and players" id="team-sections" />
+          <TeamTabs tabs={tabs} />
+        </section>
+      )}
+
+      {honours && (
+        <section aria-labelledby="honours">
+          <SectionHead kicker="Trophy cabinet" title="Major honours" id="honours" />
+          <TeamHonours honours={honours} asOf={HONOURS_AS_OF} />
+        </section>
+      )}
+
       {profile && profile.competitions.length > 0 && (
         <section aria-labelledby="competitions">
           <SectionHead kicker="This season" title="Competitions" id="competitions" />
@@ -212,13 +237,6 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       )}
 
       {about.length > 0 && <TeamAbout name={name} paragraphs={about} />}
-
-      {squad.length > 0 && (
-        <section aria-labelledby="squad">
-          <SectionHead kicker="Players" title={`Squad (${squad.length})`} id="squad" />
-          <TeamSquad squad={squad} />
-        </section>
-      )}
 
       {/* Opponents this team has published picks against — each one is a
           pairing with a head-to-head record worth reading. Rendered only when

@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Trophy } from "lucide-react";
 import { TeamCrest } from "@/components/TeamCrest";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import type { TeamCompetition, TeamNextMatch, TeamStanding } from "@/lib/teamProfile";
+import type { SquadPlayer } from "@/lib/enrichment";
+import type { Honour } from "@/lib/clubHonours";
 
 /**
  * The editorial pieces of the team page: masthead, next match, competitions
@@ -188,5 +190,138 @@ export function TeamAbout({ name, paragraphs }: { name: string; paragraphs: stri
         ))}
       </div>
     </article>
+  );
+}
+
+const ROW_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", day: "numeric", month: "short" });
+
+/** The club's upcoming fixtures, one row each; rows with a published prediction link to it. */
+export function TeamFixtureList({ fixtures, teamApiId }: { fixtures: TeamNextMatch[]; teamApiId: number | null }) {
+  if (!fixtures.length) return <p className="text-sm text-gray-500">No upcoming fixtures listed right now.</p>;
+  return (
+    <ul className="divide-y divide-brand-border">
+      {fixtures.map((f) => {
+        const home = f.homeTeamApiId === teamApiId;
+        const opponent = home ? f.awayTeam : f.homeTeam;
+        const opponentId = home ? f.awayTeamApiId : f.homeTeamApiId;
+        const row = (
+          <div className="flex items-center gap-3 py-2.5">
+            <div className="w-16 shrink-0 text-center">
+              <div className="text-xs font-semibold tabular-nums text-gray-200">{TIME.format(f.kickoff)}</div>
+              <div className="whitespace-nowrap text-[10px] text-gray-500">{ROW_DAY.format(f.kickoff)}</div>
+            </div>
+            <TeamCrest teamApiId={opponentId} size={24} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-gray-100">
+                <span className="mr-1 text-xs font-medium text-gray-500">{home ? "vs" : "at"}</span>
+                {opponent}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <LeagueBadge leagueApiId={f.leagueApiId} leagueName={f.leagueName} showName={false} size={12} />
+                <span className="truncate">{f.leagueName}</span>
+              </div>
+            </div>
+            {f.href ? (
+              <span className="chip shrink-0 bg-brand/15 text-brand">Prediction</span>
+            ) : (
+              <span className="shrink-0 text-[11px] text-gray-600">Soon</span>
+            )}
+          </div>
+        );
+        return (
+          <li key={`${f.kickoff.toISOString()}-${opponent}`}>
+            {f.href ? (
+              <Link href={f.href} className="block rounded-md transition hover:bg-brand-bg/60">
+                {row}
+              </Link>
+            ) : (
+              row
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** One leaderboard inside the Top players tab. */
+function Leaders({ title, rows, format }: { title: string; rows: { p: SquadPlayer; value: number }[]; format: (v: number) => string }) {
+  if (!rows.length) return null;
+  return (
+    <div>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">{title}</h3>
+      <ol className="space-y-1.5">
+        {rows.map(({ p, value }, i) => (
+          <li key={p.id} className="flex items-center gap-3 rounded-lg bg-brand-bg/60 px-2.5 py-2">
+            <span className="w-4 text-xs font-bold tabular-nums text-gray-500">{i + 1}</span>
+            {p.photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.photo} alt="" width={28} height={28} loading="lazy" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+            ) : (
+              <span className="h-7 w-7 shrink-0 rounded-full bg-brand-border" />
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium text-gray-100">{p.name}</div>
+              <div className="text-[10px] text-gray-500">
+                {p.position ?? ""}
+                {p.stats ? ` · ${p.stats.appearances} app${p.stats.appearances === 1 ? "" : "s"}` : ""}
+              </div>
+            </div>
+            <span className="text-base font-bold tabular-nums text-brand">{format(value)}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * This season's standout players from the squad's stored season totals:
+ * goals, assists and average rating (rating needs a fair share of
+ * appearances, so a one-match 8.0 does not top the list).
+ */
+export function TeamTopPlayers({ squad }: { squad: SquadPlayer[] }) {
+  const withStats = squad.filter((p) => p.stats && p.stats.appearances > 0);
+  if (!withStats.length) return <p className="text-sm text-gray-500">Player statistics for this season are not available yet.</p>;
+  const top = (value: (p: SquadPlayer) => number, n = 3) =>
+    withStats
+      .map((p) => ({ p, value: value(p) }))
+      .filter((r) => r.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, n);
+  const maxApps = Math.max(...withStats.map((p) => p.stats!.appearances));
+  const minApps = Math.max(2, Math.ceil(maxApps * 0.4));
+  const rated = withStats
+    .filter((p) => p.stats!.rating != null && p.stats!.appearances >= minApps)
+    .map((p) => ({ p, value: p.stats!.rating! }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3);
+  return (
+    <div className="grid gap-5 sm:grid-cols-3">
+      <Leaders title="Goals" rows={top((p) => p.stats!.goals)} format={(v) => String(v)} />
+      <Leaders title="Assists" rows={top((p) => p.stats!.assists)} format={(v) => String(v)} />
+      <Leaders title="Average rating" rows={rated} format={(v) => v.toFixed(2)} />
+    </div>
+  );
+}
+
+/** Major honours as a trophy cabinet: count, competition and the most recent win. */
+export function TeamHonours({ honours, asOf }: { honours: Honour[]; asOf: string }) {
+  return (
+    <div>
+      <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {honours.map((h) => (
+          <li key={h.title} className="rounded-xl border border-brand-border bg-brand-card p-3">
+            <div className="flex items-baseline gap-1.5">
+              <Trophy size={14} className="shrink-0 text-amber-300" aria-hidden />
+              <span className="text-2xl font-extrabold tabular-nums text-gray-100">{h.count}</span>
+            </div>
+            <div className="mt-1 text-xs font-medium leading-snug text-gray-300">{h.title}</div>
+            <div className="mt-0.5 text-[11px] text-gray-500">Last won {h.last}</div>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-[11px] text-gray-600">Major honours up to the end of the {asOf} season.</p>
+    </div>
   );
 }
