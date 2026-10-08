@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
@@ -101,9 +102,12 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
           {rows.length} Both Teams to Score {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.
         </p>
       </div>
-      <FeedDayTabs basePath={PATH} active={day} />
-      <BttsPredictionsGuide />
-      <CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds />
+      <PredictionViewSwitch
+        tabs={<FeedDayTabs basePath={PATH} active={day} />}
+        intro=<BttsPredictionsGuide />
+        detailed={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="detailed" />}
+        compact={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="compact" />}
+      />
       <BttsPredictionsEvidence />
     </div>
   );

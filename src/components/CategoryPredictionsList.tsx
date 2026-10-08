@@ -30,7 +30,8 @@ export function CategoryPredictionsList({
   withAds = false,
   view = "detailed",
 }: {
-  category: PredictionCategory;
+  /** The feed's category. Omitted on team, league and cup pages, which mix categories. */
+  category?: PredictionCategory;
   rows: (PredictionRow & PredictionTableRow)[];
   withAds?: boolean;
   view?: PredictionView;
@@ -98,7 +99,7 @@ export function CategoryPredictionsList({
  * tier deserve to know that is why, not to wonder whether it stopped working.
  * The numbers are VIP_CONFIDENCE_FLOOR and PREMIUM_CONFIDENCE_FLOOR (src/lib/geniusCuration.ts).
  */
-export function emptyFeedMessage(category: PredictionCategory): string {
+export function emptyFeedMessage(category?: PredictionCategory): string {
   if (category === "VIP" || category === "PREMIUM") {
     const bar = category === "PREMIUM" ? "80%" : "75%";
     const name = category === "PREMIUM" ? "Premium" : "VIP";

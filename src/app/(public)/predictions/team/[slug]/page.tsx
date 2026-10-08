@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
-import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { TeamEnrichmentPanel } from "@/components/TeamEnrichmentPanel";
 import { TeamSquad } from "@/components/TeamSquad";
@@ -207,11 +208,10 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
       <section aria-labelledby="predictions">
         <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {shaped.map((p) => (
-            <PredictionCard key={p.id} p={p as any} />
-          ))}
-        </div>
+        <PredictionViewSwitch
+          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" />}
+          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+        />
       </section>
 
       {/* Reference sections in tabs: everything is in the HTML, one shown at a time. */}
