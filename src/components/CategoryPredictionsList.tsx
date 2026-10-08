@@ -29,12 +29,15 @@ export function CategoryPredictionsList({
   rows,
   withAds = false,
   view = "detailed",
+  reasoningExcerpt = false,
 }: {
   /** The feed's category. Omitted on team, league and cup pages, which mix categories. */
   category?: PredictionCategory;
   rows: (PredictionRow & PredictionTableRow)[];
   withAds?: boolean;
   view?: PredictionView;
+  /** Detailed cards show a short reasoning excerpt with "Show full reasoning" (team pages). */
+  reasoningExcerpt?: boolean;
 }) {
   if (rows.length === 0) {
     return <div className="card text-gray-400">{emptyFeedMessage(category)}</div>;
@@ -58,7 +61,7 @@ export function CategoryPredictionsList({
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {rows.map((p) => (
-          <PredictionCard key={p.id} p={p} />
+          <PredictionCard key={p.id} p={p} reasoningExcerpt={reasoningExcerpt} />
         ))}
       </div>
     );
@@ -82,7 +85,7 @@ export function CategoryPredictionsList({
         <Fragment key={i}>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {group.map((p) => (
-              <PredictionCard key={p.id} p={p} />
+              <PredictionCard key={p.id} p={p} reasoningExcerpt={reasoningExcerpt} />
             ))}
           </div>
           {i < groups.length - 1 && <AdInFeed index={i} />}

@@ -206,13 +206,6 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
       <AdLeaderboard />
 
-      <section aria-labelledby="predictions">
-        <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
-        <PredictionViewSwitch
-          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" />}
-          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
-        />
-      </section>
 
       {/* Reference sections in tabs: everything is in the HTML, one shown at a time. */}
       {tabs.length > 0 && (
@@ -222,17 +215,27 @@ export default async function TeamPage({ params }: { params: { slug: string } })
         </section>
       )}
 
-      {honours && (
-        <section aria-labelledby="honours">
-          <SectionHead kicker="Trophy cabinet" title="Major honours" id="honours" />
-          <TeamHonours honours={honours} asOf={HONOURS_AS_OF} />
-        </section>
-      )}
-
       {profile && profile.competitions.length > 0 && (
         <section aria-labelledby="competitions">
           <SectionHead kicker="This season" title="Competitions" id="competitions" />
           <TeamCompetitions competitions={profile.competitions} />
+        </section>
+      )}
+
+      {/* Predictions sit after the reference sections. Cards show a short
+          excerpt of the reasoning; the switch gets its own breathing room. */}
+      <section aria-labelledby="predictions" className="space-y-4">
+        <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
+        <PredictionViewSwitch
+          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" reasoningExcerpt />}
+          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+        />
+      </section>
+
+      {honours && (
+        <section aria-labelledby="honours">
+          <SectionHead kicker="Trophy cabinet" title="Major honours" id="honours" />
+          <TeamHonours honours={honours} asOf={HONOURS_AS_OF} />
         </section>
       )}
 

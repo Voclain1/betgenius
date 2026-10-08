@@ -6,6 +6,7 @@ import { leagueSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
 import { Prose } from "@/components/Prose";
+import { ReasoningExcerpt } from "@/components/ReasoningExcerpt";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 
@@ -58,7 +59,16 @@ export const catStyles: Record<string, string> = {
  * every card on the page is the same fixture and the header would repeat —
  * the match page. Everywhere else it stays on.
  */
-export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRow; hideMatchHeader?: boolean }) {
+export function PredictionCard({
+  p,
+  hideMatchHeader = false,
+  reasoningExcerpt = false,
+}: {
+  p: PredictionRow;
+  hideMatchHeader?: boolean;
+  /** Collapse the reasoning to its opening sentence or two, with a "Show full reasoning" control (team pages). */
+  reasoningExcerpt?: boolean;
+}) {
   const home = p.homeTeam ?? p.fixture?.homeTeam.name;
   const away = p.awayTeam ?? p.fixture?.awayTeam.name;
   const kickoff = p.kickoff ?? p.fixture?.kickoff;
@@ -142,7 +152,7 @@ export function PredictionCard({ p, hideMatchHeader = false }: { p: PredictionRo
         already-stored rows too, so no backfill is needed. Nothing in this
         app renders markdown by design - see src/components/Prose.tsx.
       */}
-      <Prose text={p.reasoning} />
+      {reasoningExcerpt ? <ReasoningExcerpt text={p.reasoning} /> : <Prose text={p.reasoning} />}
       {p.locked && (
         <Link href="/pricing" className="btn btn-primary justify-center text-sm">
           Upgrade to unlock
