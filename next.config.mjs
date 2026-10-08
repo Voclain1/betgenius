@@ -1,6 +1,16 @@
 const nextConfig = {
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "**" }],
+    // The only remote images next/image renders are team crests, which come
+    // from API-Football. Checked on production (8 Oct 2026): all 1,857 stored
+    // crest URLs are on media.api-sports.io. The previous "**" let anyone use
+    // the image optimiser to fetch and resize arbitrary URLs, which is the
+    // surface several Next.js advisories target (optimiser DoS, cache
+    // confusion). "*.api-sports.io" also covers the media-N mirrors the
+    // provider has used.
+    remotePatterns: [
+      { protocol: "https", hostname: "media.api-sports.io" },
+      { protocol: "https", hostname: "*.api-sports.io" },
+    ],
   },
   async redirects() {
     return [
