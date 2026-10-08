@@ -95,6 +95,29 @@ async function main() {
     const name = seen.get(id) ?? nameById.get(id) ?? null;
     console.log(`   ${String(id).padStart(4)} ${String(name).padEnd(26)} ${name == null ? "NO NAME ON FILE" : clubHonours(id, name) ? "ok" : "MISMATCH (honours hidden)"}`);
   }
+
+  console.log("\n7. Team pages as they would render (read-only), for a few clubs:");
+  const { getTeamProfile, buildTeamAbout } = await import("../src/lib/teamProfile");
+  for (const id of [49, 165, 529, 42]) {
+    const team = await prisma.teamEnrichmentCache.findUnique({ where: { teamApiId: id } });
+    const name = team?.teamName ?? String(id);
+    const profile = await getTeamProfile(id);
+    const squad = ((team?.squadJson as any[]) ?? []);
+    const picks = await prisma.prediction.count({ where: { status: "PUBLISHED", OR: [{ homeTeamApiId: id }, { awayTeamApiId: id }] } });
+    console.log(`\n   == ${name} (${id}) ==  country ${profile?.country}  published picks ${picks}`);
+    console.log(`   standing: ${profile?.standing ? `${profile.standing.leagueName} ${profile.standing.row.rank}/${profile.standing.size}, ${profile.standing.row.points} pts from ${profile.standing.row.played}` : "-"}`);
+    console.log(`   competitions: ${profile?.competitions.map((c) => `${c.name}${c.href ? "" : " (no link)"}`).join(", ") || "-"}`);
+    console.log(`   upcoming (${profile?.upcoming.length ?? 0}):`);
+    for (const f of profile?.upcoming ?? []) console.log(`     ${f.kickoff.toISOString().slice(0, 16)} ${f.homeTeam} v ${f.awayTeam} [${f.leagueName}]${f.href ? " -> " + f.href : ""}`);
+    console.log(`   squad ${squad.length}, with season stats ${squad.filter((p) => p.stats).length}`);
+    console.log(`   honours: ${(clubHonours(id, name) ?? []).map((h) => `${h.count} ${h.title}`).join("; ") || "-"}`);
+    const about = buildTeamAbout({
+      name, profile,
+      venue: { name: team?.venueName ?? null, city: team?.venueCity ?? null, capacity: team?.venueCapacity ?? null },
+      coach: (team?.coachJson as any) ?? null, lastFixtures: (team?.lastFixtures as any) ?? null, squad: squad as any, pickCount: picks,
+    });
+    for (const p of about) console.log(`   | ${p}`);
+  }
 }
 
 main()
