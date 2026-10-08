@@ -118,6 +118,8 @@ async function main() {
     console.log(`   upcoming (${profile?.upcoming.length ?? 0}):`);
     for (const f of profile?.upcoming ?? []) console.log(`     ${f.kickoff.toISOString().slice(0, 16)} ${f.homeTeam} v ${f.awayTeam} [${f.leagueName}]${f.href ? " -> " + f.href : ""}`);
     console.log(`   squad ${squad.length}, with season stats ${squad.filter((p) => p.stats).length}`);
+    console.log(`   team cache: fetched ${age(team?.fetchedAt)} ago, attempt ${age(team?.lastAttemptAt)}, squad ${age(team?.squadFetchedAt)}${team?.lastError ? `, ERR ${team.lastError.slice(0, 100)}` : ""}`);
+    console.log(`   lastFixtures: ${(((team?.lastFixtures as any[]) ?? []).map((f) => `${String(f.date).slice(0, 10)} ${f.result} v ${f.opponent}`)).join("; ")}`);
     console.log(`   honours: ${(clubHonours(id, name) ?? []).map((h) => `${h.count} ${h.title}`).join("; ") || "-"}`);
     const about = buildTeamAbout({
       name, profile,
