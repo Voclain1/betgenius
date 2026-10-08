@@ -95,6 +95,17 @@ async function main() {
   check("an id whose name does not match shows nothing", clubHonours(49, "Chelsea FC Women".replace("Chelsea", "Arsenal")) === null);
   check("uncurated club shows nothing", clubHonours(999999, "Anyone") === null);
 
+  const { reasoningExcerpt } = await import("../src/lib/reasoningExcerpt");
+  const long = "Arsenal have won four of their last five at home. Leeds have conceded in every away game this season. The market prices Arsenal at 1.45, close to our view.";
+  const ex = reasoningExcerpt(long);
+  check("excerpt keeps the first two sentences when they fit", ex.excerpt === "Arsenal have won four of their last five at home. Leeds have conceded in every away game this season." && ex.truncated, ex.excerpt);
+  const one = reasoningExcerpt("A".repeat(10) + " " + "word ".repeat(80) + "end.");
+  check("an overlong first sentence is cut at a word with an ellipsis", one.excerpt.endsWith("…") && one.excerpt.length <= 201 && one.truncated, one.excerpt);
+  const short = reasoningExcerpt("Short and complete.");
+  check("short reasoning is not truncated", short.excerpt === "Short and complete." && !short.truncated);
+  check("markdown markers are stripped", reasoningExcerpt("**Form** is strong. More here. And more text that goes on.").excerpt.startsWith("Form is strong."));
+  check("empty reasoning gives nothing", reasoningExcerpt(null).excerpt === "");
+
   console.log(failures ? `\n${failures} failure(s)` : "\nall passed");
   process.exit(failures ? 1 : 0);
 }
