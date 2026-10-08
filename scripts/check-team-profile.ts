@@ -29,6 +29,7 @@ async function main() {
     name: "Arsenal",
     profile: {
       nextMatch: { homeTeam: "Arsenal", awayTeam: "Chelsea", homeTeamApiId: 42, awayTeamApiId: 49, kickoff: new Date("2026-10-18T16:30:00Z"), leagueApiId: 39, leagueName: "Premier League", href: null },
+      upcoming: [],
       competitions: [{ leagueApiId: 39, name: "Premier League", href: "/predictions/league/premier-league" }],
       standing: { leagueApiId: 39, leagueName: "Premier League", size: 20, row: { rank: 2, teamId: 42, teamName: "Arsenal", teamLogo: null, points: 16, played: 7, win: 5, draw: 1, loss: 1, goalsFor: 14, goalsAgainst: 5, form: null } },
       country: "England",

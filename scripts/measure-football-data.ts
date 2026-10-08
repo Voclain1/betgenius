@@ -77,6 +77,24 @@ async function main() {
     }
   }
   console.log(`   ${drift.size}${drift.size ? ": " + [...drift.keys()].slice(0, 15).join("; ") : ""}`);
+
+  console.log("\n6. Curated honours: each team id against the name stored for it:");
+  const { CLUB_HONOURS, clubHonours } = await import("../src/lib/clubHonours");
+  const ids = Object.keys(CLUB_HONOURS).map(Number);
+  const stored = await prisma.prediction.findMany({
+    where: { OR: [{ homeTeamApiId: { in: ids } }, { awayTeamApiId: { in: ids } }] },
+    distinct: ["homeTeamApiId"],
+    select: { homeTeamApiId: true, homeTeam: true, awayTeamApiId: true, awayTeam: true },
+  });
+  const seen = new Map<number, string>();
+  for (const r of stored) {
+    if (r.homeTeamApiId != null && ids.includes(r.homeTeamApiId)) seen.set(r.homeTeamApiId, r.homeTeam ?? "");
+    if (r.awayTeamApiId != null && ids.includes(r.awayTeamApiId) && !seen.has(r.awayTeamApiId)) seen.set(r.awayTeamApiId, r.awayTeam ?? "");
+  }
+  for (const id of ids) {
+    const name = seen.get(id) ?? nameById.get(id) ?? null;
+    console.log(`   ${String(id).padStart(4)} ${String(name).padEnd(26)} ${name == null ? "NO NAME ON FILE" : clubHonours(id, name) ? "ok" : "MISMATCH (honours hidden)"}`);
+  }
 }
 
 main()

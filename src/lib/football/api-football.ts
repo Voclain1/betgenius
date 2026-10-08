@@ -456,7 +456,8 @@ export type PlayerStatEntry = {
   player: { id: number; name: string; photo?: string | null };
   statistics: Array<{
     team: { id: number; name: string; logo?: string | null };
-    games: { appearences: number | null; minutes: number | null; position?: string | null };
+    league?: { id: number; name?: string } | null;
+    games: { appearences: number | null; minutes: number | null; position?: string | null; rating?: string | null };
     goals: { total: number | null; assists: number | null };
     cards: { yellow: number | null; yellowred: number | null; red: number | null };
   }>;
@@ -479,6 +480,14 @@ export function getTopAssists(leagueId: number, season: number) {
 
 export function getTopYellowCards(leagueId: number, season: number) {
   return apiFetch<PlayerStatEntry[]>("/players/topyellowcards", { league: leagueId, season });
+}
+
+/**
+ * A team's players with their season statistics, one page (20 players) at a
+ * time. Each player carries one statistics entry per competition played.
+ */
+export function getTeamPlayerStats(teamId: number, season: number, page = 1) {
+  return apiFetch<PlayerStatEntry[]>("/players", { team: teamId, season, page });
 }
 
 export type SquadEntry = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };
