@@ -31,13 +31,8 @@ export async function TeamEnrichmentPanel({ teamApiId }: { teamApiId: number | n
 
   return (
     <div className="card space-y-3">
-      <div className="flex items-center justify-between">
-        {/* The crest sits in the page heading now (TeamCrest), not here twice. */}
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-300">Team form</span>
-        </div>
-      </div>
-
+      {/* No heading of its own: the team page titles this section, and the
+          crest sits in the masthead. */}
       {/* Venue: nothing at all when the cache has no stadium for this club,
           rather than a placeholder row. Capacity and city each degrade
           independently, so a club with a named ground but no capacity still

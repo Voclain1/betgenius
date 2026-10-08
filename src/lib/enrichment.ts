@@ -114,7 +114,26 @@ export type LeagueStandingRow = {
    */
   zone?: string | null;
 };
-export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
+export type LeagueUpcomingFixture = {
+  id: number;
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeLogo: string | null;
+  awayLogo: string | null;
+  /** Team ids. Optional: rows cached before they were stored carry only the names (see upcomingTeamIds). */
+  homeId?: number | null;
+  awayId?: number | null;
+};
+
+/** A cached upcoming fixture's team ids, from the stored ids or, on older rows, the id inside the crest URL. */
+export function upcomingTeamIds(f: LeagueUpcomingFixture): { home: number | null; away: number | null } {
+  const fromLogo = (logo: string | null) => {
+    const m = logo?.match(/\/teams\/(\d+)\.png/);
+    return m ? Number(m[1]) : null;
+  };
+  return { home: f.homeId ?? fromLogo(f.homeLogo), away: f.awayId ?? fromLogo(f.awayLogo) };
+}
 /**
  * Shape stored in FixtureDetailCache.detailJson — only fields that exist
  * nowhere else in the app. Team names come from Prediction and crests from
@@ -877,12 +896,17 @@ function trimUpcoming(fixtures: FixtureRow[] | null): LeagueUpcomingFixture[] | 
   if (!fixtures?.length) return null;
   return fixtures
     .filter((f) => f.fixture.status.short === "NS")
-    .slice(0, 8)
+    // The whole fortnight, not the first few: team pages read this for each
+    // club's next match, and a cut at 8 dropped most of a 10-game matchday.
+    // The league page shows the first few itself.
+    .slice(0, 40)
     .map((f) => ({
       id: f.fixture.id,
       date: f.fixture.date,
       homeTeam: f.teams.home.name,
       awayTeam: f.teams.away.name,
+      homeId: f.teams.home.id,
+      awayId: f.teams.away.id,
       homeLogo: f.teams.home.logo ?? null,
       awayLogo: f.teams.away.logo ?? null,
     }));

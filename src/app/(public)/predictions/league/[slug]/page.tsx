@@ -89,7 +89,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
   // Fixtures already kicked off are dropped at read time too, so a cache the
   // refresh has not reached yet still never lists a past match as upcoming.
-  const upcoming = ((enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null)?.filter((f) => new Date(f.date).getTime() > Date.now()) ?? null;
+  const upcoming = ((enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null)?.filter((f) => new Date(f.date).getTime() > Date.now())
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 10) ?? null;
   // Only the fixtures this page can link: the upcoming list's own slugs, and
   // anything kicking off inside the recent-results window (LeagueResults keys
   // its links by matchKey, whose day is the kickoff's UTC day — hence the
