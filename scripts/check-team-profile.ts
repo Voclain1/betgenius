@@ -58,6 +58,18 @@ async function main() {
     JSON.stringify(upcomingTeamIds({ id: 1, date: "", homeTeam: "a", awayTeam: "b", homeLogo: "https://media.api-sports.io/football/teams/165.png", awayLogo: null })) === '{"home":165,"away":null}',
   );
 
+  const { competitionInSentence } = await import("../src/lib/teamProfile");
+  check(
+    "competition articles",
+    competitionInSentence("Premier League") === "the Premier League" &&
+      competitionInSentence("La Liga") === "La Liga" &&
+      competitionInSentence("Serie A") === "Serie A" &&
+      competitionInSentence("Ligue 1") === "Ligue 1" &&
+      competitionInSentence("UEFA Champions League") === "the UEFA Champions League" &&
+      competitionInSentence("Copa del Rey") === "Copa del Rey",
+  );
+  check("one competition reads with its article", text.includes("This season Arsenal competes in the Premier League."), text.split("\n")[1]);
+
   const { aggregatePlayerStats, playerStatsWanted } = await import("../src/lib/enrichment");
   const agg = aggregatePlayerStats(
     [

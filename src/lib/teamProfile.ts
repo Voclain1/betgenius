@@ -192,6 +192,14 @@ const LAGOS_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", 
 const LAGOS_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const PLAIN_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", day: "numeric", month: "long", year: "numeric" });
 
+/**
+ * A competition's name as it reads mid-sentence: "the Premier League", "the
+ * Bundesliga", but "La Liga", "Serie A" and "Ligue 1", which take no article.
+ */
+export function competitionInSentence(name: string): string {
+  return /^(La ?Liga|Serie [A-C]\b|Ligue \d|Segunda|Copa |Coppa |Coupe )/.test(name) ? name : `the ${name}`;
+}
+
 const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 export type TeamAboutInput = {
@@ -247,12 +255,12 @@ export function buildTeamAbout(input: TeamAboutInput): string[] {
   // This season: competitions and table position.
   const season: string[] = [];
   const comps = profile?.competitions.map((c) => c.name) ?? [];
-  if (comps.length) season.push(`This season ${name} ${comps.length === 1 ? "competes in" : "is competing in"} ${comps.length === 1 ? comps[0] : list(comps)}.`);
+  if (comps.length) season.push(`This season ${name} ${comps.length === 1 ? "competes in" : "is competing in"} ${list(comps.map(competitionInSentence))}.`);
   const st = profile?.standing;
   if (st && st.row.played > 0) {
     const r = st.row;
     season.push(
-      `In the ${st.leagueName} they sit ${ORDINAL(r.rank)} of ${st.size} with ${r.points} point${r.points === 1 ? "" : "s"} from ${r.played} match${r.played === 1 ? "" : "es"}: ${r.win} won, ${r.draw} drawn and ${r.loss} lost, with ${r.goalsFor} scored and ${r.goalsAgainst} conceded.`,
+      `In ${competitionInSentence(st.leagueName)} they sit ${ORDINAL(r.rank)} of ${st.size} with ${r.points} point${r.points === 1 ? "" : "s"} from ${r.played} match${r.played === 1 ? "" : "es"}: ${r.win} won, ${r.draw} drawn and ${r.loss} lost, with ${r.goalsFor} scored and ${r.goalsAgainst} conceded.`,
     );
     if (r.zone) season.push(`In the table, that place is marked "${r.zone}".`);
   }
@@ -273,7 +281,7 @@ export function buildTeamAbout(input: TeamAboutInput): string[] {
   const next = profile?.nextMatch;
   if (next) {
     matches.push(
-      `Next up is ${next.homeTeam} vs ${next.awayTeam}${next.leagueName ? ` in the ${next.leagueName}` : ""}, on ${LAGOS_DATE.format(next.kickoff)} at ${LAGOS_TIME.format(next.kickoff)} (West Africa Time)${next.href ? ", and our prediction for it is already published" : ""}.`,
+      `Next up is ${next.homeTeam} vs ${next.awayTeam}${next.leagueName ? ` in ${competitionInSentence(next.leagueName)}` : ""}, on ${LAGOS_DATE.format(next.kickoff)} at ${LAGOS_TIME.format(next.kickoff)} (West Africa Time)${next.href ? ", and our prediction for it is already published" : ""}.`,
     );
   }
   if (matches.length) paragraphs.push(matches.join(" "));
