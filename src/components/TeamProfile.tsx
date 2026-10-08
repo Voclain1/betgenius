@@ -105,7 +105,7 @@ export function TeamMasthead({
           <div className="flex flex-wrap items-center justify-center gap-2 border-t border-brand-border px-3 py-2.5">
             <LeagueBadge leagueApiId={standing.leagueApiId} leagueName={standing.leagueName} showName={false} size={14} />
             <span className="text-xs font-semibold text-gray-300">{standing.leagueName}</span>
-            {r.zone && <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-bold text-brand">{r.zone}</span>}
+            {r.zone && <span className="text-[11px] font-bold text-brand">· {r.zone}</span>}
           </div>
         </div>
       )}
@@ -230,8 +230,8 @@ export function TeamAbout({ name, paragraphs }: { name: string; paragraphs: stri
 
 /**
  * The club's upcoming fixtures. A fixture with a published prediction is a
- * solid, tinted row with a brand edge and an arrow, and links to it; the rest
- * are quiet rows.
+ * solid, tinted row with an arrow button, and links to it; the rest are quiet
+ * rows. No coloured accent edges and no tinted pills: the owner's house style.
  */
 export function TeamFixtureList({ fixtures, teamApiId }: { fixtures: TeamNextMatch[]; teamApiId: number | null }) {
   if (!fixtures.length) return <p className="text-sm text-gray-500">No upcoming fixtures listed right now.</p>;
@@ -244,9 +244,7 @@ export function TeamFixtureList({ fixtures, teamApiId }: { fixtures: TeamNextMat
         const predicted = !!f.href;
         const row = (
           <div
-            className={`flex items-center gap-3 rounded-2xl border-l-4 px-3 py-3 ${
-              predicted ? "border-brand bg-brand/[0.14]" : "border-transparent bg-brand-bg/50"
-            }`}
+            className={`flex items-center gap-3 rounded-2xl px-3 py-3 ${predicted ? "bg-brand/[0.14]" : "bg-brand-bg/50"}`}
           >
             <div className="w-14 shrink-0 text-center">
               <div className="text-sm font-black tabular-nums text-gray-100">{TIME.format(f.kickoff)}</div>
