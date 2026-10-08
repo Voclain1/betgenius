@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { TeamCrest } from "@/components/TeamCrest";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -18,6 +17,10 @@ import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton } from "@/components/FollowButton";
+import { NextMatchCard, SectionHead, TeamAbout, TeamCompetitions, TeamMasthead } from "@/components/TeamProfile";
+import { buildTeamAbout, getTeamProfile } from "@/lib/teamProfile";
+import type { TeamCoach, TeamFixtureSummary } from "@/lib/enrichment";
+import { absoluteUrl } from "@/lib/seo";
 
 /** The row set can mix two spellings that happen to slug the same, or (rarely) one team's home games and another same-slugged team's away games; picks whichever stored name actually matches `slug` for display. */
 function resolveTeamName(rows: { homeTeam: string | null; awayTeam: string | null }[], slug: string): string {
@@ -72,8 +75,37 @@ export default async function TeamPage({ params }: { params: { slug: string } })
   const name = resolveTeamName(rows, params.slug);
   const teamApiId = resolveTeamApiId(rows, params.slug);
   const opponents = await getOpponentsForTeamSlug(params.slug);
-  const enrichment = await getTeamEnrichment(teamApiId);
+  const [enrichment, profile] = await Promise.all([getTeamEnrichment(teamApiId), getTeamProfile(teamApiId)]);
   const squad = (enrichment?.squadJson as unknown as SquadPlayer[] | null) ?? [];
+  const coach = (enrichment?.coachJson as unknown as TeamCoach | null) ?? null;
+  const about = buildTeamAbout({
+    name,
+    profile,
+    venue: { name: enrichment?.venueName ?? null, city: enrichment?.venueCity ?? null, capacity: enrichment?.venueCapacity ?? null },
+    coach,
+    lastFixtures: (enrichment?.lastFixtures as unknown as TeamFixtureSummary[] | null) ?? null,
+    squad,
+    pickCount: rows.length,
+  });
+
+  // The club itself as structured data, beside the events: name, crest,
+  // ground, coach and the competitions it plays in, all from stored facts.
+  const teamJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SportsTeam",
+    name,
+    sport: "Soccer",
+    url: absoluteUrl(`/predictions/team/${params.slug}`),
+    ...(teamApiId != null ? { logo: `https://media.api-sports.io/football/teams/${teamApiId}.png` } : {}),
+    ...(about.length ? { description: about[0] } : {}),
+    ...(enrichment?.venueName
+      ? { location: { "@type": "Place", name: enrichment.venueName, ...(enrichment.venueCity ? { address: enrichment.venueCity } : {}) } }
+      : {}),
+    ...(coach ? { coach: { "@type": "Person", name: coach.name } } : {}),
+    ...(profile?.competitions.length
+      ? { memberOf: profile.competitions.map((c) => ({ "@type": "SportsOrganization", name: c.name, ...(c.href ? { url: absoluteUrl(c.href) } : {}) })) }
+      : {}),
+  };
 
   const session = await getServerSession(authOptions);
   const viewer = await getViewerEntitlement();
@@ -130,44 +162,70 @@ export default async function TeamPage({ params }: { params: { slug: string } })
             { name, path: `/predictions/team/${params.slug}` },
           ]),
           ...events,
+          teamJsonLd,
         ]}
       />
-      <div className="space-y-2">
-        <h1 className="flex items-center gap-3 text-2xl font-bold">
-          <TeamCrest teamApiId={teamApiId} size={36} />
-          {name}
-        </h1>
+
+      <TeamMasthead name={name} teamApiId={teamApiId} country={profile?.country ?? null} flagCode={profile?.flagCode ?? null} standing={profile?.standing ?? null}>
         {teamApiId != null && <FollowButton targetType="TEAM" targetKey={String(teamApiId)} label={name} />}
-        {/* Answers "what is this site's record on this team" in one line,
-            above the form panel and the RateCard that break it down. */}
-        <AnswerSummary text={teamSummary({ name, pickCount: rows.length, stat })} />
+      </TeamMasthead>
+
+      {/* Answers "what is this site's record on this team" in one line. */}
+      <AnswerSummary text={teamSummary({ name, pickCount: rows.length, stat })} />
+
+      <div className={profile?.nextMatch ? "grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : "max-w-sm"}>
+        {profile?.nextMatch && (
+          <section aria-labelledby="next-match">
+            <SectionHead kicker="Fixture" title="Next match" id="next-match" />
+            <NextMatchCard match={profile.nextMatch} />
+          </section>
+        )}
+        <section aria-labelledby="our-record">
+          <SectionHead kicker="BetGenius" title="Our record" id="our-record" />
+          <RateCard stat={stat} label={`All-time for ${name}`} big />
+        </section>
       </div>
 
-      <TeamEnrichmentPanel teamApiId={teamApiId} />
+      {enrichment && (
+        <section aria-labelledby="form">
+          <SectionHead kicker="Form" title="Form and club facts" id="form" />
+          <TeamEnrichmentPanel teamApiId={teamApiId} />
+        </section>
+      )}
 
-      <div className="max-w-xs">
-        <RateCard stat={stat} label={`All-time for ${name}`} big />
-      </div>
-
-      {/* After the first main content section — the summary line, the form
-          panel and the all-time rate card — and before the squad. */}
       <AdLeaderboard />
 
-      {squad.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-xl font-semibold">
-            Squad <span className="text-sm font-normal text-gray-500">({squad.length})</span>
-          </h2>
-          <TeamSquad squad={squad} />
+      <section aria-labelledby="predictions">
+        <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {shaped.map((p) => (
+            <PredictionCard key={p.id} p={p as any} />
+          ))}
         </div>
+      </section>
+
+      {profile && profile.competitions.length > 0 && (
+        <section aria-labelledby="competitions">
+          <SectionHead kicker="This season" title="Competitions" id="competitions" />
+          <TeamCompetitions competitions={profile.competitions} />
+        </section>
+      )}
+
+      {about.length > 0 && <TeamAbout name={name} paragraphs={about} />}
+
+      {squad.length > 0 && (
+        <section aria-labelledby="squad">
+          <SectionHead kicker="Players" title={`Squad (${squad.length})`} id="squad" />
+          <TeamSquad squad={squad} />
+        </section>
       )}
 
       {/* Opponents this team has published picks against — each one is a
           pairing with a head-to-head record worth reading. Rendered only when
           there's at least one, rather than as an empty shell. */}
       {opponents.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-xl font-semibold">Head-to-head records</h2>
+        <section aria-labelledby="h2h">
+          <SectionHead kicker="Rivals" title="Head-to-head records" id="h2h" />
           <div className="flex flex-wrap gap-2">
             {opponents.map((o) => (
               <Link
@@ -180,14 +238,8 @@ export default async function TeamPage({ params }: { params: { slug: string } })
               </Link>
             ))}
           </div>
-        </div>
+        </section>
       )}
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {shaped.map((p) => (
-          <PredictionCard key={p.id} p={p as any} />
-        ))}
-      </div>
     </div>
   );
 }
