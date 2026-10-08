@@ -45,11 +45,11 @@ async function main() {
   check("states the ground", text.includes("Emirates Stadium in London, which holds 60,383 spectators"));
   check("states the table", text.includes("they sit 2nd of 20 with 16 points from 7 matches"));
   check("coach without an unassertable start date", text.includes("coached by Mikel Arteta (Spain).") && !text.includes("since"));
-  check("last result reads naturally", text.includes("Arsenal beat Spurs 2-0 at home"));
+  check("no past results (they would go stale between refreshes)", !text.includes("Spurs") && !text.includes("most recent match"));
   check("next match in WAT", text.includes("on Sunday 18 October at 17:30 (West Africa Time)"));
   check("no prediction claimed when none is linked", !text.includes("already published"));
   check("singular prediction", text.includes("published 1 prediction on"));
-  check("one-result form line is not stated", !text.includes("Across their last"));
+  check("no recent-form line", !text.includes("Across their last"));
   check("no empty paragraphs", full.every((p) => p.trim().length > 0));
 
   check("ids from stored fields", JSON.stringify(upcomingTeamIds({ id: 1, date: "", homeTeam: "a", awayTeam: "b", homeLogo: null, awayLogo: null, homeId: 5, awayId: 6 })) === '{"home":5,"away":6}');

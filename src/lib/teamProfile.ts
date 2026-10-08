@@ -221,7 +221,7 @@ export type TeamAboutInput = {
  * vouches for them. Pure, so it is unit-checked.
  */
 export function buildTeamAbout(input: TeamAboutInput): string[] {
-  const { name, profile, venue, coach, lastFixtures, squad, pickCount } = input;
+  const { name, profile, venue, coach, squad, pickCount } = input;
   const paragraphs: string[] = [];
 
   // Identity: country, ground, coach.
@@ -266,18 +266,12 @@ export function buildTeamAbout(input: TeamAboutInput): string[] {
   }
   if (season.length) paragraphs.push(season.join(" "));
 
-  // Recent and next match.
+  // The next match only. Past results are deliberately not stated here: the
+  // page is rebuilt on every request, but a club's results cache is refreshed
+  // only while we have a prediction coming up on it, so "their most recent
+  // match" could lag weeks behind. The next fixture comes from the league
+  // caches, refreshed every few hours, and drops off once it kicks off.
   const matches: string[] = [];
-  const last = lastFixtures?.filter((f) => f.result !== "?").sort((a, b) => b.date.localeCompare(a.date))[0];
-  if (last && last.goalsFor != null && last.goalsAgainst != null) {
-    const verb = last.result === "W" ? "beat" : last.result === "L" ? "lost to" : "drew with";
-    matches.push(`Their most recent match was on ${PLAIN_DATE.format(new Date(last.date))}, when ${name} ${verb} ${last.opponent} ${last.goalsFor}-${last.goalsAgainst} ${last.venue === "home" ? "at home" : "away"}.`);
-  }
-  const results = (lastFixtures ?? []).map((f) => f.result).filter((r) => r !== "?");
-  if (results.length >= 3) {
-    const w = results.filter((r) => r === "W").length, d = results.filter((r) => r === "D").length, l = results.filter((r) => r === "L").length;
-    matches.push(`Across their last ${results.length} matches the record is ${w} win${w === 1 ? "" : "s"}, ${d} draw${d === 1 ? "" : "s"} and ${l} defeat${l === 1 ? "" : "s"}.`);
-  }
   const next = profile?.nextMatch;
   if (next) {
     matches.push(
