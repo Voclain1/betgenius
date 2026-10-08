@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { notFound } from "next/navigation";
 import { CupRounds } from "@/components/CupRounds";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
@@ -14,7 +16,6 @@ import { leagueSlug } from "@/lib/slug";
 import { competitionHubContent } from "@/lib/competitionHubContent";
 import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
 import { RateCard } from "@/components/TrackRecordView";
-import { PredictionCard } from "@/components/PredictionCard";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import type { PredictionCategory } from "@/lib/enums";
@@ -80,9 +81,10 @@ export default async function CupPage({ params, searchParams }: { params: { slug
           <h2 id="competition-picks-heading" className="text-xl font-semibold">Published {data.cup.name} picks</h2>
           {scoped && <div className="max-w-xs"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
           {shaped.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {shaped.map((prediction) => <PredictionCard key={prediction.id} p={prediction as any} />)}
-            </div>
+            <PredictionViewSwitch
+              detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" />}
+              compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+            />
           ) : <div className="card text-sm text-gray-400">No {data.cup.name} predictions are published yet.</div>}
         </section>
       )}

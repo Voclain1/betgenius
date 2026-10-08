@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
@@ -102,9 +103,12 @@ export default async function Over25GoalsPage({ searchParams }: { searchParams?:
           {rows.length} {rows.length === 1 ? "match" : "matches"} currently meet this market selection for the chosen day.
         </p>
       </div>
-      <FeedDayTabs basePath={PATH} active={day} />
-      <Over25PredictionsGuide />
-      <CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds />
+      <PredictionViewSwitch
+        tabs={<FeedDayTabs basePath={PATH} active={day} />}
+        intro=<Over25PredictionsGuide />
+        detailed={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="detailed" />}
+        compact={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="compact" />}
+      />
       <Over25PredictionsEvidence />
     </div>
   );

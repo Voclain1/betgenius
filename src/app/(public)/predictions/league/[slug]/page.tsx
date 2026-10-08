@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
-import { PredictionCard } from "@/components/PredictionCard";
 import { RateCard } from "@/components/TrackRecordView";
 import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { LeagueFixtures } from "@/components/LeagueFixtures";
@@ -233,15 +234,16 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           predictions would otherwise push standings, fixtures and results so
           far down that the page's depth is unreachable. Everything above is
           fixed-height or collapsed. */}
-      <div>
-        <h2 className="mb-3 text-xl font-semibold">
-          {rows.length} published {rows.length === 1 ? "pick" : "picks"}
-        </h2>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {shaped.map((p) => (
-            <PredictionCard key={p.id} p={p as any} />
-          ))}
-        </div>
+      <div className="space-y-3">
+        <PredictionViewSwitch
+          tabs={
+            <h2 className="text-xl font-semibold">
+              {rows.length} published {rows.length === 1 ? "pick" : "picks"}
+            </h2>
+          }
+          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" />}
+          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+        />
       </div>
 
       {hubContent && <CompetitionHubLinks competition={name} />}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LayoutGrid, List } from "lucide-react";
 import {
   DEFAULT_PREDICTION_VIEW,
   PREDICTION_VIEWS,
@@ -14,6 +15,11 @@ const LABELS: Record<PredictionView, string> = {
   compact: "Compact",
 };
 
+const ICONS: Record<PredictionView, typeof List> = {
+  detailed: LayoutGrid,
+  compact: List,
+};
+
 /** Reads window.localStorage without letting a blocked accessor throw. */
 function localStore(): Storage | null {
   try {
@@ -24,8 +30,9 @@ function localStore(): Storage | null {
 }
 
 /**
- * The Detailed / Compact control for a non-TODAY category feed, and the only
- * client state that feature needs.
+ * The Detailed / Compact control for every public prediction list (category
+ * feeds except TODAY, team, league and cup pages, the market guides), and the
+ * only client state that feature needs. One stored preference drives them all.
  *
  * Owns the preference and nothing else. Both renderings arrive already built
  * by the server page — `detailed` and `compact` are CategoryPredictionsList
@@ -50,7 +57,8 @@ export function PredictionViewSwitch({
   detailed,
   compact,
 }: {
-  tabs: React.ReactNode;
+  /** Day tabs, a section heading, or nothing: whatever sits left of the switch. */
+  tabs?: React.ReactNode;
   intro?: React.ReactNode;
   detailed: React.ReactNode;
   compact: React.ReactNode;
@@ -68,25 +76,26 @@ export function PredictionViewSwitch({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className={`flex flex-wrap items-center gap-3 ${tabs ? "justify-between" : "justify-end"}`}>
         {tabs}
-        <div
-          role="group"
-          aria-label="Prediction view"
-          className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1"
-        >
+        {/* Deliberately unlike the day tabs beside it: round, small, icon-led,
+            and an inverted (light-on-dark / dark-on-light) active state rather
+            than brand green, so the two controls never read as one. */}
+        <div role="group" aria-label="Prediction view" className="inline-flex shrink-0 items-center gap-0.5 rounded-full border-2 border-gray-500 p-0.5">
           {PREDICTION_VIEWS.map((option) => {
             const isActive = option === view;
+            const Icon = ICONS[option];
             return (
               <button
                 key={option}
                 type="button"
                 aria-pressed={isActive}
                 onClick={() => choose(option)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-                  isActive ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                  isActive ? "bg-gray-100 text-brand-bg" : "text-gray-400 hover:text-gray-100"
                 }`}
               >
+                <Icon size={13} strokeWidth={2.75} aria-hidden />
                 {LABELS[option]}
               </button>
             );

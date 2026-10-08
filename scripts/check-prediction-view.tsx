@@ -179,6 +179,18 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("category page renders both views with ads", count(page, 'withAds view="detailed"') === 1 && count(page, 'withAds view="compact"') === 1);
   check("category page nulls Over/Under on locked rows", /overUnder: null,\s*locked: true/.test(page));
 
+  for (const f of [
+    "src/app/(public)/predictions/team/[slug]/page.tsx",
+    "src/app/(public)/predictions/league/[slug]/page.tsx",
+    "src/app/(public)/predictions/cup/[slug]/page.tsx",
+    "src/app/(public)/predictions/btts/page.tsx",
+    "src/app/(public)/predictions/over-2-5-goals/page.tsx",
+    "src/app/(public)/predictions/double-chance/page.tsx",
+  ]) {
+    const src = read(f);
+    check(`${f.split("/").slice(-3, -1).join("/")} offers the view switch`, src.includes("<PredictionViewSwitch") && src.includes('view="compact"') && src.includes('view="detailed"'));
+  }
+
   const sw = read("src/components/PredictionViewSwitch.tsx");
   check("the switch is a client component", sw.startsWith('"use client"'));
   check("the switch fetches nothing", !/\bfetch\(|prisma|@\/lib\/categoryPredictions/.test(sw));
@@ -200,7 +212,7 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("server render shows Detailed", out.includes("DETAILED-VIEW") && !out.includes("COMPACT-VIEW"), out);
   check("controls are a labelled group", out.includes('role="group"') && out.includes('aria-label="Prediction view"'));
   check("Detailed is pressed, Compact is not",
-    /aria-pressed="true"[^>]*>Detailed</.test(out) && /aria-pressed="false"[^>]*>Compact</.test(out), out);
+    /aria-pressed="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Detailed</.test(out) && /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Compact</.test(out), out);
   check("buttons are type=button", count(out, 'type="button"') === 2);
   check("tabs, then intro, then the list",
     out.indexOf("TABS") < out.indexOf("Prediction view") && out.indexOf("Prediction view") < out.indexOf("INTRO") &&
