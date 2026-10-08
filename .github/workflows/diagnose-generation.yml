@@ -21,7 +21,6 @@ on:
     paths:
       - scripts/measure-generation-leadtime.ts
       - scripts/measure-vip-premium.ts
-      - scripts/list-image-hosts.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -73,5 +72,3 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/measure-vip-premium.ts "${{ github.event.inputs.days || '4' }}"
-      - name: TEMP image hosts
-        run: npx tsx scripts/list-image-hosts.ts
