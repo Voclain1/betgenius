@@ -466,6 +466,23 @@ export function tierFor(nextKickoff: Date | null | undefined, now: Date = new Da
 }
 
 /**
+ * Teams with no upcoming fixture of ours still have a page: its form panel and
+ * recent results read the team cache. They are refreshed weekly, in whatever
+ * room a run has left after the tiered teams, for as long as they had a
+ * prediction in the last IDLE_TEAM_WINDOW_MS. Before this they were never
+ * refreshed at all, and a club between picks showed results weeks old.
+ */
+export const IDLE_TEAM_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+export const IDLE_TEAM_WINDOW_MS = 60 * 24 * 60 * 60_000;
+
+/** Whether a team with no upcoming fixture is due its weekly refresh. */
+export function idleRefreshDue(target: Pick<TeamTarget, "nextKickoff" | "kickoff">, fetchedAt: Date | null | undefined, now: Date = new Date()): boolean {
+  if (tierFor(target.nextKickoff, now)) return false; // tiered, handled there
+  if (!target.kickoff || now.getTime() - target.kickoff.getTime() > IDLE_TEAM_WINDOW_MS) return false;
+  return !fetchedAt || now.getTime() - fetchedAt.getTime() >= IDLE_TEAM_MAX_AGE_MS;
+}
+
+/**
  * Teams due a refresh, most urgent first.
  *
  * A team is due when its cache is older than its tier's tolerance; teams inside
@@ -482,11 +499,15 @@ export async function orderTeamsByPriority(targets: TeamTarget[], now: Date = ne
 
   const due: Array<{ target: TeamTarget; tierIndex: number; age: number }> = [];
   for (const target of targets) {
-    const tier = tierFor(target.nextKickoff, now);
-    if (!tier) continue;
     const row = byId.get(target.teamApiId);
     const fetchedAt = row?.fetchedAt?.getTime() ?? null;
     const age = fetchedAt === null ? Infinity : now.getTime() - fetchedAt;
+    const tier = tierFor(target.nextKickoff, now);
+    if (!tier) {
+      // After every tier, so an idle club only ever takes a slot no upcoming fixture needed.
+      if (idleRefreshDue(target, row?.fetchedAt, now)) due.push({ target, tierIndex: REFRESH_TIERS.length, age });
+      continue;
+    }
     if (age < tier.maxAgeMs) continue;
     due.push({ target, tierIndex: REFRESH_TIERS.indexOf(tier), age });
   }
