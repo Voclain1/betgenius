@@ -46,7 +46,7 @@ export function TipsPicker({
             key={c.key}
             type="button"
             onClick={() => setActiveCategory(c.key)}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
               activeCategory === c.key
                 ? "bg-brand text-on-brand"
                 : c.locked
@@ -61,7 +61,7 @@ export function TipsPicker({
       </div>
 
       {category?.locked ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-border bg-brand-bg py-8 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-brand-border bg-brand-bg py-8 text-center">
           <Lock size={22} className="text-gray-500" />
           <p className="text-sm text-gray-400">Subscribe to unlock {category.label}.</p>
           <Link href="/pricing" className="btn btn-primary text-sm">Upgrade</Link>
@@ -69,20 +69,20 @@ export function TipsPicker({
       ) : category && visibleOptions.length === 0 ? (
         <p className="py-4 text-sm text-gray-400">No published tips in this category yet.</p>
       ) : (
-        <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-lg border border-brand-border">
+        <ul className="max-h-72 divide-y divide-brand-border overflow-y-auto rounded-2xl border border-brand-border bg-brand-bg/50">
           {visibleOptions.map((opt) => {
             const added = addedIds.has(opt.id);
             return (
-              <li key={opt.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <li key={opt.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{opt.label}</div>
+                  <div className="truncate font-bold text-gray-100">{opt.label}</div>
                   <div className="truncate text-gray-400">{opt.market} — {opt.pick}</div>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <button
                     onClick={() => onAdd(opt)}
                     disabled={added}
-                    className={`text-xs ${added ? "text-gray-500" : "text-brand hover:underline"}`}
+                    className={`text-xs font-bold ${added ? "text-gray-500" : "text-brand hover:underline"}`}
                   >
                     {added ? "Added" : "Add"}
                   </button>
