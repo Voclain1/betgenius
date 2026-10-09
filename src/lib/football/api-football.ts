@@ -58,9 +58,17 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
   // exactly the timeouts and 429s that matter most for staying under the cap.
   await recordCall(path);
 
+  // Never through Next's data cache. With `next: { revalidate: 60 }` every
+  // request whose URL never changes (a league's /standings, a team's
+  // /fixtures?last=5) kept being answered from a cached copy that stopped
+  // revalidating: in October 2026 tables and recent results were frozen at
+  // 20 September while every refresh stamped them as fresh. URLs that carry a
+  // date were unaffected, which is what gave it away. Each call is counted
+  // against the daily budget above whether or not it is cached, so the cache
+  // saved nothing the budget relies on.
   const res = await fetch(url.toString(), {
     headers: { "x-apisports-key": KEY },
-    next: { revalidate: 60 }, // 1-minute cache on the edge
+    cache: "no-store",
   });
   if (!res.ok) {
     console.error("[api-football]", res.status, await res.text());
