@@ -6,10 +6,14 @@ import { InstallPrompt } from "@/components/InstallPrompt";
 import { PushOnboarding } from "@/components/PushOnboarding";
 import { GoogleOneTap } from "@/components/GoogleOneTap";
 import { AppTabBar } from "@/components/AppTabBar";
+import { Preloader } from "@/components/Preloader";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      {/* The logo splash on a hard load. Public layout only, so /admin and
+          /dashboard never get it; the pages it skips are in src/lib/preloader.ts. */}
+      <Preloader />
       <PreviewDataBanner />
       <Nav />
       {/* Top-left of the content column rather than in the nav bar: the back
