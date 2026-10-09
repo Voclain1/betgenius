@@ -59,10 +59,12 @@ export function competitionStats(table: LeagueStandingRow[] | null | undefined):
 }
 
 /**
- * Two or three marquee fixtures from the next round: published predictions
- * first (they link through), then the meetings of the highest-placed clubs.
- * "The next round" is every fixture within four days of the earliest one, so
- * a weekend round spread over Friday to Monday stays together.
+ * The week's biggest fixtures (three by default): everything kicking off in
+ * the next seven days, ranked by where the two clubs stand in the table, so
+ * the meeting of the highest-placed pair comes first. In a break with nothing
+ * that soon, the seven days from the next fixture stand in. A published
+ * prediction only breaks a tie (and makes the card link through); it never
+ * lifts a small match over a big one. Returned in kickoff order.
  */
 export function featuredMatches(
   upcoming: LeagueUpcomingFixture[] | null | undefined,
@@ -75,14 +77,15 @@ export function featuredMatches(
 ): TeamNextMatch[] {
   const future = (upcoming ?? []).filter((f) => new Date(f.date).getTime() > now.getTime()).sort((a, b) => a.date.localeCompare(b.date));
   if (!future.length) return [];
-  const first = new Date(future[0].date).getTime();
-  const round = future.filter((f) => new Date(f.date).getTime() - first <= 4 * 24 * 3600_000);
+  const WEEK = 7 * 24 * 3600_000;
+  const from = Math.max(now.getTime(), new Date(future[0].date).getTime() - WEEK);
+  const week = future.filter((f) => new Date(f.date).getTime() <= from + WEEK);
 
   const rankById = new Map((table ?? []).map((r) => [r.teamId, r.rank]));
   const worst = (table?.length ?? 20) + 1;
   const published = new Set(publishedSlugs);
 
-  return round
+  return week
     .map((f) => {
       const ids = upcomingTeamIds(f);
       const slug = matchSlug({ homeTeam: f.homeTeam, awayTeam: f.awayTeam, kickoff: f.date });
@@ -99,10 +102,10 @@ export function featuredMatches(
           leagueName,
           href,
         } satisfies TeamNextMatch,
-        score: (href ? 0 : 1000) + strength,
+        strength,
       };
     })
-    .sort((a, b) => a.score - b.score || a.match.kickoff.getTime() - b.match.kickoff.getTime())
+    .sort((a, b) => a.strength - b.strength || Number(!a.match.href) - Number(!b.match.href) || a.match.kickoff.getTime() - b.match.kickoff.getTime())
     .slice(0, limit)
     .map((x) => x.match)
     .sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
