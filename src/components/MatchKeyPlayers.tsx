@@ -1,6 +1,7 @@
 import { getLeagueEnrichment } from "@/lib/predictionScope";
 import type { LeaguePlayerStat } from "@/lib/enrichment";
 import type { TeamDigest } from "@/lib/ai/digest";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * Leading scorers and assisters from the league leaderboards, for the two
@@ -70,15 +71,15 @@ function TeamColumn({ name, rows }: { name: string; rows: KeyPlayerRow[] }) {
   if (rows.length === 0) return null;
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-300">{name}</h3>
-      <ul className="space-y-1">
+      <h3 className="text-sm font-black text-gray-100">{name}</h3>
+      <ul className="divide-y divide-brand-border">
         {rows.map((p) => (
-          <li key={p.name} className="flex items-center justify-between gap-2 text-sm">
+          <li key={p.name} className="flex items-center justify-between gap-2 py-2 text-sm">
             <span className="truncate text-gray-300">
               {p.name}
               {p.absent && <span className="ml-2 text-[10px] text-red-300/80">{p.absent}</span>}
             </span>
-            <span className="shrink-0 text-xs tabular-nums text-gray-500">
+            <span className="shrink-0 text-xs font-bold tabular-nums text-gray-300">
               {p.goals != null && `${p.goals}G`}
               {p.goals != null && p.assists != null && " · "}
               {p.assists != null && `${p.assists}A`}
@@ -121,18 +122,17 @@ export async function MatchKeyPlayers({
   if (home.length === 0 && away.length === 0) return null;
 
   return (
-    <section className="card space-y-3">
-      <h2 className="section-heading">Key players this season</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <PremiumPanel kicker="Players" title="Key players this season" id="key-players">
+      <div className="grid gap-6 sm:grid-cols-2">
         <TeamColumn name={homeTeam} rows={home} />
         <TeamColumn name={awayTeam} rows={away} />
       </div>
       {/* States the limit of the claim rather than leaving the reader to assume
           a team sheet. */}
-      <p className="text-[11px] text-gray-500">
+      <p className="mt-4 border-t border-brand-border pt-3 text-[11px] text-gray-500">
         League scoring and assist totals for this season — not a predicted lineup. Availability is only shown where team news
         names the same player.
       </p>
-    </section>
+    </PremiumPanel>
   );
 }

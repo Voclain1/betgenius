@@ -1,5 +1,6 @@
 import { buildMatchFacts, isMatchFactsEmpty, MIN_RATE_SAMPLE, type VenueProfile, type MatchFacts } from "@/lib/matchFacts";
 import type { TeamDigest } from "@/lib/ai/digest";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * Venue-split statistics for this fixture.
@@ -15,12 +16,12 @@ import type { TeamDigest } from "@/lib/ai/digest";
 
 function Row({ label, home, away, hint }: { label: string; home: React.ReactNode; away: React.ReactNode; hint?: string }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-1.5">
-      <div className="text-right text-sm font-medium tabular-nums">{home}</div>
-      <div className="px-2 text-center text-[10px] uppercase leading-tight text-gray-500" title={hint}>
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-2.5">
+      <div className="text-right text-base font-black tabular-nums text-gray-100">{home}</div>
+      <div className="w-28 px-2 text-center text-[10px] font-semibold uppercase leading-tight tracking-[0.1em] text-gray-500" title={hint}>
         {label}
       </div>
-      <div className="text-left text-sm font-medium tabular-nums">{away}</div>
+      <div className="text-left text-base font-black tabular-nums text-gray-100">{away}</div>
     </div>
   );
 }
@@ -49,12 +50,11 @@ export function MatchStatsComparison({
   const { home, away, homeRecent, awayRecent } = facts;
 
   return (
-    <section className="card space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="section-heading">Statistical comparison</h2>
-        <span className="text-[11px] text-gray-500">
-          {homeTeam} at home vs {awayTeam} away
-        </span>
+    <PremiumPanel kicker="Numbers" title="Statistical comparison" id="stats">
+      <div className="mb-1 grid grid-cols-[1fr_auto_1fr] gap-2 border-b border-brand-border pb-3 text-xs font-bold text-gray-300">
+        <span className="break-words text-right leading-snug">{homeTeam} at home</span>
+        <span className="w-28" />
+        <span className="break-words leading-snug">{awayTeam} away</span>
       </div>
 
       <div className="divide-y divide-brand-border">
@@ -105,10 +105,10 @@ export function MatchStatsComparison({
 
       {/* Stated as the addition it is, not dressed up as a projection. */}
       {facts.combinedGoalRate != null && (
-        <p className="text-[11px] text-gray-500">
+        <p className="mt-3 border-t border-brand-border pt-3 text-[11px] text-gray-500">
           Combined scoring rate: {facts.combinedGoalRate} goals per game ({homeTeam} at home plus {awayTeam} away).
         </p>
       )}
-    </section>
+    </PremiumPanel>
   );
 }

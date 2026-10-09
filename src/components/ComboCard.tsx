@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { catStyles } from "@/components/PredictionCard";
+import { textTone } from "@/lib/tone";
 import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
 
 export type ComboLegView = {
@@ -42,10 +43,10 @@ export function ComboCard({
   const implied = product ? (1 / product) * 100 : null;
 
   return (
-    <article className="card flex flex-col gap-4">
+    <article className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
       <div>
-        <span className={`chip ${catStyles[combo.category] ?? "bg-gray-500/20"}`}>{categoryLabel}</span>
-        <h2 className="mt-2 text-lg font-semibold">{combo.title}</h2>
+        <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${textTone(catStyles[combo.category] ?? "text-gray-400")}`}>{categoryLabel}</span>
+        <h2 className="mt-1.5 text-lg font-black tracking-tight text-gray-100">{combo.title}</h2>
         {combo.description && <p className="mt-1 text-sm text-gray-400">{combo.description}</p>}
       </div>
 

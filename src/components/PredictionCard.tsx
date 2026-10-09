@@ -9,6 +9,7 @@ import { Prose } from "@/components/Prose";
 import { ReasoningExcerpt } from "@/components/ReasoningExcerpt";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
+import { textTone } from "@/lib/tone";
 
 export type PredictionRow = {
   id: string;
@@ -74,23 +75,27 @@ export function PredictionCard({
   const kickoff = p.kickoff ?? p.fixture?.kickoff;
   const leagueName = p.leagueName ?? p.fixture?.league.name;
 
+  const isDouble = p.marketType === "SAME_GAME_DOUBLE";
+  const hasConfidence = p.confidence !== null && p.confidence !== undefined;
+
   return (
-    <article className="card flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`chip ${catStyles[p.category] ?? "bg-gray-500/20"}`}>{categoryChipLabel(p.category)}</span>
+    <article className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
+      {/* Category and result as coloured small caps, never as tinted pills. */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3 text-[11px] font-black uppercase tracking-[0.14em]">
+          <span className={textTone(catStyles[p.category] ?? "text-gray-400")}>{categoryChipLabel(p.category)}</span>
           {p.outcome && p.outcome !== "PENDING" && (
-            <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? "bg-brand-border"}`}>{p.outcome}</span>
+            <span className={textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}>{p.outcome}</span>
           )}
         </div>
         {kickoff && !hideMatchHeader && (
-          <span className="text-xs text-gray-400">
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-400">
             {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>
       {!hideMatchHeader && (home || leagueName) && (
-        <div>
+        <div className="space-y-1.5">
           {leagueName && (
             <Link href={competitionPredictionsHref(p.leagueApiId, leagueSlug(leagueName, p.leagueApiId))} className="hover:underline">
               <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />
@@ -98,52 +103,52 @@ export function PredictionCard({
           )}
           {!leagueName && <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />}
           {home && (
-            <div className="text-lg font-semibold">
+            <div className="text-lg font-black leading-snug tracking-tight text-gray-100">
               <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} />
             </div>
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Market</div>
-          <div className={p.locked ? "flex items-center justify-center gap-1 text-sm font-semibold text-brand" : "text-sm font-medium"}>
-            {p.locked ? <><Lock size={14} /> Locked</> : p.market}
+      {/* The pick, set like the match page's verdict: market small, pick large,
+          confidence as a big numeral. */}
+      <div className="rounded-2xl bg-brand-bg/70 p-4 ring-1 ring-brand-border">
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{p.locked ? "Market" : p.market}</div>
+            <div className="mt-1 flex items-center gap-1.5 break-words text-xl font-black leading-tight text-brand">
+              {p.locked ? <><Lock size={16} /> Locked</> : p.pick}
+            </div>
           </div>
+          {hasConfidence && (
+            <div className="shrink-0 text-right">
+              <div className="text-2xl font-black leading-none tabular-nums text-gray-100">
+                {p.confidence}
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+              {/*
+                A same-game double's number is a CEILING, not an estimate.
+                P(A and B) <= min(P(A), P(B)) holds under any correlation, so
+                "no better than" is a true statement where a bare "Confidence"
+                would read as a joint probability we have not computed and could
+                not honestly compute — the legs are correlated. See
+                comboConfidenceCeiling in src/lib/sameGameDouble.ts.
+              */}
+              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                {isDouble ? "Both must land · no better than" : "Confidence"}
+              </div>
+            </div>
+          )}
         </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Pick</div>
-          <div className="text-sm font-semibold text-brand flex items-center justify-center gap-1">
-            {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
-          </div>
-        </div>
-      </div>
-      {/* Below the pick, above the confidence bar: the badge qualifies the number
-          that follows it, so it has to be read first. Locked rows never reach
-          here — a reader who cannot see the pick is not shown its evidence. */}
-      {p.marketConfirmation && !p.locked && <MarketConfirmedBadge confirmation={p.marketConfirmation} />}
-      {p.confidence !== null && p.confidence !== undefined && (
-        <div>
-          <div className="mb-1 flex justify-between text-xs text-gray-400">
-            {/*
-              A same-game double's number is a CEILING, not an estimate.
-              P(A and B) <= min(P(A), P(B)) holds under any correlation, so
-              "no better than" is a true statement where a bare "Confidence"
-              would read as a joint probability we have not computed and could
-              not honestly compute — the legs are correlated. See
-              comboConfidenceCeiling in src/lib/sameGameDouble.ts.
-            */}
-            <span>{p.marketType === "SAME_GAME_DOUBLE" ? "Both must land" : "Confidence"}</span>
-            <span>
-              {p.marketType === "SAME_GAME_DOUBLE" ? "no better than " : ""}
-              {p.confidence}%
-            </span>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-brand-border">
+        {hasConfidence && (
+          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-brand-border" aria-hidden>
             <div className="h-full rounded-full bg-brand" style={{ width: `${p.confidence}%` }} />
           </div>
-        </div>
-      )}
+        )}
+      </div>
+      {/* Below the pick, above the reasoning: the badge qualifies the number
+          before it is relied on. Locked rows never reach here — a reader who
+          cannot see the pick is not shown its evidence. */}
+      {p.marketConfirmation && !p.locked && <MarketConfirmedBadge confirmation={p.marketConfirmation} />}
       {/*
         Prose, not a raw <p>. Prose splits blank-line paragraphs and strips
         any markdown markers in the stored text. Without it a combo's leg
@@ -154,7 +159,7 @@ export function PredictionCard({
       */}
       {reasoningExcerpt ? <ReasoningExcerpt text={p.reasoning} /> : <Prose text={p.reasoning} />}
       {p.locked && (
-        <Link href="/pricing" className="btn btn-primary justify-center text-sm">
+        <Link href="/pricing" className="flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-black text-on-brand transition hover:bg-brand-dark">
           Upgrade to unlock
         </Link>
       )}
