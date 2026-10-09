@@ -231,3 +231,25 @@ export const getTeamTrackRecord = cache(async (teamApiId: number | null): Promis
   if (rows.length < MIN_SETTLED_SAMPLE_SIZE) return null;
   return computeStat(rows.map((r) => r.outcome));
 });
+
+/**
+ * Settled record for one category feed, gated like getLeagueTrackRecord. TODAY
+ * ignores tags (it is every published pick), so its record is every settled
+ * pick; every other feed is its tag.
+ */
+export const getCategoryTrackRecord = cache(async (category: string): Promise<WinRateStat | null> => {
+  // Counted in the database: a feed's whole history is thousands of rows.
+  const groups = await prisma.prediction.groupBy({
+    by: ["outcome"],
+    where: {
+      status: "PUBLISHED",
+      outcome: { not: "PENDING" },
+      ...(category === "TODAY" ? {} : { categories: { some: { category } } }),
+    },
+    _count: { _all: true },
+  });
+  const outcomes = groups.flatMap((g) => Array<string>(g._count._all).fill(g.outcome));
+  if (outcomes.length < MIN_SETTLED_SAMPLE_SIZE) return null;
+  return computeStat(outcomes);
+});
+
