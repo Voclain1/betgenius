@@ -9,6 +9,8 @@ import { ComboCard, type ComboView } from "@/components/ComboCard";
 import { comboIsUpcoming } from "@/lib/combos";
 import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 import Link from "next/link";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);
@@ -104,58 +106,74 @@ export default async function MultiBetsPage() {
       : []),
   ].filter((s) => s.combos.length > 0);
 
+  const tierCount = new Set(tiered.map((c) => c.oddsTier)).size;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Multi bet predictions</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Browse football accumulators assembled from individual predictions already published on BetGenius. Each available leg shows its match, market and selection so you can inspect the component picks before considering the combined bet.</p>
-      </div>
+    <div className="space-y-10">
+      <CategoryMasthead
+        kicker="Accumulators"
+        title="Multi bet predictions"
+        blurb="Browse football accumulators assembled from individual predictions already published on BetGenius. Each available leg shows its match, market and selection so you can inspect the component picks before considering the combined bet."
+        stats={
+          combos.length > 0
+            ? [
+                { label: combos.length === 1 ? "Multi bet" : "Multi bets", value: String(combos.length), accent: true },
+                ...(tierCount > 0 ? [{ label: tierCount === 1 ? "Odds tier" : "Odds tiers", value: String(tierCount) }] : []),
+                ...(manual.length > 0 ? [{ label: "Editor's picks", value: String(manual.length) }] : []),
+              ]
+            : []
+        }
+      />
 
       {bookmakers.length > 0 && <AffiliateDisclosure compact />}
 
       {combos.length === 0 ? (
-        <p className="text-sm text-gray-400">No multi bets published yet — check back soon.</p>
+        <p className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">No multi bets published yet — check back soon.</p>
       ) : (
-        <div className="space-y-10">
-          {sections.map((section) => (
-            <section key={section.key}>
-              <h2 className="mb-1 text-lg font-semibold">{section.heading}</h2>
-              <p className="mb-3 text-sm text-gray-400">{section.blurb}</p>
-              <div
-                className={
-                  section.layout === "stack"
-                    ? "grid max-w-2xl grid-cols-1 gap-4"
-                    : "grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-                }
-              >
-                {section.combos.map((c) => (
-                  <ComboCard
-                    key={c.id}
-                    combo={{
-                      id: c.id,
-                      title: c.title,
-                      description: c.description,
-                      category: c.category,
-                      oddsTier: c.oddsTier,
-                      legs: (legsByCombo.get(c.id) ?? []).map(({ comboId, ...leg }) => leg),
-                    }}
-                    locked={!unlockedIds.has(c.id)}
-                    categoryLabel={CATEGORY_NAMES[c.category as PredictionCategory]}
-                    bookmakers={bookmakers}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        sections.map((section) => (
+          <PremiumPanel
+            key={section.key}
+            kicker={section.layout === "stack" ? "Target return" : "Hand-built"}
+            title={section.heading}
+            id={`multi-${section.key}`}
+            bare
+          >
+            <p className="-mt-2 mb-4 max-w-2xl text-sm text-gray-400">{section.blurb}</p>
+            <div
+              className={
+                section.layout === "stack"
+                  ? "grid max-w-2xl grid-cols-1 gap-4"
+                  : "grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+              }
+            >
+              {section.combos.map((c) => (
+                <ComboCard
+                  key={c.id}
+                  combo={{
+                    id: c.id,
+                    title: c.title,
+                    description: c.description,
+                    category: c.category,
+                    oddsTier: c.oddsTier,
+                    legs: (legsByCombo.get(c.id) ?? []).map(({ comboId, ...leg }) => leg),
+                  }}
+                  locked={!unlockedIds.has(c.id)}
+                  categoryLabel={CATEGORY_NAMES[c.category as PredictionCategory]}
+                  bookmakers={bookmakers}
+                />
+              ))}
+            </div>
+          </PremiumPanel>
+        ))
       )}
 
-      <section className="card space-y-3">
-        <h2 className="text-lg font-semibold">How to assess a multi bet</h2>
-        <p className="text-sm leading-6 text-gray-300">An accumulator succeeds only when every included leg wins. Adding selections can increase the combined return, but it also creates more ways for the ticket to lose. A higher displayed odds target should therefore be treated as higher risk, not as stronger evidence.</p>
-        <p className="text-sm leading-6 text-gray-300">Open the underlying match predictions, compare their reasoning and check that team news or kickoff status has not changed. Our <Link href="/methodology" className="text-brand hover:underline">prediction methodology</Link> explains confidence and evidence limits, while the <Link href="/track-record" className="text-brand hover:underline">track record</Link> retains settled results.</p>
-        <p className="text-xs leading-5 text-gray-500">Odds may move or become unavailable. BetGenius does not guarantee a return, and no accumulator should be treated as certain.</p>
-      </section>
+      <PremiumPanel kicker="Before you bet" title="How to assess a multi bet" id="assess-multi">
+        <div className="space-y-3">
+          <p className="text-sm leading-7 text-gray-300">An accumulator succeeds only when every included leg wins. Adding selections can increase the combined return, but it also creates more ways for the ticket to lose. A higher displayed odds target should therefore be treated as higher risk, not as stronger evidence.</p>
+          <p className="text-sm leading-7 text-gray-300">Open the underlying match predictions, compare their reasoning and check that team news or kickoff status has not changed. Our <Link href="/methodology" className="font-semibold text-brand hover:underline">prediction methodology</Link> explains confidence and evidence limits, while the <Link href="/track-record" className="font-semibold text-brand hover:underline">track record</Link> retains settled results.</p>
+          <p className="text-xs leading-5 text-gray-500">Odds may move or become unavailable. BetGenius does not guarantee a return, and no accumulator should be treated as certain.</p>
+        </div>
+      </PremiumPanel>
     </div>
   );
 }

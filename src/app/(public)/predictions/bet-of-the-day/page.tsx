@@ -7,6 +7,12 @@ import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchDescription } from "@
 import { matchSlug, matchKey } from "@/lib/slug";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { canViewCategory } from "@/lib/access";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
+import { LinkTile } from "@/components/LinkTile";
+import { Prose } from "@/components/Prose";
+
+const BLURB = "One pick a day — the strongest call we have at a price worth taking, not the shortest-priced favourite.";
 
 /**
  * The dedicated Bet of the Day page.
@@ -53,12 +59,12 @@ export default async function BetOfTheDayPage() {
 
   if (!data) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Bet of the Day</h1>
-        <div className="card text-gray-400">
+      <div className="space-y-8">
+        <CategoryMasthead kicker="One pick a day" title="Bet of the Day" blurb={BLURB} stats={[]} />
+        <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm leading-relaxed text-gray-400">
           No Bet of the Day is selected right now. One pick a day is chosen from the strongest published tips at a
           genuine market price — check back shortly, or browse{" "}
-          <Link href="/predictions/today" className="text-brand hover:underline">
+          <Link href="/predictions/today" className="font-semibold text-brand hover:underline">
             today&apos;s tips
           </Link>
           .
@@ -85,7 +91,7 @@ export default async function BetOfTheDayPage() {
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <JsonLd
         data={[
           breadcrumbJsonLd([
@@ -119,38 +125,39 @@ export default async function BetOfTheDayPage() {
         ]}
       />
 
-      <div>
-        <h1 className="text-2xl font-bold">Bet of the Day</h1>
-        <p className="text-sm text-gray-400">
-          One pick a day — the strongest call we have at a price worth taking, not the shortest-priced favourite.
-        </p>
-      </div>
+      <CategoryMasthead
+        kicker="One pick a day"
+        title="Bet of the Day"
+        blurb={BLURB}
+        stats={[
+          { label: "Confidence", value: `${row.confidence}%`, accent: true },
+          ...(live && data.gate?.price != null ? [{ label: "Best odds", value: data.gate.price.toFixed(2) }] : []),
+          ...(state === "SETTLED" ? [{ label: "Result", value: row.outcome.charAt(0) + row.outcome.slice(1).toLowerCase() }] : []),
+        ]}
+      />
 
       {!live && (
-        <div className="card border-brand/40 text-sm text-gray-300">
+        <p className="rounded-3xl border border-brand-border bg-brand-card p-5 text-sm leading-relaxed text-gray-300">
           {state === "SETTLED"
             ? `The latest Bet of the Day has finished — result: ${row.outcome}. `
             : "The latest Bet of the Day has kicked off, so it is no longer an active recommendation. Its result appears here once settled. "}
           The next pick appears here as soon as it is selected.
-        </div>
+        </p>
       )}
 
-      <BetOfTheDayCard data={data} variant="page" inactive={!live} />
+      <PremiumPanel kicker={live ? "Today's pick" : "Latest pick"} title={`${row.homeTeam} vs ${row.awayTeam}`} id="botd-pick" bare>
+        <BetOfTheDayCard data={data} variant="page" inactive={!live} />
+      </PremiumPanel>
 
       {row.matchPreview && (
-        <div className="card space-y-2">
-          <h2 className="text-sm uppercase text-gray-400">Match preview</h2>
-          <p className="text-sm leading-relaxed text-gray-300">{row.matchPreview}</p>
-        </div>
+        <PremiumPanel kicker="Context" title="Match preview" id="botd-preview">
+          <Prose text={row.matchPreview} />
+        </PremiumPanel>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <Link href="/predictions/today" className="btn btn-ghost">
-          Today&apos;s tips
-        </Link>
-        <Link href="/track-record" className="btn btn-ghost">
-          Track record
-        </Link>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <LinkTile href="/predictions/today" title="Today's tips" desc="Every published prediction for today's matches." />
+        <LinkTile href="/track-record" title="Track record" desc="Settled results, wins and losses alike." />
       </div>
     </div>
   );

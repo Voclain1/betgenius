@@ -171,8 +171,6 @@ export default function FixturesClient({
 
   return (
     <div className="space-y-5">
-      <h1 className="text-2xl font-bold">Fixtures</h1>
-
       {/* Controls wrap rather than scroll — three pill groups fit two rows at
           375px without pushing the page wider than the viewport. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -195,7 +193,7 @@ export default function FixturesClient({
           choice; this says what was actually rendered instead, so the two
           never silently disagree. */}
       {!loading && widenedToKnown && (
-        <p className="rounded-lg border border-brand-border bg-brand-card px-3 py-2 text-xs text-gray-400">
+        <p className="rounded-2xl border border-brand-border bg-brand-card px-4 py-3 text-xs text-gray-400">
           No {tab} matches in the major leagues for this range — showing other leagues we cover instead.
         </p>
       )}

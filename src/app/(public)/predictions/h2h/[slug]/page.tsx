@@ -3,6 +3,8 @@ import { TeamCrest } from "@/components/TeamCrest";
 import Link from "next/link";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
 import { getH2HBySlug } from "@/lib/predictionScope";
 import { h2hTrendLine, type H2HMeeting, type H2HRecord } from "@/lib/h2h";
 import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "@/lib/h2hEvidence";
@@ -37,14 +39,17 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function Crest({ name, teamApiId }: { name: string; teamApiId: number }) {
   return (
-    <div className="rounded-md bg-brand-bg p-2 text-center">
-      <div className="text-[10px] uppercase text-gray-500">{label}</div>
-      <div className="text-sm font-semibold">{value}</div>
-    </div>
+    <Link href={`/predictions/team/${teamSlug(name)}`} aria-label={name} className="group flex min-w-0 flex-col items-center gap-2 text-center">
+      <span className="flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-b from-brand-bg to-brand-card shadow-inner ring-1 ring-brand-border transition group-hover:ring-brand/60 sm:h-28 sm:w-28">
+        <TeamCrest teamApiId={teamApiId} size={64} />
+      </span>
+    </Link>
   );
 }
+
+const DATE = { day: "numeric", month: "short", year: "numeric" } as const;
 
 /** W-D-L from the perspective named by `forTeam`. */
 function RecordLine({ record, forTeamIsA }: { record: H2HRecord; forTeamIsA: boolean }) {
@@ -64,22 +69,22 @@ function MeetingRow({ m, teamAApiId }: { m: H2HMeeting; teamAApiId: number }) {
   const tone = aGoals > bGoals ? "text-emerald-300" : aGoals < bGoals ? "text-red-300" : "text-gray-300";
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 px-5 py-3.5">
       <div className="min-w-0">
-        <div className="truncate text-sm">
-          <span className={aIsHome ? "font-semibold" : ""}>{m.homeTeam}</span>{" "}
+        <div className="truncate text-sm font-semibold text-gray-200">
+          <span className={aIsHome ? "font-black text-gray-100" : ""}>{m.homeTeam}</span>{" "}
           <span className="text-gray-500">vs</span>{" "}
-          <span className={aIsHome ? "" : "font-semibold"}>{m.awayTeam}</span>
+          <span className={aIsHome ? "" : "font-black text-gray-100"}>{m.awayTeam}</span>
         </div>
         {/* LeagueBadge falls back to rendering the name as text when it has no
             crest for the id, so the name is left to it entirely rather than
             printed again here — otherwise cup competitions show it twice. */}
         <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
           <LeagueBadge leagueApiId={m.leagueApiId} leagueName={m.leagueName} />
-          <span className="shrink-0">· {new Date(m.date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</span>
+          <span className="shrink-0">· {new Date(m.date).toLocaleDateString(undefined, DATE)}</span>
         </div>
       </div>
-      <div className={`shrink-0 text-base font-bold tabular-nums ${tone}`}>
+      <div className={`shrink-0 text-xl font-black tabular-nums ${tone}`}>
         {m.homeGoals} - {m.awayGoals}
       </div>
     </div>
@@ -91,9 +96,9 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
 
   if (!pair) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold">Head-to-head</h1>
-        <div className="card text-gray-400">
+      <div className="space-y-8">
+        <CategoryMasthead kicker="Head-to-head" title="Head-to-head" blurb="Every completed meeting between two clubs, with the goal trends behind them." stats={[]} />
+        <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">
           No published predictions pair these two teams.{" "}
           <Link href="/predictions/today" className="text-brand hover:underline">
             See today&apos;s tips →
@@ -114,8 +119,19 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
         : null
     : null;
 
+  const LIST = "divide-y divide-brand-border overflow-hidden rounded-3xl border border-brand-border bg-brand-card";
+  const empty = "rounded-3xl border border-brand-border bg-brand-card p-6 text-sm leading-relaxed text-gray-400";
+  const facts: [string, string][] = stats
+    ? [
+        ["Meetings", String(stats.sample)],
+        ["Avg goals", stats.avgGoals!.toFixed(1)],
+        ["BTTS", `${Math.round(stats.bttsPct!)}%`],
+        ["Over 2.5", `${Math.round(stats.over25Pct!)}%`],
+      ]
+    : [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <JsonLd
         data={breadcrumbJsonLd([
           { name: "Home", path: "/" },
@@ -124,150 +140,154 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
         ])}
       />
 
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold md:text-3xl">
-          <Link href={`/predictions/team/${teamSlug(pair.teamAName)}`} className="hover:underline">
-            <TeamCrest teamApiId={pair.teamAApiId} size={28} className="mr-2" />
-            {pair.teamAName}
-          </Link>{" "}
-          <span className="text-gray-500">vs</span>{" "}
-          <Link href={`/predictions/team/${teamSlug(pair.teamBName)}`} className="hover:underline">
-            <TeamCrest teamApiId={pair.teamBApiId} size={28} className="mr-2" />
-            {pair.teamBName}
-          </Link>
-        </h1>
-        <p className="text-sm text-gray-400">Head-to-head record</p>
-      </div>
+      {/* The pairing's hero, in the match page's language: both crests facing
+          each other, the all-time record between them. */}
+      <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+        <div aria-hidden className="pointer-events-none absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
+        <div className="relative px-5 pb-6 pt-5 sm:px-8 sm:pt-7">
+          <div className="flex items-center justify-center gap-2">
+            <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
+            <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Head-to-head</span>
+          </div>
+          <div className="mt-6 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 sm:gap-6">
+            <Crest name={pair.teamAName} teamApiId={pair.teamAApiId} />
+            {stats ? (
+              <div className="text-center">
+                <div className="flex items-baseline justify-center gap-2 text-4xl font-black tabular-nums tracking-tight text-gray-100 sm:text-5xl">
+                  <span>{stats.overall.teamAWins}</span>
+                  <span className="text-2xl text-gray-500 sm:text-3xl">{stats.overall.draws}</span>
+                  <span>{stats.overall.teamBWins}</span>
+                </div>
+                <div className="mt-1.5 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">Wins · Draws · Wins</div>
+              </div>
+            ) : (
+              <div className="text-center text-2xl font-black text-gray-500">vs</div>
+            )}
+            <Crest name={pair.teamBName} teamApiId={pair.teamBApiId} />
+          </div>
+          <h1 className="mt-5 text-center text-2xl font-black leading-tight tracking-tight text-gray-100 sm:text-4xl">
+            <Link href={`/predictions/team/${teamSlug(pair.teamAName)}`} className="hover:text-brand">
+              {pair.teamAName}
+            </Link>{" "}
+            <span className="font-bold text-gray-500">vs</span>{" "}
+            <Link href={`/predictions/team/${teamSlug(pair.teamBName)}`} className="hover:text-brand">
+              {pair.teamBName}
+            </Link>{" "}
+            <span className="block text-base font-bold tracking-normal text-gray-400 sm:inline sm:text-4xl sm:tracking-tight">head-to-head</span>
+          </h1>
+        </div>
+        {facts.length > 0 && (
+          <dl className="relative grid grid-cols-2 gap-px border-t border-brand-border bg-brand-border sm:grid-cols-4">
+            {facts.map(([label, value]) => (
+              <div key={label} className="flex flex-col-reverse bg-brand-card px-2 py-3.5 text-center">
+                <dt className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">{label}</dt>
+                <dd className="text-2xl font-black tabular-nums text-gray-100 sm:text-3xl">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </header>
 
       {/* Three states, deliberately distinct: not fetched yet, fetched and
           they've never met, and a real record. */}
       {!fetchedAt ? (
-        <div className="card text-gray-400">
+        <div className={empty}>
           Head-to-head history isn&apos;t available for this pairing yet — it&apos;s fetched on a schedule and will appear here once it lands.
         </div>
       ) : meetings.length === 0 ? (
-        <div className="card text-gray-400">
+        <div className={empty}>
           {pair.teamAName} and {pair.teamBName} have no completed meetings on record.
         </div>
       ) : (
         <>
-          {trend && (
-            <p className="text-sm text-gray-300">
-              <span className="font-semibold text-gray-200">H2H trends: </span>
-              {trend}
-            </p>
-          )}
-
-          <section className="card space-y-3" aria-labelledby="h2h-summary-heading">
-            <h2 id="h2h-summary-heading" className="text-lg font-semibold">What the head-to-head record shows</h2>
-            <p className="text-sm leading-6 text-gray-300">
-              Across the {stats!.sample} completed {stats!.sample === 1 ? "meeting" : "meetings"} in this record, {pair.teamAName} won {stats!.overall.teamAWins}, {pair.teamBName} won {stats!.overall.teamBWins}, and {stats!.overall.draws} finished level. {leader ? `${leader} therefore has more wins in the available sample.` : "Neither team has more wins in the available sample."}
-            </p>
-            <p className="text-sm leading-6 text-gray-300">
-              These fixtures averaged {stats!.avgGoals!.toFixed(1)} total goals. Both teams scored in {Math.round(stats!.bttsPct!)}% of the recorded games, while {Math.round(stats!.over25Pct!)}% finished with more than 2.5 goals. The figures describe previous meetings only; squad changes, venue, competition and current form can make the next match different.
-            </p>
-          </section>
-
-          <div className="card space-y-3">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-gray-300">Overall</h2>
-              <span className="text-xs text-gray-500">
-                last {stats!.sample} {stats!.sample === 1 ? "meeting" : "meetings"}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Stat label={pair.teamAName} value={stats!.overall.teamAWins} />
-              <Stat label="Draws" value={stats!.overall.draws} />
-              <Stat label={pair.teamBName} value={stats!.overall.teamBWins} />
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <Stat label="Avg goals" value={stats!.avgGoals!.toFixed(1)} />
-              <Stat label="BTTS" value={`${Math.round(stats!.bttsPct!)}%`} />
-              <Stat label="Over 2.5" value={`${Math.round(stats!.over25Pct!)}%`} />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="card space-y-2">
-              <h2 className="text-sm font-semibold text-gray-300">{pair.teamAName} at home</h2>
-              {stats!.teamAAtHome.played > 0 ? (
-                <>
-                  <div className="text-lg font-bold">
-                    <RecordLine record={stats!.teamAAtHome} forTeamIsA />
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {stats!.teamAAtHome.played} of the {stats!.sample} meetings hosted by {pair.teamAName}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-gray-500">No meetings on record hosted by {pair.teamAName}.</p>
+          <PremiumPanel kicker="The record" title="What the head-to-head record shows" id="h2h-summary-heading">
+            <div className="space-y-3">
+              {trend && (
+                <p className="text-base font-semibold leading-relaxed text-gray-100">{trend}</p>
               )}
-            </div>
-            <div className="card space-y-2">
-              <h2 className="text-sm font-semibold text-gray-300">{pair.teamBName} at home</h2>
-              {stats!.teamBAtHome.played > 0 ? (
-                <>
-                  <div className="text-lg font-bold">
-                    <RecordLine record={stats!.teamBAtHome} forTeamIsA={false} />
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {stats!.teamBAtHome.played} of the {stats!.sample} meetings hosted by {pair.teamBName}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-gray-500">No meetings on record hosted by {pair.teamBName}.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="card space-y-1">
-              <h2 className="text-sm font-semibold text-gray-300">Most recent meeting</h2>
-              <div className="text-sm">
-                {stats!.mostRecent!.homeTeam} {stats!.mostRecent!.homeGoals} - {stats!.mostRecent!.awayGoals} {stats!.mostRecent!.awayTeam}
-              </div>
-              <p className="text-xs text-gray-500">
-                {new Date(stats!.mostRecent!.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
-                {stats!.mostRecent!.leagueName ? ` · ${stats!.mostRecent!.leagueName}` : ""}
+              <p className="text-sm leading-7 text-gray-300">
+                Across the {stats!.sample} completed {stats!.sample === 1 ? "meeting" : "meetings"} in this record, {pair.teamAName} won {stats!.overall.teamAWins}, {pair.teamBName} won {stats!.overall.teamBWins}, and {stats!.overall.draws} finished level. {leader ? `${leader} therefore has more wins in the available sample.` : "Neither team has more wins in the available sample."}
+              </p>
+              <p className="text-sm leading-7 text-gray-300">
+                These fixtures averaged {stats!.avgGoals!.toFixed(1)} total goals. Both teams scored in {Math.round(stats!.bttsPct!)}% of the recorded games, while {Math.round(stats!.over25Pct!)}% finished with more than 2.5 goals. The figures describe previous meetings only; squad changes, venue, competition and current form can make the next match different.
               </p>
             </div>
-            <div className="card space-y-1">
-              <h2 className="text-sm font-semibold text-gray-300">Biggest win</h2>
-              {stats!.biggestWin ? (
-                <>
-                  <div className="text-sm">
-                    {stats!.biggestWin.meeting.homeTeam} {stats!.biggestWin.meeting.homeGoals} - {stats!.biggestWin.meeting.awayGoals}{" "}
-                    {stats!.biggestWin.meeting.awayTeam}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    {stats!.biggestWin.margin}-goal margin ·{" "}
-                    {new Date(stats!.biggestWin.meeting.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-gray-500">Every meeting on record was drawn.</p>
-              )}
-            </div>
-          </div>
+          </PremiumPanel>
 
-          <div>
-            <h2 className="mb-3 text-xl font-semibold">Last {recent.length === 1 ? "meeting" : `${recent.length} meetings`}</h2>
-            <div className="divide-y divide-brand-border rounded-xl border border-brand-border bg-brand-bg/60">
+          <PremiumPanel kicker="Venue split" title="Home and away" id="h2h-venues" bare>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                [pair.teamAName, stats!.teamAAtHome, true],
+                [pair.teamBName, stats!.teamBAtHome, false],
+              ] as const).map(([name, record, isA]) => (
+                <div key={name} className="rounded-3xl border border-brand-border bg-brand-card p-5">
+                  <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">{name} at home</h3>
+                  {record.played > 0 ? (
+                    <>
+                      <div className="mt-2 text-3xl font-black tracking-tight text-gray-100">
+                        <RecordLine record={record} forTeamIsA={isA} />
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {record.played} of the {stats!.sample} meetings hosted by {name}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-500">No meetings on record hosted by {name}.</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </PremiumPanel>
+
+          <PremiumPanel kicker="Notable" title="Key meetings" id="h2h-notable" bare>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-3xl border border-brand-border bg-brand-card p-5">
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">Most recent meeting</h3>
+                <div className="mt-2 text-lg font-black leading-snug tracking-tight text-gray-100">
+                  {stats!.mostRecent!.homeTeam} <span className="tabular-nums">{stats!.mostRecent!.homeGoals} - {stats!.mostRecent!.awayGoals}</span> {stats!.mostRecent!.awayTeam}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  {new Date(stats!.mostRecent!.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                  {stats!.mostRecent!.leagueName ? ` · ${stats!.mostRecent!.leagueName}` : ""}
+                </p>
+              </div>
+              <div className="rounded-3xl border border-brand-border bg-brand-card p-5">
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">Biggest win</h3>
+                {stats!.biggestWin ? (
+                  <>
+                    <div className="mt-2 text-lg font-black leading-snug tracking-tight text-gray-100">
+                      {stats!.biggestWin.meeting.homeTeam}{" "}
+                      <span className="tabular-nums">{stats!.biggestWin.meeting.homeGoals} - {stats!.biggestWin.meeting.awayGoals}</span>{" "}
+                      {stats!.biggestWin.meeting.awayTeam}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {stats!.biggestWin.margin}-goal margin ·{" "}
+                      {new Date(stats!.biggestWin.meeting.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">Every meeting on record was drawn.</p>
+                )}
+              </div>
+            </div>
+          </PremiumPanel>
+
+          <PremiumPanel kicker="Results" title={`Last ${recent.length === 1 ? "meeting" : `${recent.length} meetings`}`} id="h2h-recent" bare>
+            <div className={LIST}>
               {recent.map((m) => (
                 <MeetingRow key={m.fixtureApiId} m={m} teamAApiId={pair.teamAApiId} />
               ))}
             </div>
-          </div>
+          </PremiumPanel>
 
           {meetings.length > recent.length && (
-            <div>
-              <h2 className="mb-3 text-xl font-semibold">Earlier meetings</h2>
-              <div className="divide-y divide-brand-border rounded-xl border border-brand-border bg-brand-bg/60">
+            <PremiumPanel kicker="Archive" title="Earlier meetings" id="h2h-earlier" bare>
+              <div className={LIST}>
                 {meetings.slice(RECENT_WINDOW).map((m) => (
                   <MeetingRow key={m.fixtureApiId} m={m} teamAApiId={pair.teamAApiId} />
                 ))}
               </div>
-            </div>
+            </PremiumPanel>
           )}
         </>
       )}
@@ -279,22 +299,21 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
       )}
 
       {rows.length > 0 && (
-        <div>
-          <h2 className="mb-3 text-xl font-semibold">Our predictions for this pairing</h2>
-          <div className="divide-y divide-brand-border rounded-xl border border-brand-border bg-brand-bg/60">
+        <PremiumPanel kicker="BetGenius" title="Our predictions for this pairing" id="h2h-predictions" bare>
+          <div className={LIST}>
             {rows.map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                <div className="min-w-0 text-sm">
+              <div key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                <div className="min-w-0 text-sm font-semibold text-gray-100">
                   <MatchLink homeTeam={r.homeTeam} awayTeam={r.awayTeam} kickoff={r.kickoff} />
-                  <div className="mt-0.5 text-xs text-gray-500">
+                  <div className="mt-0.5 text-xs font-normal text-gray-500">
                     {r.market}
-                    {r.kickoff ? ` · ${new Date(r.kickoff).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}` : ""}
+                    {r.kickoff ? ` · ${new Date(r.kickoff).toLocaleDateString(undefined, DATE)}` : ""}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </PremiumPanel>
       )}
     </div>
   );

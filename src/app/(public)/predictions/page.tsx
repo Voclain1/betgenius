@@ -1,4 +1,6 @@
-import Link from "next/link";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
+import { LinkTile } from "@/components/LinkTile";
 import type { Metadata } from "next";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
@@ -54,72 +56,65 @@ export default function PredictionsIndex() {
   return (
     <div className="space-y-10">
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Predictions", path: "/predictions" }])} />
-      <header className="max-w-3xl space-y-3">
-        <h1 className="text-2xl font-bold md:text-3xl">Football predictions and betting tips</h1>
-        <p className="text-gray-300">
-          Start with today&apos;s full card or browse a focused selection below. Each published football prediction names its market and pick, shows a confidence rating where public, and explains the match evidence behind the assessment.
-        </p>
-        <p className="text-sm text-gray-400">
-          Predictions are statistical assessments, not promises. Results remain uncertain, so review the reasoning and public record before making your own decision.
-        </p>
-      </header>
+      <CategoryMasthead
+        kicker="Predictions"
+        title="Football predictions and betting tips"
+        blurb={
+          <>
+            Start with today&apos;s full card or browse a focused selection below. Each published football prediction names its market and pick, shows a confidence rating where public, and explains the match evidence behind the assessment.
+            <span className="mt-2 block text-sm text-gray-400">
+              Predictions are statistical assessments, not promises. Results remain uncertain, so review the reasoning and public record before making your own decision.
+            </span>
+          </>
+        }
+        stats={[]}
+      />
 
-      <section aria-labelledby="prediction-categories">
-        <h2 id="prediction-categories" className="mb-4 text-xl font-semibold">Browse predictions by category</h2>
+      <PremiumPanel kicker="Categories" title="Browse predictions by category" id="prediction-categories" bare>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cats.map((c) => (
-            <Link key={c.slug} href={`/predictions/${c.slug}`} className="card hover:border-brand">
-              <div className="text-lg font-semibold">{c.name}</div>
-              <p className="text-sm text-gray-400">{c.desc}</p>
-            </Link>
+            <LinkTile key={c.slug} href={`/predictions/${c.slug}`} title={c.name} desc={c.desc} />
           ))}
         </div>
-      </section>
+      </PremiumPanel>
 
-      <section aria-labelledby="prediction-markets">
-        <h2 id="prediction-markets" className="mb-4 text-xl font-semibold">Browse predictions by market</h2>
+      <PremiumPanel kicker="Markets" title="Browse predictions by market" id="prediction-markets" bare>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {marketHubs.map((market) => (
-            <Link key={market.href} href={market.href} className="card hover:border-brand">
-              <div className="text-lg font-semibold">{market.name}</div>
-              <p className="text-sm text-gray-400">{market.desc}</p>
-            </Link>
+            <LinkTile key={market.href} href={market.href} title={market.name} desc={market.desc} />
           ))}
         </div>
-      </section>
+      </PremiumPanel>
 
-      <section aria-labelledby="using-predictions" className="grid gap-5 lg:grid-cols-[1.1fr,0.9fr]">
-        <div className="card space-y-3">
-          <h2 id="using-predictions" className="text-xl font-semibold">How to use a BetGenius prediction</h2>
-          <p className="text-sm leading-6 text-gray-300">
-            Read the market and pick first, then compare the stated confidence with the supporting form, head-to-head history, standings, team news and other match context available on the page. Confidence describes the strength of the assessment; it does not remove football&apos;s uncertainty.
-          </p>
-          <p className="text-sm leading-6 text-gray-300">
-            For a broader view, move from a match to its league or team page. Those pages connect current fixtures with standings, recent form and previously published predictions, helping you assess a pick in context rather than in isolation.
-          </p>
+      <PremiumPanel kicker="Reading a pick" title="How to use a BetGenius prediction" id="using-predictions">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-3">
+            <p className="text-sm leading-7 text-gray-300">
+              Read the market and pick first, then compare the stated confidence with the supporting form, head-to-head history, standings, team news and other match context available on the page. Confidence describes the strength of the assessment; it does not remove football&apos;s uncertainty.
+            </p>
+            <p className="text-sm leading-7 text-gray-300">
+              For a broader view, move from a match to its league or team page. Those pages connect current fixtures with standings, recent form and previously published predictions, helping you assess a pick in context rather than in isolation.
+            </p>
+          </div>
+          <div className="space-y-3 border-t border-brand-border pt-6 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">What you can verify</h3>
+            <p className="text-sm leading-7 text-gray-300">
+              BetGenius keeps settled results visible and explains its editorial standard. Check the track record for sample sizes and outcomes, then read the methodology for what the model considers and where the available data may be incomplete.
+            </p>
+            <p className="text-sm leading-7 text-gray-300">
+              No prediction guarantees winnings. Only adults aged 18 or older should participate in betting, and nobody should stake money they cannot afford to lose.
+            </p>
+          </div>
         </div>
-        <div className="card space-y-3">
-          <h2 className="text-xl font-semibold">What you can verify</h2>
-          <p className="text-sm leading-6 text-gray-300">
-            BetGenius keeps settled results visible and explains its editorial standard. Check the track record for sample sizes and outcomes, then read the methodology for what the model considers and where the available data may be incomplete.
-          </p>
-          <p className="text-sm leading-6 text-gray-300">
-            No prediction guarantees winnings. Only adults aged 18 or older should participate in betting, and nobody should stake money they cannot afford to lose.
-          </p>
-        </div>
-      </section>
+      </PremiumPanel>
 
-      <section aria-labelledby="prediction-evidence">
-        <h2 id="prediction-evidence" className="mb-4 text-xl font-semibold">Explore the evidence</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
+      <PremiumPanel kicker="Evidence" title="Explore the evidence" id="prediction-evidence" bare>
+        <div className="grid gap-4 sm:grid-cols-2">
           {evidenceLinks.map((item) => (
-            <Link key={item.href} href={item.href} className="rounded-xl border border-brand-border bg-brand-card p-4 hover:border-brand">
-              <div className="font-semibold">{item.name}</div>
-              <p className="mt-1 text-sm text-gray-400">{item.desc}</p>
-            </Link>
+            <LinkTile key={item.href} href={item.href} title={item.name} desc={item.desc} />
           ))}
         </div>
-      </section>
+      </PremiumPanel>
     </div>
   );
 }
