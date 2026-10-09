@@ -8,7 +8,6 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { MatchMasthead } from "@/components/MatchMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
-import { MatchLiveStatus } from "@/components/MatchLiveStatus";
 import { MatchFormComparison } from "@/components/MatchFormComparison";
 import { MatchVerdict } from "@/components/MatchVerdict";
 import { KeyFactors } from "@/components/KeyFactors";
@@ -139,6 +138,11 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // The one preview worth showing at the top: the highest-confidence row the
   // reader can actually read (rows are already confidence-ordered).
   const preview = shaped.find((r) => !("locked" in r && r.locked) && r.matchPreview)?.matchPreview ?? null;
+
+  // A settled row carries the match's final score; the masthead shows it in
+  // place of the kickoff time without waiting on the live feed.
+  const settled = rows.find((r) => r.finalHomeScore != null && r.finalAwayScore != null);
+  const finalScore = settled ? { home: settled.finalHomeScore!, away: settled.finalAwayScore! } : null;
   const lockedCount = shaped.filter((r) => "locked" in r && r.locked).length;
   const h2hPair = h2hSlug(match.homeTeam, match.awayTeam);
   const h2hLink = h2hPair ? `/predictions/h2h/${h2hPair}` : null;
@@ -231,7 +235,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         venue={detail?.venue}
         city={detail?.city}
         referee={detail?.referee}
-        status={<MatchLiveStatus homeTeamApiId={match.homeTeamApiId} awayTeamApiId={match.awayTeamApiId} kickoff={match.kickoff.toISOString()} scoreOnly />}
+        finalScore={finalScore}
         follow={
           <>
             {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
