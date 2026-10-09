@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { lagosTodayBounds } from "@/lib/lagosDate";
+import { lagosDayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE, isPaidOnlyProvenance } from "@/lib/paidOnly";
@@ -236,12 +236,18 @@ type CurationRule = {
    * already carries a dedicated paid-pass row belongs to that row.
    */
   paid?: boolean;
+  /**
+   * Every row already carrying the tag stays and fills a slot; curation only
+   * adds. GENIUS: the editor tags picks into it by hand, and removing any tag
+   * curation did not choose itself undid that work three-hourly.
+   */
+  keepExisting?: boolean;
 };
 
 const CURATION_RULES: Record<AutoCategory, CurationRule> = {
   // GENIUS is the free tier and takes no route requirement: the genius route is
   // where most fixtures legitimately land, so gating it would empty the feed.
-  GENIUS: { floor: GENIUS_CONFIDENCE_FLOOR },
+  GENIUS: { floor: GENIUS_CONFIDENCE_FLOOR, keepExisting: true },
   VIP: { floor: VIP_CONFIDENCE_FLOOR, requireVipRoute: true, hardFloor: true, paid: true },
   PREMIUM: { floor: PREMIUM_CONFIDENCE_FLOOR, requireVipRoute: true, hardFloor: true, paid: true },
 };
@@ -392,7 +398,11 @@ export function planCuration(
       : [],
   );
 
-  const protectedIds = new Set([...dedicatedIds, ...grandfatheredIds]);
+  // keepExisting: every tagged row this feed may hold is a fixed point too.
+  const keptIds = rule.keepExisting
+    ? rows.filter((r) => tagged.has(r.id) && (rule.paid || !isPaidOnlyProvenance(r.provenance))).map((r) => r.id)
+    : [];
+  const protectedIds = new Set([...dedicatedIds, ...grandfatheredIds, ...keptIds]);
 
   /**
    * May this row be NEWLY selected into this feed?
@@ -525,8 +535,8 @@ async function loadPaidClaimedFixtures(start: Date, end: Date): Promise<Set<stri
   return paidClaimsFrom(dedicated);
 }
 
-async function curateCategory(category: AutoCategory, now: Date) {
-  const { start, end } = lagosTodayBounds(now);
+async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) {
+  const { start, end } = lagosDayBounds(dayOffset, now);
   const [raw, paidClaimed] = await Promise.all([
     prisma.prediction.findMany({
       where: {
@@ -558,7 +568,23 @@ async function curateCategory(category: AutoCategory, now: Date) {
   return plan;
 }
 
-export const curateGeniusTips = (now: Date = new Date()) => curateCategory("GENIUS", now);
+/**
+ * Kickoff days GENIUS is filled for: today and the next two. The feed has a
+ * Tomorrow tab, and picks are published a day or more ahead; curating only on
+ * the day left that tab empty and the review queue without a single Genius pick.
+ */
+export const GENIUS_CURATION_DAYS = 3;
+
+/** Today's plan (the shape settlement records), plus what was added on the days ahead. */
+export async function curateGeniusTips(now: Date = new Date()) {
+  const today = await curateCategory("GENIUS", now, 0);
+  const ahead: Array<{ dayOffset: number; selected: number; added: number }> = [];
+  for (let d = 1; d < GENIUS_CURATION_DAYS; d++) {
+    const plan = await curateCategory("GENIUS", now, d);
+    ahead.push({ dayOffset: d, selected: plan.selected, added: plan.added.length });
+  }
+  return { ...today, ahead };
+}
 export const curateVipTips = (now: Date = new Date()) => curateCategory("VIP", now);
 export const curatePremiumTips = (now: Date = new Date()) => curateCategory("PREMIUM", now);
 

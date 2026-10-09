@@ -354,7 +354,19 @@ async function main() {
     check("curation: a two-pick VIP day stays a two-pick day", plan("VIP", [row("x90", 90), row("x80", 80), row("x74", 74)]).selected === 2);
     eq("curation: GENIUS is unchanged — 70 floor, still topped up to five",
       plan("GENIUS", pool).selectedIds, curation.selectCuratedIds(pool, curation.GENIUS_CONFIDENCE_FLOOR));
-    eq("curation: GENIUS rule unchanged", curation.curationRuleFor("GENIUS"), { floor: 70 });
+    eq("curation: GENIUS rule: 70 floor, keeps what is already tagged", curation.curationRuleFor("GENIUS"), { floor: 70, keepExisting: true });
+    {
+      // Hand-tagged Genius picks survive curation and fill slots; it only adds.
+      const manual = row("m55", 55, { prov: null, tags: ["GENIUS"] });
+      const g = plan("GENIUS", [manual, ...pool]);
+      eq("genius: a hand-tagged pick below the floor is never removed", g.removed, []);
+      check("genius: ...and stays selected", g.selectedIds.includes("m55"));
+      check("genius: ...and fills a slot (the top-up to five counts it)", g.selected === 5, g.selectedIds);
+      const full = Array.from({ length: 15 }, (_, i) => row(`t${i}`, 71, { prov: null, tags: ["GENIUS"] }));
+      const g2 = plan("GENIUS", [...full, row("n95", 95, { prov: null })]);
+      eq("genius: a full day of fifteen tagged picks takes nothing more", g2.added, []);
+      eq("genius: ...and loses nothing", g2.removed, []);
+    }
 
     const dbl = row("dbl85", 85, { prov: null, market: "SAME_GAME_DOUBLE" });
     check("curation: a SAME_GAME_DOUBLE is not selected into VIP, whatever its confidence", !plan("VIP", [dbl, row("s76", 76)]).selectedIds.includes("dbl85"));
