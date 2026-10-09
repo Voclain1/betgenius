@@ -128,6 +128,55 @@ async function main() {
     });
     for (const p of about) console.log(`   | ${p}`);
   }
+
+  console.log("\n8. Squad season stats coverage (Top players tab):");
+  const withSquad = teams.filter((t) => ((t.squadJson as any[]) ?? []).length > 0);
+  const statsShare = (t: (typeof teams)[number]) => {
+    const sq = (t.squadJson as any[]) ?? [];
+    return sq.length ? sq.filter((p) => p.stats).length / sq.length : 0;
+  };
+  console.log(`   teams with a squad ${withSquad.length}; with any season stats ${withSquad.filter((t) => statsShare(t) > 0).length}; squad refreshed <7d ${withSquad.filter((t) => t.squadFetchedAt && Date.now() - t.squadFetchedAt.getTime() < 7 * DAY).length}`);
+  for (const id of [42, 40, 50, 49, 33, 47, 66, 34, 541, 529, 530, 157, 165, 505, 489, 496, 492, 85]) {
+    const t = teams.find((x) => x.teamApiId === id);
+    if (!t) { console.log(`   ${id} not cached`); continue; }
+    const sq = (t.squadJson as any[]) ?? [];
+    console.log(`   ${String(id).padStart(4)} ${String(t.teamName).padEnd(22)} squad ${age(t.squadFetchedAt)} ${sq.length} players, ${sq.filter((p) => p.stats).length} with stats`);
+  }
+
+  console.log("\n9. Recent results freshness: team cache lastFixtures vs the Match Insights history (same /fixtures endpoint):");
+  const full = await prisma.teamEnrichmentCache.findMany({
+    select: { teamApiId: true, teamName: true, fetchedAt: true, lastAttemptAt: true, lastError: true, lastFixtures: true, teamDigestJson: true },
+  });
+  const hist = await prisma.teamFixtureHistory.findMany({ select: { teamApiId: true, fixtures: true, fetchedAt: true, lastAttemptAt: true, lastError: true } });
+  const histBy = new Map(hist.map((h) => [h.teamApiId, h]));
+  const newest = (arr: any[] | null | undefined, key = "date") =>
+    (arr ?? []).map((f) => String(f?.[key] ?? "")).filter(Boolean).sort().at(-1)?.slice(0, 10) ?? "-";
+  // A result older than 14 days on a row refreshed within 3 days is the pattern under investigation.
+  const stale = full.filter((t) => {
+    const n = newest(t.lastFixtures as any[]);
+    return t.fetchedAt && Date.now() - t.fetchedAt.getTime() < 3 * DAY && n !== "-" && Date.now() - Date.parse(n) > 14 * DAY;
+  });
+  console.log(`   rows ${full.length}; refreshed <3d but newest result >14d old: ${stale.length}`);
+  const digestLast = (d: any) => {
+    const l5 = d?.last5 ?? d?.recent ?? d?.form?.last5 ?? null;
+    return Array.isArray(l5) ? newest(l5) + ` (${l5.length})` : "n/a";
+  };
+  for (const t of [...stale.slice(0, 12), ...full.filter((x) => [42, 529, 40, 50, 541, 157].includes(x.teamApiId))]) {
+    const h = histBy.get(t.teamApiId);
+    console.log(
+      `   ${String(t.teamApiId).padStart(5)} ${String(t.teamName).padEnd(22)} cache fetched ${age(t.fetchedAt)} newest ${newest(t.lastFixtures as any[])} (${((t.lastFixtures as any[]) ?? []).length}) digest ${digestLast(t.teamDigestJson)}${t.lastError ? " ERR " + t.lastError.slice(0, 60) : ""} | history fetched ${age(h?.fetchedAt)} attempt ${age(h?.lastAttemptAt)} newest ${newest(h?.fixtures as any[])}${h?.lastError ? " ERR " + h.lastError.slice(0, 60) : ""}`,
+    );
+  }
+  const digestKeys = full.find((t) => t.teamDigestJson)?.teamDigestJson as any;
+  console.log(`   digest keys: ${digestKeys ? Object.keys(digestKeys).join(",") : "-"}`);
+  const sample = ((full.find((t) => t.teamApiId === 42)?.lastFixtures as any[]) ?? []);
+  console.log(`   Arsenal lastFixtures raw: ${JSON.stringify(sample).slice(0, 400)}`);
+
+  console.log("\n10. api-football calls by path, last 3 days:");
+  const usage = await prisma.apiUsage.findMany({ where: { day: { gte: new Date(Date.now() - 3 * DAY).toISOString().slice(0, 10) } }, orderBy: [{ day: "asc" }, { path: "asc" }] });
+  const byDay = new Map<string, string[]>();
+  for (const u of usage) byDay.set(u.day, [...(byDay.get(u.day) ?? []), `${u.path} ${u.count}`]);
+  for (const [d, list] of byDay) console.log(`   ${d}: total ${usage.filter((u) => u.day === d).reduce((n, u) => n + u.count, 0)} — ${list.join(", ")}`);
 }
 
 main()
