@@ -231,13 +231,15 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         venue={detail?.venue}
         city={detail?.city}
         referee={detail?.referee}
-        status={<MatchLiveStatus homeTeamApiId={match.homeTeamApiId} awayTeamApiId={match.awayTeamApiId} kickoff={match.kickoff.toISOString()} />}
+        status={<MatchLiveStatus homeTeamApiId={match.homeTeamApiId} awayTeamApiId={match.awayTeamApiId} kickoff={match.kickoff.toISOString()} scoreOnly />}
+        follow={
+          <>
+            {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
+            {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
+            {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
+          </>
+        }
       >
-        <div className="flex flex-wrap justify-center gap-2">
-          {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
-          {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
-          {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
-        </div>
         <div className="flex justify-center">
           <EditorialAttribution />
         </div>

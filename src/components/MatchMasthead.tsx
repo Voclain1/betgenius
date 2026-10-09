@@ -4,7 +4,7 @@ import { LeagueBadge } from "@/components/LeagueBadge";
 import { teamCrestUrl } from "@/lib/leagues";
 import { leagueSlug, teamSlug } from "@/lib/slug";
 
-const DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "long" });
+const DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", day: "numeric", month: "short" });
 const TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4" };
@@ -37,6 +37,7 @@ export function MatchMasthead({
   city,
   referee,
   status,
+  follow,
   children,
 }: {
   homeTeam: string;
@@ -50,12 +51,14 @@ export function MatchMasthead({
   venue?: string | null;
   city?: string | null;
   referee?: string | null;
-  /** Live score / kickoff status line. */
+  /** Live or final score, once there is one. */
   status?: React.ReactNode;
+  /** Follow buttons, directly under the title. */
+  follow?: React.ReactNode;
   /** Follow buttons and attribution, under the facts. */
   children?: React.ReactNode;
 }) {
-  const facts: [string, string][] = [["Kickoff", DAY.format(kickoff)]];
+  const facts: [string, string][] = [];
   if (round) facts.push(["Round", round]);
   if (venue) facts.push(["Venue", city ? `${venue}, ${city}` : venue]);
   if (referee) facts.push(["Referee", referee]);
@@ -95,7 +98,8 @@ export function MatchMasthead({
           <Side name={homeTeam} teamApiId={homeTeamApiId} />
           <div className="text-center">
             <div className="text-4xl font-black tabular-nums tracking-tight text-gray-100 sm:text-5xl">{TIME.format(kickoff)}</div>
-            <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500">WAT</div>
+            {/* "SAT 10 OCT": the one place the kickoff is shown, in Lagos time like the clock above it. */}
+            <div className="mt-1.5 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">{DAY.format(kickoff).replace(",", "")}</div>
           </div>
           <Side name={awayTeam} teamApiId={awayTeamApiId} />
         </div>
@@ -111,10 +115,12 @@ export function MatchMasthead({
           </Link>{" "}
           <span className="block text-base font-bold tracking-normal text-gray-400 sm:inline sm:text-4xl sm:tracking-tight">prediction</span>
         </h1>
-        {status && <div className="mt-3 flex justify-center">{status}</div>}
+        {follow && <div className="mt-4 flex flex-wrap justify-center gap-2">{follow}</div>}
+        {status && <div className="mt-3 flex justify-center empty:hidden">{status}</div>}
       </div>
 
       {/* Hairlines from a 1px gap over the border colour, so a wrapped 2x2 grid is ruled both ways. */}
+      {facts.length > 0 && (
       <dl className={`relative grid gap-px border-t border-brand-border bg-brand-border ${FACT_COLS[facts.length] ?? FACT_COLS[4]}`}>
         {facts.map(([label, value]) => (
           <div key={label} className="min-w-0 bg-brand-card px-3 py-3.5 text-center">
@@ -123,6 +129,7 @@ export function MatchMasthead({
           </div>
         ))}
       </dl>
+      )}
 
       {children && <div className="relative space-y-3 border-t border-brand-border px-5 py-4">{children}</div>}
     </header>
