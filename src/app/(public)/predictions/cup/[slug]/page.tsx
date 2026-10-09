@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { notFound } from "next/navigation";
 import { CupRounds } from "@/components/CupRounds";
@@ -63,7 +63,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
   const history = COMPETITION_HISTORY[data.cup.id] ?? null;
   const stats = data.cup.capabilities.standings ? competitionStats(data.standings) : null;
   // The cup's own fixture list, shaped like a league's upcoming list so the
-  // same featured-match selection applies (published picks first).
+  // same featured-match selection applies (the week's biggest by table position).
   const upcomingCup = data.fixtures
     .filter((f) => f.fixture.status.short === "NS")
     .map((f) => ({
@@ -104,7 +104,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
 
       {featured.length > 0 && (
         <section aria-labelledby="featured">
-          <SectionHead kicker="Coming up" title="Featured matches" id="featured" />
+          <SectionHead kicker="Coming up" title="Matches of the week" id="featured" />
           <FeaturedMatches matches={featured} />
         </section>
       )}
@@ -140,6 +140,13 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         </section>
       )}
 
+      {history && (
+        <section aria-labelledby="champions">
+          <SectionHead kicker="All-time roll of honour" title="Winners" id="champions" />
+          <CompetitionChampions champions={history.champions} scope={history.scope} />
+        </section>
+      )}
+
       <section aria-labelledby="clubs">
         <SectionHead kicker="Clubs" title={`Participating teams (${data.clubs.length})`} id="clubs" />
         <LeagueClubGrid clubs={data.clubs} />
@@ -151,17 +158,10 @@ export default async function CupPage({ params, searchParams }: { params: { slug
           {scoped && <div className="max-w-sm"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
           {shaped.length > 0 ? (
             <PredictionViewSwitch
-              detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" reasoningExcerpt />}
-              compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+              detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+              compact={<PredictionTimelineList rows={shaped as any} view="compact" emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
             />
           ) : <div className="card text-sm text-gray-400">No {data.cup.name} predictions are published yet.</div>}
-        </section>
-      )}
-
-      {history && (
-        <section aria-labelledby="champions">
-          <SectionHead kicker="Roll of honour" title="Winners" id="champions" />
-          <CompetitionChampions champions={history.champions} />
         </section>
       )}
 

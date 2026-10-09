@@ -71,6 +71,7 @@ export const PURE_STEPS = [
   `${RENDER} scripts/check-match-insights-render.tsx`,
   `${RENDER} scripts/check-match-render.tsx`,
   `${RENDER} scripts/check-prediction-view.tsx`,
+  `${RENDER} scripts/check-prediction-timeline.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 

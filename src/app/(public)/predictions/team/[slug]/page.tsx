@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
@@ -233,8 +233,8 @@ export default async function TeamPage({ params }: { params: { slug: string } })
       <section aria-labelledby="predictions" className="space-y-4">
         <SectionHead kicker="Predictions" title={`${name} predictions`} id="predictions" />
         <PredictionViewSwitch
-          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" reasoningExcerpt />}
-          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+          detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+          compact={<PredictionTimelineList rows={shaped as any} view="compact" emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
         />
       </section>
 

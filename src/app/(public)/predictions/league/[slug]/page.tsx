@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -95,9 +95,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
   // Fixtures already kicked off are dropped at read time too, so a cache the
   // refresh has not reached yet still never lists a past match as upcoming.
-  const upcoming = ((enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null)?.filter((f) => new Date(f.date).getTime() > Date.now())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 10) ?? null;
+  const upcomingAll = ((enrichment?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? null)?.filter((f) => new Date(f.date).getTime() > Date.now())
+    .sort((a, b) => a.date.localeCompare(b.date)) ?? null;
+  const upcoming = upcomingAll?.slice(0, 10) ?? null;
   // Only the fixtures this page can link: the upcoming list's own slugs, and
   // anything kicking off inside the recent-results window (LeagueResults keys
   // its links by matchKey, whose day is the kickoff's UTC day — hence the
@@ -106,7 +106,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   // every league page render.
   const now = Date.now();
   const matchIndex = await getPublishedMatchIndexFor({
-    slugs: (upcoming ?? []).map((f) => matchSlug({ homeTeam: f.homeTeam, awayTeam: f.awayTeam, kickoff: f.date })).filter((s): s is string => s !== null),
+    slugs: (upcomingAll ?? []).map((f) => matchSlug({ homeTeam: f.homeTeam, awayTeam: f.awayTeam, kickoff: f.date })).filter((s): s is string => s !== null),
     kickoff: { gte: new Date(now - RESULTS_LINK_LOOKBACK_MS), lte: new Date(now + RESULTS_LINK_LOOKAHEAD_MS) },
   });
   const clubs = standings?.length ? await getLeagueClubs(standings) : [];
@@ -126,7 +126,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   // The upcoming list has no team ids, so its preview links match on the
   // name-derived slug — the values of the id-keyed index are those same slugs.
   const publishedSlugs = Object.values(matchIndex);
-  const featured = featuredMatches(upcoming, standings, publishedSlugs, leagueApiId, name);
+  const featured = featuredMatches(upcomingAll, standings, publishedSlugs, leagueApiId, name);
   const shaped = rows.map((r) => {
     const canView = canViewCategory(r.category as PredictionCategory, viewer.tier, viewer.status, viewer.role);
     return canView
@@ -205,7 +205,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
       <div className={featured.length ? "grid gap-6" : "max-w-sm"}>
         {featured.length > 0 && (
           <section aria-labelledby="featured">
-            <SectionHead kicker="Next round" title="Featured matches" id="featured" />
+            <SectionHead kicker="Coming up" title="Matches of the week" id="featured" />
             <FeaturedMatches matches={featured} />
           </section>
         )}
@@ -260,6 +260,13 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         </section>
       )}
 
+      {history && (
+        <section aria-labelledby="champions">
+          <SectionHead kicker="All-time roll of honour" title="Title winners" id="champions" />
+          <CompetitionChampions champions={history.champions} scope={history.scope} />
+        </section>
+      )}
+
       {clubs.length > 0 && (
         <section aria-labelledby="clubs">
           <SectionHead kicker="Clubs" title={`Clubs in ${name}`} id="clubs" />
@@ -272,17 +279,10 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
       <section aria-labelledby="predictions" className="space-y-4">
         <SectionHead kicker="Predictions" title={`${rows.length} published ${rows.length === 1 ? "pick" : "picks"}`} id="predictions" />
         <PredictionViewSwitch
-          detailed={<CategoryPredictionsList rows={shaped as any} view="detailed" reasoningExcerpt />}
-          compact={<CategoryPredictionsList rows={shaped as any} view="compact" />}
+          detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+          compact={<PredictionTimelineList rows={shaped as any} view="compact" emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
         />
       </section>
-
-      {history && (
-        <section aria-labelledby="champions">
-          <SectionHead kicker="Roll of honour" title="Title winners" id="champions" />
-          <CompetitionChampions champions={history.champions} />
-        </section>
-      )}
 
       {about.length > 0 && <TeamAbout name={competitionInSentence(name)} paragraphs={about} kicker="Competition profile" />}
 

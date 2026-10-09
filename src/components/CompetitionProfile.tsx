@@ -173,33 +173,52 @@ export function CompetitionTopPlayers({ scorers, assists, cards }: { scorers: Le
 }
 
 function ChampionRow({ c }: { c: Champion }) {
+  const muted = c.note && !c.also;
   return (
     <li className="flex items-center gap-3 py-2.5">
       <span className="w-16 shrink-0 text-sm font-black tabular-nums text-gray-400">{c.season}</span>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-bg ring-1 ring-brand-border">
         {c.teamId != null ? <TeamCrest teamApiId={c.teamId} size={20} /> : <span aria-hidden className="h-2 w-2 rounded-full bg-amber-300/60" />}
       </span>
-      <span className={`min-w-0 flex-1 truncate text-sm font-bold ${c.note ? "text-gray-500" : "text-gray-100"}`}>{c.winner}</span>
+      <span className={`min-w-0 flex-1 truncate text-sm font-bold ${muted ? "text-gray-500" : "text-gray-100"}`}>
+        {c.winner}
+        {c.also && ` & ${c.also.winner}`}
+      </span>
       {c.note && <span className="shrink-0 text-[11px] text-gray-500">{c.note}</span>}
     </li>
   );
 }
 
+function Disclosure({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <details className="group border-t border-brand-border">
+      <summary className="flex cursor-pointer list-none items-center gap-1 py-3 text-sm font-bold text-gray-100 hover:text-brand">
+        {label}
+        <ChevronDown size={16} aria-hidden className="transition group-open:rotate-180" />
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 /**
- * Champions by season: the most successful clubs over the period as gold
- * tiles, then the season-by-season list (latest ten shown, the rest behind a
- * native disclosure so it is in the HTML without a client bundle).
+ * The competition's whole roll of honour: the three most successful clubs of
+ * all time as gold tiles, the latest ten champions, and behind native
+ * disclosures (in the HTML, no client bundle) every season since the first
+ * and every title-winning club with its count.
  */
-export function CompetitionChampions({ champions }: { champions: Champion[]; asOf?: string }) {
+export function CompetitionChampions({ champions, scope }: { champions: Champion[]; scope?: string }) {
   const asOf = champions[0]?.season;
-  const leaders = titlesSince(champions).slice(0, 3);
   const first = champions[champions.length - 1]?.season;
+  const tally = titlesSince(champions);
+  const leaders = tally.slice(0, 3);
   return (
     <div className="space-y-4">
       <ul className="grid grid-cols-3 gap-2.5">
         {leaders.map((l) => (
           <li key={l.winner} className="rounded-2xl border border-brand-border bg-brand-card p-3 text-center">
             <div className="text-3xl font-black tabular-nums leading-none text-amber-300">{l.count}</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">titles</div>
             <div className="mt-2 flex flex-col items-center gap-1.5">
               {l.teamId != null && <TeamCrest teamApiId={l.teamId} size={20} />}
               <span className="line-clamp-2 text-xs font-bold leading-snug text-gray-100">{l.winner}</span>
@@ -208,27 +227,38 @@ export function CompetitionChampions({ champions }: { champions: Champion[]; asO
         ))}
       </ul>
       <div className="rounded-3xl border border-brand-border bg-brand-card px-4 py-1">
+        <div className="pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Latest champions</div>
         <ul className="divide-y divide-brand-border">
           {champions.slice(0, 10).map((c) => (
             <ChampionRow key={c.season} c={c} />
           ))}
         </ul>
         {champions.length > 10 && (
-          <details className="group border-t border-brand-border">
-            <summary className="flex cursor-pointer list-none items-center gap-1 py-3 text-sm font-bold text-gray-100 hover:text-brand">
-              Show all seasons since {first}
-              <ChevronDown size={16} aria-hidden className="transition group-open:rotate-180" />
-            </summary>
+          <Disclosure label={`Every season since ${first}`}>
             <ul className="divide-y divide-brand-border border-t border-brand-border">
               {champions.slice(10).map((c) => (
                 <ChampionRow key={c.season} c={c} />
               ))}
             </ul>
-          </details>
+          </Disclosure>
         )}
+        <Disclosure label={`All ${tally.length} title-winning clubs`}>
+          <ol className="divide-y divide-brand-border border-t border-brand-border">
+            {tally.map((t) => (
+              <li key={t.winner} className="flex items-center gap-3 py-2.5">
+                <span className="w-8 shrink-0 text-right text-lg font-black tabular-nums text-amber-300">{t.count}</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-bg ring-1 ring-brand-border">
+                  {t.teamId != null ? <TeamCrest teamApiId={t.teamId} size={20} /> : <span aria-hidden className="h-2 w-2 rounded-full bg-amber-300/60" />}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-bold text-gray-100">{t.winner}</span>
+                <span className="shrink-0 text-xs font-medium text-gray-500">Last {t.last}</span>
+              </li>
+            ))}
+          </ol>
+        </Disclosure>
       </div>
-      <p className="text-[11px] text-gray-600">
-        Titles since {first}, up to the end of the {asOf} season.
+      <p className="text-[11px] leading-relaxed text-gray-500">
+        {scope ? `${scope} ` : ""}Up to the end of the {asOf} season.
       </p>
     </div>
   );
