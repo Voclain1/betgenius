@@ -22,10 +22,13 @@ export function MatchLiveStatus({
   homeTeamApiId,
   awayTeamApiId,
   kickoff,
+  scoreOnly = false,
 }: {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   kickoff: string;
+  /** Render only a live or final score: nothing while loading, before kickoff, or when the fixture isn't found (the match masthead already shows the kickoff). */
+  scoreOnly?: boolean;
 }) {
   const [fixture, setFixture] = useState<FixtureRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,9 +74,10 @@ export function MatchLiveStatus({
 
   const kickoffTime = new Date(kickoff).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-  if (loading) return <span className="text-sm text-gray-500">Checking status…</span>;
+  if (loading) return scoreOnly ? null : <span className="text-sm text-gray-500">Checking status…</span>;
 
   if (!fixture) {
+    if (scoreOnly) return null;
     return (
       <span className="text-sm text-gray-400">
         {new Date(kickoff).getTime() > Date.now() ? `Kicks off ${kickoffTime}` : `Kicked off ${kickoffTime}`}
@@ -84,8 +88,8 @@ export function MatchLiveStatus({
   const code = fixture.fixture.status.short;
   const group = classifyStatus(code);
 
-  if (group === "upcoming") return <span className="text-sm text-gray-400">Kicks off {kickoffTime}</span>;
-  if (isIrregular(code)) return <span className="chip bg-amber-500/20 text-xs text-amber-400">{statusLabel(code)}</span>;
+  if (group === "upcoming") return scoreOnly ? null : <span className="text-sm text-gray-400">Kicks off {kickoffTime}</span>;
+  if (isIrregular(code)) return <span className="text-xs font-black uppercase tracking-[0.12em] text-amber-400">{statusLabel(code)}</span>;
 
   const score = `${fixture.goals.home ?? "-"} - ${fixture.goals.away ?? "-"}`;
 

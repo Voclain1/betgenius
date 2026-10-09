@@ -23,7 +23,7 @@ const LABELS: Record<FeedDay, string> = {
 /** basePath is the surface the switch belongs to: a category feed, or "/" for the homepage. */
 export function FeedDayTabs({ basePath, active }: { basePath: string; active: FeedDay }) {
   return (
-    <nav aria-label="Select day" className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
+    <nav aria-label="Select day" className="inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
       {FEED_DAYS.map((day) => {
         const isActive = day === active;
         return (
@@ -31,7 +31,7 @@ export function FeedDayTabs({ basePath, active }: { basePath: string; active: Fe
             key={day}
             href={dayHref(basePath, day)}
             aria-current={isActive ? "page" : undefined}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+            className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
               isActive ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
             }`}
           >

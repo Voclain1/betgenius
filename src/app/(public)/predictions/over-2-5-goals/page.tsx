@@ -9,6 +9,8 @@ import { getOver25Predictions } from "@/lib/marketPredictions";
 import { dayShowsOutcomes, feedDayHref, parseFeedDay } from "@/lib/categoryPredictions";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { lagosDayLabel } from "@/lib/lagosDate";
 import { Over25PredictionsEvidence, Over25PredictionsGuide } from "@/components/Over25PredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 
@@ -97,12 +99,16 @@ export default async function Over25GoalsPage({ searchParams }: { searchParams?:
         ]),
         ...publicEvents,
       ]} />
-      <div>
-        <h1 className="text-2xl font-bold">Over 2.5 Goals predictions today</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">
-          {rows.length} {rows.length === 1 ? "match" : "matches"} currently meet this market selection for the chosen day.
-        </p>
-      </div>
+      <CategoryMasthead
+        kicker="Market guide"
+        title="Over 2.5 Goals predictions today"
+        blurb={<>{rows.length} {rows.length === 1 ? "match" : "matches"} currently meet this market selection for the chosen day.</>}
+        dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
+        stats={[
+          { label: rows.length === 1 ? "Pick" : "Picks", value: String(rows.length) },
+          { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
+        ]}
+      />
       <PredictionViewSwitch
         tabs={<FeedDayTabs basePath={PATH} active={day} />}
         intro=<Over25PredictionsGuide />

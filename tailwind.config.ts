@@ -4,7 +4,7 @@ import type { Config } from "tailwindcss";
  * Every colour resolves through a CSS variable defined in src/app/globals.css,
  * never through a fixed hex here.
  *
- * The `gray`, `emerald`, `red`, `amber` and `yellow` scales deliberately
+ * The `gray`, `emerald`, `red`, `amber`, `yellow`, `blue`, `orange` and `purple` scales deliberately
  * OVERRIDE Tailwind's built-in palettes rather than sitting beside them. That
  * is what makes the ~400 existing `text-gray-400`-style classes across 76
  * component files switch with the theme without any of those files being
@@ -62,6 +62,21 @@ export default {
           300: withAlpha("--yellow-300"),
           400: withAlpha("--yellow-400"),
           500: withAlpha("--yellow-500"),
+        },
+
+        blue: {
+          300: withAlpha("--blue-300"),
+          400: withAlpha("--blue-400"),
+          500: withAlpha("--blue-500"),
+        },
+        orange: {
+          300: withAlpha("--orange-300"),
+          500: withAlpha("--orange-500"),
+        },
+        purple: {
+          300: withAlpha("--purple-300"),
+          400: withAlpha("--purple-400"),
+          500: withAlpha("--purple-500"),
         },
 
         vip: withAlpha("--vip"),

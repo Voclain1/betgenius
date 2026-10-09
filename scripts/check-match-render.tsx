@@ -204,7 +204,9 @@ const panels: Array<[string, string]> = [
   ["key factors", html(<KeyFactors analysisJson={buildAnalysis({ keyFactors: ["a"] })} />)],
 ];
 for (const [name, markup] of panels) {
-  check(`headings: ${name} uses an h2 section heading`, markup.includes('<h2 class="section-heading">'), markup.slice(0, 140));
+  // One heading weight for every panel: the SectionHead title (an id'd <h2> the
+  // section is labelled by), shared with the team and competition pages.
+  check(`headings: ${name} uses an h2 section heading`, /<h2 id="[^"]+" class="mt-1\.5 text-2xl font-black/.test(markup), markup.slice(0, 140));
   check(`headings: ${name} emits no h1`, !markup.includes("<h1"));
 }
 

@@ -1,5 +1,7 @@
 import { teamNewsState, type TeamNewsState, type AvailabilityFreshness } from "@/lib/matchFacts";
 import type { TeamDigest, AvailabilityEntry } from "@/lib/ai/digest";
+import { PremiumPanel } from "@/components/PremiumPanel";
+import { textTone } from "@/lib/tone";
 
 /**
  * Injuries, suspensions and other absences for both sides.
@@ -52,11 +54,11 @@ function Freshness({ freshness }: { freshness: AvailabilityFreshness }) {
 
 function AbsenceList({ entries }: { entries: AvailabilityEntry[] }) {
   return (
-    <ul className="space-y-1">
+    <ul className="divide-y divide-brand-border">
       {entries.map((e) => (
-        <li key={`${e.kind}-${e.player}`} className="flex items-center justify-between gap-2 text-sm">
+        <li key={`${e.kind}-${e.player}`} className="flex items-center justify-between gap-2 py-2 text-sm">
           <span className="text-gray-300">{e.player}</span>
-          <span className={`chip shrink-0 text-[10px] ${KIND_STYLES[e.kind]}`}>
+          <span className={`shrink-0 text-[11px] font-bold ${textTone(KIND_STYLES[e.kind])}`}>
             {/* The API's own reason where it is more specific than the bucket
                 ("Knee Injury" beats "Injury"); the bucket label otherwise. */}
             {e.reason && e.reason.toLowerCase() !== "injury" ? e.reason : KIND_LABELS[e.kind]}
@@ -70,7 +72,7 @@ function AbsenceList({ entries }: { entries: AvailabilityEntry[] }) {
 function TeamColumn({ name, state }: { name: string; state: TeamNewsState }) {
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-300">{name}</h3>
+      <h3 className="text-sm font-black text-gray-100">{name}</h3>
 
       {state.kind === "unavailable" && (
         <p className="text-sm text-gray-500">Team news unavailable for this fixture.</p>
@@ -115,12 +117,11 @@ export function TeamNewsPanel({
   if (home.kind === "unavailable" && away.kind === "unavailable") return null;
 
   return (
-    <section className="card space-y-3">
-      <h2 className="section-heading">Team news</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <PremiumPanel kicker="Availability" title="Team news" id="team-news">
+      <div className="grid gap-6 sm:grid-cols-2">
         <TeamColumn name={homeTeam} state={home} />
         <TeamColumn name={awayTeam} state={away} />
       </div>
-    </section>
+    </PremiumPanel>
   );
 }

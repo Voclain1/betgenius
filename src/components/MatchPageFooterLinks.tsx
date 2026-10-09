@@ -3,6 +3,7 @@ import { getPublishedMatchIndexFor, getLeagueEnrichment, getPublishedTeamIndexFo
 import { matchKey, teamSlug, leagueSlug } from "@/lib/slug";
 import type { LeagueUpcomingFixture, LeagueStandingRow } from "@/lib/enrichment";
 import type { H2HMeeting } from "@/lib/h2h";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * Onward links from a match page.
@@ -33,7 +34,7 @@ function upcomingSlugPrefix(f: LeagueUpcomingFixture): string {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">{title}</h3>
+      <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-gray-500">{title}</h3>
       {children}
     </div>
   );
@@ -109,8 +110,8 @@ export async function MatchPageFooterLinks({
   if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0) return null;
 
   return (
-    <section className="card space-y-4">
-      <h2 className="section-heading">More from BetGenius</h2>
+    <PremiumPanel kicker="Explore" title="More from BetGenius" id="more">
+      <div className="space-y-5">
 
       {previous.length > 0 && (
         <Section title="Our previous calls on this fixture">
@@ -158,6 +159,7 @@ export async function MatchPageFooterLinks({
           All {leagueName} predictions →
         </Link>
       )}
-    </section>
+      </div>
+    </PremiumPanel>
   );
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { computeH2HStats, h2hTrendLine, type H2HMeeting } from "@/lib/h2h";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * The head-to-head record, inline on the match page.
@@ -40,43 +41,45 @@ export function MatchH2HSummary({
   const recent = meetings.slice(0, MEETINGS_SHOWN);
 
   return (
-    <section className="card space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="section-heading">Head-to-head</h2>
-        {h2hLink && (
-          <Link href={h2hLink} className="text-[11px] text-brand hover:underline">
+    <PremiumPanel
+      kicker="History"
+      title="Head-to-head"
+      id="h2h"
+      aside={
+        h2hLink && (
+          <Link href={h2hLink} className="text-brand hover:underline">
             Full record →
           </Link>
-        )}
-      </div>
+        )
+      }
+    >
+      <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-brand-border text-center">
+        {[
+          [homeTeam, stats.overall.teamAWins],
+          ["Draws", stats.overall.draws],
+          [awayTeam, stats.overall.teamBWins],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="min-w-0 bg-brand-bg px-2 py-3">
+            <dd className="text-3xl font-black tabular-nums text-gray-100">{value}</dd>
+            <dt className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">{label}</dt>
+          </div>
+        ))}
+      </dl>
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">{homeTeam}</div>
-          <div className="text-sm font-semibold">{stats.overall.teamAWins}</div>
-        </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Draws</div>
-          <div className="text-sm font-semibold">{stats.overall.draws}</div>
-        </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">{awayTeam}</div>
-          <div className="text-sm font-semibold">{stats.overall.teamBWins}</div>
-        </div>
-      </div>
+      {trend && <p className="mt-4 text-sm leading-relaxed text-gray-300">{trend}</p>}
 
-      {trend && <p className="text-sm text-gray-300">{trend}</p>}
-
-      <ul className="space-y-1">
+      <ul className="mt-3 divide-y divide-brand-border">
         {recent.map((m) => (
-          <li key={m.fixtureApiId} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-500 tabular-nums">{m.date.slice(0, 10)}</span>
-            <span className="flex-1 truncate text-gray-300">
-              {m.homeTeam} <span className="font-semibold tabular-nums">{m.homeGoals}-{m.awayGoals}</span> {m.awayTeam}
+          <li key={m.fixtureApiId} className="flex items-center gap-3 py-2.5 text-sm">
+            <span className="w-20 shrink-0 text-xs tabular-nums text-gray-500">{m.date.slice(0, 10)}</span>
+            <span className="min-w-0 flex-1 truncate text-right text-gray-300">{m.homeTeam}</span>
+            <span className="shrink-0 rounded-lg bg-brand-bg px-2 py-0.5 font-black tabular-nums text-gray-100">
+              {m.homeGoals}-{m.awayGoals}
             </span>
+            <span className="min-w-0 flex-1 truncate text-gray-300">{m.awayTeam}</span>
           </li>
         ))}
       </ul>
-    </section>
+    </PremiumPanel>
   );
 }

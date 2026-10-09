@@ -1,4 +1,6 @@
 import { FORM_BAND_STYLES, formSummaryLine, type FormRating } from "@/lib/form";
+import { PremiumPanel } from "@/components/PremiumPanel";
+import { textTone } from "@/lib/tone";
 
 /**
  * Score + band + the sample it came from. The caveat line is not optional
@@ -9,10 +11,10 @@ export function FormRatingBadge({ rating, label, align = "left" }: { rating: For
   const right = align === "right";
   return (
     <div className={`space-y-1 ${right ? "text-right" : ""}`}>
-      {label && <div className="text-[10px] uppercase text-gray-500">{label}</div>}
+      {label && <div className="truncate text-[11px] font-bold uppercase tracking-[0.12em] text-gray-400">{label}</div>}
       <div className={`flex items-baseline gap-2 ${right ? "justify-end" : ""}`}>
-        <span className="text-2xl font-bold tabular-nums">{rating.score}</span>
-        <span className={`chip ${FORM_BAND_STYLES[rating.band]}`}>{rating.band}</span>
+        <span className="text-3xl font-black tabular-nums text-gray-100">{rating.score}</span>
+        <span className={`text-sm font-black ${textTone(FORM_BAND_STYLES[rating.band])}`}>{rating.band}</span>
       </div>
       <p className="text-xs text-gray-500">
         {formSummaryLine(rating)}
@@ -45,13 +47,12 @@ export function FormComparison({
     const only = home ?? away;
     if (!only) return null;
     return (
-      <div className="card space-y-2">
-        <h2 className="text-sm font-semibold text-gray-300">Recent form</h2>
+      <PremiumPanel kicker="Form" title="Recent form" id="form">
         <FormRatingBadge rating={only} label={home ? homeName : awayName} />
-        <p className="text-xs text-gray-500">
+        <p className="mt-3 text-xs text-gray-500">
           Not enough recent data to rate {home ? awayName : homeName} yet, so there&apos;s nothing to compare against.
         </p>
-      </div>
+      </PremiumPanel>
     );
   }
 
@@ -61,16 +62,15 @@ export function FormComparison({
   const homeShare = total === 0 ? 50 : (home.score / total) * 100;
 
   return (
-    <div className="card space-y-3">
-      <h2 className="text-sm font-semibold text-gray-300">Recent form</h2>
-      <div className="grid grid-cols-2 gap-3">
+    <PremiumPanel kicker="Form" title="Recent form" id="form">
+      <div className="grid grid-cols-2 gap-4">
         <FormRatingBadge rating={home} label={homeName} />
         <FormRatingBadge rating={away} label={awayName} align="right" />
       </div>
-      <div className="flex h-2 overflow-hidden rounded-full bg-brand-border">
-        <div className="bg-brand" style={{ width: `${homeShare}%` }} />
-        <div className="bg-gray-500" style={{ width: `${100 - homeShare}%` }} />
+      <div className="mt-4 flex h-2 gap-0.5 overflow-hidden rounded-full">
+        <div className="rounded-l-full bg-brand" style={{ width: `${homeShare}%` }} />
+        <div className="rounded-r-full bg-gray-500" style={{ width: `${100 - homeShare}%` }} />
       </div>
-    </div>
+    </PremiumPanel>
   );
 }

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { TeamCrest } from "@/components/TeamCrest";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -7,7 +6,8 @@ import { FollowButton } from "@/components/FollowButton";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
-import { MatchInfoPanel } from "@/components/MatchInfoPanel";
+import { MatchMasthead } from "@/components/MatchMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
 import { MatchLiveStatus } from "@/components/MatchLiveStatus";
 import { MatchFormComparison } from "@/components/MatchFormComparison";
 import { MatchVerdict } from "@/components/MatchVerdict";
@@ -21,7 +21,7 @@ import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext } from "@/lib/predictionScope";
-import { teamSlug, h2hSlug } from "@/lib/slug";
+import { h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
@@ -152,10 +152,10 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // api-football call happens on this page.
   const { home: homeDigest, away: awayDigest, standings } = digests!;
 
-  // Venue for the structured data, from the same cached row MatchInfoPanel
+  // Venue for the structured data, from the same cached row the masthead
   // renders, so the markup can't describe a different ground than the page.
   const fixtureDetail = await getFixtureDetail(match.matchKey);
-  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null } | null) ?? null;
+  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null; round?: string | null; referee?: string | null } | null) ?? null;
 
   // Crests, competition badge and ingested fixture status for the structured
   // data. Venue is NOT taken from here — `detail` above is already the correct,
@@ -176,7 +176,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     // The one page on the site deep enough to carry a rail. See AdRail for the
     // width arithmetic and for why it only exists at xl and above.
     <WithAdRail unit="skyscraper">
-    <div className="space-y-6">
+    <div className="space-y-8">
       <JsonLd
         data={[
           breadcrumbJsonLd([
@@ -219,46 +219,34 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         ]}
       />
 
-      <div className="space-y-2">
-        {/* One natural phrase. "prediction" is what the page is and what the
-            reader searched for; stacking "tips / preview / odds / H2H" after it
-            would describe the same page four times. Team names stay linked
-            inside the heading so the primary internal links are where a reader
-            looks first. */}
-        <h1 className="text-2xl font-bold md:text-3xl">
-          <Link href={`/predictions/team/${teamSlug(match.homeTeam)}`} className="hover:underline">
-            <TeamCrest teamApiId={match.homeTeamApiId} size={28} className="mr-2" />
-            {match.homeTeam}
-          </Link>{" "}
-          <span className="text-gray-500">vs</span>{" "}
-          <Link href={`/predictions/team/${teamSlug(match.awayTeam)}`} className="hover:underline">
-            <TeamCrest teamApiId={match.awayTeamApiId} size={28} className="mr-2" />
-            {match.awayTeam}
-          </Link>{" "}
-          <span className="text-gray-400">prediction</span>
-        </h1>
-        <MatchLiveStatus
-          homeTeamApiId={match.homeTeamApiId}
-          awayTeamApiId={match.awayTeamApiId}
-          kickoff={match.kickoff.toISOString()}
-        />
-        <div className="flex flex-wrap gap-2">
-          {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
-          {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
-          {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
-        </div>
-        <EditorialAttribution />
-      </div>
-
-      <MatchInfoPanel
-        matchKey={match.matchKey}
+      <MatchMasthead
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+        homeTeamApiId={match.homeTeamApiId}
+        awayTeamApiId={match.awayTeamApiId}
         kickoff={match.kickoff}
         leagueName={match.leagueName}
         leagueApiId={match.leagueApiId}
-      />
+        round={detail?.round}
+        venue={detail?.venue}
+        city={detail?.city}
+        referee={detail?.referee}
+        status={<MatchLiveStatus homeTeamApiId={match.homeTeamApiId} awayTeamApiId={match.awayTeamApiId} kickoff={match.kickoff.toISOString()} scoreOnly />}
+        follow={
+          <>
+            {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
+            {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
+            {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
+          </>
+        }
+      >
+        <div className="flex justify-center">
+          <EditorialAttribution />
+        </div>
+      </MatchMasthead>
 
-      {/* Directly after the first main content section — the fixture info
-          panel — rather than two thirds of the way down the page. It is its
+      {/* Directly after the first main content section — the masthead with
+          the fixture facts — rather than two thirds of the way down the page. It is its
           own full-width block between two panels; nothing here sits inside a
           prediction card. */}
       <AdRectangle />
@@ -280,10 +268,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       )}
 
       {preview && (
-        <section className="card space-y-2">
-          <h2 className="section-heading">Match preview</h2>
+        <PremiumPanel kicker="Preview" title="Match preview" id="preview">
           <Prose text={preview} />
-        </section>
+        </PremiumPanel>
       )}
 
       {topRow && <KeyFactors analysisJson={topRow.analysisJson} />}
@@ -338,23 +325,25 @@ export default async function MatchPage({ params }: { params: { slug: string } }
 
       <MatchTrackRecord leagueApiId={match.leagueApiId} leagueName={match.leagueName} />
 
-      <div>
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="section-heading">
-            {rows.length} published {rows.length === 1 ? "market" : "markets"}
-          </h2>
-          {lockedCount > 0 && (
-            <span className="text-xs text-gray-500">
+      <PremiumPanel
+        bare
+        kicker="Predictions"
+        title={`${rows.length} published ${rows.length === 1 ? "market" : "markets"}`}
+        id="markets"
+        aside={
+          lockedCount > 0 && (
+            <span className="font-medium text-gray-500">
               {lockedCount} locked — <Link href="/pricing" className="text-brand hover:underline">upgrade to unlock</Link>
             </span>
-          )}
-        </div>
+          )
+        }
+      >
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {shaped.map((p) => (
             <PredictionCard key={p.id} p={p as any} hideMatchHeader />
           ))}
         </div>
-      </div>
+      </PremiumPanel>
 
       <MatchPageFooterLinks
         leagueApiId={match.leagueApiId}

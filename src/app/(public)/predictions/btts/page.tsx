@@ -9,6 +9,8 @@ import { getBttsPredictions } from "@/lib/marketPredictions";
 import { dayShowsOutcomes, feedDayHref, parseFeedDay } from "@/lib/categoryPredictions";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { lagosDayLabel } from "@/lib/lagosDate";
 import { BttsPredictionsEvidence, BttsPredictionsGuide } from "@/components/BttsPredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 
@@ -96,12 +98,16 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
         ]),
         ...sportsEventsForFixtures(eventRows),
       ]} />
-      <div>
-        <h1 className="text-2xl font-bold">BTTS predictions today</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">
-          {rows.length} Both Teams to Score {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.
-        </p>
-      </div>
+      <CategoryMasthead
+        kicker="Market guide"
+        title="BTTS predictions today"
+        blurb={<>{rows.length} Both Teams to Score {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
+        dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
+        stats={[
+          { label: rows.length === 1 ? "Pick" : "Picks", value: String(rows.length) },
+          { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
+        ]}
+      />
       <PredictionViewSwitch
         tabs={<FeedDayTabs basePath={PATH} active={day} />}
         intro=<BttsPredictionsGuide />
