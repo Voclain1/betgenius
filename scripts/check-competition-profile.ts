@@ -93,14 +93,18 @@ async function main() {
   const top = (id: number, n: number) => tally(id).slice(0, n).map((t) => `${t.winner} ${t.count}`).join(", ");
   check("England all-time: Liverpool 20, Man United 20, Arsenal 14, Man City 10, Everton 9", top(39, 5) === "Liverpool 20, Manchester United 20, Arsenal 14, Manchester City 10, Everton 9", top(39, 5));
   check("Premier League 2025/26: Arsenal", COMPETITION_HISTORY[39].champions[0].season === "2025/26" && COMPETITION_HISTORY[39].champions[0].winner === "Arsenal");
-  check("Spain all-time: Real Madrid 36, Barcelona 28, Atlético 11", top(140, 3) === "Real Madrid 36, Barcelona 28, Atlético Madrid 11", top(140, 3));
-  check("Italy all-time: Juventus 36, Inter 20, Milan 19", top(135, 3) === "Juventus 36, Inter 20, AC Milan 19", top(135, 3));
+  check("Spain all-time: Real Madrid 36, Barcelona 29, Atlético 11", top(140, 3) === "Real Madrid 36, Barcelona 29, Atlético Madrid 11", top(140, 3));
+  check("Italy all-time: Juventus 36, Inter 21, Milan 19", top(135, 3) === "Juventus 36, Inter 21, AC Milan 19", top(135, 3));
   check("Italy 1921/22: both champions count", COMPETITION_HISTORY[135].champions.find((c) => c.season === "1921/22")?.also?.winner === "Novese" && tally(135).some((t) => t.winner === "Novese" && t.count === 1));
   check("Italy: revoked titles count for nobody", tally(135).every((t) => t.winner !== "Not assigned"));
-  check("Germany all-time: Bayern 34, Nürnberg 9, Dortmund 8", top(78, 3) === "Bayern Munich 34, 1. FC Nürnberg 9, Borussia Dortmund 8", top(78, 3));
-  check("France all-time: PSG 13, Saint-Étienne 10, Marseille 9", top(61, 3) === "Paris Saint-Germain 13, Saint-Étienne 10, Marseille 9", top(61, 3));
+  check("Germany all-time: Bayern 35, Nürnberg 9, Dortmund 8", top(78, 3) === "Bayern Munich 35, 1. FC Nürnberg 9, Borussia Dortmund 8", top(78, 3));
+  check("France all-time: PSG 14, Saint-Étienne 10, Marseille 9", top(61, 3) === "Paris Saint-Germain 14, Saint-Étienne 10, Marseille 9", top(61, 3));
   check("Champions League all-time: Real Madrid 15, Milan 7", top(2, 2) === "Real Madrid 15, AC Milan 7", top(2, 2));
-  check("Champions League 2024/25: Paris Saint-Germain", COMPETITION_HISTORY[2].champions[0].winner === "Paris Saint-Germain");
+  const latest = Object.fromEntries(Object.entries(COMPETITION_HISTORY).map(([id, h]) => [id, `${h.champions[0].season} ${h.champions[0].winner}`]));
+  check("2025/26 champions everywhere", JSON.stringify(latest) === JSON.stringify({
+    2: "2025/26 Paris Saint-Germain", 3: "2025/26 Aston Villa", 39: "2025/26 Arsenal", 61: "2025/26 Paris Saint-Germain",
+    78: "2025/26 Bayern Munich", 135: "2025/26 Inter", 140: "2025/26 Barcelona",
+  }), JSON.stringify(latest));
   check("Europa League all-time: Sevilla 7", top(3, 1) === "Sevilla 7", top(3, 1));
 
   // The rolls and the club honours are kept by hand in two places: they must
