@@ -231,7 +231,7 @@ export const COMPETITION_HISTORY: Record<number, CompetitionHistory> = {
       - - -
       ATM ATM VAL ATH VAL BAR SEV VAL BAR BAR ATM ATM BAR BAR RMA RMA ATH RMA RMA BAR BAR
       RMA RMA RMA RMA RMA ATM RMA RMA RMA ATM VAL RMA ATM BAR RMA RMA ATM RMA RMA RMA RSO RSO ATH ATH BAR
-      RMA RMA RMA RMA RMA BAR BAR BAR BAR RMA ATM RMA BAR BAR DEP RMA VAL RMA VAL BAR BAR RMA RMA BAR BAR BAR RMA BAR ATM BAR BAR RMA BAR BAR RMA ATM RMA BAR RMA BAR
+      RMA RMA RMA RMA RMA BAR BAR BAR BAR RMA ATM RMA BAR BAR DEP RMA VAL RMA VAL BAR BAR RMA RMA BAR BAR BAR RMA BAR ATM BAR BAR RMA BAR BAR RMA ATM RMA BAR RMA BAR BAR
     `, 1929),
   },
   135: {
@@ -247,7 +247,7 @@ export const COMPETITION_HISTORY: Record<number, CompetitionHistory> = {
       INT PRO PRO+NOV GEN GEN BOL JUV XT TOR BOL INT JUV JUV JUV JUV JUV BOL BOL INT BOL INT BOL ROM TOR
       - -
       TOR TOR TOR TOR JUV MIL JUV INT INT MIL FIO MIL JUV MIL JUV JUV MIL INT BOL INT INT JUV MIL FIO CAG INT JUV JUV LAZ JUV TOR JUV JUV MIL INT JUV JUV ROM JUV VER JUV NAP MIL INT NAP SAM
-      MIL MIL MIL JUV MIL JUV JUV MIL LAZ ROM JUV JUV MIL XC INT INT INT INT INT MIL JUV JUV JUV JUV JUV JUV JUV JUV JUV INT MIL NAP INT NAP
+      MIL MIL MIL JUV MIL JUV JUV MIL LAZ ROM JUV JUV MIL XC INT INT INT INT INT MIL JUV JUV JUV JUV JUV JUV JUV JUV JUV INT MIL NAP INT NAP INT
     `, 1909),
   },
   78: {
@@ -264,7 +264,7 @@ export const COMPETITION_HISTORY: Record<number, CompetitionHistory> = {
       - - -
       FCN MAN VFB FCK VFB FCK H96 RWE BVB BVB S04 SGE HSV FCN KOE BVB
       KOE SVW M60 EBS FCN BAY BMG BMG BAY BAY BAY BMG BMG BMG KOE HSV BAY BAY HSV HSV VFB BAY BAY BAY SVW BAY BAY FCK VFB SVW BAY BVB BVB BAY FCK BAY BAY BAY BVB BAY SVW BAY BAY VFB BAY WOB BAY BVB BVB
-      BAY BAY BAY BAY BAY BAY BAY BAY BAY BAY BAY B04 BAY
+      BAY BAY BAY BAY BAY BAY BAY BAY BAY BAY BAY B04 BAY BAY
     `, 1963),
   },
   61: {
@@ -278,29 +278,29 @@ export const COMPETITION_HISTORY: Record<number, CompetitionHistory> = {
       OLL SET SOC RCP OM SOC SET
       - - - - - -
       LIL CRT OM REI BOR NIC NIC REI LIL REI NIC STE REI NIC REI ASM REI ASM STE NAN NAN STE STE STE STE OM OM NAN STE STE STE NAN ASM STR NAN STE ASM NAN BOR BOR PSG BOR ASM OM OM OM OM XM
-      PSG NAN AUX ASM LEN BOR ASM NAN OL OL OL OL OL OL OL BOR OM LIL MTP PSG PSG PSG PSG ASM PSG PSG PSG LIL PSG PSG PSG PSG
+      PSG NAN AUX ASM LEN BOR ASM NAN OL OL OL OL OL OL OL BOR OM LIL MTP PSG PSG PSG PSG ASM PSG PSG PSG LIL PSG PSG PSG PSG PSG
     `),
   },
   2: {
     profile: [
       "The European Cup began in 1955/56 and became the UEFA Champions League in 1992/93. From 2024/25 it opens with a single 36-team league phase, followed by knockout rounds and a one-off final.",
-      "Real Madrid have won it more often than any other club, including the first five editions and three in a row from 2016 to 2018. AC Milan, Bayern Munich and Liverpool are next on the roll of honour, and Paris Saint-Germain won it for the first time in 2024/25.",
+      "Real Madrid have won it more often than any other club, including the first five editions and three in a row from 2016 to 2018. AC Milan, Bayern Munich and Liverpool are next on the roll of honour, and Paris Saint-Germain won it for the first time in 2024/25, then retained it in 2025/26.",
       "It is the most watched annual club competition in the world, and its anthem and group-stage nights are central to the modern game. Qualification comes through domestic leagues, so a club's league position decides whether it plays here the following season.",
     ],
     scope: "European Cup winners since 1955/56; the Champions League since 1992/93.",
     champions: roll(1955, `
-      RMA RMA RMA RMA RMA BEN BEN MIL INT INT RMA CEL MUN MIL FEY AJA AJA AJA BAY BAY BAY LIV LIV NFO NFO LIV AVL HSV LIV JUV STB FCP PSV MIL MIL RSB BAR OM MIL AJA JUV BVB RMA MUN RMA BAY RMA MIL FCP LIV BAR MIL MUN BAR INT BAR CHE BAY RMA BAR RMA RMA RMA LIV BAY CHE RMA MCI RMA PSG
+      RMA RMA RMA RMA RMA BEN BEN MIL INT INT RMA CEL MUN MIL FEY AJA AJA AJA BAY BAY BAY LIV LIV NFO NFO LIV AVL HSV LIV JUV STB FCP PSV MIL MIL RSB BAR OM MIL AJA JUV BVB RMA MUN RMA BAY RMA MIL FCP LIV BAR MIL MUN BAR INT BAR CHE BAY RMA BAR RMA RMA RMA LIV BAY CHE RMA MCI RMA PSG PSG
     `),
   },
   3: {
     profile: [
       "The UEFA Cup began in 1971/72 and was renamed the UEFA Europa League in 2009/10. Since 2024/25 it opens with a 36-team league phase before the knockout rounds and the final.",
       "Sevilla are its most successful club by far, with seven titles, three of them in a row from 2014 to 2016. Its winner earns a place in the next season's Champions League, which has made it a serious target for clubs outside their domestic top four.",
-      "Recent finals have brought first European trophies or long-awaited ones: Eintracht Frankfurt in 2022, Atalanta in 2024 and Tottenham Hotspur, ending a 17-year wait for silverware, in 2025.",
+      "Recent finals have brought first European trophies or long-awaited ones: Eintracht Frankfurt in 2022, Atalanta in 2024, Tottenham Hotspur, ending a 17-year wait for silverware, in 2025, and Aston Villa in 2026.",
     ],
     scope: "UEFA Cup winners since 1971/72; the Europa League since 2009/10.",
     champions: roll(1971, `
-      TOT LIV FEY BMG LIV JUV PSV BMG SGE IPS GOT AND TOT RMA RMA GOT B04 NAP JUV INT AJA JUV INT PAR BAY S04 INT PAR GAL LIV FEY FCP VAL CSK SEV SEV ZEN SHA ATM FCP ATM CHE SEV SEV SEV MUN ATM CHE SEV VIL SGE SEV ATA TOT
+      TOT LIV FEY BMG LIV JUV PSV BMG SGE IPS GOT AND TOT RMA RMA GOT B04 NAP JUV INT AJA JUV INT PAR BAY S04 INT PAR GAL LIV FEY FCP VAL CSK SEV SEV ZEN SHA ATM FCP ATM CHE SEV SEV SEV MUN ATM CHE SEV VIL SGE SEV ATA TOT AVL
     `),
   },
 };

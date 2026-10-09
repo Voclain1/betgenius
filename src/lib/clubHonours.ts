@@ -17,7 +17,7 @@
  * UEFA Cup and Europa League).
  */
 
-export const HONOURS_AS_OF = "2024/25";
+export const HONOURS_AS_OF = "2025/26";
 
 export type Honour = { title: string; count: number; /** Year of the most recent win (the year the final or title race ended). */ last: number };
 /** `asOf` overrides HONOURS_AS_OF for a club updated with a later season. */
@@ -38,7 +38,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
     { title: "League titles", count: 20, last: 2025 }, { title: "FA Cup", count: 8, last: 2022 }, { title: "League Cup", count: 10, last: 2024 },
     { title: UCL, count: 6, last: 2019 }, { title: UEL, count: 3, last: 2001 },
   ] },
-  42: { match: "arsenal", asOf: "2025/26", honours: [
+  42: { match: "arsenal", honours: [
     { title: "League titles", count: 14, last: 2026 }, { title: "FA Cup", count: 14, last: 2020 }, { title: "League Cup", count: 2, last: 1993 },
     { title: CWC, count: 1, last: 1994 },
   ] },
@@ -47,7 +47,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
     { title: UCL, count: 2, last: 2021 }, { title: UEL, count: 2, last: 2019 }, { title: CWC, count: 2, last: 1998 }, { title: UECL, count: 1, last: 2025 },
   ] },
   50: { match: "manchester city", honours: [
-    { title: "League titles", count: 10, last: 2024 }, { title: "FA Cup", count: 7, last: 2023 }, { title: "League Cup", count: 8, last: 2021 },
+    { title: "League titles", count: 10, last: 2024 }, { title: "FA Cup", count: 8, last: 2026 }, { title: "League Cup", count: 9, last: 2026 },
     { title: UCL, count: 1, last: 2023 }, { title: CWC, count: 1, last: 1970 },
   ] },
   47: { match: "tottenham", honours: [
@@ -59,7 +59,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
   ] },
   66: { match: "aston villa", honours: [
     { title: "League titles", count: 7, last: 1981 }, { title: "FA Cup", count: 7, last: 1957 }, { title: "League Cup", count: 5, last: 1996 },
-    { title: UCL, count: 1, last: 1982 },
+    { title: UCL, count: 1, last: 1982 }, { title: UEL, count: 1, last: 2026 },
   ] },
   34: { match: "newcastle", honours: [
     { title: "League titles", count: 4, last: 1927 }, { title: "FA Cup", count: 6, last: 1955 }, { title: "League Cup", count: 1, last: 2025 },
@@ -71,7 +71,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
     { title: UCL, count: 15, last: 2024 }, { title: UEL, count: 2, last: 1986 },
   ] },
   529: { match: "barcelona", honours: [
-    { title: "La Liga", count: 28, last: 2025 }, { title: "Copa del Rey", count: 32, last: 2025 },
+    { title: "La Liga", count: 29, last: 2026 }, { title: "Copa del Rey", count: 32, last: 2025 },
     { title: UCL, count: 5, last: 2015 }, { title: CWC, count: 4, last: 1997 },
   ] },
   530: { match: "atletico", honours: [
@@ -95,7 +95,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
     { title: UCL, count: 2, last: 1996 }, { title: UEL, count: 3, last: 1993 }, { title: CWC, count: 1, last: 1984 },
   ] },
   505: { match: "inter", honours: [
-    { title: "Serie A", count: 20, last: 2024 }, { title: "Coppa Italia", count: 9, last: 2023 },
+    { title: "Serie A", count: 21, last: 2026 }, { title: "Coppa Italia", count: 10, last: 2026 },
     { title: UCL, count: 3, last: 2010 }, { title: UEL, count: 3, last: 1998 },
   ] },
   489: { match: "milan", honours: [
@@ -114,7 +114,7 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
 
   // Germany
   157: { match: "bayern", honours: [
-    { title: "German titles", count: 34, last: 2025 }, { title: "DFB-Pokal", count: 20, last: 2020 },
+    { title: "German titles", count: 35, last: 2026 }, { title: "DFB-Pokal", count: 21, last: 2026 },
     { title: UCL, count: 6, last: 2020 }, { title: UEL, count: 1, last: 1996 }, { title: CWC, count: 1, last: 1967 },
   ] },
   165: { match: "dortmund", honours: [
@@ -130,8 +130,8 @@ export const CLUB_HONOURS: Record<number, ClubHonours> = {
 
   // France
   85: { match: "paris", honours: [
-    { title: "Ligue 1", count: 13, last: 2025 }, { title: "Coupe de France", count: 16, last: 2025 },
-    { title: UCL, count: 1, last: 2025 }, { title: CWC, count: 1, last: 1996 },
+    { title: "Ligue 1", count: 14, last: 2026 }, { title: "Coupe de France", count: 16, last: 2025 },
+    { title: UCL, count: 2, last: 2026 }, { title: CWC, count: 1, last: 1996 },
   ] },
   81: { match: "marseille", honours: [
     { title: "Ligue 1", count: 9, last: 2010 }, { title: "Coupe de France", count: 10, last: 1989 }, { title: UCL, count: 1, last: 1993 },
