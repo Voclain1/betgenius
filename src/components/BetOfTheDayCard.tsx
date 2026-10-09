@@ -56,14 +56,14 @@ function TeamRow({ name, crest, score }: { name: string | null; crest?: string |
   return (
     <div className="flex items-center gap-3">
       {crest ? (
-        <Image src={crest} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />
+        <Image src={crest} alt="" width={32} height={32} className="h-8 w-8 shrink-0 object-contain" />
       ) : (
-        <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-border text-[10px] font-semibold text-gray-300">
+        <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-border text-[10px] font-semibold text-gray-300">
           {initials}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-base font-semibold">{name}</span>
-      {score != null && <span className="text-lg font-bold tabular-nums">{score}</span>}
+      <span className="min-w-0 flex-1 truncate text-lg font-black tracking-tight text-gray-100">{name}</span>
+      {score != null && <span className="text-2xl font-black tabular-nums text-gray-100">{score}</span>}
     </div>
   );
 }
@@ -96,71 +96,74 @@ export function BetOfTheDayCard({
   const showScore = settled && row.finalHomeScore != null && row.finalAwayScore != null;
   const confidence = Math.max(0, Math.min(100, row.confidence));
 
-  // One pill, never wrapping: when it kicks off, that it is in play, or that it has finished.
-  const pill = "shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-semibold";
-  const statusPill = settled ? (
-    <span className={`${pill} bg-brand-border uppercase tracking-wide text-gray-300`}>Full time</span>
+  // Match state as plain small caps, never a tinted pill: when it kicks off,
+  // that it is in play, or that it has finished.
+  const caps = "shrink-0 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em]";
+  const statusLabel = settled ? (
+    <span className={`${caps} text-gray-300`}>Full time</span>
   ) : !live ? (
-    <span className={`${pill} inline-flex items-center gap-1.5 bg-red-500/15 uppercase tracking-wide text-red-300`}>
+    <span className={`${caps} inline-flex items-center gap-1.5 text-red-400`}>
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" aria-hidden />
       In play
     </span>
   ) : when ? (
-    <span className={`${pill} bg-brand-border tabular-nums text-gray-200`}>{when}</span>
+    <span className={`${caps} tabular-nums text-gray-300`}>{when}</span>
   ) : null;
 
   const body = (
-    <div className="card space-y-4 border-brand/40">
+    <div className="space-y-5 rounded-3xl border border-brand-border bg-brand-card p-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)] sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <LeagueBadge leagueApiId={row.leagueApiId} leagueName={row.leagueName} showName={false} size={16} />
-          <span className="truncate text-xs font-medium text-gray-400">{row.leagueName}</span>
+          <span className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-gray-400">{row.leagueName}</span>
         </div>
-        {statusPill}
+        {statusLabel}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <TeamRow name={row.homeTeam} crest={crests?.home} score={showScore ? row.finalHomeScore : null} />
         <TeamRow name={row.awayTeam} crest={crests?.away} score={showScore ? row.finalAwayScore : null} />
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-lg border border-brand/30 bg-brand/10 p-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{row.market}</div>
-          <div className="break-words text-lg font-bold leading-snug text-brand">{row.pick}</div>
+      {/* The pick, set like the prediction cards: market small, pick large,
+          and whatever matters now as the big figure on the right. */}
+      <div className="rounded-2xl bg-brand-bg/70 p-4 ring-1 ring-brand-border">
+        <div className="flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{row.market}</div>
+            <div className="mt-1 break-words text-xl font-black leading-tight text-brand">{row.pick}</div>
+          </div>
+          <div className="shrink-0 text-right">
+            {result ? (
+              <>
+                <div className={`text-2xl font-black leading-none ${result.className}`}>{result.label}</div>
+                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Result</div>
+              </>
+            ) : !live ? (
+              <>
+                <div className="text-base font-black leading-none text-gray-300">In play</div>
+                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Status</div>
+              </>
+            ) : gate?.price != null ? (
+              <>
+                <div className="text-3xl font-black leading-none tabular-nums text-gray-100">{gate.price.toFixed(2)}</div>
+                <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Odds</div>
+              </>
+            ) : (
+              <div className="max-w-[7rem] text-xs text-gray-500">Price not available yet</div>
+            )}
+          </div>
         </div>
-        <div className="text-right">
-          {result ? (
-            <>
-              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Result</div>
-              <div className={`text-xl font-bold ${result.className}`}>{result.label}</div>
-            </>
-          ) : !live ? (
-            <>
-              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Status</div>
-              <div className="text-sm font-semibold text-gray-300">In play</div>
-            </>
-          ) : gate?.price != null ? (
-            <>
-              <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Odds</div>
-              <div className="text-2xl font-bold tabular-nums">{gate.price.toFixed(2)}</div>
-            </>
-          ) : (
-            <div className="max-w-[7rem] text-xs text-gray-500">Price not available yet</div>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">Confidence</span>
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-brand-border" aria-hidden>
+        <div className="mt-4 flex items-center gap-3">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-brand-border" aria-hidden>
             <div className="h-full rounded-full bg-brand" style={{ width: `${confidence}%` }} />
           </div>
-          <span className="text-xs font-semibold tabular-nums">{row.confidence}%</span>
+          <span className="text-xs font-bold tabular-nums text-gray-200">
+            {row.confidence}% <span className="font-semibold text-gray-500">confidence</span>
+          </span>
         </div>
         {live && gate?.price != null && (
-          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-gray-500">
+          <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-gray-500">
             <span>
               Best of {gate.bookmakers} bookmaker{gate.bookmakers === 1 ? "" : "s"}
               {/* The quote's age, always shown when a price is: a price with no

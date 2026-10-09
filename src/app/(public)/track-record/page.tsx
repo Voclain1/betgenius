@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { TrackRecordView } from "@/components/TrackRecordView";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
 
 export const revalidate = 300;
 
@@ -32,10 +33,10 @@ export default async function TrackRecordPage() {
 
   if (data.totalSettledAllTime < MIN_SETTLED_SAMPLE_SIZE) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold">Track record</h1>
-        <div className="card">
-          <p className="text-lg font-semibold">Not enough data yet</p>
+      <div className="space-y-8">
+        <CategoryMasthead kicker="Public record" title="Track record" blurb="Every settled prediction, wins and losses alike, published once there is a fair sample to judge." stats={[]} />
+        <div className="rounded-3xl border border-brand-border bg-brand-card p-6">
+          <p className="text-lg font-black text-gray-100">Not enough data yet</p>
           <p className="mt-2 text-sm text-gray-400">
             We only publish real numbers once there's a meaningful sample to judge fairly — {data.totalSettledAllTime} of{" "}
             {MIN_SETTLED_SAMPLE_SIZE} settled tips so far. Check back soon.

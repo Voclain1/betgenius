@@ -37,6 +37,9 @@ import {
   HOMEPAGE_FEATURED_LIMIT,
 } from "@/lib/homepageFeatured";
 import { AdLeaderboard, AdNativeBand } from "@/components/ads/AdPlacements";
+import { PremiumPanel, textTone } from "@/components/PremiumPanel";
+import { SectionHead } from "@/components/TeamProfile";
+import { LinkTile } from "@/components/LinkTile";
 
 export const revalidate = 60;
 
@@ -254,30 +257,39 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     return canView ? { ...r, category, locked: false } : { ...r, category, pick: "LOCKED", confidence: null, locked: true };
   });
 
+  const dayWord = day === "today" ? "today" : day === "yesterday" ? "yesterday" : "tomorrow";
+  const ARROW = "whitespace-nowrap text-sm font-semibold text-brand hover:underline";
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       <JsonLd data={websiteJsonLd()} />
       {/* Two columns once there's a pick to show: the claim on the left, a
           real published pick as its evidence on the right. Collapses to the
           original single column when nothing public is available, so the hero
           never renders a hole. */}
-      <section className="rounded-2xl bg-gradient-to-br from-brand/20 via-brand-card to-brand-bg p-6 md:p-10">
-        <div className={`grid items-center gap-8 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
+      <section className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+        <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
+        <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
           <div>
+            <div className="flex items-center gap-2">
+              <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
+              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Football predictions</span>
+            </div>
             {/* Built rather than written inline: the banker half of this
                 headline is a claim about the day's card, and it is gated on
                 the same count the paragraph below it uses. See homeHeadline. */}
-            <h1 className="text-[26px] font-bold leading-[1.15] sm:text-3xl md:text-5xl">
+            <h1 className="mt-3 text-[28px] font-black leading-[1.05] tracking-tight text-gray-100 sm:text-4xl md:text-5xl">
               {homeHeadline({ day, bankerCount: slate.bankerCount })}
             </h1>
             {/* Directly under the H1, before the pick card and everything
                 below it: what is actually published right now, in counts and
                 competitions. No percentage — /track-record owns the rate, and
                 a second copy of it here would be free to drift. */}
-            <div className="mt-3">
+            <div className="mt-4">
               <AnswerSummary text={homeSummary({ day, ...slate })} />
             </div>
-            <p className="mt-3 max-w-2xl text-gray-300 md:text-lg">
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
               {/* The markets named here are the ones actually published — see
                   the marketType mix in the corpus — so the line reinforces
                   what a reader searches for without promising a market this
@@ -291,127 +303,148 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           </div>
           {heroPick && <HeroPick pick={heroPick} />}
         </div>
+        {/* The day's card in numbers — the same counts the answer paragraph states. */}
+        {slate.pickCount > 0 && (
+          <dl className={`relative grid gap-px border-t border-brand-border bg-brand-border ${slate.bankerCount > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
+            {(
+              [
+                [`Picks ${dayWord}`, slate.pickCount],
+                ["Competitions", slate.leagueCount],
+                ...(slate.bankerCount > 0 ? [[slate.bankerCount === 1 ? "Banker" : "Bankers", slate.bankerCount]] : []),
+              ] as [string, number][]
+            ).map(([label, value]) => (
+              <div key={label} className="flex flex-col-reverse bg-brand-card px-2 py-3.5 text-center">
+                <dt className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">{label}</dt>
+                <dd className="text-2xl font-black tabular-nums text-gray-100 sm:text-3xl">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </section>
 
+      {/* The category shortcuts, as one row of quiet links under the hero. */}
+      <nav aria-label="Prediction categories" className="flex flex-wrap gap-2">
+        {HOME_CATEGORY_LINKS.map((c) => (
+          <Link
+            key={c.href}
+            href={c.href}
+            className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+          >
+            {c.label}
+          </Link>
+        ))}
+      </nav>
 
-
-      <section className="space-y-6">
-        {genius.length > 0 && (
-          <div>
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-xl font-semibold">Genius tips</h2>
-              {/* self-start so the control keeps its natural width in the stacked
-                  mobile layout, matching Featured — which cannot stretch because
-                  it shares its row with "View all". */}
-              <div className="self-start">
-                <FeedDayTabs basePath="/" active={day} />
-              </div>
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-brand-border">
-              <table className="w-full text-sm">
-                <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
-                  <tr>
-                    <th className="px-3 py-2">Match</th>
-                    <th className="px-3 py-2">League</th>
-                    <th className="px-3 py-2">Market / Pick</th>
-                    <th className="px-3 py-2 text-right">Confidence</th>
-                    <th className="px-3 py-2 text-right">Result</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-border">
-                  {genius.map((p) => {
-                    const home = p.homeTeam ?? p.fixture?.homeTeam.name;
-                    const away = p.awayTeam ?? p.fixture?.awayTeam.name;
-                    const leagueName = p.leagueName ?? p.fixture?.league.name;
-                    const kickoff = p.kickoff ?? p.fixture?.kickoff;
-                    return (
-                      <tr key={p.id} className="hover:bg-brand-card/50">
-                        <td className="px-3 py-2">
-                          <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
-                        </td>
-                        <td className="px-3 py-2">
-                          {leagueName ? (
-                            <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
-                              <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
-                            </Link>
-                          ) : (
-                            <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="font-semibold text-brand flex items-center gap-1">
-                            {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
-                          </div>
-                          <div className="text-xs text-gray-400">{p.market}</div>
-                        </td>
-                        <td className="px-3 py-2 text-right">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
-                        <td className="px-3 py-2 text-right">
-                          {p.outcome !== "PENDING" ? (
-                            <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? "bg-brand-border"}`}>{p.outcome}</span>
-                          ) : kickoff ? (
-                            <span className="text-xs text-gray-400">
-                              {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-4">
-              <Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>
+      {genius.length > 0 && (
+        <section aria-labelledby="home-genius">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <SectionHead kicker="Our strongest calls" title="Genius tips" id="home-genius" />
+            {/* self-start so the control keeps its natural width in the stacked
+                mobile layout, matching Featured. */}
+            <div className="self-start sm:mb-4 sm:self-auto">
+              <FeedDayTabs basePath="/" active={day} />
             </div>
           </div>
-        )}
-
-        <div className="flex flex-wrap gap-3">
-          {HOME_CATEGORY_LINKS.map((c) => (
-            <Link key={c.href} href={c.href} className="btn btn-ghost">
-              {c.label}
-            </Link>
-          ))}
-        </div>
-      </section>
+          <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
+            <table className="w-full text-sm">
+              <thead className="border-b border-brand-border text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+                <tr>
+                  <th className="px-4 py-3">Match</th>
+                  <th className="px-4 py-3">League</th>
+                  <th className="px-4 py-3">Market / Pick</th>
+                  <th className="px-4 py-3 text-right">Confidence</th>
+                  <th className="px-4 py-3 text-right">Result</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-border">
+                {genius.map((p) => {
+                  const home = p.homeTeam ?? p.fixture?.homeTeam.name;
+                  const away = p.awayTeam ?? p.fixture?.awayTeam.name;
+                  const leagueName = p.leagueName ?? p.fixture?.league.name;
+                  const kickoff = p.kickoff ?? p.fixture?.kickoff;
+                  return (
+                    <tr key={p.id} className="transition hover:bg-brand-bg/40">
+                      <td className="px-4 py-3 font-semibold text-gray-100">
+                        <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
+                      </td>
+                      <td className="px-4 py-3">
+                        {leagueName ? (
+                          <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
+                            <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                          </Link>
+                        ) : (
+                          <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 font-black text-brand">
+                          {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
+                        </div>
+                        <div className="text-xs text-gray-400">{p.market}</div>
+                      </td>
+                      <td className="px-4 py-3 text-right text-base font-black tabular-nums text-gray-100">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        {p.outcome !== "PENDING" ? (
+                          <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}`}>{p.outcome}</span>
+                        ) : kickoff ? (
+                          <span className="text-xs font-semibold text-gray-400">
+                            {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4">
+            <Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>
+          </div>
+        </section>
+      )}
 
       {/* Directly above Featured, and rendered only when a pick actually holds
           the slot — an empty "Bet of the Day" heading would advertise a
           promise the page is not keeping. It stays through the rest of its
           kickoff day, in play and then with its result (getHomepageBetOfTheDay). */}
       {betOfTheDay && (
-        <section>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Bet of the Day</h2>
-            <Link href="/predictions/bet-of-the-day" className="text-sm text-brand hover:underline">
+        <PremiumPanel
+          kicker="One pick a day"
+          title="Bet of the Day"
+          id="home-botd"
+          aside={
+            <Link href="/predictions/bet-of-the-day" className={ARROW}>
               Full reasoning →
             </Link>
-          </div>
+          }
+          bare
+        >
           <BetOfTheDayCard
             data={betOfTheDay}
             variant="hero"
             state={betOfTheDay.state}
             crests={{ home: botdContext?.homeTeamLogo, away: botdContext?.awayTeamLogo }}
           />
-        </section>
+        </PremiumPanel>
       )}
 
-      <section>
+      <section aria-labelledby="home-featured">
         {/* Stacks below sm. On one row at phone width the heading wrapped to two
             lines and "View all" broke across three, with the pills squeezed
             between them. The day control needs a full-width row of its own on a
             narrow screen. */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-xl font-semibold">Featured tips</h2>
-          <div className="flex items-center justify-between gap-4 sm:justify-end">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
+          <div className="flex items-center justify-between gap-4 sm:mb-4 sm:justify-end">
             {/* The two excerpts share one ?date=, so both controls show the same
                 active day. Repeated rather than hoisted because the sections are
                 far apart on the page — a reader at Featured should not have to
                 scroll back to the Genius header to change day. */}
             <FeedDayTabs basePath="/" active={day} />
-            <Link href="/predictions/featured" className="whitespace-nowrap text-sm text-brand hover:underline">View all →</Link>
+            <Link href="/predictions/featured" className={ARROW}>View all →</Link>
           </div>
         </div>
         {/* Two different empty states. With nothing tagged FEATURED for the
@@ -419,12 +452,12 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             eligible for this excerpt (see src/lib/homepageFeatured.ts), say so
             and point at the full feed, which still lists them. */}
         {featured.rows.length === 0 && featured.published === 0 ? (
-          <p className="text-gray-400">
+          <p className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">
             No featured tips published yet. Admins can publish tips from{" "}
             <Link href="/admin" className="underline">the dashboard</Link>.
           </p>
         ) : featured.rows.length === 0 ? (
-          <p className="text-gray-400">
+          <p className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">
             {featuredBarMessage(day)}{" "}
             <Link href="/predictions/featured" className="underline">Browse all Featured picks</Link>.
           </p>
@@ -433,8 +466,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         )}
       </section>
 
-      <section>
-        <h2 className="mb-4 text-xl font-semibold">Popular leagues</h2>
+      <PremiumPanel kicker="Where we publish most" title="Popular leagues" id="home-popular" bare>
         <LeagueNav
           leagues={popular}
           empty={
@@ -443,7 +475,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               : "No leagues yet. Once tips are published, the leagues they cover appear here."
           }
         />
-      </section>
+      </PremiumPanel>
 
       {/* The homepage's one in-content ad, and it is here rather than under
           the hero on purpose. Everything above this point is a pick or an
@@ -454,39 +486,37 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           chrome. See the placement rule in AdPlacements.tsx. */}
       <AdLeaderboard />
 
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Recent results</h2>
-          <Link href="/livescores" className="text-sm text-brand hover:underline">Livescores →</Link>
-        </div>
+      <PremiumPanel
+        kicker="Final scores"
+        title="Recent results"
+        id="home-results"
+        aside={
+          <Link href="/livescores" className={ARROW}>
+            Livescores →
+          </Link>
+        }
+        bare
+      >
         <RecentResults linkIndex={matchIndex} />
-      </section>
+      </PremiumPanel>
 
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Browse by league</h2>
-          {leagues.length > 0 && <span className="text-sm text-gray-500">{leagues.length} leagues</span>}
-        </div>
+      <PremiumPanel
+        kicker="Every competition"
+        title="Browse by league"
+        id="home-leagues"
+        aside={leagues.length > 0 ? <span className="font-semibold text-gray-500">{leagues.length} leagues</span> : undefined}
+        bare
+      >
         <LeagueNav leagues={leagues} empty="No leagues yet. Once tips are published, the leagues they cover appear here." />
-      </section>
+      </PremiumPanel>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <Link href="/livescores" className="card hover:border-brand">
-          <div className="text-brand text-sm font-semibold">LIVE</div>
-          <div className="mt-1 text-lg font-semibold">Livescores</div>
-          <p className="text-sm text-gray-400">In-play scores across every major league.</p>
-        </Link>
-        <Link href="/bet-builder" className="card hover:border-brand">
-          <div className="text-brand text-sm font-semibold">BUILD</div>
-          <div className="mt-1 text-lg font-semibold">Bet builder</div>
-          <p className="text-sm text-gray-400">Combine picks into a clear selection list.</p>
-        </Link>
-        <Link href="/statspad" className="card hover:border-brand">
-          <div className="text-brand text-sm font-semibold">STATS</div>
-          <div className="mt-1 text-lg font-semibold">StatsPad</div>
-          <p className="text-sm text-gray-400">Team form, xG, over/under trends, head-to-head.</p>
-        </Link>
-      </section>
+      <PremiumPanel kicker="Tools" title="More from BetGenius" id="home-tools" bare>
+        <div className="grid gap-4 md:grid-cols-3">
+          <LinkTile href="/livescores" kicker="Live" title="Livescores" desc="In-play scores across every major league." />
+          <LinkTile href="/bet-builder" kicker="Build" title="Bet builder" desc="Combine picks into a clear selection list." />
+          <LinkTile href="/statspad" kicker="Stats" title="StatsPad" desc="Attack, defence, form and goal difference leaders by league." />
+        </div>
+      </PremiumPanel>
 
       {/* Last thing on the page, below every pick, every league list and the
           product cards. The Native Banner is the one unit whose whole design

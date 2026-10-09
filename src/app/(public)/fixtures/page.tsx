@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import FixturesClient from "./FixturesClient";
 import { getPublishedMatchIndex } from "@/lib/predictionScope";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
 
 // Server shell over the client page, for one reason: the match-page link
@@ -19,12 +20,12 @@ export default async function FixturesPage() {
   // useSearchParams, which opts its subtree into client-side rendering.
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold md:text-3xl">Football fixtures</h1>
-        <p className="mt-2 max-w-3xl text-sm text-gray-400">
-          Browse today&apos;s matches, upcoming kickoffs and recent results across every competition we cover.
-        </p>
-      </header>
+      <CategoryMasthead
+        kicker="Fixtures"
+        title="Football fixtures"
+        blurb="Browse today's matches, upcoming kickoffs and recent results across every competition we cover."
+        stats={[]}
+      />
       <Suspense fallback={null}>
         {/* Directly under the heading and the filter row — the first main
             content section — rather than beneath the whole fixture list. */}

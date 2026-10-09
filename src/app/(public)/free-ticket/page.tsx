@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
+import { Prose } from "@/components/Prose";
 import type { Metadata } from "next";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
@@ -86,6 +89,8 @@ export async function generateMetadata(): Promise<Metadata> {
   );
 }
 
+const BLURB = "One free pick from our next fixture, with the reasoning behind it. No account needed.";
+
 export default async function FreeTicketPage() {
   const row = await getFreeTicket();
 
@@ -97,14 +102,11 @@ export default async function FreeTicketPage() {
 
   if (!row || !isPublic) {
     return (
-      <div className="mx-auto max-w-2xl space-y-6">
-        <header className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand">Free tip</p>
-          <h1 className="text-2xl font-bold">Today&apos;s free ticket</h1>
-        </header>
-        <div className="card text-gray-400">
+      <div className="mx-auto max-w-2xl space-y-8">
+        <CategoryMasthead kicker="Free tip" title="Today's free ticket" blurb={BLURB} stats={[]} />
+        <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm leading-relaxed text-gray-400">
           No free tip is live right now — check back soon. New picks publish through the day, or browse{" "}
-          <Link href="/predictions/today" className="text-brand hover:underline">today&apos;s predictions</Link>.
+          <Link href="/predictions/today" className="font-semibold text-brand hover:underline">today&apos;s predictions</Link>.
         </div>
         <UpgradeCta />
       </div>
@@ -138,7 +140,7 @@ export default async function FreeTicketPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-8">
       <JsonLd
         data={[
           breadcrumbJsonLd([
@@ -175,21 +177,21 @@ export default async function FreeTicketPage() {
         ]}
       />
 
-      <header className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand">Free tip</p>
-        <h1 className="text-2xl font-bold">Today&apos;s free ticket</h1>
-        <p className="text-sm leading-6 text-gray-300">
-          One free pick from our next fixture, with the reasoning behind it. No account needed.
-        </p>
-      </header>
+      <CategoryMasthead
+        kicker="Free tip"
+        title="Today's free ticket"
+        blurb={BLURB}
+        stats={[{ label: "Confidence", value: `${row.confidence}%`, accent: true }]}
+      />
 
-      <PredictionCard p={shaped} />
+      <PremiumPanel kicker="The pick" title={home && away ? `${home} vs ${away}` : "Free tip"} id="free-pick" bare>
+        <PredictionCard p={shaped} />
+      </PremiumPanel>
 
       {row.matchPreview && (
-        <div className="card space-y-2">
-          <h2 className="text-sm uppercase text-gray-400">Match preview</h2>
-          <p className="text-sm leading-relaxed text-gray-300">{row.matchPreview}</p>
-        </div>
+        <PremiumPanel kicker="Context" title="Match preview" id="free-preview">
+          <Prose text={row.matchPreview} />
+        </PremiumPanel>
       )}
 
       <UpgradeCta />
@@ -200,16 +202,20 @@ export default async function FreeTicketPage() {
 /** Shown in both states — the fallback is still funnel traffic worth converting. */
 function UpgradeCta() {
   return (
-    <section className="card space-y-3 text-center">
-      <h2 className="text-lg font-bold">Want more tips like this? Upgrade to VIP</h2>
-      <p className="text-sm leading-6 text-gray-300">
-        VIP unlocks our full daily card — every market, every fixture, with the reasoning and confidence on each pick.
-      </p>
-      <Link href="/pricing" className="btn btn-primary">Upgrade to VIP</Link>
-      <p className="text-xs text-gray-400">
-        18+ only. Predictions are analysis, not guarantees — see our{" "}
-        <Link href="/betting-disclaimer" className="text-brand hover:underline">betting disclaimer</Link>.
-      </p>
+    <section className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card p-6 text-center sm:p-8">
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-60 w-60 -translate-x-1/2 -translate-y-1/3 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
+      <div className="relative space-y-3">
+        <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">VIP</div>
+        <h2 className="text-2xl font-black tracking-tight text-gray-100">Want more tips like this?</h2>
+        <p className="mx-auto max-w-md text-sm leading-6 text-gray-300">
+          VIP unlocks our full daily card — every market, every fixture, with the reasoning and confidence on each pick.
+        </p>
+        <Link href="/pricing" className="btn btn-primary">Upgrade to VIP</Link>
+        <p className="text-xs text-gray-400">
+          18+ only. Predictions are analysis, not guarantees — see our{" "}
+          <Link href="/betting-disclaimer" className="text-brand hover:underline">betting disclaimer</Link>.
+        </p>
+      </div>
     </section>
   );
 }

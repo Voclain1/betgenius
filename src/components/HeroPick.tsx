@@ -35,35 +35,41 @@ export function HeroPick({ pick }: { pick: HeroPickData }) {
   const href = slug ? `/predictions/match/${slug}` : null;
 
   const body = (
-    <div className="card space-y-3 border-brand/30 bg-brand-bg/70 backdrop-blur">
+    <div className="space-y-4 rounded-3xl border border-brand-border bg-brand-bg/80 p-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)] backdrop-blur">
       <div className="flex items-center justify-between gap-2">
-        <LeagueBadge leagueApiId={pick.leagueApiId} leagueName={pick.leagueName} />
+        <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand">Top pick today</span>
         {pick.kickoff && (
-          <span className="text-xs text-gray-500" suppressHydrationWarning>
+          <span className="text-xs font-semibold tabular-nums text-gray-400" suppressHydrationWarning>
             {new Date(pick.kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
       </div>
 
-      <div className="text-base font-semibold leading-snug">
-        <TeamCrest teamApiId={pick.homeTeamApiId} className="mr-1.5" />
-        {pick.homeTeam} <span className="text-gray-500">vs</span> <TeamCrest teamApiId={pick.awayTeamApiId} className="mr-1.5" />
-        {pick.awayTeam}
-      </div>
-
-      <div>
-        <div className="rounded-md bg-brand-card p-2">
-          <div className="text-[10px] uppercase text-gray-500">{pick.market}</div>
-          <div className="truncate text-sm font-semibold text-brand">{pick.pick}</div>
+      <div className="space-y-1.5">
+        <LeagueBadge leagueApiId={pick.leagueApiId} leagueName={pick.leagueName} />
+        <div className="text-lg font-black leading-snug tracking-tight text-gray-100">
+          <TeamCrest teamApiId={pick.homeTeamApiId} className="mr-1.5" />
+          {pick.homeTeam} <span className="font-bold text-gray-500">vs</span> <TeamCrest teamApiId={pick.awayTeamApiId} className="mr-1.5" />
+          {pick.awayTeam}
         </div>
       </div>
 
-      <div>
-        <div className="mb-1 flex justify-between text-xs text-gray-400">
-          <span>Confidence</span>
-          <span className="tabular-nums">{pick.confidence}%</span>
+      {/* Set like the prediction cards: market small, pick large, confidence as the big figure. */}
+      <div className="rounded-2xl bg-brand-card p-4 ring-1 ring-brand-border">
+        <div className="flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{pick.market}</div>
+            <div className="mt-1 break-words text-xl font-black leading-tight text-brand">{pick.pick}</div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-2xl font-black leading-none tabular-nums text-gray-100">
+              {pick.confidence}
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Confidence</div>
+          </div>
         </div>
-        <div className="h-1.5 w-full rounded-full bg-brand-border">
+        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-brand-border" aria-hidden>
           <div className="h-full rounded-full bg-brand" style={{ width: `${pick.confidence}%` }} />
         </div>
       </div>
