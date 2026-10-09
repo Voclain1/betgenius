@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TeamCrest } from "@/components/TeamCrest";
+import { MatchScoreClock } from "@/components/MatchScoreClock";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { teamCrestUrl } from "@/lib/leagues";
 import { leagueSlug, teamSlug } from "@/lib/slug";
@@ -21,7 +22,8 @@ function Side({ name, teamApiId }: { name: string; teamApiId: number | null }) {
 
 /**
  * The match page hero, in the team and competition pages' language: both
- * crests facing each other over a soft glow, the kickoff between them, the
+ * crests facing each other over a soft glow, the kickoff (or, once the
+ * match starts, the score) between them, the
  * fixture's facts in a stats strip underneath. Carries the page's one <h1>.
  */
 export function MatchMasthead({
@@ -36,7 +38,7 @@ export function MatchMasthead({
   venue,
   city,
   referee,
-  status,
+  finalScore,
   follow,
   children,
 }: {
@@ -51,8 +53,8 @@ export function MatchMasthead({
   venue?: string | null;
   city?: string | null;
   referee?: string | null;
-  /** Live or final score, once there is one. */
-  status?: React.ReactNode;
+  /** The stored final score of a settled prediction, so a finished match shows its result without waiting on the live feed. */
+  finalScore?: { home: number; away: number } | null;
   /** Follow buttons, directly under the title. */
   follow?: React.ReactNode;
   /** Follow buttons and attribution, under the facts. */
@@ -96,11 +98,14 @@ export function MatchMasthead({
 
         <div className="mt-6 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 sm:gap-6">
           <Side name={homeTeam} teamApiId={homeTeamApiId} />
-          <div className="text-center">
-            <div className="text-4xl font-black tabular-nums tracking-tight text-gray-100 sm:text-5xl">{TIME.format(kickoff)}</div>
-            {/* "SAT 10 OCT": the one place the kickoff is shown, in Lagos time like the clock above it. */}
-            <div className="mt-1.5 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">{DAY.format(kickoff).replace(",", "")}</div>
-          </div>
+          <MatchScoreClock
+            homeTeamApiId={homeTeamApiId}
+            awayTeamApiId={awayTeamApiId}
+            kickoff={kickoff.toISOString()}
+            timeLabel={TIME.format(kickoff)}
+            dayLabel={DAY.format(kickoff).replace(",", "")}
+            finalScore={finalScore}
+          />
           <Side name={awayTeam} teamApiId={awayTeamApiId} />
         </div>
 
@@ -116,7 +121,6 @@ export function MatchMasthead({
           <span className="block text-base font-bold tracking-normal text-gray-400 sm:inline sm:text-4xl sm:tracking-tight">prediction</span>
         </h1>
         {follow && <div className="mt-4 flex flex-wrap justify-center gap-2">{follow}</div>}
-        {status && <div className="mt-3 flex justify-center empty:hidden">{status}</div>}
       </div>
 
       {/* Hairlines from a 1px gap over the border colour, so a wrapped 2x2 grid is ruled both ways. */}

@@ -49,6 +49,8 @@ const SCOPED_SELECT = {
   matchPreview: true,
   analysisJson: true,
   outcome: true,
+  finalHomeScore: true,
+  finalAwayScore: true,
   publishedAt: true,
 } as const;
 
@@ -100,6 +102,9 @@ export type ScopedResult = {
     matchPreview: string | null;
     analysisJson: unknown;
     outcome: string;
+    /** Set once the prediction is settled. */
+    finalHomeScore: number | null;
+    finalAwayScore: number | null;
     publishedAt: Date | null;
   }[];
   stat: WinRateStat;
