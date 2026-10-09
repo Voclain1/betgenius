@@ -177,6 +177,23 @@ async function main() {
   const byDay = new Map<string, string[]>();
   for (const u of usage) byDay.set(u.day, [...(byDay.get(u.day) ?? []), `${u.path} ${u.count}`]);
   for (const [d, list] of byDay) console.log(`   ${d}: total ${usage.filter((u) => u.day === d).reduce((n, u) => n + u.count, 0)} — ${list.join(", ")}`);
+
+  console.log("\n11. Settlement by kickoff day (published picks), to see whether results after ~20 Sep are arriving:");
+  const settled = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", kickoff: { gte: new Date("2026-09-10T00:00:00Z"), lt: new Date(Date.now() - 6 * 3600_000) } },
+    select: { kickoff: true, outcome: true, settledAt: true, settlementNote: true },
+  });
+  const byKick = new Map<string, { n: number; pending: number; lastSettled: string; note: string }>();
+  for (const p of settled) {
+    const d = p.kickoff!.toISOString().slice(0, 10);
+    const e = byKick.get(d) ?? { n: 0, pending: 0, lastSettled: "", note: "" };
+    e.n++;
+    if (p.outcome === "PENDING") { e.pending++; if (!e.note && p.settlementNote) e.note = p.settlementNote.slice(0, 70); }
+    const sa = p.settledAt?.toISOString().slice(0, 16) ?? "";
+    if (sa > e.lastSettled) e.lastSettled = sa;
+    byKick.set(d, e);
+  }
+  for (const [d, e] of [...byKick].sort()) console.log(`   ${d}: ${e.n} picks, ${e.pending} pending, last settled ${e.lastSettled || "-"}${e.note ? ` — ${e.note}` : ""}`);
 }
 
 main()
