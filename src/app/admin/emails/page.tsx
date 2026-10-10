@@ -33,6 +33,7 @@ export default function AdminEmails() {
   const [body, setBody] = useState("");
   const [audience, setAudience] = useState("ALL_PAID");
   const [testTo, setTestTo] = useState("");
+  const [emails, setEmails] = useState("");
   const [busy, setBusy] = useState<"test" | "send" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -45,22 +46,33 @@ export default function AdminEmails() {
   }, [load]);
 
   const chosen = data?.audiences.find((a) => a.id === audience);
+  const isDirect = audience === "DIRECT";
+  // For pasted addresses the count is what was pasted; the server says which have no account.
+  const pasted = [...new Set(emails.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))].length;
+  const sendCount = isDirect ? pasted : chosen?.count ?? 0;
 
   const submit = async (action: "test" | "send") => {
-    if (action === "send" && !window.confirm(`Send “${subject}” to ${chosen?.count ?? 0} ${chosen?.count === 1 ? "person" : "people"}? This can't be undone.`)) return;
+    if (action === "send" && !window.confirm(`Send “${subject}” to ${sendCount} ${sendCount === 1 ? "person" : "people"}? This can't be undone.`)) return;
     setBusy(action);
     setMessage(null);
     try {
       const res = await fetch("/api/admin/emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, subject, body, audience, testTo }),
+        body: JSON.stringify({ action, subject, body, audience, testTo, emails }),
       });
       const json = await res.json();
       if (!res.ok) setMessage({ ok: false, text: json.error ?? "That didn't work." });
       else if (action === "test") setMessage({ ok: json.delivered, text: json.delivered ? `Test sent to ${json.to}.` : "The test couldn't be sent — see failures below." });
       else {
-        setMessage({ ok: true, text: `Queued for ${json.campaign.queued} ${json.campaign.queued === 1 ? "person" : "people"}; ${json.sentNow} sent so far. The rest go out over the next few minutes.` });
+        const missing: string[] = json.notFound ?? [];
+        setMessage({
+          ok: true,
+          text:
+            `Queued for ${json.campaign.queued} ${json.campaign.queued === 1 ? "person" : "people"}; ${json.sentNow} sent so far. The rest go out over the next few minutes.` +
+            (missing.length ? ` Not sent — no BetGenius account: ${missing.join(", ")}.` : ""),
+        });
+        setEmails("");
         setSubject("");
         setBody("");
       }
@@ -87,18 +99,29 @@ export default function AdminEmails() {
       )}
 
       <section className="card space-y-4">
-        <h2 className="section-heading">New announcement</h2>
+        <h2 className="section-heading">New email</h2>
         <label className="block space-y-1">
           <span className="text-sm text-gray-300">Send to</span>
           <select value={audience} onChange={(e) => setAudience(e.target.value)} className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">
             {data?.audiences.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.label} — {a.count}
+                {a.id === "DIRECT" ? a.label : `${a.label} — ${a.count}`}
               </option>
             ))}
           </select>
-          <span className="block text-xs text-gray-500">Counts leave out anyone who unsubscribed from announcements. Free accounts are not an audience: they never agreed to marketing email.</span>
+          <span className="block text-xs text-gray-500">
+            {isDirect
+              ? "A personal message to named customers, e.g. about their own payment. Up to 20, registered accounts only, no unsubscribe link — use an audience for anything you'd send to many people."
+              : "Counts leave out anyone who unsubscribed from announcements. Free accounts are not an audience: they never agreed to marketing email."}
+          </span>
         </label>
+        {isDirect && (
+          <label className="block space-y-1">
+            <span className="text-sm text-gray-300">Email addresses</span>
+            <textarea value={emails} onChange={(e) => setEmails(e.target.value)} rows={3} placeholder="customer@gmail.com" className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
+            <span className="block text-xs text-gray-500">Paste one or more, separated by commas or new lines. You can copy them from Payments or Subscribers.</span>
+          </label>
+        )}
         <label className="block space-y-1">
           <span className="text-sm text-gray-300">Subject</span>
           <input value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={150} className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
@@ -117,8 +140,8 @@ export default function AdminEmails() {
           <button type="button" disabled={!!busy || !subject.trim() || !body.trim()} onClick={() => submit("test")} className="btn btn-ghost disabled:opacity-50">
             {busy === "test" ? "Sending test…" : "Send test"}
           </button>
-          <button type="button" disabled={!!busy || !subject.trim() || !body.trim() || !chosen?.count} onClick={() => submit("send")} className="btn btn-primary disabled:opacity-50">
-            {busy === "send" ? "Sending…" : `Send to ${chosen?.count ?? 0}`}
+          <button type="button" disabled={!!busy || !subject.trim() || !body.trim() || !sendCount} onClick={() => submit("send")} className="btn btn-primary disabled:opacity-50">
+            {busy === "send" ? "Sending…" : `Send to ${sendCount}`}
           </button>
         </div>
         {message && <p className={`text-sm ${message.ok ? "text-gray-200" : "text-red-400"}`}>{message.text}</p>}
