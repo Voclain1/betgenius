@@ -32,6 +32,7 @@ export default function AdminEmails() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [audience, setAudience] = useState("ALL_PAID");
+  const [testTo, setTestTo] = useState("");
   const [busy, setBusy] = useState<"test" | "send" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -53,7 +54,7 @@ export default function AdminEmails() {
       const res = await fetch("/api/admin/emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, subject, body, audience }),
+        body: JSON.stringify({ action, subject, body, audience, testTo }),
       });
       const json = await res.json();
       if (!res.ok) setMessage({ ok: false, text: json.error ?? "That didn't work." });
@@ -107,9 +108,14 @@ export default function AdminEmails() {
           <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={10} className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2 leading-6" />
           <span className="block text-xs text-gray-500">Plain text. A blank line starts a new paragraph. An unsubscribe link and the 18+ notice are added automatically.</span>
         </label>
+        <label className="block space-y-1">
+          <span className="text-sm text-gray-300">Send test to</span>
+          <input type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="Your own login email" className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
+          <span className="block text-xs text-gray-500">Leave empty to use the email you are signed in with.</span>
+        </label>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={!!busy || !subject.trim() || !body.trim()} onClick={() => submit("test")} className="btn btn-ghost disabled:opacity-50">
-            {busy === "test" ? "Sending test…" : "Send test to me"}
+            {busy === "test" ? "Sending test…" : "Send test"}
           </button>
           <button type="button" disabled={!!busy || !subject.trim() || !body.trim() || !chosen?.count} onClick={() => submit("send")} className="btn btn-primary disabled:opacity-50">
             {busy === "send" ? "Sending…" : `Send to ${chosen?.count ?? 0}`}
