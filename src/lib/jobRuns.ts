@@ -51,6 +51,10 @@ export const JOB_GENERATION_DISCOVERY = "generation-discovery" as const;
  */
 export const JOB_NOTIFICATIONS_DISPATCH = "notifications-dispatch" as const;
 export const JOB_NOTIFICATIONS_REMINDERS = "notifications-reminders" as const;
+/** Email queueing and sending, run inside the notifications dispatch request. See lib/mail/dispatch. */
+export const JOB_EMAIL_DISPATCH = "email-dispatch" as const;
+/** The hourly read-only Paystack listing the email pass does. See lib/mail/producers. */
+export const JOB_PAYSTACK_SYNC = "paystack-sync" as const;
 /**
  * The Match Insights refresh. Defined here with the other job names rather than
  * in insightRefresh.ts, which re-exports it: that module pulls in the provider
@@ -73,6 +77,8 @@ export const KNOWN_JOBS = [
   JOB_REFRESH_INSIGHTS,
   JOB_NOTIFICATIONS_REMINDERS,
   JOB_NOTIFICATIONS_DISPATCH,
+  JOB_EMAIL_DISPATCH,
+  JOB_PAYSTACK_SYNC,
 ] as const;
 
 export type JobRunInput = {

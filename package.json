@@ -37,6 +37,7 @@
     "check:ads": "tsx scripts/check-ad-placement.ts",
     "check:analytics": "tsx scripts/check-analytics-events.ts",
     "check:consent": "tsx scripts/check-consent.ts",
+    "check:email": "tsx scripts/check-email.ts",
     "check:robots": "tsx scripts/check-robots-scoping.ts",
     "check:sitemap-scoping": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-sitemap-scoping.tsx",
     "check:auth-cookies": "tsx scripts/check-auth-cookies.ts",
