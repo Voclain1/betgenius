@@ -122,7 +122,14 @@ export function receiptEmail(input: { tier: PaidTier; amountNgn: number; referen
 }
 
 /** Paystack categories this email speaks to, and what each one tells the payer. */
-export type PaymentProblem = "ABANDONED" | "ISSUER_DECLINE" | "INSUFFICIENT_FUNDS" | "FRAUD_BLOCK" | "GATEWAY_FAILURE" | "UNKNOWN_FAILURE";
+/**
+ * TIMED_OUT is not a Paystack category: it is a failure whose response says the
+ * order expired ("The order was closed due to timeout") — the payer chose a
+ * method such as OPay or a bank app and the approval was not completed in
+ * time. failureCategory files it under GATEWAY_FAILURE by its "timeout" text,
+ * but telling the payer "the provider had a problem" would be wrong.
+ */
+export type PaymentProblem = "ABANDONED" | "ISSUER_DECLINE" | "INSUFFICIENT_FUNDS" | "FRAUD_BLOCK" | "GATEWAY_FAILURE" | "TIMED_OUT" | "UNKNOWN_FAILURE";
 
 /**
  * How to reach a person. Replies only reach someone when a support inbox is
@@ -149,6 +156,10 @@ const problemCopy = (): Record<PaymentProblem, { heading: string; body: string }
   FRAUD_BLOCK: {
     heading: "Your payment was stopped by a security check",
     body: `Paystack's automatic security checks stopped this payment before it completed, so your plan hasn't changed. This is not a problem with your bank. Please try again with bank transfer or USSD, or ${contactUs()} and we'll sort it out with you.`,
+  },
+  TIMED_OUT: {
+    heading: "Your payment timed out",
+    body: "The payment wasn't approved in time, so it was cancelled and your plan hasn't changed. This happens when the approval step — in your OPay or bank app, or a transfer — isn't finished within a few minutes. When you try again, keep the payment page open and approve the payment straight away.",
   },
   GATEWAY_FAILURE: {
     heading: "Your payment didn't go through",

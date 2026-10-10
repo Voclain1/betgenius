@@ -15,7 +15,20 @@ export const REMINDER_LEAD_MS = 3 * DAY;
 export const PROBLEM_CATEGORIES: PaymentProblem[] = ["ABANDONED", "ISSUER_DECLINE", "INSUFFICIENT_FUNDS", "FRAUD_BLOCK", "GATEWAY_FAILURE", "UNKNOWN_FAILURE"];
 export const PROBLEM_DELAY_MS = 45 * 60_000;
 
-export type ProblemAttempt = { reference: string; userId: string | null; tier: string | null; category: string; occurredAt: Date };
+export type ProblemAttempt = {
+  reference: string;
+  userId: string | null;
+  tier: string | null;
+  category: string;
+  gatewayResponse?: string | null;
+  occurredAt: Date;
+};
+
+/** What the payer is told. The category, except an expired order, which reads as a provider fault and is not one. */
+export function problemFor(a: Pick<ProblemAttempt, "category" | "gatewayResponse">): PaymentProblem {
+  if (/time(d)?\s?out/i.test(a.gatewayResponse ?? "") && a.category !== "ABANDONED") return "TIMED_OUT";
+  return a.category as PaymentProblem;
+}
 
 /**
  * Which attempts deserve a payment-problem email: pure, so the rules are

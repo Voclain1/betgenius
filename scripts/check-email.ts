@@ -6,7 +6,7 @@ process.env.NEXTAUTH_SECRET ||= "check-email-secret";
 async function main() {
   const { unsubscribeToken, readUnsubscribeToken } = await import("../src/lib/mail/unsubscribe");
   const t = await import("../src/lib/mail/templates");
-  const { problemsToEmail, inDailyPicksWindow, PROBLEM_DELAY_MS } = await import("../src/lib/mail/rules");
+  const { problemsToEmail, problemFor, inDailyPicksWindow, PROBLEM_DELAY_MS } = await import("../src/lib/mail/rules");
   const { retryDelayMs } = await import("../src/lib/mail/outbox");
 
   // --- Unsubscribe tokens: round-trip, and nothing else verifies.
@@ -46,7 +46,7 @@ async function main() {
   assert.match(picks.text, /15:00/, "kickoff shown in Lagos time (UTC+1)");
   assert.match(picks.text, /@ 1\.85/);
   assert.match(picks.html, /Unsubscribe/);
-  for (const problem of ["ABANDONED", "ISSUER_DECLINE", "INSUFFICIENT_FUNDS", "FRAUD_BLOCK", "GATEWAY_FAILURE", "UNKNOWN_FAILURE"] as const) {
+  for (const problem of ["ABANDONED", "ISSUER_DECLINE", "INSUFFICIENT_FUNDS", "FRAUD_BLOCK", "GATEWAY_FAILURE", "TIMED_OUT", "UNKNOWN_FAILURE"] as const) {
     const e = t.paymentProblemEmail({ tier: "VIP", problem, reference: "bg_VIP_ref" });
     assert.match(e.text, /bg_VIP_ref/);
     assert.match(e.text, /\/pricing/);
@@ -80,6 +80,13 @@ async function main() {
   );
   assert.deepEqual(chosen.map((c) => [c.userId, c.reference]), [["a", ref(2)]]);
   assert.ok(PROBLEM_DELAY_MS >= 30 * 60_000, "wait long enough for a retry before emailing");
+
+  // An expired order (the real 10 Oct 2026 OPay case) is not a provider fault.
+  assert.equal(problemFor({ category: "GATEWAY_FAILURE", gatewayResponse: "The order was closed due to timeout" }), "TIMED_OUT");
+  assert.equal(problemFor({ category: "GATEWAY_FAILURE", gatewayResponse: "Transaction timed out" }), "TIMED_OUT");
+  assert.equal(problemFor({ category: "GATEWAY_FAILURE", gatewayResponse: "System malfunction" }), "GATEWAY_FAILURE");
+  assert.equal(problemFor({ category: "ISSUER_DECLINE", gatewayResponse: "Declined" }), "ISSUER_DECLINE");
+  assert.doesNotMatch(t.paymentProblemEmail({ tier: "VIP", problem: "TIMED_OUT", reference: "r" }).text, /temporary problem/);
 
   // --- Daily picks window, Lagos time (UTC+1).
   assert.equal(inDailyPicksWindow(new Date("2026-10-10T07:59:00Z")), false, "08:59 Lagos");

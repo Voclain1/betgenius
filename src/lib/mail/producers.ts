@@ -15,11 +15,10 @@ import {
   paymentProblemEmail,
   receiptEmail,
   renewalReminderEmail,
-  type PaymentProblem,
   type PickLine,
 } from "@/lib/mail/templates";
 import type { PaidTier } from "@/lib/pricing";
-import { PROBLEM_CATEGORIES, REMINDER_LEAD_MS, inDailyPicksWindow, lagosHour, problemsToEmail, type ProblemAttempt } from "@/lib/mail/rules";
+import { PROBLEM_CATEGORIES, REMINDER_LEAD_MS, inDailyPicksWindow, lagosHour, problemFor, problemsToEmail, type ProblemAttempt } from "@/lib/mail/rules";
 
 /**
  * The automatic emails. Each producer asks one question of the live data —
@@ -114,7 +113,7 @@ export async function queuePaymentProblems(now: Date): Promise<number> {
   const [attempts, successes] = await Promise.all([
     prisma.paymentAttempt.findMany({
       where: { occurredAt: { gte: since }, category: { in: PROBLEM_CATEGORIES } },
-      select: { reference: true, userId: true, tier: true, category: true, occurredAt: true },
+      select: { reference: true, userId: true, tier: true, category: true, gatewayResponse: true, occurredAt: true },
       take: 500,
     }),
     prisma.paymentAttempt.findMany({ where: { occurredAt: { gte: since }, status: "success" }, select: { userId: true, occurredAt: true } }),
@@ -141,7 +140,7 @@ export async function queuePaymentProblems(now: Date): Promise<number> {
       kind: "PAYMENT_PROBLEM",
       userId: user.id,
       to: user.email,
-      email: paymentProblemEmail({ tier: a.tier as PaidTier, problem: a.category as PaymentProblem, reference: a.reference }),
+      email: paymentProblemEmail({ tier: a.tier as PaidTier, problem: problemFor(a), reference: a.reference }),
       expiresAt: new Date(now.getTime() + DAY),
     });
   }
