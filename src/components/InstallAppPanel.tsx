@@ -75,7 +75,11 @@ export function InstallAppPanel() {
           <button type="button" onClick={install} disabled={status === "busy"} className="btn btn-primary w-full justify-center text-base disabled:opacity-60 sm:w-auto">
             {status === "busy" ? "Opening…" : "Install the app"}
           </button>
-          {status === "dismissed" && <p className="text-sm text-gray-400">No problem — you can install it from here whenever you like.</p>}
+          <p className="text-sm text-gray-400">
+            {status === "dismissed"
+              ? "No problem — you can install it from here whenever you like."
+              : "It installs like any other app and appears with your apps."}
+          </p>
         </div>
       )}
 
@@ -90,9 +94,11 @@ export function InstallAppPanel() {
         />
       )}
 
-      {platform === "android" && (
+      {/* With the one-tap install on offer, the button is the whole story —
+          the menu steps are only for browsers that can't offer it. */}
+      {platform === "android" && !canPrompt && (
         <Steps
-          title={canPrompt ? "Or from your browser menu" : "On Android"}
+          title="On Android"
           steps={[
             <>Open this page in <strong className="text-gray-100">Chrome</strong> (Samsung Internet and Edge work too).</>,
             <>Tap the <MoreVertical size={15} className="mx-0.5 inline align-[-2px]" aria-hidden="true" /> menu at the top right.</>,
