@@ -16,6 +16,21 @@ trackEvent("begin_checkout", { currency: "NGN", value: 5000 });
 assert.deepEqual(calls, [["event", "begin_checkout", { currency: "NGN", value: 5000 }]]);
 delete (globalThis as any).window;
 
+// Conversions are forwarded to the Meta Pixel under its standard names; other
+// events stay GA4-only. Either tag may be absent without breaking the other.
+const meta: unknown[][] = [];
+(globalThis as any).window = { fbq: (...args: unknown[]) => meta.push(args) };
+trackEvent("sign_up", { method: "google" });
+trackEvent("begin_checkout", { currency: "NGN", value: 5000, items: [{ item_id: "vip" }] });
+trackEvent("purchase", { transaction_id: "ref_1", currency: "NGN", value: 5000, items: [{ item_id: "vip" }] });
+trackEvent("page_scroll", {});
+assert.deepEqual(meta, [
+  ["track", "CompleteRegistration", { content_name: "google" }],
+  ["track", "InitiateCheckout", { currency: "NGN", value: 5000, content_ids: ["vip"], content_type: "product" }],
+  ["track", "Purchase", { currency: "NGN", value: 5000, content_ids: ["vip"], content_type: "product" }, { eventID: "ref_1" }],
+]);
+delete (globalThis as any).window;
+
 const register = code("src/app/(public)/register/page.tsx");
 assert.ok(register.indexOf('trackEvent("sign_up"') > register.indexOf("if (!res.ok)"), "email sign_up follows a successful response");
 assert.match(register, /trackEvent\("sign_up", \{ method: "email" \}\)/);
@@ -39,4 +54,4 @@ assert.match(payment, /transaction_id: reference/);
 assert.match(payment, /sessionStorage\.getItem\(key\)/);
 assert.match(payment, /sessionStorage\.setItem\(key, "1"\)/);
 
-console.log("Analytics event checks passed: email sign-up, new Google sign-up, checkout and confirmed purchase.");
+console.log("Analytics event checks passed (GA4 + Meta Pixel): email sign-up, new Google sign-up, checkout and confirmed purchase.");
