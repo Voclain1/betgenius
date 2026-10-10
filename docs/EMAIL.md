@@ -15,6 +15,8 @@ Operational notes for whoever runs BetGenius email. Code lives in
 | Announcement | Written and sent from `/admin/emails` to paid audiences only | Yes |
 | Admin alert | To every admin, when Paystack shows a paid BetGenius checkout that has unlocked nothing after 30 min | Admins only |
 
+The payment-problem email names what happened (bank declined, fraud check, unfinished, timed out…). A failure whose response says the order timed out, such as "The order was closed due to timeout", gets its own wording even though the admin view files it under Gateway failure. It means the OPay or bank-app approval wasn't finished in time, not that Paystack had a fault.
+
 Free accounts get account emails only (password reset). They are not an
 announcement audience, because they never agreed to marketing email.
 
