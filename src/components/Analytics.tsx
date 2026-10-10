@@ -1,4 +1,5 @@
 import Script from "next/script";
+import { CONSENT_STORAGE_KEY } from "@/lib/consent";
 
 /**
  * Google Analytics 4.
@@ -64,8 +65,17 @@ export function Analytics() {
     <>
       <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
       <Script id="ga-init" strategy="afterInteractive">
+        {/* Consent Mode: everything denied until the visitor accepts in the
+            cookie banner (lib/consent.ts), so no GA cookies are set before
+            then. A stored "granted" from an earlier visit is applied here,
+            before config, so returning visitors are measured from the first
+            hit. The key is read inline because this runs before React. */}
         {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
+var bgConsent = null;
+try { bgConsent = localStorage.getItem('${CONSENT_STORAGE_KEY}'); } catch (e) {}
+var bgGranted = bgConsent === 'granted' ? 'granted' : 'denied';
+gtag('consent', 'default', { analytics_storage: bgGranted, ad_storage: bgGranted, ad_user_data: bgGranted, ad_personalization: bgGranted });
 gtag('js', new Date());
 gtag('config', '${GA_ID}');`}
       </Script>

@@ -1,4 +1,5 @@
 import Script from "next/script";
+import { CONSENT_STORAGE_KEY } from "@/lib/consent";
 
 /**
  * Meta (Facebook) Pixel, for attributing ad traffic and conversions.
@@ -15,6 +16,12 @@ import Script from "next/script";
  * VERCEL_ENV is set by Vercel itself to "production" only on the production
  * deployment, so everywhere else this renders nothing.
  *
+ * CONSENT. The pixel starts revoked — it sends nothing and sets no cookie —
+ * unless the visitor has accepted in the cookie banner (lib/consent.ts). The
+ * stored choice is read inline because this runs before React. The noscript
+ * image below is left out for the same reason: with JavaScript off there is
+ * no banner, so there can be no consent.
+ *
  * CLIENT-SIDE NAVIGATION. The stock snippet fires one PageView on load. App
  * Router navigations do not reload the document; fbevents.js listens to
  * history pushState itself and fires a PageView for each one, so nothing
@@ -27,9 +34,8 @@ export function MetaPixel() {
   if (process.env.VERCEL_ENV !== "production") return null;
 
   return (
-    <>
-      <Script id="meta-pixel" strategy="afterInteractive">
-        {`!function(f,b,e,v,n,t,s)
+    <Script id="meta-pixel" strategy="afterInteractive">
+      {`!function(f,b,e,v,n,t,s)
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
 if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
@@ -37,18 +43,9 @@ n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];
 s.parentNode.insertBefore(t,s)}(window, document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
+try { if (localStorage.getItem('${CONSENT_STORAGE_KEY}') !== 'granted') fbq('consent', 'revoke'); } catch (e) { fbq('consent', 'revoke'); }
 fbq('init', '${META_PIXEL_ID}');
 fbq('track', 'PageView');`}
-      </Script>
-      <noscript>
-        <img
-          height="1"
-          width="1"
-          style={{ display: "none" }}
-          alt=""
-          src={`https://www.facebook.com/tr?id=${META_PIXEL_ID}&ev=PageView&noscript=1`}
-        />
-      </noscript>
-    </>
+    </Script>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CookieSettingsLink } from "@/components/CookieConsent";
 
 const groups = [
   { title: "Company", links: [["About", "/about"], ["Contact", "/contact"], ["Methodology", "/methodology"], ["Editorial Policy", "/editorial-policy"]] },
@@ -28,6 +29,7 @@ export function SiteFooter() {
               <h2 className="text-sm font-semibold text-gray-100">{group.title}</h2>
               <ul className="mt-3 space-y-2">
                 {group.links.map(([label, href]) => <li key={href}><Link href={href} prefetch={false} className="text-sm text-gray-400 hover:text-brand">{label}</Link></li>)}
+                {group.title === "Legal" && <li><CookieSettingsLink /></li>}
               </ul>
             </nav>
           ))}
