@@ -18,9 +18,9 @@ import { CONSENT_STORAGE_KEY } from "@/lib/consent";
  *
  * CONSENT. The pixel starts revoked — it sends nothing and sets no cookie —
  * unless the visitor has accepted in the cookie banner (lib/consent.ts). The
- * stored choice is read inline because this runs before React. The noscript
- * image below is left out for the same reason: with JavaScript off there is
- * no banner, so there can be no consent.
+ * stored choice is read inline because this runs before React. The stock
+ * snippet's no-JavaScript image fallback is left out: with JavaScript off there is no
+ * banner, so there can be no consent.
  *
  * CLIENT-SIDE NAVIGATION. The stock snippet fires one PageView on load. App
  * Router navigations do not reload the document; fbevents.js listens to
