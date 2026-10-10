@@ -149,6 +149,19 @@ check("editorial desk: does not imply multiple or independent reviewers", editor
 check("editorial desk: uses the existing brand identity rather than a synthetic portrait", editorialTeam.includes("editorialDesk.image") && !editorialTeam.includes("AI-generated"));
 check("editorial desk: is not presented as named Person schema", !editorialTeam.includes('"@type": "Person"'));
 
+// --- Guide publishing architecture ---------------------------------------
+const guidesIndex = readFileSync(join(repoRoot, "src/app/(public)/guides/page.tsx"), "utf8");
+const guidePage = readFileSync(join(repoRoot, "src/app/(public)/guides/[slug]/page.tsx"), "utf8");
+const guideArticle = readFileSync(join(repoRoot, "src/components/GuideArticle.tsx"), "utf8");
+const guidesContent = readFileSync(join(repoRoot, "src/content/guides.tsx"), "utf8");
+const sitemapEntriesSource = readFileSync(join(repoRoot, "src/lib/sitemapEntries.ts"), "utf8");
+check("guides: index has unique metadata and canonical", guidesIndex.includes('title: "Football Prediction Guides"') && guidesIndex.includes('canonical: "/guides"'));
+check("guides: article emits breadcrumb and Article structured data", guidePage.includes("breadcrumbJsonLd") && guidePage.includes("articleJsonLd"));
+check("guides: mobile contents are folded and desktop contents remain visible", guideArticle.includes("<details") && guideArticle.includes("lg:hidden") && guideArticle.includes("hidden lg:block"));
+check("guides: visible reviewed date and organization attribution", guideArticle.includes("Reviewed {formatDate") && guideArticle.includes("<EditorialAttribution"));
+check("guides: first article has stable sections and related evidence links", guidesContent.includes('slug: "how-to-read-football-predictions"') && guidesContent.includes('href: "/track-record"') && guidesContent.includes('href: "/responsible-gambling"'));
+check("guides: index and published guides are sitemap entries", sitemapEntriesSource.includes('{ path: "/guides"') && sitemapEntriesSource.includes("GUIDES.map"));
+
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
 const lateUtc = new Date("2026-09-10T23:30:00Z");
