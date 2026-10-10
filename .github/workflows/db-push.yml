@@ -1,0 +1,67 @@
+# Push prisma/schema.prisma to the live database — by hand, additive only.
+#
+# WHY THIS EXISTS. The schema process is `prisma db push` (see
+# docs/MATCH_INSIGHTS_NOTIFICATIONS.md), and preflight's schema-sync check
+# fails any build whose schema declares something the database lacks. Pushing
+# used to need a laptop with the production URL in .env. This runs it from
+# GitHub with the repository secrets preflight already uses, so a schema change
+# can ship from anywhere.
+#
+# HOW TO USE. Actions → db-push → Run workflow, choosing the branch that adds
+# the tables or columns. Run it BEFORE merging that branch; the PR's preflight
+# turns green once the database has caught up.
+#
+# WHAT IT REFUSES. Anything that is not purely additive. The planned SQL is
+# printed first, and the job stops if it contains a DROP, a type change or a
+# rename — those need a human with a plan, not a button. `prisma db push`
+# without --accept-data-loss refuses data loss on its own as well; this is a
+# second, louder lock.
+
+name: db-push
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: db-push
+  cancel-in-progress: false
+
+jobs:
+  db-push:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Plan (what would change)
+        run: |
+          npx prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --script > plan.sql
+          echo "----- planned SQL -----"
+          cat plan.sql
+          echo "-----------------------"
+          if grep -Eiq '\bDROP\b|\bALTER COLUMN\b.*\bTYPE\b|\bRENAME\b|\bALTER TYPE\b' plan.sql; then
+            echo "::error::The plan is not purely additive (DROP / type change / rename). Not pushing."
+            exit 1
+          fi
+          if ! grep -q '[A-Za-z]' plan.sql || grep -q 'This is an empty migration' plan.sql; then
+            echo "Nothing to push: the database already matches the schema."
+          fi
+
+      - name: Push (additive only; refuses data loss)
+        run: npx prisma db push --skip-generate
+
+      - name: Verify
+        run: npm run check:schema
