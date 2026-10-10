@@ -13,6 +13,7 @@ Operational notes for whoever runs BetGenius email. Code lives in
 | Access ended | Within a day after access ends | No |
 | Daily picks | Once a Lagos day, from 09:00 to 20:00, to active subscribers, on days with upcoming VIP/Premium picks. Premium gets Premium and VIP picks | Yes |
 | Announcement | Written and sent from `/admin/emails` to paid audiences only | Yes |
+| Direct message | Written on `/admin/emails` with "Specific people": pasted addresses of registered accounts, up to 20, e.g. a customer whose payment failed | No: personal correspondence about their account |
 | Admin alert | To every admin, when Paystack shows a paid BetGenius checkout that has unlocked nothing after 30 min | Admins only |
 
 The payment-problem email names what happened (bank declined, fraud check, unfinished, timed out…). A failure whose response says the order timed out, such as "The order was closed due to timeout", gets its own wording even though the admin view files it under Gateway failure. It means the OPay or bank-app approval wasn't finished in time, not that Paystack had a fault.

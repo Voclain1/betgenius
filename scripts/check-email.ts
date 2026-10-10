@@ -8,6 +8,7 @@ async function main() {
   const t = await import("../src/lib/mail/templates");
   const { problemsToEmail, problemFor, inDailyPicksWindow, PROBLEM_DELAY_MS } = await import("../src/lib/mail/rules");
   const { retryDelayMs } = await import("../src/lib/mail/outbox");
+  const { parseEmailList, DIRECT_MAX } = await import("../src/lib/mail/campaigns");
 
   // --- Unsubscribe tokens: round-trip, and nothing else verifies.
   const token = unsubscribeToken("user_1", "dailyPicks");
@@ -93,6 +94,13 @@ async function main() {
   assert.equal(inDailyPicksWindow(new Date("2026-10-10T08:00:00Z")), true, "09:00 Lagos");
   assert.equal(inDailyPicksWindow(new Date("2026-10-10T18:59:00Z")), true, "19:59 Lagos");
   assert.equal(inDailyPicksWindow(new Date("2026-10-10T19:00:00Z")), false, "20:00 Lagos");
+
+  // Pasted addresses for a direct message: any separator, de-duplicated, lower-cased.
+  assert.deepEqual(parseEmailList(" A@x.com, b@y.com;\nA@X.com  c@z.com\n"), ["a@x.com", "b@y.com", "c@z.com"]);
+  assert.deepEqual(parseEmailList("   "), []);
+  assert.ok(DIRECT_MAX <= 20, "a direct message is correspondence, not a broadcast");
+  // A direct message carries no unsubscribe link.
+  assert.doesNotMatch(t.announcementEmail({ subject: "About your payment", body: "Hi", unsubscribeUrl: null }).html, /Unsubscribe/);
 
   assert.deepEqual([1, 2, 3, 4].map(retryDelayMs), [2, 4, 8, 16].map((m) => m * 60_000));
 
