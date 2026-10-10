@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { cupSupports } from "@/lib/cupConfig";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
 
 const STANDINGS_COMPETITIONS = LEAGUE_CATALOGUE.filter((league) => cupSupports(league.id, "standings"));
@@ -46,6 +47,8 @@ const STAT_COLUMNS: { key: string; label: string; value: (r: Row) => number | st
   { key: "GD", label: "GD", value: (r) => r.goalsDiff },
 ];
 
+const FORM_TONE: Record<string, string> = { W: "text-emerald-400", D: "text-gray-400", L: "text-red-400" };
+
 export default function StandingsPage() {
   const [leagueId, setLeagueId] = useState(39);
   const [rows, setRows] = useState<Row[]>([]);
@@ -69,52 +72,62 @@ export default function StandingsPage() {
 
   const shown = rows.slice(0, visible);
   const remaining = rows.length - shown.length;
+  const league = STANDINGS_COMPETITIONS.find((l) => l.id === leagueId);
+  const leader = !loading ? rows[0] : undefined;
+  const mostPlayed = rows.reduce((m, r) => Math.max(m, r.all.played), 0);
+  const moreButton = "w-full rounded-2xl border border-brand-border bg-brand-card px-4 py-3 text-sm font-bold text-gray-200 transition hover:border-brand hover:text-brand";
 
   return (
-    <div className="space-y-4">
-      {/* Stacked on mobile so the select gets the full width rather than
-          being squeezed beside the heading; side-by-side from sm up. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Standings</h1>
-
-        {/* Native <select>, deliberately: on a phone this opens the OS picker,
-            which handles a 36-league grouped list better than anything we'd
-            build — it's scrollable, searchable by keypress, and accessible for
-            free. What was wrong wasn't the element, it was that it kept the
-            browser's default chrome. appearance-none removes that, and the
-            brand tokens, focus ring and our own chevron replace it, so it
-            reads as ours while staying a real select. */}
-        <label className="relative block w-full sm:w-72">
-          <span className="sr-only">League</span>
-          <select
-            value={leagueId}
-            onChange={(e) => setLeagueId(Number(e.target.value))}
-            className="w-full appearance-none rounded-lg border border-brand-border bg-brand-card py-2.5 pl-3 pr-10 text-sm font-medium text-gray-100 transition hover:border-brand/50 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/40"
-          >
-            {LEAGUE_TIERS.map((g) => (
-              <optgroup key={g.tier} label={g.label} className="bg-brand-bg text-gray-300">
-                {g.leagues.map((l) => (
-                  <option key={l.id} value={l.id} className="bg-brand-bg text-gray-100">
-                    {l.name}
-                    {l.country !== "World" ? ` (${l.country})` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <ChevronDown
-            size={16}
-            aria-hidden="true"
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-brand"
-          />
-        </label>
-      </div>
+    <div className="space-y-6">
+      <CategoryMasthead
+        kicker="League tables"
+        title="Standings"
+        blurb={league ? `${league.name}${league.country !== "World" ? ` (${league.country})` : ""} — the current table, refreshed from the live feed.` : "Current league tables across the competitions we cover."}
+        stats={
+          leader
+            ? [
+                { label: "Leader", value: leader.team.name, accent: true },
+                { label: "Points", value: String(leader.points) },
+                { label: "Teams", value: String(rows.length) },
+                { label: "Most played", value: String(mostPlayed) },
+              ]
+            : []
+        }
+        actions={
+          /* Native <select>, deliberately: on a phone this opens the OS picker,
+             which handles a 36-league grouped list better than anything we'd
+             build — it's scrollable, searchable by keypress, and accessible for
+             free. appearance-none removes the browser chrome, and the brand
+             tokens, focus ring and our own chevron replace it, so it reads as
+             ours while staying a real select. */
+          <label className="relative block w-full sm:w-80">
+            <span className="sr-only">League</span>
+            <select
+              value={leagueId}
+              onChange={(e) => setLeagueId(Number(e.target.value))}
+              className="w-full appearance-none rounded-2xl border border-brand-border bg-brand-bg py-3 pl-4 pr-10 text-sm font-bold text-gray-100 transition hover:border-brand/50 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/40"
+            >
+              {LEAGUE_TIERS.map((g) => (
+                <optgroup key={g.tier} label={g.label} className="bg-brand-bg text-gray-300">
+                  {g.leagues.map((l) => (
+                    <option key={l.id} value={l.id} className="bg-brand-bg text-gray-100">
+                      {l.name}
+                      {l.country !== "World" ? ` (${l.country})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <ChevronDown size={16} aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-brand" />
+          </label>
+        }
+      />
 
       {/* After the first main content section — the heading and the league
           picker — rather than under the table at the foot of the page. */}
       <AdHalfBanner />
 
-      {loading && <div className="card text-gray-400">Loading…</div>}
+      {loading && <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">Loading…</div>}
 
       {!loading && rows.length > 0 && (
         <>
@@ -124,20 +137,20 @@ export default function StandingsPage() {
               destroys, so the table stays a table and the position/club cell
               is pinned left instead: scroll to GF and you can still see whose
               row you're reading. */}
-          <div className="overflow-x-auto rounded-xl border border-brand-border">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
+          <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="border-b border-brand-border text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
                 <tr>
-                  <th scope="col" className="sticky left-0 z-10 bg-brand-card px-3 py-2">
+                  <th scope="col" className="sticky left-0 z-10 bg-brand-card px-4 py-3">
                     Team
                   </th>
                   {STAT_COLUMNS.map((c) => (
-                    <th scope="col" key={c.key} className="px-2 py-2 text-right">
+                    <th scope="col" key={c.key} className="px-2 py-3 text-right">
                       {c.label}
                     </th>
                   ))}
-                  <th scope="col" className="px-3 py-2 text-right">Pts</th>
-                  <th scope="col" className="px-3 py-2">Form</th>
+                  <th scope="col" className="px-3 py-3 text-right">Pts</th>
+                  <th scope="col" className="px-4 py-3">Form</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-border">
@@ -146,23 +159,31 @@ export default function StandingsPage() {
                     {/* Rank and club share the pinned cell — two sticky columns
                         would need hard-coded offsets, and they read as one
                         thing anyway. */}
-                    <th scope="row" className="sticky left-0 z-10 bg-brand-bg px-3 py-2 text-left font-normal">
-                      <div className="flex items-center gap-2">
-                        <span className="w-4 shrink-0 text-right text-xs tabular-nums text-gray-500">{r.rank}</span>
+                    <th scope="row" className="sticky left-0 z-10 bg-brand-card px-4 py-3 text-left font-normal">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-5 shrink-0 text-right text-xs font-bold tabular-nums text-gray-500">{r.rank}</span>
                         {r.team.logo && (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={r.team.logo} alt="" width={18} height={18} loading="lazy" className="shrink-0 object-contain" />
+                          <img src={r.team.logo} alt="" width={20} height={20} loading="lazy" className="shrink-0 object-contain" />
                         )}
-                        <span className="whitespace-nowrap font-medium">{r.team.name}</span>
+                        <span className="whitespace-nowrap font-bold text-gray-100">{r.team.name}</span>
                       </div>
                     </th>
                     {STAT_COLUMNS.map((c) => (
-                      <td key={c.key} className="px-2 py-2 text-right tabular-nums text-gray-300">
+                      <td key={c.key} className="px-2 py-3 text-right tabular-nums text-gray-300">
                         {c.value(r)}
                       </td>
                     ))}
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-brand">{r.points}</td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-gray-400">{r.form || ""}</td>
+                    <td className="px-3 py-3 text-right text-base font-black tabular-nums text-gray-100">{r.points}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="flex gap-1 text-[11px] font-black">
+                        {(r.form || "").split("").map((ch, i) => (
+                          <span key={i} className={FORM_TONE[ch] ?? "text-gray-500"}>
+                            {ch}
+                          </span>
+                        ))}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -171,20 +192,12 @@ export default function StandingsPage() {
 
           {/* Same control the fixtures lists and league standings panel use. */}
           {remaining > 0 && (
-            <button
-              type="button"
-              onClick={() => setVisible((v) => v + PAGE_SIZE)}
-              className="btn btn-ghost w-full justify-center text-sm"
-            >
+            <button type="button" onClick={() => setVisible((v) => v + PAGE_SIZE)} className={moreButton}>
               Show more ({remaining} more)
             </button>
           )}
           {visible > PAGE_SIZE && (
-            <button
-              type="button"
-              onClick={() => setVisible(PAGE_SIZE)}
-              className="btn btn-ghost w-full justify-center text-sm"
-            >
+            <button type="button" onClick={() => setVisible(PAGE_SIZE)} className={moreButton}>
               Show less
             </button>
           )}
@@ -192,7 +205,7 @@ export default function StandingsPage() {
       )}
 
       {!loading && rows.length === 0 && (
-        <div className="card text-gray-400">No standings available (check API key).</div>
+        <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">No standings available (check API key).</div>
       )}
     </div>
   );

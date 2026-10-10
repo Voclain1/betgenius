@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import {
   CATEGORY_SLUGS as SLUGS,
   CATEGORY_NAMES as NAMES,
@@ -16,6 +17,8 @@ import {
   feedDayHref,
 } from "@/lib/categoryPredictions";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { getCategoryTrackRecord } from "@/lib/trackRecord";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
@@ -127,11 +130,29 @@ export default async function CategoryPage(
           matchPreview: null,
           confidence: null,
           odds: null,
+          overUnder: null,
           locked: true,
         },
   );
 
   const slug = params.category;
+  // TODAY's shared blurb says "every match happening today", which is the one
+  // line that stops being true on the yesterday/tomorrow tabs. Every other
+  // category describes what it selects, not when.
+  const blurb = cat === "TODAY" && day !== "today" ? "Every match on that day's card." : BLURBS[cat];
+
+  // The masthead's numbers, all read from the rows listed below (or the feed's
+  // settled record, gated on sample size). A locked feed shows no confidence:
+  // the number would describe picks the reader cannot see.
+  const record = await getCategoryTrackRecord(cat);
+  const competitions = new Set(rows.map((r) => r.leagueApiId ?? r.leagueName ?? r.fixture?.league?.name).filter((v) => v != null)).size;
+  const topConfidence = canView ? Math.max(0, ...rows.map((r) => r.confidence ?? 0)) : 0;
+  const stats: { label: string; value: string; accent?: boolean }[] = [
+    { label: shaped.length === 1 ? "Pick" : "Picks", value: String(shaped.length) },
+    { label: competitions === 1 ? "Competition" : "Competitions", value: String(competitions) },
+  ];
+  if (topConfidence > 0) stats.push({ label: "Top confidence", value: `${topConfidence}%` });
+  if (record?.rate != null) stats.push({ label: "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
@@ -174,7 +195,7 @@ export default async function CategoryPage(
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 sm:space-y-8">
       <JsonLd
         data={[
           breadcrumbJsonLd([
@@ -185,23 +206,28 @@ export default async function CategoryPage(
           ...events,
         ]}
       />
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">
-            {cat === "TODAY" ? "Football predictions today" : NAMES[cat]}
-          </h1>
-          {cat === "TODAY" && (
-            <p className="mt-1 text-sm text-gray-400">{dateLabel} · West Africa Time</p>
-          )}
-          <FollowButton targetType="CATEGORY" targetKey={cat} label={`${NAMES[cat]} tips`} />
-        </div>
-        {!canView && (cat === "VIP" || cat === "PREMIUM") && (
-          <Link href="/pricing" className="btn btn-primary">Unlock {cat === "VIP" ? "VIP" : "Premium"}</Link>
-        )}
-        {needsRegistration && (
-          <Link href="/register" className="btn btn-primary">Sign up free</Link>
-        )}
-      </div>
+      <CategoryMasthead
+        kicker="Predictions"
+        title={cat === "TODAY" ? "Football predictions today" : NAMES[cat]}
+        blurb={blurb}
+        dateLabel={`${dateLabel} · West Africa Time`}
+        stats={stats}
+        actions={
+          <>
+            <FollowButton targetType="CATEGORY" targetKey={cat} label={`${NAMES[cat]} tips`} />
+            {!canView && (cat === "VIP" || cat === "PREMIUM") && (
+              <Link href="/pricing" className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-black text-on-brand transition hover:bg-brand-dark">
+                Unlock {cat === "VIP" ? "VIP" : "Premium"}
+              </Link>
+            )}
+            {needsRegistration && (
+              <Link href="/register" className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-black text-on-brand transition hover:bg-brand-dark">
+                Sign up free
+              </Link>
+            )}
+          </>
+        }
+      />
 
       {/* Above the day filter and the grid: the count the header used to carry,
           as a sentence that says what this feed is and how many picks are in
@@ -212,26 +238,34 @@ export default async function CategoryPage(
           // TODAY's shared blurb says "every match happening today", which is
           // the one line that stops being true on the yesterday/tomorrow tabs.
           // Every other category describes what it selects, not when.
-          blurb: cat === "TODAY" && day !== "today" ? "Every match on that day's card." : BLURBS[cat],
+          blurb,
           pickCount: shaped.length,
           day,
         })}
       />
-
-      <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
-
-      {cat === "TODAY" && (
-        <TodayPredictionsGuide dateLabel={dateLabel} />
-      )}
-
-      {cat === "BANKER" && <BankerPredictionsIntro />}
 
       {/* Ads are IN the feed now, between groups of picks, rather than in a
           single band under it — see feedAdPositions in src/lib/ads.ts for the
           counts and AdPlacements.tsx for the rule they follow. The foot band
           is gone rather than kept: three insertions plus a fourth underneath
           would be four ads on one feed. */}
-      <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
+      {cat === "TODAY" ? (
+        <>
+          <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
+          <TodayPredictionsGuide dateLabel={dateLabel} />
+          <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
+        </>
+      ) : (
+        // Every other feed offers Detailed (the card grid) and Compact (the
+        // Today table). Both are rendered here, on the server, from the same
+        // shaped rows; the client switch only chooses which one to mount.
+        <PredictionViewSwitch
+          tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
+          intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}
+          detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
+          compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
+        />
+      )}
 
       {cat === "BANKER" && <BankerPredictionsEvidence />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}

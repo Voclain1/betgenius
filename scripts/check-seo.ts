@@ -46,11 +46,20 @@ const trackRecordView = readFileSync(join(repoRoot, "src/components/TrackRecordV
 check("banker hub: does not claim there is only one pick", !categoryPredictions.includes("single most-confident"));
 check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to three may be published"));
 check("banker hub: explains that days can have no selection", bankerGuide.includes("some days will have none"));
+// Banker renders through PredictionViewSwitch (Detailed / Compact), which
+// places `intro` above whichever list is showing — that rendered order is
+// asserted in scripts/check-prediction-view.tsx. Here: the intro is handed to
+// the switch as `intro`, ahead of both lists, and both lists keep their ads.
+const bankerFeed = categoryPage.slice(categoryPage.indexOf("<PredictionViewSwitch"));
 check("banker hub: intro appears before the ad-enabled feed",
-  categoryPage.indexOf("<BankerPredictionsIntro") < categoryPage.indexOf("<CategoryPredictionsList"));
+  categoryPage.includes("<PredictionViewSwitch") &&
+    bankerFeed.includes('intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}') &&
+    bankerFeed.indexOf("<BankerPredictionsIntro") < bankerFeed.indexOf("<CategoryPredictionsList"));
 check("banker hub: evidence appears after the ad-enabled feed",
-  categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.indexOf("<CategoryPredictionsList"));
-check("banker hub: keeps the existing ad-enabled list", categoryPage.includes("<CategoryPredictionsList category={cat} rows={shaped as any} withAds />"));
+  categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.lastIndexOf("<CategoryPredictionsList"));
+check("banker hub: keeps the existing ad-enabled list",
+  bankerFeed.includes('<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />') &&
+    bankerFeed.includes('<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />'));
 check("banker hub: links to category-specific public evidence", bankerGuide.includes("/track-record#category-banker"));
 check("banker hub: public track record exposes the Banker anchor", trackRecordView.includes('id={`category-${cat.toLowerCase().replaceAll("_", "-")}`}'));
 
@@ -65,7 +74,7 @@ check("over 2.5 hub: query stays bounded", marketPredictions.includes("take: 60"
 check("over 2.5 hub: explains the winning threshold", over25Guide.includes("at least three total goals"));
 check("over 2.5 hub: avoids a guaranteed outcome claim", over25Guide.includes("not a guaranteed probability"));
 check("over 2.5 hub: evidence renders after the ad-enabled feed", over25Page.indexOf("<Over25PredictionsEvidence") > over25Page.indexOf("<CategoryPredictionsList"));
-check("over 2.5 hub: keeps the existing ad-enabled list", over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("over 2.5 hub: keeps the existing ad-enabled list", (over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("over 2.5 hub: links to an exact public record", over25Guide.includes("/track-record#market-over-25") && trackRecordView.includes('id="market-over-25"'));
 check("over 2.5 hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/over-2-5-goals"'));
 check("over 2.5 hub: sitemap inclusion uses the exact structured selection", sitemapEntries.includes("const over25Rows") && sitemapEntries.includes('direction === "OVER"'));
@@ -77,7 +86,7 @@ check("btts hub: query uses the structured market type", marketPredictions.inclu
 check("btts hub: defines both Yes and No outcomes", bttsGuide.includes('A “Yes” pick') && bttsGuide.includes('A “No” pick'));
 check("btts hub: does not confuse BTTS with the match winner", bttsGuide.includes("final winner of the") && bttsGuide.includes("does not decide this market"));
 check("btts hub: evidence renders after the ad-enabled feed", bttsPage.indexOf("<BttsPredictionsEvidence") > bttsPage.indexOf("<CategoryPredictionsList"));
-check("btts hub: keeps the existing ad-enabled list", bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("btts hub: keeps the existing ad-enabled list", (bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("btts hub: links to the exact market record", bttsGuide.includes("/track-record#market-btts") && trackRecordView.includes('id={`market-${mt.toLowerCase().replaceAll("_", "-")}`}'));
 check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/btts"'));
 check("btts hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('r.marketType === "BTTS"'));
@@ -89,7 +98,7 @@ check("double chance hub: query uses the structured market type", marketPredicti
 check("double chance hub: defines all three covered pairs", doubleChanceGuide.includes("Home or Draw") && doubleChanceGuide.includes("Away or Draw") && doubleChanceGuide.includes("Home or Away"));
 check("double chance hub: does not imply certainty", doubleChanceGuide.includes("does not make the pick certain"));
 check("double chance hub: evidence renders after the ad-enabled feed", doubleChancePage.indexOf("<DoubleChancePredictionsEvidence") > doubleChancePage.indexOf("<CategoryPredictionsList"));
-check("double chance hub: keeps the existing ad-enabled list", doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds />"));
+check("double chance hub: keeps the existing ad-enabled list", (doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("double chance hub: links to the exact market record", doubleChanceGuide.includes("/track-record#market-double-chance"));
 check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/double-chance"'));
 check("double chance hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('r.marketType === "DOUBLE_CHANCE"'));
@@ -122,10 +131,10 @@ for (const [id, heading] of [
 check("competition hubs: league route uses targeted H1 and intro", leaguePageSource.includes("hubContent?.heading") && leaguePageSource.includes("<CompetitionHubIntro"));
 check("competition hubs: mobile intro is folded while desktop copy stays visible", competitionIntro.includes("<details") && competitionIntro.includes("md:hidden") && competitionIntro.includes("md:block"));
 check("competition hubs: cup metadata comes from the targeted competition profile", cupPageSource.includes("hubContent.metadataTitle") && cupPageSource.includes("hubContent.metadataDescription"));
-check("competition hubs: targeted cups add dynamic published picks and a settled record", cupPageSource.includes("Published {data.cup.name} picks") && cupPageSource.includes("<RateCard stat={scoped.stat}"));
+check("competition hubs: targeted cups add dynamic published picks and a settled record", cupPageSource.includes("Published ${data.cup.name} picks") && cupPageSource.includes("<RateCard stat={scoped.stat}"));
 check("competition hubs: non-target cup pages retain their query profile", cupPageSource.includes("Only targeted top-tier competition hubs add prediction/proof data"));
 check("competition hubs: league proof box follows the prediction feed", leaguePageSource.indexOf("<CompetitionHubLinks") > leaguePageSource.indexOf("{shaped.map"));
-check("competition hubs: cup proof box follows fixtures and reference data", cupPageSource.indexOf("<CompetitionHubLinks") > cupPageSource.indexOf("<TopScorersLeaderboard"));
+check("competition hubs: cup proof box follows fixtures and reference data", cupPageSource.indexOf("<CompetitionHubLinks") > cupPageSource.indexOf("<CompetitionTopPlayers"));
 check("competition hubs: proof links include record, method and responsible use", competitionLinks.includes('href="/track-record"') && competitionLinks.includes('href="/methodology"') && competitionLinks.includes('href="/responsible-gambling"'));
 check("competition hubs: NPFL has an explicit metadata profile", readFileSync(join(repoRoot, "src/lib/seo.tsx"), "utf8").includes('title: "NPFL Predictions — Nigeria Premier League"'));
 

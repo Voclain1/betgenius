@@ -14,7 +14,7 @@ import { competitionPredictionsHref } from "@/lib/cupConfig";
  * broken-image icon, matching LeagueBadge's behaviour.
  */
 export function LeagueNav({ leagues, empty }: { leagues: LeagueNavItem[]; empty: React.ReactNode }) {
-  if (leagues.length === 0) return <div className="card text-sm text-gray-400">{empty}</div>;
+  if (leagues.length === 0) return <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm text-gray-400">{empty}</div>;
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -23,7 +23,7 @@ export function LeagueNav({ leagues, empty }: { leagues: LeagueNavItem[]; empty:
           key={l.slug}
           href={competitionPredictionsHref(l.leagueApiId, l.slug)}
           title={l.country ? `${l.name} · ${l.country}` : l.name}
-          className="inline-flex max-w-full items-center gap-2 rounded-full border border-brand-border bg-brand-card px-3 py-1.5 text-sm transition hover:border-brand hover:text-brand"
+          className="inline-flex max-w-full items-center gap-2 rounded-full border border-brand-border bg-brand-card px-3.5 py-2 text-sm font-semibold text-gray-100 transition hover:border-brand hover:text-brand"
         >
           {l.crest && (
             // eslint-disable-next-line @next/next/no-img-element

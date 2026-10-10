@@ -17,6 +17,7 @@
  * overlap) cannot produce two 10x cards or silently reprice a published one.
  */
 import { prisma } from "@/lib/prisma";
+import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { matchKey } from "@/lib/slug";
 import { setComboLegs } from "@/lib/combos";
@@ -63,7 +64,8 @@ export async function buildAccumulatorPool(now: Date = new Date()): Promise<Pool
   const { start, end } = lagosDayBounds(0, now);
 
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: start, lt: end }, homeTeam: { not: null }, awayTeam: { not: null } },
+    // Paid-only picks never become free accumulator legs (PAID_ONLY_PROVENANCES).
+    where: { status: "PUBLISHED", kickoff: { gte: start, lt: end }, homeTeam: { not: null }, awayTeam: { not: null }, ...NOT_PAID_ONLY },
     select: {
       id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true,
       marketType: true, selection: true, market: true, pick: true, confidence: true, leagueApiId: true,

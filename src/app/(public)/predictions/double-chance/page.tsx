@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
+import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import type { PredictionCategory } from "@/lib/enums";
 import { getDoubleChancePredictions } from "@/lib/marketPredictions";
 import { dayShowsOutcomes, feedDayHref, parseFeedDay } from "@/lib/categoryPredictions";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { lagosDayLabel } from "@/lib/lagosDate";
 import { DoubleChancePredictionsEvidence, DoubleChancePredictionsGuide } from "@/components/DoubleChancePredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 
@@ -42,12 +45,15 @@ export default async function DoubleChancePage({ searchParams }: { searchParams?
   const shaped = rows.map((row) => {
     const categories = row.categories.map((item) => item.category as PredictionCategory);
     const gateCategory = categories.find((category) => canViewCategory(category, viewer.tier, viewer.status, viewer.role))
-      ?? (row.category as PredictionCategory);
+      ?? presentedCategory(row.category, categories);
     const canView = canViewCategory(gateCategory, viewer.tier, viewer.status, viewer.role);
-    if (canView) return { ...row, outcome: showOutcomes ? row.outcome : null };
+    // The chip shows a free category whenever the row has one (presentedCategory).
+    const category = presentedCategory(row.category, categories);
+    if (canView) return { ...row, category, outcome: showOutcomes ? row.outcome : null };
     const needsRegistration = gateCategory === "BANKER" && !session?.user;
     return {
       ...row,
+      category,
       outcome: showOutcomes ? row.outcome : null,
       pick: "LOCKED",
       reasoning: needsRegistration
@@ -66,7 +72,7 @@ export default async function DoubleChancePage({ searchParams }: { searchParams?
     if (!homeTeam || !awayTeam) return null;
     const categories = row.categories.map((item) => item.category as PredictionCategory);
     const publiclyReadable = categories.some((category) => canViewCategory(category))
-      || canViewCategory(row.category as PredictionCategory);
+      || canViewCategory(presentedCategory(row.category, categories));
     return {
       homeTeam,
       awayTeam,
@@ -92,15 +98,22 @@ export default async function DoubleChancePage({ searchParams }: { searchParams?
         ]),
         ...sportsEventsForFixtures(eventRows),
       ]} />
-      <div>
-        <h1 className="text-2xl font-bold">Double Chance predictions today</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">
-          {rows.length} Double Chance {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.
-        </p>
-      </div>
-      <FeedDayTabs basePath={PATH} active={day} />
-      <DoubleChancePredictionsGuide />
-      <CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds />
+      <CategoryMasthead
+        kicker="Market guide"
+        title="Double Chance predictions today"
+        blurb={<>{rows.length} Double Chance {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
+        dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
+        stats={[
+          { label: rows.length === 1 ? "Pick" : "Picks", value: String(rows.length) },
+          { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
+        ]}
+      />
+      <PredictionViewSwitch
+        tabs={<FeedDayTabs basePath={PATH} active={day} />}
+        intro=<DoubleChancePredictionsGuide />
+        detailed={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="detailed" />}
+        compact={<CategoryPredictionsList category="FEATURED" rows={shaped as any} withAds view="compact" />}
+      />
       <DoubleChancePredictionsEvidence />
     </div>
   );

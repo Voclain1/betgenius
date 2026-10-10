@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewCategory } from "@/lib/access";
+import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
@@ -45,7 +45,7 @@ export async function GET(req: Request) {
   const shaped = rows.map((r) => {
     // Gate on the requested category page when one is set; otherwise a row is
     // visible if it's unlocked under ANY of its assigned categories.
-    const gateCategory = category ?? r.categories.find((c) => canViewCategory(c.category as PredictionCategory, tier, status, role))?.category ?? (r.category as PredictionCategory);
+    const gateCategory = category ?? r.categories.find((c) => canViewCategory(c.category as PredictionCategory, tier, status, role))?.category ?? presentedCategory(r.category, r.categories);
     const canView = canViewCategory(gateCategory as PredictionCategory, tier, status, role);
     return canView
       ? r

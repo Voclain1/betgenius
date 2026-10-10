@@ -59,27 +59,33 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
   };
   db.fixtureOddsCache.findUnique = async () => null;
 
-  const { getBetOfTheDay, getCurrentBetOfTheDay } = await import("../src/lib/betOfTheDay");
+  const { getBetOfTheDay, getCurrentBetOfTheDay, getHomepageBetOfTheDay } = await import("../src/lib/betOfTheDay");
 
   const today: Row = { id: "botd-today", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(NOW.getTime() + 2 * hour), tags: ["BET_OF_THE_DAY"] };
   rows.push(today);
 
-  console.log("\nhomepage slot follows the pick's lifecycle:");
-  check("before kickoff it is on the homepage", (await getCurrentBetOfTheDay(NOW))?.row.id === "botd-today");
+  console.log("\nhomepage slot follows the pick's lifecycle, through the end of its kickoff day:");
+  check("before kickoff it is current", (await getCurrentBetOfTheDay(NOW))?.row.id === "botd-today");
+  check("before kickoff the homepage shows it as upcoming", (await getHomepageBetOfTheDay(NOW))?.state === "LIVE");
 
   const afterKickoff = new Date(NOW.getTime() + 2 * hour + 60_000);
-  check("started but unsettled: gone from the homepage", (await getCurrentBetOfTheDay(afterKickoff)) === null);
+  check("started: no longer current (no price, not a recommendation)", (await getCurrentBetOfTheDay(afterKickoff)) === null);
+  check("started: STILL on the homepage, shown as in play", (await getHomepageBetOfTheDay(afterKickoff))?.state === "STARTED");
   check("...still returned as the tagged pick", (await getBetOfTheDay())?.row.id === "botd-today");
 
   today.outcome = "WON";
   const evening = new Date(NOW.getTime() + 6 * hour);
-  check("settled: gone from the homepage", (await getCurrentBetOfTheDay(evening)) === null);
+  check("settled: no longer current", (await getCurrentBetOfTheDay(evening)) === null);
+  check("settled: STILL on the homepage the same day, with its result", (await getHomepageBetOfTheDay(evening))?.state === "SETTLED");
+  const nextLagosDay = new Date(NOW.getTime() + 26 * hour);
+  check("the next day (Lagos) it leaves the homepage", (await getHomepageBetOfTheDay(nextLagosDay)) === null);
   const history = await getBetOfTheDay();
   check("settled pick remains in the data with its result", history?.row.id === "botd-today" && history.row.outcome === "WON");
   check("...and keeps its tag", today.tags.includes("BET_OF_THE_DAY"));
 
   today.status = "ARCHIVED";
   check("withdrawn: not shown anywhere as current", (await getCurrentBetOfTheDay(NOW)) === null);
+  check("withdrawn: not on the homepage either", (await getHomepageBetOfTheDay(evening)) === null);
   today.status = "PUBLISHED";
 
   console.log("\na new valid selection reactivates the slot:");
@@ -95,7 +101,12 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
 
   console.log("\nwiring:");
   const home = readFileSync("src/app/(public)/page.tsx", "utf8");
-  check("homepage reads the current-only helper", home.includes("getCurrentBetOfTheDay()") && !/\bgetBetOfTheDay\(\)/.test(home));
+  check("homepage reads the end-of-day helper", home.includes("getHomepageBetOfTheDay()") && !/\bgetBetOfTheDay\(\)/.test(home));
+  check("homepage passes the state, so the card shows upcoming / in play / result", /state=\{betOfTheDay\.state\}/.test(home));
+  const card = readFileSync("src/components/BetOfTheDayCard.tsx", "utf8");
+  check("the card no longer carries the '★ Bet of the Day' chip", !card.includes(">★ Bet of the Day<"));
+  check("the card shows kickoff in Lagos time, not the server's", /timeZone: "Africa\/Lagos"/.test(card));
+  check("the card withholds the price once the match has started", /\) : !live \? \(/.test(card));
   check("homepage section is conditional", /\{betOfTheDay && \(/.test(home));
   const lib = readFileSync("src/lib/betOfTheDay.ts", "utf8");
   const current = lib.slice(lib.indexOf("export async function getCurrentBetOfTheDay"), lib.indexOf("export async function setBetOfTheDay"));

@@ -4,8 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { setPredictionCategories, reviewTransition } from "@/lib/predictions";
+import { setPredictionCategories, reviewTransition, reviewBlockedByKickoff } from "@/lib/predictions";
 import { GOALS, withGoalsCategory } from "@/lib/goalsCategory";
+import { hiddenLegCategoryEditError, HiddenComboLegError } from "@/lib/comboLegs";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { comboMarketEditError, isComboPrediction, mergeEditedCategories } from "@/lib/comboAdmin";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
@@ -13,6 +14,7 @@ import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
+import { curateGeniusTips } from "@/lib/geniusCuration";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -82,6 +84,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (comboError) return NextResponse.json({ error: comboError }, { status: 400 });
   // Resolved up front so a rejected category set writes nothing at all.
   const held = before.categories.map((c) => c.category);
+  // A hidden combo leg takes no category edit: its only category is
+  // SAME_GAME_DOUBLE (src/lib/comboLegs.ts). Refused before anything is written.
+  const legEditError = categories ? hiddenLegCategoryEditError(before.marketType, held, categories) : null;
+  if (legEditError) return NextResponse.json({ error: legEditError }, { status: 400 });
   const merged = categories ? mergeEditedCategories(held, categories) : null;
   // A Goals-pass row is filed under GOALS alone, which the editor never sends,
   // so its save carries no editorial category. That is allowed here; the
@@ -182,9 +188,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (target.status !== "PUBLISHED") {
       return NextResponse.json({ error: "Only a PUBLISHED prediction can be pinned as Bet of the Day" }, { status: 400 });
     }
-    const pinned = await setBetOfTheDay(params.id, session!.user.id);
-    return NextResponse.json({ prediction: pinned, pinned: true });
+    try {
+      const pinned = await setBetOfTheDay(params.id, session!.user.id);
+      return NextResponse.json({ prediction: pinned, pinned: true });
+    } catch (error) {
+      if (error instanceof HiddenComboLegError) return NextResponse.json({ error: error.message }, { status: 400 });
+      throw error;
+    }
   }
+
+  // Kicked off: no approval or publication. The same save may be correcting the
+  // kickoff itself, so the edited value wins over the stored one.
+  const kickoffBlock = reviewBlockedByKickoff(action, rest.kickoff !== undefined ? rest.kickoff : before.kickoff);
+  if (kickoffBlock) return NextResponse.json({ error: kickoffBlock }, { status: 409 });
 
   if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {
     // Shared with the bulk endpoint so the two can't drift — see
@@ -215,6 +231,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await recordPredictionEvents(tx, before, row, action);
     return row;
   });
+  // A newly published pick may belong in Genius: fill it now rather than at the
+  // next three-hourly settlement run. Never fails the publish.
+  if (action === "PUBLISH") await curateGeniusTips().catch((err) => console.error("[genius] curation after publish failed", err));
   return NextResponse.json({ prediction: updated });
 }
 

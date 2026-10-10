@@ -123,7 +123,8 @@ check("constraint never names a feed, tier or category (house voice)", !/feed|ti
 check("closing instruction allows only 1.5 / 2.5 OVER, or nothing", /\{"line": 1\.5, "direction": "OVER"\}/.test(GOALS_MARKET_INSTRUCTION) && /\{"line": 2\.5, "direction": "OVER"\}/.test(GOALS_MARKET_INSTRUCTION) && /AT MOST ONE/.test(GOALS_MARKET_INSTRUCTION));
 // Raw source: the prompt strings contain "/*"-like text the comment stripper would eat.
 const analysis = read("src/lib/ai/analysis.ts");
-check("the constraint is added only for goalsOnly (and never beside a handicap line)", /const goalsBlock = input\.goalsOnly && !hc \? goalsMarketBlock\(\) : "";/.test(analysis));
+check("the constraint is added only for goalsOnly (and never beside a handicap line)", /const goalsBlock = input\.goalsOnly && !hc \? goalsMarketBlock\(\) : input\.lowerRisk && !hc \? lowerRiskPickBlock\(input\.lowerRisk\.avoidPicks\) : "";/.test(analysis));
+check("...and the paid pass's lower-risk block only for that pass, so ordinary prompts are unchanged", /\.\.\.\(input\.intent === "VIP_PREMIUM" \? \{ lowerRisk: \{ avoidPicks: input\.avoidPicks \?\? \[\] \} \} : \{\}\)/.test(read("src/lib/ai/generate.ts")));
 check("ordinary generation keeps its instruction and its prompt layout", /: `Return JSON only\. marketType must be one of: \$\{AUTO_MARKET_TYPES\.join\(", "\)\}\.`;/.test(analysis) && /\$\{handicapBlock\}\$\{goalsBlock\}\r?\n\$\{marketInstruction\}`;/.test(analysis));
 check("the shared base prompt is untouched (still its original O/U example)", /"OVER_UNDER"     -> selection: \{ "line": number, "direction": "OVER" \| "UNDER" \}   \/\/ e\.g\. line 2\.5/.test(read("src/lib/ai/analysis.ts")));
 
@@ -193,6 +194,10 @@ check("an Under single also blocks (no contradicting pair on one fixture)", plan
 const withHiddenLeg = fixture({ rows: [{ marketType: "SAME_GAME_DOUBLE", categories: ["SAME_GAME_DOUBLE"] }, { marketType: "OVER_UNDER", categories: ["SAME_GAME_DOUBLE"] }] });
 check("a hidden combo leg is NOT public Goals supply: the fixture stays eligible", same(targets(plan([withHiddenLeg])).map(String), [String(withHiddenLeg.id)]));
 check("...and the leg itself stays hidden (never tagged GOALS)", same(withGoalsCategory(["SAME_GAME_DOUBLE"], { marketType: "OVER_UNDER", selection: ou(2.5, "OVER") }), ["SAME_GAME_DOUBLE"]));
+const paidOver15 = fixture({ rows: [{}, { marketType: "OVER_UNDER", provenance: "VIP_GENERATED", categories: ["VIP"] }] });
+check("a paid-only VIP pick on Over 1.5 does NOT block the free Goals pick (it claims nothing)", same(targets(plan([paidOver15])).map(String), [String(paidOver15.id)]));
+const onlyPaid = fixture({ rows: [{ marketType: "DOUBLE_CHANCE", provenance: "PREMIUM_GENERATED", categories: ["VIP", "PREMIUM"] }] });
+check("...and a paid-only pick alone is not ordinary coverage", plan([onlyPaid]).skipped.NOT_YET_GENERATED === 1);
 const archivedOU = fixture({ rows: [{}, { marketType: "OVER_UNDER", status: "ARCHIVED" }] });
 check("an ARCHIVED O/U single does not block", plan([archivedOU]).targets.length === 1);
 const attemptedOnce = fixture();
@@ -369,7 +374,11 @@ async function publicationAndProbe() {
   const callers = walk("src").filter((f) => /autoPublishGoalsPrediction\(/.test(read(f)) && !f.endsWith("goalsPipeline.ts"));
   check("auto-publish is reachable only from the Goals run", callers.length === 1 && callers[0].endsWith("generation/worker.ts"), callers);
   const reviewCallers = walk("src").filter((f) => /applyReviewAction\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
-  check("applyReviewAction is used only by the bulk route and the Goals auto-publish", reviewCallers.length === 2 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$/.test(f)), reviewCallers);
+  check(
+    "applyReviewAction is used only by the bulk route and the two gated auto-publishes (Goals, dedicated VIP/PREMIUM)",
+    reviewCallers.length === 3 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$|vipPremiumPipeline\.ts$/.test(f)),
+    reviewCallers,
+  );
   check("generation still persists every row PENDING_REVIEW (the gate publishes afterwards)", /status: "PENDING_REVIEW"/.test(code("src/lib/ai/generate.ts")));
   check("a draft failing the market/confidence gate is never persisted (pickGoalsDraft runs before any create)", code("src/lib/ai/generate.ts").indexOf("pickGoalsDraft(") < code("src/lib/ai/generate.ts").indexOf(PERSIST_CALL));
 

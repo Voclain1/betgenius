@@ -5,6 +5,7 @@ import { MatchLink } from "@/components/MatchLink";
 import { leagueSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
+import { textTone } from "@/lib/tone";
 
 export type PredictionTableRow = {
   id: string;
@@ -12,6 +13,9 @@ export type PredictionTableRow = {
   leagueName?: string | null;
   homeTeam?: string | null;
   awayTeam?: string | null;
+  /** API-Football team ids; when present, each team name shows its crest. */
+  homeTeamApiId?: number | null;
+  awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
   pick: string;
   overUnder?: string | null;
@@ -57,17 +61,17 @@ export function PredictionsTable({
   const columnCount = 6 + (showOutcome ? 1 : 0);
   const adAfter = new Map(ads.map((a) => [a.after, a.node]));
   return (
-    <div className="overflow-x-auto rounded-xl border border-brand-border">
+    <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
       <table className="w-full text-sm">
-        <thead className="bg-brand-card text-left text-xs uppercase text-gray-400">
+        <thead className="bg-brand-bg/60 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
           <tr>
-            <th className="px-3 py-2">League</th>
-            <th className="px-3 py-2">Match</th>
-            <th className="px-3 py-2">Pick</th>
-            {showOutcome && <th className="px-3 py-2">Result</th>}
-            <th className="hidden px-3 py-2 sm:table-cell">Over/Under</th>
-            <th className="hidden px-3 py-2 text-right md:table-cell">Confidence</th>
-            <th className="hidden px-3 py-2 md:table-cell">Kickoff</th>
+            <th className="px-3 py-3">League</th>
+            <th className="px-3 py-3">Match</th>
+            <th className="px-3 py-3">Pick</th>
+            {showOutcome && <th className="px-3 py-3">Result</th>}
+            <th className="hidden px-3 py-3 sm:table-cell">Over/Under</th>
+            <th className="hidden px-3 py-3 text-right md:table-cell">Confidence</th>
+            <th className="hidden px-3 py-3 md:table-cell">Kickoff</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-brand-border">
@@ -79,8 +83,8 @@ export function PredictionsTable({
             const ad = adAfter.get(index + 1);
             return (
               <Fragment key={p.id}>
-              <tr className="hover:bg-brand-card/50">
-                <td className="px-3 py-2">
+              <tr className="transition hover:bg-brand-bg/40">
+                <td className="px-3 py-3">
                   {leagueName ? (
                     <Link href={competitionPredictionsHref(p.leagueApiId, leagueSlug(leagueName, p.leagueApiId))}>
                       <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
@@ -89,22 +93,25 @@ export function PredictionsTable({
                     <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
                   )}
                 </td>
-                <td className="px-3 py-2">
-                  <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
+                <td className="px-3 py-3">
+                  <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="px-3 py-2 font-semibold text-brand">{p.locked ? "LOCKED" : p.pick}</td>
+                <td className="px-3 py-3 font-black text-brand">{p.locked ? "LOCKED" : p.pick}</td>
                 {showOutcome && (
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-3">
                     {p.outcome && p.outcome !== "PENDING" ? (
-                      <span className={`chip ${OUTCOME_STYLES[p.outcome] ?? "bg-brand-border"}`}>{p.outcome}</span>
+                      <span className={`text-[11px] font-black uppercase tracking-[0.1em] ${textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}`}>{p.outcome}</span>
                     ) : (
                       <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
                 )}
-                <td className="hidden px-3 py-2 sm:table-cell">{p.overUnder ?? "—"}</td>
-                <td className="hidden px-3 py-2 text-right md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
-                <td className="hidden px-3 py-2 text-gray-400 md:table-cell">
+                {/* Masked with the pick: the line is generated from the pick
+                    itself ("Over 2.5"), so showing it on a locked row would
+                    hand over the tip the lock is withholding. */}
+                <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
+                <td className="hidden px-3 py-3 text-right font-black tabular-nums text-gray-100 md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
               </tr>

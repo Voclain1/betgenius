@@ -1,0 +1,289 @@
+import { cache } from "react";
+import { prisma } from "@/lib/prisma";
+import { LEAGUE_CATALOGUE } from "@/lib/leagues";
+import { competitionPredictionsHref } from "@/lib/cupConfig";
+import { leagueSlug, matchSlug } from "@/lib/slug";
+import { upcomingTeamIds, type LeagueStandingRow, type LeagueUpcomingFixture, type TeamCoach, type TeamFixtureSummary, type SquadPlayer } from "@/lib/enrichment";
+
+/**
+ * Everything the team page shows beyond its predictions, built only from what
+ * the site already stores: the league caches (tables, upcoming fixtures), the
+ * team cache (venue, coach, form, squad) and published predictions. No
+ * api-football calls are made here; a section with nothing behind it is left
+ * out rather than padded.
+ */
+
+export type TeamNextMatch = {
+  homeTeam: string;
+  awayTeam: string;
+  homeTeamApiId: number | null;
+  awayTeamApiId: number | null;
+  kickoff: Date;
+  leagueApiId: number | null;
+  leagueName: string | null;
+  /** The match page when a prediction is published for it; null otherwise. */
+  href: string | null;
+};
+
+export type TeamCompetition = {
+  leagueApiId: number;
+  name: string;
+  /** Null when nothing is published in that competition yet, so the link would land on an empty page. */
+  href: string | null;
+};
+
+export type TeamStanding = { leagueApiId: number; leagueName: string; row: LeagueStandingRow; size: number };
+
+export type TeamProfile = {
+  nextMatch: TeamNextMatch | null;
+  /** The next fixtures, soonest first (at most UPCOMING_LIMIT); nextMatch is the first. */
+  upcoming: TeamNextMatch[];
+  competitions: TeamCompetition[];
+  standing: TeamStanding | null;
+  country: string | null;
+  flagCode: string | null;
+};
+
+const UPCOMING_LIMIT = 8;
+
+/** How far back a prediction still counts as "this season" for the competitions list. */
+const SEASON_LOOKBACK_MS = 120 * 24 * 60 * 60_000;
+
+const catalogueById = new Map<number, (typeof LEAGUE_CATALOGUE)[number]>(LEAGUE_CATALOGUE.map((l) => [l.id, l]));
+
+export const getTeamProfile = cache(async (teamApiId: number | null): Promise<TeamProfile | null> => {
+  if (teamApiId == null) return null;
+  const now = new Date();
+
+  const [leagues, predictedRows, seasonRows] = await Promise.all([
+    prisma.leagueEnrichmentCache.findMany({
+      where: { fetchedAt: { not: null } },
+      select: { leagueApiId: true, standingsJson: true, upcomingJson: true },
+    }),
+    prisma.prediction.findMany({
+      where: { status: "PUBLISHED", kickoff: { gt: now }, OR: [{ homeTeamApiId: teamApiId }, { awayTeamApiId: teamApiId }] },
+      orderBy: { kickoff: "asc" },
+      // Several markets per fixture: enough rows to reach UPCOMING_LIMIT fixtures.
+      take: 40,
+      select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, leagueApiId: true, leagueName: true },
+    }),
+    prisma.prediction.findMany({
+      where: {
+        status: "PUBLISHED",
+        kickoff: { gte: new Date(now.getTime() - SEASON_LOOKBACK_MS) },
+        leagueApiId: { not: null },
+        OR: [{ homeTeamApiId: teamApiId }, { awayTeamApiId: teamApiId }],
+      },
+      distinct: ["leagueApiId"],
+      select: { leagueApiId: true, leagueName: true },
+    }),
+  ]);
+
+  // Tables and fixture lists that include this team.
+  let standing: TeamStanding | null = null;
+  const competitionIds = new Set<number>(seasonRows.map((r) => r.leagueApiId!));
+  const listed: { f: LeagueUpcomingFixture; leagueApiId: number }[] = [];
+
+  for (const l of leagues) {
+    const table = (l.standingsJson as unknown as LeagueStandingRow[] | null) ?? [];
+    const row = table.find((r) => r.teamId === teamApiId);
+    if (row) {
+      competitionIds.add(l.leagueApiId);
+      // The domestic league's table is the one worth stating; a cup group
+      // table is not "where the club sits this season".
+      const domestic = catalogueById.get(l.leagueApiId)?.kind === "league";
+      if (domestic && (!standing || row.played > standing.row.played)) {
+        standing = { leagueApiId: l.leagueApiId, leagueName: catalogueById.get(l.leagueApiId)?.name ?? "", row, size: table.length };
+      }
+    }
+    for (const f of (l.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? []) {
+      const ids = upcomingTeamIds(f);
+      if (ids.home !== teamApiId && ids.away !== teamApiId) continue;
+      if (new Date(f.date).getTime() <= now.getTime()) continue;
+      competitionIds.add(l.leagueApiId);
+      listed.push({ f, leagueApiId: l.leagueApiId });
+    }
+  }
+
+  // Published fixtures link through to their predictions; listed fixtures
+  // fill in the rest. One entry per fixture: the same two clubs on the same
+  // Lagos day are the same match, and the published version wins.
+  const fixtureKey = (home: number | null, away: number | null, kickoff: Date) =>
+    `${[home ?? 0, away ?? 0].sort((a, b) => a - b).join("-")}@${kickoff.toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" })}`;
+  const byKey = new Map<string, TeamNextMatch>();
+  for (const p of predictedRows) {
+    if (!p.kickoff) continue;
+    const key = fixtureKey(p.homeTeamApiId, p.awayTeamApiId, p.kickoff);
+    if (byKey.has(key)) continue;
+    const slug = matchSlug({ homeTeam: p.homeTeam, awayTeam: p.awayTeam, kickoff: p.kickoff });
+    byKey.set(key, {
+      homeTeam: p.homeTeam ?? "",
+      awayTeam: p.awayTeam ?? "",
+      homeTeamApiId: p.homeTeamApiId,
+      awayTeamApiId: p.awayTeamApiId,
+      kickoff: p.kickoff,
+      leagueApiId: p.leagueApiId,
+      leagueName: p.leagueName,
+      href: slug ? `/predictions/match/${slug}` : null,
+    });
+  }
+  for (const { f, leagueApiId } of listed) {
+    const ids = upcomingTeamIds(f);
+    const kickoff = new Date(f.date);
+    const key = fixtureKey(ids.home, ids.away, kickoff);
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      homeTeam: f.homeTeam,
+      awayTeam: f.awayTeam,
+      homeTeamApiId: ids.home,
+      awayTeamApiId: ids.away,
+      kickoff,
+      leagueApiId,
+      leagueName: catalogueById.get(leagueApiId)?.name ?? null,
+      href: null,
+    });
+  }
+  const upcoming = [...byKey.values()].sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, UPCOMING_LIMIT);
+  const nextMatch = upcoming[0] ?? null;
+
+  // Competition names come from published rows where there are any, because
+  // the league page's slug is derived from that stored name.
+  const ids = [...competitionIds];
+  const named = ids.length
+    ? await prisma.prediction.findMany({
+        where: { status: "PUBLISHED", leagueApiId: { in: ids }, leagueName: { not: null } },
+        distinct: ["leagueApiId"],
+        orderBy: { publishedAt: "desc" },
+        select: { leagueApiId: true, leagueName: true },
+      })
+    : [];
+  const nameById = new Map(named.map((r) => [r.leagueApiId!, r.leagueName!]));
+  const competitions: TeamCompetition[] = ids
+    .map((id) => {
+      const published = nameById.get(id);
+      const name = catalogueById.get(id)?.name ?? published;
+      if (!name) return null;
+      return { leagueApiId: id, name, href: published ? competitionPredictionsHref(id, leagueSlug(published, id)) : null };
+    })
+    .filter((c): c is TeamCompetition => c !== null)
+    // Domestic league first, then the rest alphabetically.
+    .sort((a, b) => Number(b.leagueApiId === standing?.leagueApiId) - Number(a.leagueApiId === standing?.leagueApiId) || a.name.localeCompare(b.name));
+
+  const home = standing ? catalogueById.get(standing.leagueApiId) : competitions.map((c) => catalogueById.get(c.leagueApiId)).find((l) => l?.kind === "league");
+  return {
+    nextMatch,
+    upcoming,
+    competitions,
+    standing,
+    country: home && home.kind === "league" ? home.country : null,
+    flagCode: home && "flagCode" in home ? (home.flagCode as string) : null,
+  };
+});
+
+// ── "Know more about" ────────────────────────────────────────────────────────
+
+const ORDINAL = (n: number) => {
+  const v = n % 100;
+  const s = v >= 11 && v <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${s}`;
+};
+
+const LAGOS_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "long" });
+const LAGOS_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const PLAIN_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", day: "numeric", month: "long", year: "numeric" });
+
+/**
+ * A competition's name as it reads mid-sentence: "the Premier League", "the
+ * Bundesliga", but "La Liga", "Serie A" and "Ligue 1", which take no article.
+ */
+export function competitionInSentence(name: string): string {
+  return /^(La ?Liga|Serie [A-C]\b|Ligue \d|Segunda|Copa |Coppa |Coupe )/.test(name) ? name : `the ${name}`;
+}
+
+const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+
+export type TeamAboutInput = {
+  name: string;
+  profile: TeamProfile | null;
+  venue: { name: string | null; city: string | null; capacity: number | null };
+  coach: TeamCoach | null;
+  lastFixtures: TeamFixtureSummary[] | null;
+  squad: SquadPlayer[];
+  pickCount: number;
+};
+
+/**
+ * The "Know more about" paragraphs: plain sentences built from stored facts.
+ *
+ * Every clause is conditional on its own data, so a club with only a venue
+ * gets one sentence rather than a template with holes. Nothing is inferred:
+ * no founding year, honours or history, because nothing the site stores
+ * vouches for them. Pure, so it is unit-checked.
+ */
+export function buildTeamAbout(input: TeamAboutInput): string[] {
+  const { name, profile, venue, coach, squad, pickCount } = input;
+  const paragraphs: string[] = [];
+
+  // Identity: country, ground, coach.
+  const identity: string[] = [];
+  const where = profile?.country && profile.country !== "World" ? `a football club from ${profile.country}` : "a football club";
+  if (venue.name) {
+    const city = venue.city ? ` in ${venue.city}` : "";
+    const capacity = venue.capacity ? `, which holds ${venue.capacity.toLocaleString("en-GB")} spectators` : "";
+    identity.push(`${name} is ${where} that plays its home matches at ${venue.name}${city}${capacity}.`);
+  } else if (profile?.country) {
+    identity.push(`${name} is ${where}.`);
+  }
+  if (coach) {
+    const since = coach.since ? `, in charge since ${new Date(coach.since).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}` : "";
+    identity.push(`The team is coached by ${coach.name}${coach.nationality ? ` (${coach.nationality})` : ""}${since}.`);
+  }
+  if (squad.length) {
+    const byPos = (p: string) => squad.filter((s) => s.position === p).length;
+    const parts = [
+      [byPos("Goalkeeper"), "goalkeeper"],
+      [byPos("Defender"), "defender"],
+      [byPos("Midfielder"), "midfielder"],
+      [byPos("Attacker"), "forward"],
+    ]
+      .filter(([n]) => (n as number) > 0)
+      .map(([n, label]) => `${n} ${label}${n === 1 ? "" : "s"}`);
+    identity.push(`The current squad lists ${squad.length} players${parts.length ? `: ${list(parts)}` : ""}.`);
+  }
+  if (identity.length) paragraphs.push(identity.join(" "));
+
+  // This season: competitions and table position.
+  const season: string[] = [];
+  const comps = profile?.competitions.map((c) => c.name) ?? [];
+  if (comps.length) season.push(`This season ${name} ${comps.length === 1 ? "competes in" : "is competing in"} ${list(comps.map(competitionInSentence))}.`);
+  const st = profile?.standing;
+  if (st && st.row.played > 0) {
+    const r = st.row;
+    season.push(
+      `In ${competitionInSentence(st.leagueName)} they sit ${ORDINAL(r.rank)} of ${st.size} with ${r.points} point${r.points === 1 ? "" : "s"} from ${r.played} match${r.played === 1 ? "" : "es"}: ${r.win} won, ${r.draw} drawn and ${r.loss} lost, with ${r.goalsFor} scored and ${r.goalsAgainst} conceded.`,
+    );
+    if (r.zone) season.push(`In the table, that place is marked "${r.zone}".`);
+  }
+  if (season.length) paragraphs.push(season.join(" "));
+
+  // The next match only. Past results are deliberately not stated here: the
+  // page is rebuilt on every request, but a club's results cache is refreshed
+  // only while we have a prediction coming up on it, so "their most recent
+  // match" could lag weeks behind. The next fixture comes from the league
+  // caches, refreshed every few hours, and drops off once it kicks off.
+  const matches: string[] = [];
+  const next = profile?.nextMatch;
+  if (next) {
+    matches.push(
+      `Next up is ${next.homeTeam} vs ${next.awayTeam}${next.leagueName ? ` in ${competitionInSentence(next.leagueName)}` : ""}, on ${LAGOS_DATE.format(next.kickoff)} at ${LAGOS_TIME.format(next.kickoff)} (West Africa Time)${next.href ? ", and our prediction for it is already published" : ""}.`,
+    );
+  }
+  if (matches.length) paragraphs.push(matches.join(" "));
+
+  if (pickCount > 0) {
+    paragraphs.push(
+      `BetGenius has published ${pickCount} prediction${pickCount === 1 ? "" : "s"} on ${name} matches. Each one names its market and confidence and explains the reasoning, and every result is settled publicly on the track record.`,
+    );
+  }
+  return paragraphs;
+}

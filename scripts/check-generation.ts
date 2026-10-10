@@ -16,7 +16,7 @@
  */
 import { nextAttemptAt, RETRY_BACKOFF_MINUTES, MAX_GENERATION_ATTEMPTS, GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "../src/lib/generation/selector";
 import { isLagosToday, lagosTodayBounds } from "../src/lib/lagosDate";
-import { tierFor, REFRESH_TIERS } from "../src/lib/enrichment";
+import { tierFor, REFRESH_TIERS, idleRefreshDue } from "../src/lib/enrichment";
 import { reviewTransition } from "../src/lib/predictions";
 import { estimateCostUsd, providerOf, priceFor } from "../src/lib/generation/stats";
 import { CURATION_MAX, CURATION_MIN, GENIUS_CONFIDENCE_FLOOR, PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR, selectCuratedIds } from "../src/lib/geniusCuration";
@@ -182,6 +182,12 @@ eq("tier: kickoff in 30h is tier B", tierFor(hoursFrom(30), NOW)?.name, "B");
 eq("tier: kickoff in 5 days is tier C", tierFor(hoursFrom(120), NOW)?.name, "C");
 eq("tier: no upcoming fixture is not refreshed at all", tierFor(null, NOW), null);
 eq("tier: a kickoff in the past is not refreshed", tierFor(hoursFrom(-3), NOW), null);
+const DAYS = (n: number) => hoursFrom(-24 * n);
+eq("idle: no upcoming fixture, last pick 10 days ago, cache 8 days old: due", idleRefreshDue({ nextKickoff: null, kickoff: DAYS(10) }, DAYS(8), NOW), true);
+eq("idle: same, cache 2 days old: not due", idleRefreshDue({ nextKickoff: null, kickoff: DAYS(10) }, DAYS(2), NOW), false);
+eq("idle: never fetched: due", idleRefreshDue({ nextKickoff: null, kickoff: DAYS(10) }, null, NOW), true);
+eq("idle: last pick over 60 days ago: left alone", idleRefreshDue({ nextKickoff: null, kickoff: DAYS(61) }, DAYS(30), NOW), false);
+eq("idle: a team with an upcoming fixture is the tiers' business", idleRefreshDue({ nextKickoff: hoursFrom(30), kickoff: hoursFrom(30) }, DAYS(30), NOW), false);
 
 check("tier: tolerance tightens as kickoff approaches",
   REFRESH_TIERS.every((t, i) => i === 0 || t.maxAgeMs > REFRESH_TIERS[i - 1].maxAgeMs),

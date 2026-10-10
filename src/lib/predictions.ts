@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { presentedCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { withGoalsCategory, type GoalsMarket } from "@/lib/goalsCategory";
+import { isLegacyLiveHiddenLeg, withHiddenLegCategories } from "@/lib/comboLegs";
 import { recordPredictionEvents } from "@/lib/notifications";
 
 export const CATEGORY_VALUES = PREDICTION_CATEGORIES;
@@ -23,18 +26,35 @@ export function applyCategoryChanges(
  * the legacy `category` column in sync as the first entry (primary category)
  * for display/back-compat. `categories` must be non-empty.
  *
- * GOALS is recomputed here from the row's market, whatever `categories` says
- * (see src/lib/goalsCategory.ts). Every writer of category tags goes through
- * this function, so this is the one place that keeps the tag deterministic.
+ * Every writer of category tags goes through this function, so it is the one
+ * place two derived rules are enforced:
+ *
+ *   - GOALS is recomputed from the row's market, whatever `categories` says
+ *     (src/lib/goalsCategory.ts);
+ *   - a hidden combo leg resolves to exactly ["SAME_GAME_DOUBLE"]
+ *     (src/lib/comboLegs.ts). Leg status is read from the links the row
+ *     ALREADY has as well as from `categories`, so dropping SAME_GAME_DOUBLE
+ *     cannot turn a leg into a public single.
+ *
+ * A pre-cutover leg that is still live is left exactly as it is — no link and
+ * no primary-category change — until it settles (isLegacyLiveHiddenLeg).
+ *
  * Pass `market` when the caller holds the row's market already, or is about to
- * change it and has not written it yet; otherwise the stored market is read.
+ * change it and has not written it yet; otherwise the stored market is used.
  */
 export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket) {
-  const resolvedMarket =
-    market ??
-    (await prisma.prediction.findUnique({ where: { id: predictionId }, select: { marketType: true, selection: true } })) ??
-    { marketType: null, selection: null };
-  const unique = withGoalsCategory(categories, resolvedMarket);
+  const persisted = await prisma.prediction.findUnique({
+    where: { id: predictionId },
+    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, provenance: true, categories: { select: { category: true } } },
+  });
+  const resolvedMarket = market ?? persisted ?? { marketType: null, selection: null };
+  const held = persisted?.categories.map((c) => c.category) ?? [];
+  if (persisted && isLegacyLiveHiddenLeg(resolvedMarket.marketType, { ...persisted, categories: held })) return;
+
+  // A paid-only pick belongs to VIP/PREMIUM alone, so its market never files
+  // it into the free Goals feed as well (see PAID_ONLY_PROVENANCES).
+  const derived = isPaidOnlyProvenance(persisted?.provenance) ? [...new Set(categories)] : withGoalsCategory(categories, resolvedMarket);
+  const unique = withHiddenLegCategories(derived, resolvedMarket.marketType, held);
   if (unique.length === 0) throw new Error("At least one category is required");
 
   await prisma.$transaction([
@@ -42,7 +62,9 @@ export async function setPredictionCategories(predictionId: string, categories: 
     prisma.predictionCategoryLink.createMany({
       data: unique.map((category) => ({ predictionId, category })),
     }),
-    prisma.prediction.update({ where: { id: predictionId }, data: { category: unique[0] } }),
+    // A row in any free category is primarily that free category, so no
+    // surface that labels or locks by the primary shows it as VIP/PREMIUM.
+    prisma.prediction.update({ where: { id: predictionId }, data: { category: presentedCategory(unique[0], unique) } }),
   ]);
 }
 
@@ -87,11 +109,38 @@ export function reviewTransition(
  * PATCH keeps its own transaction only because it merges field edits into the
  * same update.
  */
+/**
+ * A pick whose match has started can no longer be approved or published.
+ *
+ * On 4 Oct 2026 eight picks were published after their own kickoff: they were
+ * generated hours late and reviewed later still, and once a match is under way
+ * a "prediction" is a guess with the answer half-visible. Archiving stays
+ * allowed. Null kickoff (a manual row with no date) is not blocked: there is
+ * no kickoff to be past.
+ */
+export const KICKOFF_PASSED_MESSAGE = "This match has already kicked off, so the pick can no longer be approved or published. Archive it instead.";
+
+export function reviewBlockedByKickoff(action: string, kickoff: Date | null | undefined, now: Date = new Date()): string | null {
+  if (action !== "APPROVE" && action !== "PUBLISH") return null;
+  return kickoff && kickoff.getTime() <= now.getTime() ? KICKOFF_PASSED_MESSAGE : null;
+}
+
+export class KickoffPassedError extends Error {
+  constructor() {
+    super(KICKOFF_PASSED_MESSAGE);
+    this.name = "KickoffPassedError";
+  }
+}
+
 export async function applyReviewAction(
   row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null },
   action: ReviewAction,
   actorId: string,
 ) {
+  // Every review path goes through here or the single-row route, which makes
+  // the same check. The kickoff is re-read, never trusted from the caller.
+  const current = await prisma.prediction.findUnique({ where: { id: row.id }, select: { kickoff: true } });
+  if (reviewBlockedByKickoff(action, current?.kickoff)) throw new KickoffPassedError();
   return prisma.$transaction(async (tx) => {
     const updated = await tx.prediction.update({
       where: { id: row.id },

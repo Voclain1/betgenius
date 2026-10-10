@@ -47,7 +47,7 @@ export const MC_MAX_QUOTE_AGE_MS = 2 * 60 * 60 * 1000;
  * and a gate that cannot see the market cannot confirm anything. SAME_GAME_DOUBLE
  * is excluded because it is composed of other rows rather than priced directly.
  */
-export const MC_ELIGIBLE_MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS"] as const;
+export const MC_ELIGIBLE_MARKET_TYPES = ["MATCH_WINNER", "DOUBLE_CHANCE", "OVER_UNDER", "BTTS", "DRAW_NO_BET"] as const;
 export type MarketConfirmedMarketType = (typeof MC_ELIGIBLE_MARKET_TYPES)[number];
 
 export function isEligibleMarketType(marketType: string): marketType is MarketConfirmedMarketType {
@@ -255,6 +255,23 @@ export function evaluateMarketConfirmed(input: {
     return { ...base, reason: "STALE_QUOTE", quoteAgeMs, detail: `quote is ${Math.round(quoteAgeMs / 60000)}m old` };
   }
 
+  // Draw No Bet has no stored market of its own, but it needs none: with the
+  // stake returned on a draw, its fair probability is the side's share of the
+  // non-draw outcomes in the de-vigged 1X2 — exactly how a book prices it.
+  if (input.marketType === "DRAW_NO_BET") {
+    const side = (input.selection as { value?: string } | null)?.value;
+    const value = side === "HOME" ? "Home" : side === "AWAY" ? "Away" : null;
+    if (!value) return { ...base, quoteAgeMs, reason: "UNMAPPED_SELECTION", detail: "draw no bet needs HOME or AWAY" };
+    const devigged = drawNoBetProbability(input.odds, value);
+    if (!devigged) {
+      return {
+        ...base, quoteAgeMs, market: "Match Winner", value: `${value} (draw no bet)`,
+        reason: "MARKET_NOT_QUOTED", detail: "Match Winner not fully quoted",
+      };
+    }
+    return judge(input.confidence, devigged, base, quoteAgeMs, "Match Winner", `${value} (draw no bet)`);
+  }
+
   const mapped = toBookmakerSelection(input.marketType as MarketType, input.selection);
   if (!mapped) {
     return { ...base, quoteAgeMs, reason: "UNMAPPED_SELECTION", detail: "selection has no headline-market equivalent" };
@@ -268,13 +285,25 @@ export function evaluateMarketConfirmed(input: {
     };
   }
 
+  return judge(input.confidence, devigged, base, quoteAgeMs, mapped.market, mapped.value);
+}
+
+/** The checks every market shares once its de-vigged probability is known: books, market floor, gap. */
+function judge(
+  confidence: number,
+  devigged: { probability: number; bookmakers: number },
+  base: MarketConfirmedVerdict,
+  quoteAgeMs: number,
+  market: TrimmedMarket,
+  value: string,
+): MarketConfirmedVerdict {
   const marketProbability = devigged.probability;
-  const gapPP = Math.abs(input.confidence - marketProbability);
+  const gapPP = Math.abs(confidence - marketProbability);
   const detailed: MarketConfirmedVerdict = {
     ...base,
     quoteAgeMs,
-    market: mapped.market,
-    value: mapped.value,
+    market,
+    value,
     marketProbability,
     gapPP,
     bookmakers: devigged.bookmakers,
@@ -291,6 +320,23 @@ export function evaluateMarketConfirmed(input: {
   }
 
   return { ...detailed, confirmed: true };
+}
+
+/**
+ * Draw No Bet, derived from the de-vigged Match Winner market: the side's
+ * share of the two non-draw outcomes. Coverage is the side's own 1X2 depth.
+ */
+export function drawNoBetProbability(odds: FixtureOdds, value: "Home" | "Away"): { probability: number; bookmakers: number } | null {
+  const sels = marketOf(odds, "Match Winner");
+  if (!sels) return null;
+  const probs = devig(sels, ["Home", "Draw", "Away"]);
+  if (!probs) return null;
+  const home = probs.get("Home") ?? 0;
+  const away = probs.get("Away") ?? 0;
+  if (!(home + away > 0)) return null;
+  const sel = sels.find((s) => s.value.trim().toLowerCase() === value.toLowerCase());
+  if (!sel) return null;
+  return { probability: ((value === "Home" ? home : away) / (home + away)) * 100, bookmakers: sel.bookmakers };
 }
 
 /**

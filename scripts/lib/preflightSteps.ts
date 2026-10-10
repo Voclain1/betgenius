@@ -9,10 +9,14 @@ const RENDER = "tsx --tsconfig scripts/tsconfig.render.json";
 
 /** Pure: in-memory stubs or no database access at all. Proven by running with NO_DATABASE_URL. */
 export const PURE_STEPS = [
+  "tsx scripts/check-season-resolution.ts",
+  "tsx scripts/check-team-profile.ts",
+  "tsx scripts/check-competition-profile.ts",
   "tsx scripts/check-paystack-entitlement.ts",
   "tsx scripts/check-subscription-entitlement.ts",
   "tsx scripts/check-onetime-fallback.ts",
   "tsx scripts/check-payment-observability.ts",
+  "tsx scripts/check-payment-reliability.ts",
   "tsx scripts/check-combo-bet-copy.ts",
   "tsx scripts/check-homepage-featured.ts",
   "tsx scripts/check-adaptive-combo.ts",
@@ -26,10 +30,12 @@ export const PURE_STEPS = [
   "tsx scripts/check-admin-jobs.ts",
   "tsx scripts/check-enrichment-report.ts",
   "tsx scripts/check-paid-tier-grace.ts",
+  "tsx scripts/check-vip-premium-overlay.ts",
   "tsx scripts/check-adaptive-coverage.ts",
   "tsx scripts/check-senior-womens.ts",
   "tsx scripts/check-goals-category.ts",
   "tsx scripts/check-goals-generation.ts",
+  "tsx scripts/check-combo-leg-invariant.ts",
   "tsx scripts/check-odds-breadth.ts",
   "tsx scripts/check-install-prompt.ts",
   "tsx scripts/check-push-onboarding.ts",
@@ -53,6 +59,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-digest.ts",
   "tsx scripts/check-insights.ts",
   "tsx scripts/check-seo.ts",
+  `${RENDER} scripts/check-sitemap-scoping.tsx`,
   "tsx scripts/check-matchfacts.ts",
   "tsx scripts/check-trend-cards.ts",
   "tsx scripts/check-theme-contrast.ts",
@@ -63,6 +70,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-settlement-time-basis.ts",
   `${RENDER} scripts/check-match-insights-render.tsx`,
   `${RENDER} scripts/check-match-render.tsx`,
+  `${RENDER} scripts/check-prediction-view.tsx`,
+  `${RENDER} scripts/check-prediction-timeline.tsx`,
+  "tsx scripts/check-preloader.ts",
   "tsc --noEmit -p tsconfig.json",
 ];
 
@@ -71,6 +81,8 @@ export const DB_READONLY_STEPS = [
   "tsx scripts/check-schema-sync.ts",
   "tsx scripts/check-feed-days.ts",
   "tsx scripts/check-prediction-slugs.ts",
+  "tsx scripts/check-hidden-leg-categories.ts",
+  "tsx scripts/check-paid-tier-invariant.ts",
 ];
 
 /** Insert and delete their own rows. Each also calls assertIntegrationDatabase itself. */

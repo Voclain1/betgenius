@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { StatusTabs, LeagueGroup, groupByLeague, EmptyState, type MatchLinkIndex } from "@/components/MatchList";
+import { CategoryMasthead } from "@/components/CategoryMasthead";
+import { PremiumPanel } from "@/components/PremiumPanel";
 import { tabOfStatus, type MatchStatusGroup } from "@/lib/matchStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
@@ -92,39 +94,49 @@ export default function LivescoresClient({
   const filtered = useMemo(() => merged.filter((r) => tabOfStatus(r.fixture.status.short) === tab), [merged, tab]);
   const groups = useMemo(() => groupByLeague(filtered), [filtered]);
 
+  const figure = (n: number) => (loading ? "–" : String(n));
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Live football scores today</h1>
-        <StatusTabs active={tab} onChange={setTab} counts={counts} />
-      </div>
-      <p className="max-w-3xl text-sm leading-6 text-gray-300">
-        Follow in-play football scores, match minutes and goal updates by competition. Switch between live, upcoming and finished fixtures to see today&apos;s schedule and results in one place.
-      </p>
+    <div className="space-y-8">
+      <CategoryMasthead
+        kicker="Live"
+        title="Live football scores today"
+        blurb="Follow in-play football scores, match minutes and goal updates by competition. Switch between live, upcoming and finished fixtures to see today's schedule and results in one place."
+        stats={[
+          { label: "Live now", value: figure(counts.live), accent: true },
+          { label: "Upcoming", value: figure(counts.upcoming) },
+          { label: "Finished", value: figure(counts.finished) },
+        ]}
+      />
 
-      {adSlot}
-
-      {loading && <EmptyState>Loading fixtures…</EmptyState>}
-      {!loading && groups.length === 0 && (
-        <EmptyState>
-          {tab === "live"
-            ? "No live matches right now (or API-Football key not configured)."
-            : tab === "upcoming"
-              ? "No upcoming matches scheduled for today."
-              : "No finished matches yet today."}
-        </EmptyState>
-      )}
       <div className="space-y-4">
-        {groups.map((g) => (
-          <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
-        ))}
+        <StatusTabs active={tab} onChange={setTab} counts={counts} />
+
+        {adSlot}
+
+        {loading && <EmptyState>Loading fixtures…</EmptyState>}
+        {!loading && groups.length === 0 && (
+          <EmptyState>
+            {tab === "live"
+              ? "No live matches right now (or API-Football key not configured)."
+              : tab === "upcoming"
+                ? "No upcoming matches scheduled for today."
+                : "No finished matches yet today."}
+          </EmptyState>
+        )}
+        <div className="space-y-4">
+          {groups.map((g) => (
+            <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
+          ))}
+        </div>
       </div>
 
-      <section className="card space-y-3">
-        <h2 className="text-lg font-semibold">How the live score page updates</h2>
-        <p className="text-sm leading-6 text-gray-300">Live matches refresh approximately every 20 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
-        <p className="text-sm leading-6 text-gray-300">Where BetGenius has published match analysis, the fixture links to its preview. You can also browse the full <Link href="/fixtures" className="text-brand hover:underline">football fixtures calendar</Link> or review <Link href="/predictions/today" className="text-brand hover:underline">today&apos;s football predictions</Link> before kick-off.</p>
-      </section>
+      <PremiumPanel kicker="How it works" title="How the live score page updates" id="livescores-updates">
+        <div className="space-y-3">
+          <p className="text-sm leading-7 text-gray-300">Live matches refresh approximately every 20 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
+          <p className="text-sm leading-7 text-gray-300">Where BetGenius has published match analysis, the fixture links to its preview. You can also browse the full <Link href="/fixtures" className="font-semibold text-brand hover:underline">football fixtures calendar</Link> or review <Link href="/predictions/today" className="font-semibold text-brand hover:underline">today&apos;s football predictions</Link> before kick-off.</p>
+        </div>
+      </PremiumPanel>
     </div>
   );
 }

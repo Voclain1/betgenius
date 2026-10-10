@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PLAN_PRICING, PLAN_TIERS, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
 import { trackEvent } from "@/lib/clientAnalytics";
 
@@ -15,6 +15,15 @@ export default function Pricing() {
   const { data } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+
+  // Paystack's "Cancel payment" link returns here (metadata.cancel_action, set
+  // by the initialize route). Read after mount rather than via
+  // useSearchParams so this static page needs no Suspense boundary. It only
+  // changes what is said; nothing about access is read from the URL.
+  useEffect(() => {
+    setCancelled(new URLSearchParams(window.location.search).get("checkout") === "cancelled");
+  }, []);
 
   // Sends the tier only — the server derives the amount from lib/pricing.
   // Posting an amount from here would let anyone with devtools name their
@@ -49,6 +58,11 @@ export default function Pricing() {
         <h1 className="text-2xl font-bold">BetGenius VIP and Premium pricing</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a plan for access to additional prediction categories and analysis tools. Each payment buys a single 30-day access period — there is no automatic renewal, so you renew yourself when the period ends. Prices shown in naira are the amounts charged through Paystack; the dollar figures are references only.</p>
       </div>
+      {cancelled && (
+        <div className="card border border-amber-500/30 text-sm text-amber-200">
+          Checkout was cancelled, so your plan has not changed. Pick a plan below to try again.
+        </div>
+      )}
       {err && <div className="card text-red-400">{err}</div>}
       <div className="grid gap-4 md:grid-cols-2">
         {tiers.map((t) => {
@@ -86,6 +100,15 @@ export default function Pricing() {
           );
         })}
       </div>
+      {/* What happens when they press the button. Deliberately does not list
+          payment methods: Paystack decides which it offers on the account, and
+          naming one that is then missing or declined breaks the promise. */}
+      <section className="card space-y-2 text-sm leading-6 text-gray-300">
+        <h2 className="text-lg font-semibold text-gray-100">How payment works</h2>
+        <p>You pay securely on Paystack&apos;s checkout page; BetGenius never sees your card or bank details. Paystack shows the payment methods available to you there, including bank transfer.</p>
+        <p>When Paystack confirms the payment you return to your dashboard and your plan unlocks straight away. A bank transfer can take a few minutes to confirm; access unlocks automatically when it does, even if you have closed the page.</p>
+        <p>If you cancel or leave checkout, nothing changes and you can start again from this page at any time.</p>
+      </section>
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Before choosing a plan</h2>
         <p className="text-sm leading-6 text-gray-300">VIP adds the VIP prediction category plus Bet Builder and StatsPad. Premium includes the VIP features, Premium-category selections, deeper match previews and priority support. Paid access provides analysis; it does not guarantee that any prediction will win.</p>

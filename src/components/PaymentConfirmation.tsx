@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { trackEvent } from "@/lib/clientAnalytics";
@@ -34,7 +35,16 @@ import type { PaidTier } from "@/lib/pricing";
  *
  * `activated` is computed on the SERVER from the database row and passed in —
  * this component only decides whether to keep waiting.
+ *
+ * 3. A payer who comes back WITHOUT paying — cancelled on Paystack, or closed
+ *    the page and pressed Back — used to sit through thirty seconds of
+ *    "Confirming your payment…" and then be told Paystack had not confirmed it
+ *    yet, with no way forward. The verify route now returns Paystack's own
+ *    status for the payer's own reference, so an unpaid checkout says so at
+ *    once and offers the plans again. That status decides only what is SAID;
+ *    access still comes from the server alone.
  */
+type PaymentStatus = "not_completed" | "failed" | "pending" | "unconfirmed";
 const ATTEMPTS = 10;
 const INTERVAL_MS = 3000;
 
@@ -52,6 +62,7 @@ export function PaymentConfirmation({
   const { update } = useSession();
   const router = useRouter();
   const [waiting, setWaiting] = useState(!activated);
+  const [status, setStatus] = useState<PaymentStatus | null>(null);
   const attempts = useRef(0);
 
   // A confirmed, reference-backed activation is the purchase boundary. GA4
@@ -78,11 +89,13 @@ export function PaymentConfirmation({
     void (async () => {
       if (reference && !activated) {
         try {
-          await fetch("/api/subscription/verify", {
+          const res = await fetch("/api/subscription/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ reference }),
           });
+          const json = (await res.json().catch(() => null)) as { activated?: boolean; paymentStatus?: PaymentStatus } | null;
+          if (!cancelled && json && !json.activated && json.paymentStatus) setStatus(json.paymentStatus);
         } catch {
           // The poll below is the fallback; a failed verify is not worth
           // showing anyone, because the webhook still grants access.
@@ -98,8 +111,11 @@ export function PaymentConfirmation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Nothing to wait for once Paystack has said the payment did not happen.
+  const settledUnpaid = status === "not_completed" || status === "failed";
+
   useEffect(() => {
-    if (activated) {
+    if (activated || settledUnpaid) {
       setWaiting(false);
       return;
     }
@@ -114,12 +130,34 @@ export function PaymentConfirmation({
       router.refresh();
     }, INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [activated, router, update]);
+  }, [activated, settledUnpaid, router, update]);
 
   if (activated) {
     return (
       <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
         Payment received — your subscription is active.
+      </div>
+    );
+  }
+
+  if (settledUnpaid) {
+    return (
+      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        {status === "failed"
+          ? "Paystack declined this payment, so your plan has not changed. You can try again — choosing a different payment method sometimes helps."
+          : "Paystack hasn't received this payment, so your plan has not changed. If you already sent a bank transfer, access unlocks automatically when it arrives — you don't need to pay again. Otherwise you can try again whenever you're ready."}{" "}
+        <Link href="/pricing" className="font-medium text-brand underline">
+          Choose a plan
+        </Link>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
+        Paystack is still confirming your payment — bank transfers can take a few minutes. Your access unlocks
+        automatically as soon as it clears; you don&apos;t need to stay on this page.
       </div>
     );
   }
@@ -131,7 +169,11 @@ export function PaymentConfirmation({
   ) : (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
       We haven&apos;t had confirmation from Paystack yet. If you were charged, your access will unlock as soon as it
-      arrives — refresh this page in a minute, or contact support if it persists.
+      arrives — refresh this page in a minute, or contact support if it persists. If you didn&apos;t finish paying,{" "}
+      <Link href="/pricing" className="font-medium text-brand underline">
+        choose a plan
+      </Link>{" "}
+      to try again.
     </div>
   );
 }

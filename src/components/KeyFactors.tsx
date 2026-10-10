@@ -1,4 +1,5 @@
 import { parseAnalysis } from "@/lib/predictionAnalysis";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * The model's key factors for this fixture.
@@ -19,16 +20,15 @@ export function KeyFactors({ analysisJson }: { analysisJson: unknown }) {
   if (!analysis) return null;
 
   return (
-    <section className="card space-y-2">
-      <h2 className="section-heading">Key factors</h2>
-      <ul className="space-y-1.5">
+    <PremiumPanel kicker="Analysis" title="Key factors" id="key-factors">
+      <ol className="divide-y divide-brand-border">
         {analysis.keyFactors.map((f, i) => (
-          <li key={i} className="flex gap-2 text-sm text-gray-300">
-            <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand" />
-            <span>{f}</span>
+          <li key={i} className="flex gap-4 py-3 first:pt-0 last:pb-0">
+            <span aria-hidden className="w-6 shrink-0 text-lg font-black leading-snug tabular-nums text-brand">{String(i + 1).padStart(2, "0")}</span>
+            <span className="text-sm leading-relaxed text-gray-200">{f}</span>
           </li>
         ))}
-      </ul>
-    </section>
+      </ol>
+    </PremiumPanel>
   );
 }

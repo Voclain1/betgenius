@@ -21,6 +21,7 @@ import {
   getTopYellowCards,
   getSquad,
   getCoaches,
+  getTeamPlayerStats,
   resolveSeason,
   getOdds,
   type FixtureRow,
@@ -30,7 +31,7 @@ import {
   type CoachEntry,
 } from "@/lib/football/api-football";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
-import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
+import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER, LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { trimH2H } from "@/lib/h2h";
 import { trimOdds } from "@/lib/odds";
 import { buildTeamDigest, type TeamDigest } from "@/lib/ai/digest";
@@ -114,7 +115,26 @@ export type LeagueStandingRow = {
    */
   zone?: string | null;
 };
-export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string; awayTeam: string; homeLogo: string | null; awayLogo: string | null };
+export type LeagueUpcomingFixture = {
+  id: number;
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeLogo: string | null;
+  awayLogo: string | null;
+  /** Team ids. Optional: rows cached before they were stored carry only the names (see upcomingTeamIds). */
+  homeId?: number | null;
+  awayId?: number | null;
+};
+
+/** A cached upcoming fixture's team ids, from the stored ids or, on older rows, the id inside the crest URL. */
+export function upcomingTeamIds(f: LeagueUpcomingFixture): { home: number | null; away: number | null } {
+  const fromLogo = (logo: string | null) => {
+    const m = logo?.match(/\/teams\/(\d+)\.png/);
+    return m ? Number(m[1]) : null;
+  };
+  return { home: f.homeId ?? fromLogo(f.homeLogo), away: f.awayId ?? fromLogo(f.awayLogo) };
+}
 /**
  * Shape stored in FixtureDetailCache.detailJson — only fields that exist
  * nowhere else in the app. Team names come from Prediction and crests from
@@ -123,8 +143,58 @@ export type LeagueUpcomingFixture = { id: number; date: string; homeTeam: string
  */
 export type FixtureDetail = { venue: string | null; city: string | null; referee: string | null; round: string | null };
 
-/** A squad member. Deliberately no stats — listing a squad is the scope, player profiles are not. */
-export type SquadPlayer = { id: number; name: string; age: number | null; number: number | null; position: string | null; photo: string | null };
+/**
+ * A squad member, with this season's numbers across every competition when
+ * they were fetched (top and mid-tier leagues only; see playerStatsWanted).
+ */
+export type SquadPlayer = {
+  id: number;
+  name: string;
+  age: number | null;
+  number: number | null;
+  position: string | null;
+  photo: string | null;
+  stats?: PlayerSeasonStats | null;
+};
+export type PlayerSeasonStats = { appearances: number; goals: number; assists: number; minutes: number; rating: number | null };
+
+/**
+ * Whether a team's player statistics are worth fetching: clubs from the top
+ * and mid-tier leagues. It is two to three extra calls per team a week, so it
+ * is limited to the clubs most readers look at.
+ */
+export function playerStatsWanted(leagueApiId: number | null | undefined): boolean {
+  const tier = LEAGUE_CATALOGUE.find((l) => l.id === leagueApiId)?.tier;
+  return tier === "top" || tier === "mid";
+}
+
+/**
+ * Season totals per player from /players, across every competition the
+ * player appeared in. Rating is the appearance-weighted mean of the
+ * per-competition ratings, so a cup cameo does not outweigh a league season.
+ * Pure, so it is unit-checked.
+ */
+export function aggregatePlayerStats(rows: PlayerStatEntry[], teamApiId: number): Map<number, PlayerSeasonStats> {
+  const out = new Map<number, PlayerSeasonStats>();
+  for (const r of rows) {
+    let appearances = 0, goals = 0, assists = 0, minutes = 0, ratingSum = 0, ratingApps = 0;
+    for (const s of r.statistics ?? []) {
+      if (s.team?.id !== teamApiId) continue;
+      const apps = s.games?.appearences ?? 0;
+      appearances += apps;
+      goals += s.goals?.total ?? 0;
+      assists += s.goals?.assists ?? 0;
+      minutes += s.games?.minutes ?? 0;
+      const rating = s.games?.rating ? Number(s.games.rating) : NaN;
+      if (Number.isFinite(rating) && apps > 0) {
+        ratingSum += rating * apps;
+        ratingApps += apps;
+      }
+    }
+    out.set(r.player.id, { appearances, goals, assists, minutes, rating: ratingApps ? Math.round((ratingSum / ratingApps) * 100) / 100 : null });
+  }
+  return out;
+}
 
 /** `since` is null when the record exists but its start date isn't trustworthy enough to assert — see resolveCurrentCoach. */
 export type TeamCoach = { name: string; nationality: string | null; since: string | null };
@@ -206,7 +276,16 @@ export function trimSquad(rows: Array<{ players: SquadEntryLike[] }> | null): Sq
 }
 type SquadEntryLike = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };
 
-/** Teams whose squad/coach cache is older than the 7-day TTL, stalest first. */
+/**
+ * Teams whose squad/coach cache is older than the 7-day TTL: teams with a
+ * fixture coming up first, then stalest first.
+ *
+ * The scoped set is every team ever predicted (~1,900), and one run refreshes
+ * a slice of 25, so a full cycle takes over a week. Pure staleness order spent
+ * that budget evenly on clubs nobody is about to read about while a team
+ * playing this weekend waited its turn with a departed coach or last
+ * season's players on its page.
+ */
 export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<TeamTarget[]> {
   const existing = await prisma.teamEnrichmentCache.findMany({
     where: { teamApiId: { in: targets.map((t) => t.teamApiId) } },
@@ -214,12 +293,31 @@ export async function selectStaleSquadTargets(targets: TeamTarget[]): Promise<Te
   });
   const byId = new Map(existing.map((r) => [r.teamApiId, r.squadFetchedAt]));
   const cutoff = Date.now() - SQUAD_TTL_MS;
+  // Clubs that should carry player stats but were refreshed before stats
+  // existed are due now, not at their next weekly turn. Only those clubs'
+  // squads are read, and only once: after the refresh they carry `stats`.
+  const wanted = targets.filter((t) => playerStatsWanted(t.leagueApiId)).map((t) => t.teamApiId);
+  const withoutStats = new Set<number>();
+  if (wanted.length) {
+    const rows = await prisma.teamEnrichmentCache.findMany({
+      where: { teamApiId: { in: wanted }, squadFetchedAt: { gte: new Date(cutoff) } },
+      select: { teamApiId: true, squadJson: true },
+    });
+    for (const r of rows) {
+      const squad = (r.squadJson as unknown as SquadPlayer[] | null) ?? [];
+      if (squad.length && !squad.some((p) => p.stats !== undefined)) withoutStats.add(r.teamApiId);
+    }
+  }
   return targets
     .filter((t) => {
       const at = byId.get(t.teamApiId);
-      return !at || at.getTime() < cutoff;
+      return !at || at.getTime() < cutoff || withoutStats.has(t.teamApiId);
     })
-    .sort((a, b) => (byId.get(a.teamApiId)?.getTime() ?? -Infinity) - (byId.get(b.teamApiId)?.getTime() ?? -Infinity));
+    .sort(
+      (a, b) =>
+        Number(!a.nextKickoff) - Number(!b.nextKickoff) ||
+        (byId.get(a.teamApiId)?.getTime() ?? -Infinity) - (byId.get(b.teamApiId)?.getTime() ?? -Infinity),
+    );
 }
 
 /**
@@ -249,6 +347,25 @@ export async function refreshTeamSquad(target: TeamTarget): Promise<{ teamApiId:
 
     const squad = trimSquad(squadRaw);
     const coach = resolveCurrentCoach(coachRaw, target.teamApiId);
+
+    // Season numbers for the top-players view. Best effort: a failure here
+    // leaves the squad without stats rather than failing the refresh.
+    if (squad.length && target.leagueApiId != null && playerStatsWanted(target.leagueApiId)) {
+      try {
+        const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
+        const rows: PlayerStatEntry[] = [];
+        for (let page = 1; page <= 3; page++) {
+          const batch = await getTeamPlayerStats(target.teamApiId, season, page);
+          if (!batch?.length) break;
+          rows.push(...batch);
+          if (batch.length < 20) break;
+        }
+        const stats = aggregatePlayerStats(rows, target.teamApiId);
+        for (const p of squad) p.stats = stats.get(p.id) ?? null;
+      } catch (err) {
+        console.error("[enrichment] player stats failed for team", target.teamApiId, err);
+      }
+    }
 
     await prisma.teamEnrichmentCache.upsert({
       where: { teamApiId: target.teamApiId },
@@ -349,6 +466,23 @@ export function tierFor(nextKickoff: Date | null | undefined, now: Date = new Da
 }
 
 /**
+ * Teams with no upcoming fixture of ours still have a page: its form panel and
+ * recent results read the team cache. They are refreshed weekly, in whatever
+ * room a run has left after the tiered teams, for as long as they had a
+ * prediction in the last IDLE_TEAM_WINDOW_MS. Before this they were never
+ * refreshed at all, and a club between picks showed results weeks old.
+ */
+export const IDLE_TEAM_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
+export const IDLE_TEAM_WINDOW_MS = 60 * 24 * 60 * 60_000;
+
+/** Whether a team with no upcoming fixture is due its weekly refresh. */
+export function idleRefreshDue(target: Pick<TeamTarget, "nextKickoff" | "kickoff">, fetchedAt: Date | null | undefined, now: Date = new Date()): boolean {
+  if (tierFor(target.nextKickoff, now)) return false; // tiered, handled there
+  if (!target.kickoff || now.getTime() - target.kickoff.getTime() > IDLE_TEAM_WINDOW_MS) return false;
+  return !fetchedAt || now.getTime() - fetchedAt.getTime() >= IDLE_TEAM_MAX_AGE_MS;
+}
+
+/**
  * Teams due a refresh, most urgent first.
  *
  * A team is due when its cache is older than its tier's tolerance; teams inside
@@ -365,11 +499,15 @@ export async function orderTeamsByPriority(targets: TeamTarget[], now: Date = ne
 
   const due: Array<{ target: TeamTarget; tierIndex: number; age: number }> = [];
   for (const target of targets) {
-    const tier = tierFor(target.nextKickoff, now);
-    if (!tier) continue;
     const row = byId.get(target.teamApiId);
     const fetchedAt = row?.fetchedAt?.getTime() ?? null;
     const age = fetchedAt === null ? Infinity : now.getTime() - fetchedAt;
+    const tier = tierFor(target.nextKickoff, now);
+    if (!tier) {
+      // After every tier, so an idle club only ever takes a slot no upcoming fixture needed.
+      if (idleRefreshDue(target, row?.fetchedAt, now)) due.push({ target, tierIndex: REFRESH_TIERS.length, age });
+      continue;
+    }
     if (age < tier.maxAgeMs) continue;
     due.push({ target, tierIndex: REFRESH_TIERS.indexOf(tier), age });
   }
@@ -613,7 +751,7 @@ function trimLastFixtures(teamApiId: number, fixtures: FixtureRow[] | null): Tea
 export async function refreshTeamCache(target: TeamTarget): Promise<{ teamApiId: number; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   try {
-    const season = target.leagueApiId ? await resolveSeason(target.leagueApiId, target.kickoff ?? new Date()) : new Date().getFullYear();
+    const season = target.leagueApiId ? await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff)) : new Date().getFullYear();
 
     const [teamInfo, context] = await Promise.all([
       getTeamById(target.teamApiId),
@@ -791,7 +929,7 @@ export async function refreshLeaguePlayerStats(
 ): Promise<{ leagueApiId: number; result: "ok" | "failed" | "error"; counts?: string; detail?: string }> {
   const now = new Date();
   try {
-    const season = await resolveSeason(target.leagueApiId, target.kickoff ?? new Date());
+    const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
     const [scorersRaw, assistsRaw, cardsRaw] = await Promise.all([
       getTopScorers(target.leagueApiId, season),
       getTopAssists(target.leagueApiId, season),
@@ -864,22 +1002,40 @@ function trimUpcoming(fixtures: FixtureRow[] | null): LeagueUpcomingFixture[] | 
   if (!fixtures?.length) return null;
   return fixtures
     .filter((f) => f.fixture.status.short === "NS")
-    .slice(0, 8)
+    // The whole fortnight, not the first few: team pages read this for each
+    // club's next match, and a cut at 8 dropped most of a 10-game matchday.
+    // The league page shows the first few itself.
+    .slice(0, 40)
     .map((f) => ({
       id: f.fixture.id,
       date: f.fixture.date,
       homeTeam: f.teams.home.name,
       awayTeam: f.teams.away.name,
+      homeId: f.teams.home.id,
+      awayId: f.teams.away.id,
       homeLogo: f.teams.home.logo ?? null,
       awayLogo: f.teams.away.logo ?? null,
     }));
+}
+
+/**
+ * The date to resolve a league's season by when refreshing what a page shows
+ * NOW: today, or the target's kickoff when that is still ahead.
+ *
+ * Never a past kickoff. Targets carry the kickoff of some earlier prediction in
+ * the league, and an old one resolved to last season: the Premier League cache
+ * held the finished 2025/26 table (38 played) and a stale fixture list into
+ * October 2026, and the AI was reading that table when writing predictions.
+ */
+export function currentSeasonDate(kickoff: Date | null | undefined, now: Date = new Date()): Date {
+  return kickoff && kickoff.getTime() > now.getTime() ? kickoff : now;
 }
 
 /** Same shape/invariants as refreshTeamCache — see its comment. */
 export async function refreshLeagueCache(target: LeagueTarget): Promise<{ leagueApiId: number; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   try {
-    const season = await resolveSeason(target.leagueApiId, target.kickoff ?? new Date());
+    const season = await resolveSeason(target.leagueApiId, currentSeasonDate(target.kickoff));
     const today = new Date().toISOString().slice(0, 10);
     const to = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -889,7 +1045,10 @@ export async function refreshLeagueCache(target: LeagueTarget): Promise<{ league
     ]);
 
     const standingsJson = trimStandings(standingsRaw);
-    const upcomingJson = trimUpcoming(fixturesRaw);
+    // A successful fetch with nothing in the next fortnight (an international
+    // break) is written as an empty list. Leaving the old list in place kept
+    // already-played fixtures on the page as "upcoming".
+    const upcomingJson = fixturesRaw ? trimUpcoming(fixturesRaw) ?? [] : null;
     const succeeded = !!standingsJson || !!upcomingJson;
 
     if (!succeeded) {

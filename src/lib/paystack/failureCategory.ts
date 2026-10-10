@@ -29,6 +29,7 @@ export const PAYMENT_CATEGORIES = [
   "INSUFFICIENT_FUNDS",
   "GATEWAY_FAILURE",
   "PENDING",
+  "VERIFICATION_FAILED",
   "UNKNOWN_FAILURE",
 ] as const;
 
@@ -39,7 +40,7 @@ export const CATEGORY_COPY: Record<PaymentCategory, { label: string; hint: strin
   SUCCESS: { label: "Paid", hint: "Charge approved and entitlement granted." },
   ABANDONED: {
     label: "Abandoned",
-    hint: "The payer opened checkout and left without completing. No charge was attempted.",
+    hint: "Checkout was created and never completed; Paystack reports no charge. The stage column shows how far the payer got.",
   },
   FRAUD_BLOCK: {
     label: "Fraud block",
@@ -58,6 +59,10 @@ export const CATEGORY_COPY: Record<PaymentCategory, { label: string; hint: strin
     hint: "Paystack or the upstream processor failed. Usually transient; nobody needs to change anything.",
   },
   PENDING: { label: "Pending", hint: "Still in flight — a transfer or USSD confirmation not yet settled." },
+  VERIFICATION_FAILED: {
+    label: "Verification failed",
+    hint: "Our server could not fetch Paystack's record. Paystack retries the webhook; reconcile to refresh.",
+  },
   UNKNOWN_FAILURE: {
     label: "Unclassified",
     hint: "A failure we have no mapping for. Add it to lib/paystack/failureCategory.",

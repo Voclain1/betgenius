@@ -1,4 +1,6 @@
 import { confidenceBand, verdictLine, CONFIDENCE_BAND_STYLES } from "@/lib/matchFacts";
+import { SectionHead } from "@/components/TeamProfile";
+import { textTone } from "@/lib/tone";
 
 /**
  * The headline call for this fixture, above the evidence.
@@ -26,34 +28,31 @@ export function MatchVerdict({
   const band = confidenceBand(confidence);
 
   return (
-    <section className="card space-y-3 border-brand/30">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="section-heading">Our verdict</h2>
-        <span className={`chip text-[10px] ${CONFIDENCE_BAND_STYLES[band]}`}>{band}</span>
+    <section aria-labelledby="verdict">
+      <SectionHead kicker="Our call" title="Our verdict" id="verdict" />
+      <div className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card">
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
+        <div className="relative grid items-center gap-5 p-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:p-7">
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">{market}</div>
+            <div className="mt-1.5 break-words text-3xl font-black leading-tight tracking-tight text-brand sm:text-4xl">{pick}</div>
+            <p className="mt-3 text-sm leading-relaxed text-gray-300">{verdictLine({ market, pick, confidence, overUnder })}</p>
+          </div>
+          <div className="flex items-end gap-3 sm:block sm:text-right">
+            <div className="text-5xl font-black leading-none tabular-nums tracking-tight text-gray-100 sm:text-6xl">
+              {confidence}
+              <span className="text-2xl text-gray-500">%</span>
+            </div>
+            <div className="pb-1 sm:mt-2 sm:pb-0">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Confidence</div>
+              <div className={`text-sm font-black ${textTone(CONFIDENCE_BAND_STYLES[band])}`}>{band}</div>
+            </div>
+          </div>
+        </div>
+        <div className="h-1.5 w-full bg-brand-border/60" aria-hidden>
+          <div className="h-full bg-brand" style={{ width: `${confidence}%` }} />
+        </div>
       </div>
-
-      <div className="grid grid-cols-2 gap-2 text-center">
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Market</div>
-          <div className="text-sm font-medium">{market}</div>
-        </div>
-        <div className="rounded-md bg-brand-bg p-2">
-          <div className="text-[10px] uppercase text-gray-500">Pick</div>
-          <div className="text-sm font-semibold text-brand">{pick}</div>
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-1 flex justify-between text-xs text-gray-400">
-          <span>Confidence</span>
-          <span>{confidence}%</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-brand-border">
-          <div className="h-full rounded-full bg-brand" style={{ width: `${confidence}%` }} />
-        </div>
-      </div>
-
-      <p className="text-sm text-gray-300">{verdictLine({ market, pick, confidence, overUnder })}</p>
     </section>
   );
 }

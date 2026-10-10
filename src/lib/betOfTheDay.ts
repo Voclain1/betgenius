@@ -1,12 +1,13 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { isCurrentBetOfTheDay } from "@/lib/betOfTheDayStatus";
+import { betOfTheDayState, isCurrentBetOfTheDay, showBetOfTheDayOnHomepage, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { qualifiesForBetOfDay, affordsBetOfDayPrice, MIN_ODDS, MAX_ODDS, type FixtureOdds, type OddsGateResult } from "@/lib/odds";
 import { leaguePriorityRank } from "@/lib/leagues";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/selector";
+import { HIDDEN_LEG_EXCLUSION, HiddenComboLegError, isHiddenComboLeg } from "@/lib/comboLegs";
 
 /**
  * Bet of the Day — the single pinned pick.
@@ -57,6 +58,9 @@ export type BetOfTheDayRow = {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   betOfDayPinnedAt: Date | null;
+  /** Final score once settled; shown on the card beside each team. Optional so older fixtures and stubs still type. */
+  finalHomeScore?: number | null;
+  finalAwayScore?: number | null;
 };
 
 const ROW_SELECT = {
@@ -78,6 +82,8 @@ const ROW_SELECT = {
   homeTeamApiId: true,
   awayTeamApiId: true,
   betOfDayPinnedAt: true,
+  finalHomeScore: true,
+  finalAwayScore: true,
 } as const;
 
 export type BetOfTheDayView = {
@@ -136,6 +142,16 @@ export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<Bet
 }
 
 /**
+ * The homepage slot: the tagged pick from before kickoff until the end of its
+ * kickoff day, in play and settled included (showBetOfTheDayOnHomepage), with
+ * its state so the card can present it as upcoming, in play or a result.
+ */
+export async function getHomepageBetOfTheDay(now: Date = new Date()): Promise<(BetOfTheDayView & { state: BetOfTheDayState }) | null> {
+  const view = await getBetOfTheDay();
+  return view && showBetOfTheDayOnHomepage(view.row, now) ? { ...view, state: betOfTheDayState(view.row, now) } : null;
+}
+
+/**
  * Move the tag to `predictionId`, atomically.
  *
  * The delete is unscoped by design — it removes the tag from every row, not
@@ -148,6 +164,15 @@ export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<Bet
  * never claims to be an editorial decision.
  */
 export async function setBetOfTheDay(predictionId: string, pinnedById: string | null, now: Date = new Date()) {
+  // A hidden combo leg is never a standalone pick, so it can never take the
+  // slot — pinned by an admin or chosen by auto-selection. Checked here, not
+  // only in the candidate query, so no caller can route around it.
+  const target = await prisma.prediction.findUnique({
+    where: { id: predictionId },
+    select: { marketType: true, categories: { select: { category: true } } },
+  });
+  if (target && isHiddenComboLeg(target.marketType, target.categories.map((c) => c.category))) throw new HiddenComboLegError();
+
   const [, , updated] = await prisma.$transaction([
     prisma.predictionCategoryLink.deleteMany({ where: { category: BET_OF_THE_DAY } }),
     // Clearing the pin metadata everywhere, not just on the outgoing pick,
@@ -213,6 +238,9 @@ export async function getBetOfTheDayCandidates(now: Date = new Date()): Promise<
       status: "PUBLISHED",
       outcome: "PENDING",
       kickoff: { gte: now, lt: end },
+      // Hidden combo legs are settlement inputs for a Combo Bet, never picks of
+      // their own. One took the slot on 25 Sep 2026. See src/lib/comboLegs.ts.
+      ...HIDDEN_LEG_EXCLUSION,
       // `start` still bounds the query below via the kickoff filter above; the
       // lower bound is `now` because a pick whose kickoff has passed cannot be
       // tipped, even though it is still part of today.

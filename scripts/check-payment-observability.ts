@@ -20,7 +20,15 @@
  */
 import assert from "node:assert/strict";
 import { classifyPaymentAttempt, CATEGORY_COPY, PAYMENT_CATEGORIES } from "../src/lib/paystack/failureCategory";
-import { SAFE_FIELDS, toSafePaymentAttempt } from "../src/lib/paystack/recordPaymentAttempt";
+import { SAFE_FIELDS, summariseSessionLog, toSafePaymentAttempt } from "../src/lib/paystack/recordPaymentAttempt";
+import {
+  attemptOrigin,
+  attemptOutcome,
+  CHECKOUT_STAGES,
+  checkoutStage,
+  lastMethodTried,
+  STAGE_COPY,
+} from "../src/lib/paystack/attemptDiagnosis";
 
 // ---------------------------------------------------------------------------
 // 1. The six distinctions the admin view exists to make.
@@ -205,6 +213,98 @@ const longResponse = toSafePaymentAttempt({
   gateway_response: "x".repeat(5000),
 });
 assert(longResponse!.gatewayResponse!.length <= 200, "gateway response is capped");
+
+// ---------------------------------------------------------------------------
+// 3. How far the payer got — from Paystack's session log, in the shapes
+//    production actually returned (sanitised). "Abandoned" alone collapsed all
+//    of these into one number.
+// ---------------------------------------------------------------------------
+// No session log at all: the latest VIP attempt, and every legacy plan checkout.
+const noActivity = toSafePaymentAttempt({
+  reference: "bg_VIP_018c847a91cb5aed9a1af8f17f5d4e84",
+  status: "abandoned",
+  channel: "card",
+  gateway_response: "The transaction was not completed",
+  log: null,
+});
+assert.equal(noActivity!.sessionLogged, false);
+assert.equal(checkoutStage(noActivity!), "NO_ACTIVITY", "no log is reported as no recorded activity, nothing more");
+assert.equal(noActivity!.methodsTried, null, "Paystack's default `card` channel is not taken as the payer's choice");
+
+// Fraud block while choosing a method: never reached authorization.
+const fraud = toSafePaymentAttempt({
+  reference: "bg_VIP_feded0893b353ecb70d50fe96a32b11d",
+  status: "failed",
+  channel: "bank",
+  gateway_response: "Denied by Fraud System.",
+  log: {
+    time_spent: 41,
+    attempts: 0,
+    errors: 1,
+    history: [
+      { type: "action", message: "Set payment method to: bank", time: 21 },
+      { type: "action", message: "Set payment method to: null", time: 24 },
+      { type: "action", message: "Set payment method to: bank_transfer", time: 25 },
+      { type: "action", message: "Set payment method to: ussd", time: 30 },
+      { type: "action", message: "Set payment method to: zap", time: 35 },
+      { type: "error", message: "Error: Denied by Fraud System.", time: 36 },
+      { type: "input", message: "Filled account number 0123456789", time: 38 },
+      { type: "action", message: "Set payment method to: bank_transfer", time: 41 },
+    ],
+  },
+});
+assert.equal(fraud!.category, "FRAUD_BLOCK");
+assert.equal(fraud!.methodsTried, "bank,bank_transfer,ussd,zap,bank_transfer", "the methods chosen, in order, without nulls");
+assert.equal(fraud!.sessionError, "Denied by Fraud System.");
+assert.equal(fraud!.authAttempts, 0, "no authorization was ever attempted");
+assert.equal(checkoutStage(fraud!), "BLOCKED_BEFORE_AUTHORIZATION");
+assert(!JSON.stringify(fraud).includes("0123456789"), "an input entry never reaches the database");
+
+// Chose a method and left.
+const chose = toSafePaymentAttempt({
+  reference: "bg_PREMIUM_840c0f090e492852a556b30e613d0f99",
+  status: "abandoned",
+  channel: "card",
+  log: { time_spent: 1, attempts: 0, errors: 0, history: [{ type: "action", message: "Set payment method to: bank_transfer" }] },
+});
+assert.equal(checkoutStage(chose!), "METHOD_SELECTED");
+assert.equal(lastMethodTried(chose!.methodsTried), "bank_transfer", "the method table uses the payer's choice, not `card`");
+
+// Authorization attempted, and paid.
+assert.equal(
+  checkoutStage(toSafePaymentAttempt({ reference: "T1", status: "failed", gateway_response: "Declined", log: { attempts: 2, history: [] } })!),
+  "AUTHORIZATION_ATTEMPTED",
+);
+const paid = toSafePaymentAttempt({
+  reference: "T196391549214648",
+  status: "success",
+  channel: "bank_transfer",
+  amount: 10_500,
+  paid_at: "2026-09-18T15:25:46.000Z",
+  log: { time_spent: 62, attempts: 0, history: [{ type: "success", message: "Successfully paid with bank_transfer" }] },
+});
+assert.equal(checkoutStage(paid!), "PAID");
+assert.equal(paid!.paidAt!.toISOString(), "2026-09-18T15:25:46.000Z");
+// An error that quotes an account number is masked.
+assert.equal(
+  summariseSessionLog({ history: [{ type: "error", message: "Error: Account 0123456789 not found" }] }).sessionError,
+  "Account # not found",
+);
+// A row recorded before the session summary existed is UNKNOWN, not NO_ACTIVITY.
+assert.equal(checkoutStage({ status: "abandoned", sessionLogged: null, methodsTried: null, authAttempts: null, sessionError: null }), "UNKNOWN");
+for (const stage of CHECKOUT_STAGES) assert(STAGE_COPY[stage], `${stage} has copy`);
+
+// Origin: only our own checkouts count toward the rates.
+assert.equal(attemptOrigin("bg_VIP_018c847a91cb5aed9a1af8f17f5d4e84", "u1"), "CHECKOUT");
+assert.equal(attemptOrigin("T781208455745086", "cmu6meep"), "LEGACY", "a pre-bg_ checkout with our metadata is ours");
+assert.equal(attemptOrigin("probe_render_1789746106", null), "EXTERNAL", "a script's probe is not a customer");
+assert.equal(attemptOrigin("T196391549214648", null), "EXTERNAL", "a payment BetGenius never initialised is not ours");
+
+// Outcome: the P0 state is distinct from a plain success.
+assert.equal(attemptOutcome({ category: "SUCCESS", origin: "CHECKOUT", entitled: true }), "SUCCESS");
+assert.equal(attemptOutcome({ category: "SUCCESS", origin: "CHECKOUT", entitled: false }), "ENTITLEMENT_MISSING");
+assert.equal(attemptOutcome({ category: "SUCCESS", origin: "EXTERNAL", entitled: false }), "EXTERNAL_PAYMENT");
+assert.equal(attemptOutcome({ category: "ABANDONED", origin: "CHECKOUT", entitled: false }), "ABANDONED");
 
 console.log(
   "Payment observability checks passed: fraud block, bank decline, insufficient funds, abandoned, gateway " +

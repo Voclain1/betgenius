@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { catStyles } from "@/components/PredictionCard";
+import { textTone } from "@/lib/tone";
 import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
 
 export type ComboLegView = {
@@ -42,15 +43,15 @@ export function ComboCard({
   const implied = product ? (1 / product) * 100 : null;
 
   return (
-    <article className="card flex flex-col gap-4">
+    <article className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
       <div>
-        <span className={`chip ${catStyles[combo.category] ?? "bg-gray-500/20"}`}>{categoryLabel}</span>
-        <h2 className="mt-2 text-lg font-semibold">{combo.title}</h2>
+        <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${textTone(catStyles[combo.category] ?? "text-gray-400")}`}>{categoryLabel}</span>
+        <h3 className="mt-1.5 text-lg font-black tracking-tight text-gray-100">{combo.title}</h3>
         {combo.description && <p className="mt-1 text-sm text-gray-400">{combo.description}</p>}
       </div>
 
       {locked ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-brand-border bg-brand-bg py-8 text-center">
+        <div className="flex flex-col items-center gap-2 rounded-2xl bg-brand-bg/70 py-8 text-center ring-1 ring-brand-border">
           <Lock size={22} className="text-gray-500" />
           <p className="text-sm text-gray-400">Subscribe to unlock {categoryLabel}.</p>
           <Link href="/pricing" className="btn btn-primary text-sm">Upgrade</Link>
@@ -58,8 +59,8 @@ export function ComboCard({
       ) : (
         <>
           {product !== null && (
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-brand-border bg-brand-bg px-3 py-2">
-              <span className="text-2xl font-bold text-brand">&times;{product.toFixed(2)}</span>
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-2xl bg-brand-bg/70 px-4 py-3 ring-1 ring-brand-border">
+              <span className="text-3xl font-black tabular-nums text-brand">&times;{product.toFixed(2)}</span>
               <span className="text-xs text-gray-400">
                 combined odds from {combo.legs.length} legs, at best available prices
               </span>
@@ -72,15 +73,15 @@ export function ComboCard({
             </div>
           )}
 
-          <ul className="divide-y divide-brand-border rounded-lg border border-brand-border">
+          <ul className="divide-y divide-brand-border overflow-hidden rounded-2xl border border-brand-border">
             {combo.legs.map((l, i) => (
-              <li key={l.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <li key={l.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{i + 1}. {l.matchLabel}</div>
+                  <div className="truncate font-bold text-gray-100">{i + 1}. {l.matchLabel}</div>
                   <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                 </div>
                 {isTiered && (
-                  <span className="shrink-0 font-mono text-sm text-gray-200">{(l.odds as number).toFixed(2)}</span>
+                  <span className="shrink-0 text-sm font-black tabular-nums text-gray-100">{(l.odds as number).toFixed(2)}</span>
                 )}
               </li>
             ))}

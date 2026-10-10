@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { leagueSlug } from "@/lib/slug";
 import type { LeagueStandingRow } from "@/lib/enrichment";
+import { PremiumPanel } from "@/components/PremiumPanel";
 
 /**
  * Where these two sit in the table, and what is at stake around them.
@@ -63,15 +64,18 @@ export function MatchStandingsContext({
   const indices = [...keep].sort((a, b) => a - b);
 
   return (
-    <section className="card space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="section-heading">Table context</h2>
-        {leagueName && (
-          <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="text-[11px] text-brand hover:underline">
+    <PremiumPanel
+      kicker="Table"
+      title="Table context"
+      id="table-context"
+      aside={
+        leagueName && (
+          <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="text-brand hover:underline">
             Full table →
           </Link>
-        )}
-      </div>
+        )
+      }
+    >
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -91,20 +95,20 @@ export function MatchStandingsContext({
               const gd = r.goalsFor - r.goalsAgainst;
               return (
                 <tr key={r.teamId} className={gapBefore ? "border-t border-dashed border-brand-border" : ""}>
-                  <td className="py-1 text-left text-gray-500 tabular-nums">{r.rank}</td>
-                  <td className={`py-1 text-left ${isFixtureTeam ? "font-semibold text-brand" : "text-gray-300"}`}>
+                  <td className="py-2 text-left text-gray-500 tabular-nums">{r.rank}</td>
+                  <td className={`py-2 text-left ${isFixtureTeam ? "font-black text-gray-100" : "text-gray-300"}`}>
                     {r.teamName}
                     {r.zone && <span className={`ml-2 text-[10px] ${zoneStyle(r.zone)}`}>{r.zone}</span>}
                   </td>
-                  <td className="py-1 text-right tabular-nums text-gray-400">{r.played}</td>
-                  <td className="py-1 text-right tabular-nums text-gray-400">{gd > 0 ? `+${gd}` : gd}</td>
-                  <td className="py-1 text-right font-medium tabular-nums">{r.points}</td>
+                  <td className="py-2 text-right tabular-nums text-gray-400">{r.played}</td>
+                  <td className="py-2 text-right tabular-nums text-gray-400">{gd > 0 ? `+${gd}` : gd}</td>
+                  <td className={`py-2 text-right tabular-nums ${isFixtureTeam ? "font-black text-brand" : "font-bold"}`}>{r.points}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-    </section>
+    </PremiumPanel>
   );
 }

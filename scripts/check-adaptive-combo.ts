@@ -227,7 +227,8 @@ check("explicit GENIUS+FEATURED -> both kept", same(comboDestinationCategories([
   check("Combo Bets feed still reads the SAME_GAME_DOUBLE tag plus marketType",
     /"combo-bets": "SAME_GAME_DOUBLE"/.test(feeds) && /cat === "SAME_GAME_DOUBLE" \? \{ marketType: "SAME_GAME_DOUBLE" \}/.test(feeds));
   const curation = code("src/lib/geniusCuration.ts");
-  const pool = curation.slice(curation.indexOf("async function curateCategory"), curation.indexOf("const tagged"));
+  const poolStart = curation.indexOf("async function curateCategory");
+  const pool = curation.slice(poolStart, curation.indexOf("const plan = planCuration", poolStart));
   check("Genius/VIP/Premium curation pool does not depend on FEATURED", pool.length > 0 && !/FEATURED/.test(pool));
 }
 

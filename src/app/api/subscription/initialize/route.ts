@@ -4,8 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { initializeTransaction } from "@/lib/paystack/paystack";
 import { koboFor } from "@/lib/pricing";
-import { hasActivePaidAccess } from "@/lib/entitlement";
 import { newCheckoutReference } from "@/lib/paystack/checkoutReference";
+import { recordCheckoutStart } from "@/lib/paystack/recordCheckoutStart";
 import { z } from "zod";
 
 /**
@@ -66,7 +66,16 @@ export async function POST(req: Request) {
       // NO `plan` — see the block comment at the top of this file.
       reference,
       callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
-      metadata: { userId: session.user.id, tier: parsed.data.tier },
+      // cancel_action is Paystack's documented redirect for the "Cancel
+      // payment" link on its hosted page. Without it a payer who cancels is
+      // left on Paystack with nowhere to go. It lands on the plans with a
+      // notice, and grants nothing — the page only reads it to say so.
+      // userId and tier are the fields verification checks; this one is not.
+      metadata: {
+        userId: session.user.id,
+        tier: parsed.data.tier,
+        cancel_action: `${process.env.NEXTAUTH_URL}/pricing?checkout=cancelled`,
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Paystack error";
@@ -77,31 +86,11 @@ export async function POST(req: Request) {
     );
   }
 
-  // Starting a checkout must not cost the viewer access they already hold.
-  // This used to write `{ tier, status: "PENDING" }` unconditionally, so an
-  // active subscriber who clicked subscribe again — or started an upgrade and
-  // changed their mind — was locked out on the spot, having paid. A row with
-  // live paid access keeps its tier, status and period; only the reference of
-  // the checkout in flight is recorded. The tier being bought is carried by
-  // that reference, so nothing is lost by not writing it here.
-  const existing = await prisma.subscription.findUnique({
-    where: { userId: session.user.id },
-    select: { tier: true, status: true, currentPeriodEnd: true },
-  });
-  const keepsAccess = hasActivePaidAccess(existing);
-
-  await prisma.subscription.upsert({
-    where: { userId: session.user.id },
-    update: keepsAccess
-      ? { paystackRef: init.data.reference }
-      : { tier: parsed.data.tier, status: "PENDING", paystackRef: init.data.reference },
-    create: {
-      userId: session.user.id,
-      tier: parsed.data.tier,
-      status: "PENDING",
-      paystackRef: init.data.reference,
-    },
-  });
+  // Starting a checkout must not cost the viewer access they already hold —
+  // including access a payment granted a moment ago. See recordCheckoutStart
+  // for why the access test lives in the write's WHERE clause rather than in a
+  // read before it.
+  await recordCheckoutStart(prisma, session.user.id, tier, init.data.reference);
 
   return NextResponse.json({ authorization_url: init.data.authorization_url, reference: init.data.reference });
 }

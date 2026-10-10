@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
-import { applyReviewAction } from "@/lib/predictions";
+import { applyReviewAction, KickoffPassedError } from "@/lib/predictions";
 import { GOALS } from "@/lib/goalsCategory";
 import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { parseStoredContext } from "@/lib/ai/context";
@@ -118,8 +118,9 @@ async function loadFixtureState(row: { fixtureApiId: number | null }) {
  *
  * Publication goes through applyReviewAction, the same transition and
  * NEW_PREDICTION event a bulk publish uses, attributed to `actorId` (the admin
- * the generation run is attributed to). This is the ONLY automatic publish in
- * the app, and it is reachable only from runGoalsGeneration.
+ * the generation run is attributed to). One of the app's two automatic
+ * publishes, reachable only from runGoalsGeneration; the other is the dedicated
+ * VIP/PREMIUM pick (autoPublishVipPremiumPrediction in vipPremiumPipeline.ts).
  */
 export async function autoPublishGoalsPrediction(
   predictionId: string,
@@ -133,7 +134,13 @@ export async function autoPublishGoalsPrediction(
     goalsPublishFixture(row, fixture.ledgerStatus, fixture.rows),
   );
   if (!verdict.publish) return { published: false, blocks: verdict.blocks };
-  await applyReviewAction(row, "PUBLISH", actorId);
+  try {
+    await applyReviewAction(row, "PUBLISH", actorId);
+  } catch (error) {
+    // Kickoff passed between the read and the publish: not published, not a failed run.
+    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"] };
+    throw error;
+  }
   return { published: true, blocks: [] };
 }
 

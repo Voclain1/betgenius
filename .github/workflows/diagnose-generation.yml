@@ -1,0 +1,122 @@
+# Read-only production diagnostics, runnable without a terminal: generation
+# lead time (job "leadtime") and the VIP/PREMIUM funnel and record (job
+# "vip-premium").
+#
+# Runs scripts/measure-generation-leadtime.ts against the production database
+# on a session Postgres itself keeps read-only (default_transaction_read_only),
+# and the script refuses to start unless it can confirm that. Output is the job
+# log. Trigger it from the Actions tab ("Run workflow"), or by pushing a change
+# to the script or this file on a claude/* branch.
+
+name: diagnose-generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Kickoff days to look back over"
+        default: "7"
+  push:
+    branches: ["claude/**"]
+    paths:
+      - scripts/measure-generation-leadtime.ts
+      - scripts/measure-vip-premium.ts
+      - scripts/measure-football-data.ts
+      - scripts/measure-genius.ts
+      - .github/workflows/diagnose-generation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  leadtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Lead time, causes, throughput, queue, api usage
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-generation-leadtime.ts "${{ github.event.inputs.days || '7' }}"
+
+  vip-premium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: VIP/PREMIUM funnel, attempts, feeds, picks and record
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-vip-premium.ts "${{ github.event.inputs.days || '4' }}"
+
+  football-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: League tables, crests, squads and coaches freshness
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-football-data.ts
+
+  genius:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Genius curation and feeds
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-genius.ts

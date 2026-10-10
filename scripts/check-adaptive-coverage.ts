@@ -288,7 +288,7 @@ async function main() {
   console.log("\nfallback does not alter prediction thresholds or rules:");
   eq("confidence floors unchanged", [curation.GENIUS_CONFIDENCE_FLOOR, curation.VIP_CONFIDENCE_FLOOR, curation.PREMIUM_CONFIDENCE_FLOOR], [70, 75, 80]);
   eq("market-confirmation floors unchanged", [mc.MC_MIN_MODEL_CONFIDENCE, mc.MC_MIN_MARKET_PROBABILITY, mc.MC_MIN_BOOKMAKERS, vip.VIP_MARKET_FLOOR, vip.PREMIUM_MARKET_FLOOR], [75, 75, 5, 75, 80]);
-  eq("paid-tier quota unchanged", vip.VIP_PREMIUM_DAILY_QUOTA, 6);
+  eq("paid-tier quota unchanged by coverage (8 since Oct 2026)", vip.VIP_PREMIUM_DAILY_QUOTA, 8);
   // A fallback fixture gets the same generation route as any non-top-12
   // league: no special prompt tier, no special calibration.
   const routeOf = (id: number) => JSON.stringify(resolveGenerationRisk(["FEATURED"], id));
@@ -409,6 +409,38 @@ async function main() {
   check("no FALLBACK or DEEP league is ever reservable", [...FALLBACK, ...DEEP].every((id) => !isReservable({ leagueApiId: id, kickoff: inWindow, isNewToLedger: true }, NOW)));
   check("every paid-tier league still is", VIP_PROXY_LEAGUE_IDS.every((id) => isReservable({ leagueApiId: id, kickoff: inWindow, isNewToLedger: true }, NOW)));
   check("SECONDARY leagues are still not reservable (as before)", SECONDARY.every((id) => !isReservable({ leagueApiId: id, kickoff: inWindow, isNewToLedger: true }, NOW)));
+
+  console.log("\nlead time: picks come in a day or two early, not hours before kickoff:");
+  const horizon = coverage.coverageHorizon(NOW);
+  eq("the thin-day target counts only fixtures 12h-48h away", [(horizon.from.getTime() - NOW.getTime()) / H, (horizon.until.getTime() - NOW.getTime()) / H], [12, 48]);
+  eq("a top-up fixture 6h out is refused", fallbackQualityGate(fixture(79, { hoursOut: 6 }), { now: NOW }), { ok: false, reason: "inside_lead_time" });
+  eq("...11h out too", fallbackQualityGate(fixture(79, { hoursOut: 11 }), { now: NOW }).ok, false);
+  eq("...13h out is taken", fallbackQualityGate(fixture(79, { hoursOut: 13 }), { now: NOW }), { ok: true, tier: "FALLBACK" });
+  const leadPlan = planFallback([fixture(141, { hoursOut: 4 }), fixture(141, { hoursOut: 30 })], { allowedTiers: ["CORE", "SECONDARY", "FALLBACK"], widened: true }, new Map(), () => null, NOW);
+  check("the sweep plan skips the imminent Segunda game and keeps the one 30h out",
+    leadPlan.eligible.FALLBACK.length === 1 && leadPlan.rejected.inside_lead_time === 1, JSON.stringify(leadPlan.rejected));
+  const nationalTeams = [5, 32, 960, 34, 29, 36];
+  check("national-team competitions are SECONDARY: discovered every cycle, ~48h out", nationalTeams.every((id) => generationTierOf(id) === "SECONDARY" && queue.BASE_DISCOVERY_LEAGUE_IDS.includes(id)));
+  check("...always in scope, even on a healthy day", nationalTeams.every((id) => !excludedLeagueIds({ allowedTiers: ["CORE", "SECONDARY"] }).includes(id)));
+  check("...ranked straight after CORE", nationalTeams.every((id) => leaguePriorityRank(id) >= GENERATION_TIERS.CORE.length && leaguePriorityRank(id) < GENERATION_TIERS.CORE.length + nationalTeams.length));
+  check("friendlies stay FALLBACK", generationTierOf(10) === "FALLBACK");
+
+  console.log("\nreview: nothing is approved or published after kickoff:");
+  const { reviewBlockedByKickoff, KICKOFF_PASSED_MESSAGE } = await import("../src/lib/predictions");
+  const past = new Date(NOW.getTime() - 60_000), future = new Date(NOW.getTime() + H);
+  eq("approve after kickoff is refused", reviewBlockedByKickoff("APPROVE", past, NOW), KICKOFF_PASSED_MESSAGE);
+  eq("publish after kickoff is refused", reviewBlockedByKickoff("PUBLISH", past, NOW), KICKOFF_PASSED_MESSAGE);
+  eq("...at the exact kickoff minute too", reviewBlockedByKickoff("PUBLISH", NOW, NOW), KICKOFF_PASSED_MESSAGE);
+  eq("archive after kickoff is still allowed", reviewBlockedByKickoff("ARCHIVE", past, NOW), null);
+  eq("approve before kickoff is allowed", reviewBlockedByKickoff("APPROVE", future, NOW), null);
+  eq("a row with no kickoff is not blocked", reviewBlockedByKickoff("PUBLISH", null, NOW), null);
+  const src = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
+  check("the single-row route refuses with 409, using an edited kickoff when the save corrects it",
+    /reviewBlockedByKickoff\(action, rest\.kickoff !== undefined \? rest\.kickoff : before\.kickoff\)/.test(src("src/app/api/admin/predictions/[id]/route.ts")) && /status: 409/.test(src("src/app/api/admin/predictions/[id]/route.ts")));
+  check("bulk review and the automatic publishers go through the same check (applyReviewAction re-reads the kickoff)",
+    /if \(reviewBlockedByKickoff\(action, current\?\.kickoff\)\) throw new KickoffPassedError\(\);/.test(src("src/lib/predictions.ts")) && /applyReviewAction\(row, action/.test(src("src/app/api/admin/predictions/bulk/route.ts")));
+  check("the automatic publishers treat a kickoff race as not-published, not a failed run",
+    ["src/lib/vipPremiumPipeline.ts", "src/lib/goalsPipeline.ts"].every((p) => /error instanceof KickoffPassedError/.test(src(p))));
 
   console.log(`\n${passed} passed, ${failures} failed`);
   if (failures) process.exit(1);

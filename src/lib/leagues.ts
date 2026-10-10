@@ -201,6 +201,13 @@ export const GENERATION_TIERS = {
     1, 4, // World Cup, Euro Championship
   ],
   SECONDARY: [
+    // National-team competitions: Nations League, then World Cup, Euro and
+    // AFCON qualifiers. These were FALLBACK, so they were only ever found by the
+    // thin-day sweep, which on 4 Oct 2026 queued Greece v Germany 10.7h and
+    // Netherlands v Serbia 9h before kickoff. As SECONDARY they are walked by
+    // the discovery cursor every cycle and found ~48h out, like the leagues.
+    // Friendlies stay FALLBACK.
+    5, 32, 960, 34, 29, 36,
     94, 96, // Portugal
     88, 90, // Netherlands
     144, 147, // Belgium
@@ -225,7 +232,6 @@ export const GENERATION_TIERS = {
     254, // USA: NWSL
   ],
   FALLBACK: [
-    5, 32, 960, 34, 29, 36, // national-team competitions (the international-break slate)
     13, 11, 12, 17, // continental club competitions outside Europe
     10, // international friendlies
     79, 141, 136, 62, 41, 42, 46, 89, 95, 180, 114, // European lower divisions
@@ -429,6 +435,11 @@ export function isKnownLeague(leagueApiId?: number | null): boolean {
 /** Competition crest — used for cup/international entries, and as a fallback. */
 export function leagueLogoUrl(id: number): string {
   return `https://media.api-sports.io/football/leagues/${id}.png`;
+}
+
+/** Team crest by API-Football team id. Same media CDN as the league crests; no API call. */
+export function teamCrestUrl(teamApiId: number): string {
+  return `https://media.api-sports.io/football/teams/${teamApiId}.png`;
 }
 
 /**

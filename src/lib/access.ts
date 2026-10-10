@@ -48,3 +48,29 @@ export function canViewCategory(
       return false;
   }
 }
+
+const PAID_TIER_CATEGORIES: ReadonlySet<string> = new Set(["VIP", "PREMIUM"]);
+
+/**
+ * The category a row PRESENTS under: its label chip and the padlock decision.
+ *
+ * A row that is in a free category as well as VIP/PREMIUM (an ordinary pick a
+ * paid tier fell back to) is a free pick wherever it is shown outside the paid
+ * feeds. It never carries the VIP or Premium label there and is never locked
+ * there. Only a row whose every category is paid presents as paid.
+ *
+ * The primary wins when it is free; otherwise the first free category among
+ * `categories`; otherwise the primary (a paid-only row). `categories` may be
+ * plain strings or Prisma link rows.
+ */
+export function presentedCategory(
+  primary: string,
+  categories?: ReadonlyArray<string | { category: string }> | null,
+): PredictionCategory {
+  if (!PAID_TIER_CATEGORIES.has(primary)) return primary as PredictionCategory;
+  const free = (categories ?? [])
+    .map((c) => (typeof c === "string" ? c : c.category))
+    .find((c) => !PAID_TIER_CATEGORIES.has(c));
+  return (free ?? primary) as PredictionCategory;
+}
+

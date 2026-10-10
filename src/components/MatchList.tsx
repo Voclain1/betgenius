@@ -43,10 +43,10 @@ function MatchStatusCell({ fixture }: { fixture: FixtureRow }) {
     );
   }
   if (isIrregular(code)) {
-    return <span className="chip whitespace-nowrap bg-amber-500/20 text-[10px] text-amber-400">{statusLabel(code)}</span>;
+    return <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-amber-400">{statusLabel(code)}</span>;
   }
   if (group === "finished") {
-    return <span className="chip whitespace-nowrap bg-gray-500/20 text-[10px] text-gray-400">{statusLabel(code)}</span>;
+    return <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-gray-500">{statusLabel(code)}</span>;
   }
   return (
     // suppressHydrationWarning: the time is formatted in the VIEWER's locale,
@@ -55,7 +55,7 @@ function MatchStatusCell({ fixture }: { fixture: FixtureRow }) {
     // Livescores), but the league page server-renders it from cache, and
     // without this React treats the difference as a failed hydration and
     // replaces the whole document.
-    <span className="text-xs text-gray-400" suppressHydrationWarning>
+    <span className="text-xs font-bold tabular-nums text-gray-300" suppressHydrationWarning>
       {new Date(fixture.fixture.date).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
     </span>
   );
@@ -78,7 +78,7 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
           }}
         />
       )}
-      <span className="truncate text-sm text-gray-200">{name}</span>
+      <span className="truncate text-sm font-semibold text-gray-100">{name}</span>
     </div>
   );
 }
@@ -97,7 +97,7 @@ export function MatchRow({ fx, linkIndex }: { fx: FixtureRow; linkIndex?: MatchL
   );
 
   return (
-    <div className="grid grid-cols-[1fr,auto,4.5rem] items-center gap-2 px-3 py-2.5 sm:gap-3">
+    <div className="grid grid-cols-[1fr,auto,4.5rem] items-center gap-2 px-4 py-3 sm:gap-3">
       {href ? (
         <Link href={href} className="min-w-0 rounded hover:opacity-80">
           {teams}
@@ -106,8 +106,8 @@ export function MatchRow({ fx, linkIndex }: { fx: FixtureRow; linkIndex?: MatchL
         teams
       )}
       <div className="space-y-1.5 text-right tabular-nums">
-        <div className={`text-base font-bold ${scoreTone}`}>{showScore ? fx.goals.home ?? "-" : " "}</div>
-        <div className={`text-base font-bold ${scoreTone}`}>{showScore ? fx.goals.away ?? "-" : " "}</div>
+        <div className={`text-base font-black ${scoreTone}`}>{showScore ? fx.goals.home ?? "-" : " "}</div>
+        <div className={`text-base font-black ${scoreTone}`}>{showScore ? fx.goals.away ?? "-" : " "}</div>
       </div>
       <div className="flex justify-end">
         <MatchStatusCell fixture={fx} />
@@ -126,8 +126,8 @@ export function LeagueGroup({
   linkIndex?: MatchLinkIndex;
 }) {
   return (
-    <section>
-      <div className="sticky top-16 z-10 flex items-center gap-2 rounded-t-xl border border-b-0 border-brand-border bg-brand-card px-3 py-2">
+    <section className="rounded-3xl border border-brand-border bg-brand-card">
+      <div className="sticky top-16 z-10 flex items-center gap-2 rounded-t-3xl border-b border-brand-border bg-brand-card px-4 py-3">
         {league.logo && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -142,11 +142,11 @@ export function LeagueGroup({
             }}
           />
         )}
-        <span className="truncate text-xs font-semibold uppercase tracking-wide text-gray-300">
+        <span className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-gray-300">
           {league.country} · {league.name}
         </span>
       </div>
-      <div className="divide-y divide-brand-border rounded-b-xl border border-brand-border bg-brand-bg/60">
+      <div className="divide-y divide-brand-border">
         {rows.map((fx) => (
           <MatchRow key={fx.fixture.id} fx={fx} linkIndex={linkIndex} />
         ))}
@@ -199,13 +199,13 @@ export function DateGroupedMatches({ groups, linkIndex }: { groups: { date: stri
   return (
     <div className="space-y-4">
       {groups.map((g) => (
-        <section key={g.date}>
-          <div className="flex items-center gap-2 rounded-t-xl border border-b-0 border-brand-border bg-brand-card px-3 py-2">
-            <span className="truncate text-xs font-semibold uppercase tracking-wide text-gray-300" suppressHydrationWarning>
+        <section key={g.date} className="overflow-hidden rounded-3xl border border-brand-border bg-brand-card">
+          <div className="flex items-center gap-2 border-b border-brand-border px-4 py-3">
+            <span className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-gray-300" suppressHydrationWarning>
               {g.label}
             </span>
           </div>
-          <div className="divide-y divide-brand-border rounded-b-xl border border-brand-border bg-brand-bg/60">
+          <div className="divide-y divide-brand-border">
             {g.rows.map((fx) => (
               <MatchRow key={fx.fixture.id} fx={fx} linkIndex={linkIndex} />
             ))}
@@ -224,13 +224,13 @@ export function DateGroupedMatches({ groups, linkIndex }: { groups: { date: stri
  */
 export function PillTabs<T extends string>({ options, active, onChange }: { options: { key: T; label: string }[]; active: T; onChange: (key: T) => void }) {
   return (
-    <div className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
+    <div className="inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
       {options.map((o) => (
         <button
           key={o.key}
           type="button"
           onClick={() => onChange(o.key)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${active === o.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"}`}
+          className={`rounded-xl px-3.5 py-2 text-sm font-bold transition ${active === o.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"}`}
         >
           {o.label}
         </button>
@@ -255,13 +255,13 @@ export function StatusTabs({
   counts: Record<MatchStatusGroup, number>;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
+    <div className="inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
       {TAB_ORDER.map((t) => (
         <button
           key={t.key}
           type="button"
           onClick={() => onChange(t.key)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+          className={`rounded-xl px-3.5 py-2 text-sm font-bold transition ${
             active === t.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
           }`}
         >
@@ -277,7 +277,7 @@ export type LeagueScope = "major" | "all";
 /** Same pill styling as StatusTabs, kept as a separate control since it's a different axis (which leagues) from status (which matches). */
 export function LeagueScopeToggle({ scope, onChange }: { scope: LeagueScope; onChange: (scope: LeagueScope) => void }) {
   return (
-    <div className="inline-flex rounded-lg border border-brand-border bg-brand-card p-1">
+    <div className="inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
       {(
         [
           { key: "major", label: "Major Leagues" },
@@ -288,7 +288,7 @@ export function LeagueScopeToggle({ scope, onChange }: { scope: LeagueScope; onC
           key={s.key}
           type="button"
           onClick={() => onChange(s.key)}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+          className={`rounded-xl px-3.5 py-2 text-sm font-bold transition ${
             scope === s.key ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
           }`}
         >
@@ -326,7 +326,7 @@ export function GroupedMatches({
         <LeagueGroup key={g.league.id} league={g.league} rows={g.rows} linkIndex={linkIndex} />
       ))}
       {remaining > 0 && (
-        <button type="button" onClick={onShowMore} className="btn btn-ghost w-full justify-center text-sm">
+        <button type="button" onClick={onShowMore} className="w-full rounded-2xl border border-brand-border bg-brand-card px-4 py-3 text-sm font-bold text-gray-200 transition hover:border-brand hover:text-brand">
           Show {Math.min(remaining, pageSize)} more leagues ({remaining} remaining)
         </button>
       )}
@@ -335,5 +335,5 @@ export function GroupedMatches({
 }
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
-  return <div className="card text-gray-400">{children}</div>;
+  return <div className="rounded-3xl border border-brand-border bg-brand-card p-6 text-sm leading-relaxed text-gray-400">{children}</div>;
 }

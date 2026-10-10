@@ -1,6 +1,49 @@
 # Generation scheduling
 
-How the scheduled generation passes are ordered, and why the order is load-bearing.
+How the scheduled generation passes are ordered.
+
+> **Update, Sep 2026: the ordering constraint below no longer applies.** The
+> dedicated VIP/PREMIUM pass is now an overlay on fixtures ordinary generation has
+> already covered (`src/lib/vipPremiumOverlay.ts`), exactly like the Goals pass. It
+> never reads or writes a `PENDING` ledger row, so it cannot race ordinary
+> generation and its pool is the same whenever it fires. The schedule in the table
+> needs no change.
+>
+> Going first never worked in practice: from its first scheduled run on 19 Sep to
+> 28 Sep the pass made **0** model calls in 871 runs. Ordinary generation claimed paid-scope fixtures a median
+> 8 minutes after discovery, about 44 hours before kickoff, when no bookmaker
+> quotes paid-scope fixtures yet (0 of 225 fetches 24–48h out returned a quote).
+> The sections below are kept as the record of why the old design starved.
+
+> **Update, Oct 2026: paid scope widens on thin days, and paid picks are their own.**
+> VIP/PREMIUM were empty through FIFA's merged autumn window (21 Sep – 6 Oct), because
+> the pass only looked at twelve club competitions and none were playing. Now:
+>
+> - **Scope.** `PAID_CORE_LEAGUE_IDS` (the twelve, plus UCL/UEL/UECL, World Cup, Euros)
+>   always; `PAID_WIDENED_LEAGUE_IDS` (men's SECONDARY + national-team competitions) only
+>   when fewer than `PAID_THIN_CORE_MIN` (3) covered core fixtures sit in the window.
+>   Re-decided every run. The gate's bars are unchanged for widened fixtures. The run
+>   summary on `/admin/jobs` says `(widened: N core)` when it widened.
+> - **A different, lower-risk pick.** The paid job is shown the selections already on
+>   the fixture and steered to double chance, draw no bet, conservative goal lines, BTTS
+>   or a clear favourite. The gate refuses a draft that repeats an existing selection
+>   (`REPEATS_EXISTING_PICK`) and can now confirm draw no bet from the de-vigged 1X2.
+>   Team totals and handicaps are not used: there is no team-total market in the odds
+>   feed to check them against.
+> - **Paid-only.** A `VIP_GENERATED`/`PREMIUM_GENERATED` row (`src/lib/paidOnly.ts`) is
+>   shown only in VIP/PREMIUM: never in Today, Genius, Goals or the accumulators, and it
+>   never blocks another category's pick (the Goals pass ignores it).
+> - **Significant odds.** A dedicated pick needs fair odds of at least 1.15
+>   (`PAID_MIN_FAIR_ODDS`, market ≤ ~87%): a near-formality is not a paid pick. Gate
+>   rejections for it are reported as `TOO_SHORT_TO_SELL`.
+> - **Overlap only as a fallback.** Ordinary curation may put a free pick into
+>   VIP/PREMIUM only once the dedicated pass has had its chance at that fixture: it
+>   attempted it, or kickoff is inside 12h with nothing qualifying, and no dedicated
+>   draft is still in review (`fixturesAwaitingDedicated`).
+> - **A free copy never presents as paid.** A row in any free category is stored with
+>   that free category as its primary, and every page that labels or locks by
+>   category goes through `presentedCategory` (`src/lib/access.ts`), so a Banker or
+>   Today pick that is also in VIP shows as Banker/Today, unlocked, with no VIP chip.
 
 Scheduling for this app lives in **cron-job.org**, not in the repository —
 `vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,
@@ -58,7 +101,7 @@ All entries: **GET**, header `Authorization: Bearer <CRON_SECRET>`, timezone
 
 | Order | Endpoint | Schedule | Notes |
 |---|---|---|---|
-| 1 | `/api/admin/generate/run?vipPremium=1` | `5,20,35,50 * * * *` | **Must stay ahead of row 2.** |
+| 1 | `/api/admin/generate/run?vipPremium=1` | `5,20,35,50 * * * *` | Overlay; order no longer matters (see the update above). |
 | 2 | `/api/admin/generate/run` | `10,25,40,55 * * * *` | Ordinary generation. Pre-existing; do not move. |
 
 The 5-minute lead is the whole mechanism. `10,25,40,55` is not a proposal — it is
@@ -77,10 +120,10 @@ from generation by two minutes.
   single working session, one of which killed a long-running poller outright. The
   route already treats a held lock as a non-error for the same reason.
 - **Most pokes are no-ops, and they are cheap.** The pass is capped at
-  `VIP_PREMIUM_DAILY_QUOTA` (6) attempts per day, so the large majority of its 96
-  daily runs do nothing. A run with no claimable in-scope fixture returns before
-  any odds warming, so an empty tick spends **zero** api-football calls — only
-  database reads.
+  `VIP_PREMIUM_DAILY_QUOTA` (8; 6 until Oct 2026) attempts per day and one fixture per run, so the
+  large majority of its 96 daily runs do nothing. It prices a fixture only inside
+  24h of kickoff and only when no quote under 2h old exists, so an empty tick
+  spends **zero** api-football calls — only database reads.
 - **The pass prices its own candidates.** It does not depend on the enrichment odds
   workload having run first, so it carries no ordering constraint against that job.
   This is deliberate: depending on an external scheduler to have warmed odds is

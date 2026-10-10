@@ -58,9 +58,17 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
   // exactly the timeouts and 429s that matter most for staying under the cap.
   await recordCall(path);
 
+  // Never through Next's data cache. With `next: { revalidate: 60 }` every
+  // request whose URL never changes (a league's /standings, a team's
+  // /fixtures?last=5) kept being answered from a cached copy that stopped
+  // revalidating: in October 2026 tables and recent results were frozen at
+  // 20 September while every refresh stamped them as fresh. URLs that carry a
+  // date were unaffected, which is what gave it away. Each call is counted
+  // against the daily budget above whether or not it is cached, so the cache
+  // saved nothing the budget relies on.
   const res = await fetch(url.toString(), {
     headers: { "x-apisports-key": KEY },
-    next: { revalidate: 60 }, // 1-minute cache on the edge
+    cache: "no-store",
   });
   if (!res.ok) {
     console.error("[api-football]", res.status, await res.text());
@@ -185,8 +193,16 @@ export function getFixturesByLeague(leagueId: number, season: number, from?: str
   return apiFetch<FixtureRow[]>("/fixtures", params);
 }
 
-type LeagueSeason = { year: number; start: string; end: string; current: boolean };
-const seasonMetaCache = new Map<number, LeagueSeason[]>();
+export type LeagueSeason = { year: number; start: string; end: string; current: boolean };
+const seasonMetaCache = new Map<number, { seasons: LeagueSeason[]; at: number }>();
+/**
+ * How long a league's season list is trusted. It has to expire: a warm server
+ * instance can live for days, and a list cached before API-Football added the
+ * new season has no range covering today, so every lookup fell back to last
+ * season. That is how the Premier League page came to show the finished
+ * 2025/26 table in October 2026.
+ */
+const SEASON_META_TTL_MS = 6 * 60 * 60_000;
 
 /**
  * API-Football's `season` param is the year a season STARTED, not the calendar
@@ -196,19 +212,37 @@ const seasonMetaCache = new Map<number, LeagueSeason[]>();
  * this rarely changes and every avoided call matters under a 10 req/min cap.
  */
 export async function resolveSeason(leagueId: number, date: Date): Promise<number> {
-  let seasons = seasonMetaCache.get(leagueId);
+  const cached = seasonMetaCache.get(leagueId);
+  let seasons = cached && Date.now() - cached.at < SEASON_META_TTL_MS ? cached.seasons : null;
   if (!seasons) {
     const raw = await apiFetch<Array<{ seasons: LeagueSeason[] }>>("/leagues", { id: leagueId });
-    seasons = raw?.[0]?.seasons ?? [];
-    seasonMetaCache.set(leagueId, seasons);
+    const fetched = raw?.[0]?.seasons ?? [];
+    // A failed lookup is not cached, so the next call retries rather than
+    // pinning the heuristic below for six hours. A previous good list is
+    // better than nothing while the API is failing.
+    if (fetched.length) seasonMetaCache.set(leagueId, { seasons: fetched, at: Date.now() });
+    seasons = fetched.length ? fetched : cached?.seasons ?? [];
   }
+  return pickSeason(seasons, date);
+}
 
+/**
+ * The season a date belongs to. Pure, so it is unit-checked.
+ *
+ * In a season's date range -> that season. In a gap (the summer break, or a
+ * date past every listed range) -> the most recent season that had started by
+ * then, so the break shows last season's final table until the new one
+ * begins. The API's own `current` flag only breaks a tie when nothing has
+ * started; it is not trusted on its own, because it lags the calendar.
+ */
+export function pickSeason(seasons: LeagueSeason[], date: Date): number {
   const iso = date.toISOString().slice(0, 10);
-  const inRange = seasons.find((s) => s.start <= iso && iso <= s.end);
+  const inRange = seasons.filter((s) => s.start <= iso && iso <= s.end).sort((a, b) => b.year - a.year)[0];
   if (inRange) return inRange.year;
 
-  // Off-season gap (e.g. summer break between two seasons) — fall back to
-  // whichever season the API currently flags as current, else a heuristic.
+  const started = seasons.filter((s) => s.start <= iso).sort((a, b) => b.start.localeCompare(a.start))[0];
+  if (started) return started.year;
+
   const current = seasons.find((s) => s.current);
   if (current) return current.year;
   return date.getUTCMonth() >= 6 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
@@ -430,7 +464,8 @@ export type PlayerStatEntry = {
   player: { id: number; name: string; photo?: string | null };
   statistics: Array<{
     team: { id: number; name: string; logo?: string | null };
-    games: { appearences: number | null; minutes: number | null; position?: string | null };
+    league?: { id: number; name?: string } | null;
+    games: { appearences: number | null; minutes: number | null; position?: string | null; rating?: string | null };
     goals: { total: number | null; assists: number | null };
     cards: { yellow: number | null; yellowred: number | null; red: number | null };
   }>;
@@ -453,6 +488,14 @@ export function getTopAssists(leagueId: number, season: number) {
 
 export function getTopYellowCards(leagueId: number, season: number) {
   return apiFetch<PlayerStatEntry[]>("/players/topyellowcards", { league: leagueId, season });
+}
+
+/**
+ * A team's players with their season statistics, one page (20 players) at a
+ * time. Each player carries one statistics entry per competition played.
+ */
+export function getTeamPlayerStats(teamId: number, season: number, page = 1) {
+  return apiFetch<PlayerStatEntry[]>("/players", { team: teamId, season, page });
 }
 
 export type SquadEntry = { id: number; name: string; age?: number | null; number?: number | null; position?: string | null; photo?: string | null };

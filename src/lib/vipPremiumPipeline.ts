@@ -1,121 +1,107 @@
 import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { matchKey } from "@/lib/slug";
-import { leaguePriorityRank } from "@/lib/leagues";
-import { setPredictionCategories } from "@/lib/predictions";
+import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
 import type { FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
-import { VIP_PROXY_LEAGUE_IDS } from "@/lib/ai/generationRisk";
-import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/selector";
+import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 import {
   evaluateMarketConfirmed,
   compareMarketConfirmed,
-  lopsidednessSignal,
-  MC_MIN_MARKET_PROBABILITY,
-  MC_MAX_QUOTE_AGE_MS,
   type MarketConfirmedVerdict,
 } from "@/lib/marketConfirmed";
-import { VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE } from "@/lib/geniusCuration";
+import {
+  DEDICATED_PAID_PROVENANCES,
+  PAID_TIER_CATEGORIES,
+  PREMIUM_GENERATED_PROVENANCE,
+  VIP_GENERATED_PROVENANCE,
+  isLegacyPaidTierDay,
+  paidFixtureKey,
+} from "@/lib/geniusCuration";
+import {
+  RETRYABLE_GATE_REASONS,
+  VIP_PREMIUM_BACKOFF_LOCK_PREFIX,
+  VIP_PREMIUM_INTENT,
+  VIP_PREMIUM_RETRY_BACKOFF_MS,
+  paidAutoPublishVerdict,
+  paidPublishFixture,
+  fixturesAwaitingDedicated,
+  paidTierFor,
+  planVipPremiumCandidates,
+  repeatsExistingPick,
+  qualifyVipPremiumTargets,
+  readVipPremiumAttempt,
+  vipPremiumOddsToWarm,
+  type OddsSkipReason,
+  type OverlayAttempt,
+  type OverlayQuote,
+  type OverlaySkipReason,
+  type PaidPublishBlock,
+  type PaidTier,
+  type VipPremiumTarget,
+} from "@/lib/vipPremiumOverlay";
+
+export {
+  VIP_PREMIUM_INTENT,
+  VIP_MARKET_FLOOR,
+  PREMIUM_MARKET_FLOOR,
+  VIP_PREMIUM_ODDS_WARM_LIMIT,
+  VIP_PREMIUM_RUN_LIMIT,
+  type PaidTier,
+  type VipPremiumTarget,
+} from "@/lib/vipPremiumOverlay";
 
 /**
- * The dedicated VIP/PREMIUM pass: market-first targeting, one generation, two bars.
+ * The dedicated VIP/PREMIUM pass: market-first targeting, one generation, two
+ * bars — database side. The rules are in src/lib/vipPremiumOverlay.ts.
  *
- * WHAT THIS REPLACES, AND WHY. marketConfirmedPipeline.ts was already a
- * dedicated VIP/PREMIUM pass — its categories were literally ["VIP","PREMIUM"]
- * — and it was measured rather than assumed to be broken. Over 90 days it ran
- * 82 jobs on 22 distinct days, produced 168 drafts, and promoted 3 rows (1.8%).
- * Two independent causes, both structural and neither about the prompt:
+ * WHAT IT REPLACED, AND WHY. marketConfirmedPipeline.ts was already a
+ * dedicated VIP/PREMIUM pass, and it was measured rather than assumed to be
+ * broken: 82 jobs on 22 days, 168 drafts, 3 promotions (1.8%). Not one draft
+ * had a fresh quote when the gate read it, and 60.7% fell below the model floor
+ * because it took whatever ordinary discovery offered. This pass inverts both:
+ * a fixture is generated for BECAUSE the market already prices it into
+ * qualifying territory, so a fresh quote exists by construction.
  *
- *   COLD ODDS. Not one of the 168 drafts had a fresh quote when the gate read
- *   it. Drafts are created a median 43.3h before kickoff (p25 40.8, p75 45.8);
- *   odds were being FETCHED a median 1.8h before kickoff (p25 0.8, p90 15.8).
- *   The gate ran in the same request as generation, so it was asking the market
- *   a question roughly 41 hours before anything had asked the books. Median
- *   quote age at draft time was MINUS 41.7 hours — the cache row was filled
- *   afterwards, every time.
+ * WHAT CHANGED SINCE (2026-09). It targeted PENDING ledger rows and so had to
+ * beat ordinary generation to each fixture. It never did: 0 model calls in 871
+ * scheduled runs over 19–28 Sep. It is now an OVERLAY on fixtures ordinary generation has
+ * already covered, like the Goals pass — see the note at the top of
+ * vipPremiumOverlay.ts. It reads the GenerationAttempt ledger but NEVER writes
+ * it; its attempt record is the VIP_PREMIUM-intent AIJob, plus an AppLock
+ * backoff when a run throws before one is written.
  *
- *   READ THAT 1.8h FIGURE CORRECTLY. It is when the REFRESH CRON got round to a
- *   fixture, not when a market exists to be read. The first live run of this
- *   pass tested the difference directly and the distinction is the whole reason
- *   this design works: priced on demand, 11 of 11 in-scope fixtures returned a
- *   full quote, including ones 25.8h, 27.3h and 28.3h before kickoff, at five
- *   to six bookmakers each. The books open well inside the generation window.
- *   Nothing had been asking them.
+ * WHAT IT DOES NOT DO — deliberately. It does not use a different prompt. The
+ * original tier-keyed calibration told VIP/PREMIUM to be "more safer", and on
+ * fixtures the book made the favourite 65%+, VIP-tier drafts took the straight
+ * winner 35.7% of the time against GENIUS-tier's 72.7% (see the note on
+ * tieredCalibrationBlock in ai/analysis.ts). A stricter paid-tier prompt
+ * produces over-hedging, and hedges are where this gate fails. The market mix
+ * corrects itself through candidate selection instead: margin calibration
+ * already routes a lopsided fixture to MATCH_WINNER, and targeting selects
+ * lopsided fixtures.
  *
- *   NO TARGETING. 60.7% of its drafts were rejected MODEL_BELOW_FLOOR. It took
- *   the next N fixtures from ordinary discovery, so most of what it generated
- *   was never going to clear 75 in the first place.
- *
- * This pass inverts both, the same way selectBetOfTheDayTargets inverts the
- * price band: a fixture is generated for BECAUSE the market has already priced
- * it into qualifying territory. A fresh quote therefore exists by construction,
- * and the candidate pool is pre-filtered to fixtures the market already calls
- * one-sided, which is where the model's own confidence is highest.
- *
- * WHAT IT DOES NOT DO — deliberately. It does not use a different prompt. That
- * experiment has already been run here and lost: the original tier-keyed
- * calibration told VIP/PREMIUM to be "more safer", and on fixtures the book
- * made the favourite 65%+, VIP-tier drafts took the straight winner 35.7% of
- * the time against GENIUS-tier's 72.7% — a 37pp gap on fixtures of the same
- * lopsidedness (see the note on tieredCalibrationBlock in ai/analysis.ts). A
- * stricter paid-tier prompt does not produce more rigour, it produces
- * over-hedging. And hedges are precisely where this gate fails: across 213
- * paid-tier-eligible rows, MATCH_WINNER confirmed 56.3% of the time and
- * DOUBLE_CHANCE 26.5%, while BTTS confirmed 0% (80% of it MARKET_BELOW_FLOOR).
- *
- * The market mix corrects itself through CANDIDATE SELECTION instead. Margin
- * calibration already routes a lopsided fixture to MATCH_WINNER, and targeting
- * selects lopsided fixtures — so the same prompt, given better inputs, produces
- * the market mix the gate can actually confirm. Rigour comes from the
- * cross-check and the floors, not from prose.
- *
- * ADDITIVE, NEVER A REPLACEMENT. Ordinary curation keeps filling VIP and
- * PREMIUM exactly as it does today. A day on which nothing qualifies is a
- * normal day, not a failure — the tiers were already empty on 6 of 31 observed
- * days for reasons this pass neither causes nor fixes.
+ * ADDITIVE. Ordinary curation keeps filling VIP and PREMIUM, above their floors
+ * only. A day on which nothing qualifies is a normal day, not a failure.
  */
-
-/** Label recorded on AIJob.prompt.intent — see GenerateFixtureInput.intent. */
-export const VIP_PREMIUM_INTENT = "VIP_PREMIUM" as const;
 
 /**
  * Dedicated generation attempts per day.
  *
- * Counted as ATTEMPTS, not survivors, for the reason every other pass here
- * counts them that way: a draft that then fails the gate has still spent
- * api-football budget, a model call and real money, and counting only successes
- * would let a bad day retry without limit.
+ * Counted as ATTEMPTS, not survivors: a draft that then fails the gate has
+ * still spent api-football budget, a model call and real money, and counting
+ * only successes would let a bad day retry without limit.
  *
- * 6 is sized against the measured candidate supply, not chosen for feel. Over
- * 31 days there were ~6.4 paid-tier-eligible fixtures a day; modelled yield at
- * the VIP bar is 1.65 picks/day and at the PREMIUM bar 1.00/day. Six attempts
- * is enough to land one or two picks without consuming the whole pool, and
- * costs at most ~66 api-football calls (0.9% of the 7,500/day ceiling, which
- * currently runs 44-63% used) plus roughly 44k model tokens at the measured
- * 5.7k prompt + 1.6k output per job.
- *
- * Like BANKER_DAILY_QUOTA's 3, this is a starting number chosen so that being
- * wrong about it is affordable. The recorded attempt-to-promotion ratio is what
- * should revise it — see scripts/verify-vip-premium-pass.ts.
+ * Raised from 6 to 8 (Oct 2026). 6 was sized against the measured candidate
+ * supply (~6.4 paid-tier-eligible fixtures a day over 31 days; modelled yield
+ * 1.65 VIP and 1.00 PREMIUM picks a day). The recorded attempt-to-promotion
+ * ratio then showed the cap was what bound: over 4-6 Oct the pass used 5 of
+ * its 6 attempts every day, and 17 of 30 gate rejections were the model below
+ * its floor, a draft the next attempt could have replaced. Two more attempts a
+ * day cost two model calls and their api-football fetches. The tier floors are
+ * unchanged. scripts/measure-vip-premium.ts reports whether the extra attempts
+ * convert.
  */
-export const VIP_PREMIUM_DAILY_QUOTA = 6;
-
-/**
- * The market bar for each tier.
- *
- * VIP reuses MC_MIN_MARKET_PROBABILITY rather than restating 75, because it IS
- * that bar — the gate's own floor, unchanged.
- *
- * PREMIUM's 80 is the measured separator. Over 206 settled paid-tier-eligible
- * rows, raising the MODEL confidence floor from 75 to 80 moved the strike rate
- * 76.2% -> 78.8% while cutting the sample from 206 to 33. Raising the MARKET
- * floor from 75 to 80 moved it 84.2% -> 86.5% on a larger surviving sample
- * (n=57 -> n=37). The market is what separates the tiers; the confidence floor
- * barely does, which is why PREMIUM is a strict subset on price rather than a
- * second, higher confidence bar.
- */
-export const VIP_MARKET_FLOOR = MC_MIN_MARKET_PROBABILITY;
-export const PREMIUM_MARKET_FLOOR = 80;
+export const VIP_PREMIUM_DAILY_QUOTA = 8;
 
 /**
  * NOT tightened, on purpose. Agreement is non-monotonic against outcome in the
@@ -125,15 +111,6 @@ export const PREMIUM_MARKET_FLOOR = 80;
  * to make that decision legible rather than accidental.
  */
 export const VIP_PREMIUM_MAX_GAP_PP_UNCHANGED = true;
-
-/**
- * Most fixtures this pass will price itself in one run.
- *
- * Sized to the observed in-scope candidate pool (11 on the first live probe),
- * so a normal run warms all of them and an unusual day is still bounded. One
- * api-football call each.
- */
-export const VIP_PREMIUM_ODDS_WARM_LIMIT = 12;
 
 function intentOf(promptJson: string): string | null {
   try {
@@ -155,15 +132,11 @@ export async function vipPremiumGeneratedToday(now: Date = new Date()): Promise<
 /**
  * Remaining quota for a KNOWN count, and whether that count exhausts the day.
  *
- * Pure, and separated from the counting query on purpose. The quota rule and
- * "how many did we generate today" are different questions: the first is fixed
- * arithmetic that must hold for every input, the second is whatever production
- * happens to have done since midnight in Lagos. Folding them together meant the
- * rule could only be checked against live state, so the check that guarded it
- * failed legitimately on any day generation had already run.
- *
- * Both call sites below go through these, so the stand-down decision is the
- * same comparison everywhere rather than two inequalities that could drift.
+ * Pure, and separated from the counting query on purpose: the quota rule is
+ * fixed arithmetic that must hold for every input, while "how many did we
+ * generate today" is whatever production happens to have done since midnight
+ * in Lagos. Both call sites go through these, so the stand-down decision is the
+ * same comparison everywhere.
  */
 export function vipPremiumQuotaFrom(generatedToday: number): number {
   return Math.max(0, VIP_PREMIUM_DAILY_QUOTA - generatedToday);
@@ -177,210 +150,185 @@ export async function vipPremiumQuotaRemaining(now: Date = new Date()): Promise<
   return vipPremiumQuotaFrom(await vipPremiumGeneratedToday(now));
 }
 
-export type VipPremiumTarget = {
-  matchKey: string;
-  fixtureApiId: number;
-  leagueApiId: number | null;
-  homeTeam: string;
-  awayTeam: string;
-  kickoff: Date;
-  /** The de-vigged probability that made this fixture worth a paid-tier attempt. */
-  marketProbability: number;
-  market: string;
-  selection: string;
-  bookmakers: number;
-  quoteAgeMs: number;
-};
+// ── Targeting ────────────────────────────────────────────────────────────────
+
+/** Far enough back to cover every fixture the 48h window can still reach. */
+const ATTEMPT_LOOKBACK_MS = 4 * 24 * 3_600_000;
+
+/** VIP_PREMIUM-intent AIJobs in the lookback — the pass's attempt record. */
+export async function loadVipPremiumAttempts(now: Date = new Date()): Promise<OverlayAttempt[]> {
+  const jobs = await prisma.aIJob.findMany({
+    // Narrowed in SQL on the literal JSON.stringify writes; readVipPremiumAttempt
+    // then parses properly, so a false match costs nothing but a parse.
+    where: { createdAt: { gte: new Date(now.getTime() - ATTEMPT_LOOKBACK_MS) }, prompt: { contains: `"intent":"${VIP_PREMIUM_INTENT}"` } },
+    select: { prompt: true, createdAt: true },
+  });
+  return jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+}
+
+/**
+ * fixturesAwaitingDedicated, loaded: this pass's attempts and its drafts still
+ * in review. Called by ordinary curation (geniusCuration.ts) through a dynamic
+ * import, because this module imports that one.
+ */
+export async function loadFixturesAwaitingDedicated(
+  rows: Parameters<typeof fixturesAwaitingDedicated>[0]["rows"],
+  now: Date = new Date(),
+): Promise<Set<string>> {
+  if (rows.length === 0) return new Set();
+  const [attempts, drafts] = await Promise.all([
+    loadVipPremiumAttempts(now),
+    prisma.prediction.findMany({
+      where: {
+        status: "PENDING_REVIEW",
+        kickoff: { gt: now },
+        OR: [
+          { provenance: { in: [VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE] } },
+          { aiJob: { prompt: { contains: `"intent":"${VIP_PREMIUM_INTENT}"` } } },
+        ],
+      },
+      select: { id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+    }),
+  ]);
+  return fixturesAwaitingDedicated({
+    rows,
+    attemptedFixtureApiIds: new Set(attempts.map((a) => a.fixtureApiId).filter((id): id is number => id != null)),
+    openDraftKeys: new Set(drafts.map(paidFixtureKey)),
+    now,
+  });
+}
 
 export type TargetSelection = {
   targets: VipPremiumTarget[];
-  /** Un-generated fixtures inside the odds horizon. */
+  /** Covered (ledger SUCCEEDED) fixtures inside the paid-generation window. */
   considered: number;
-  /** ...of which are in the paid-tier league scope. */
+  /** ...of which pass every pre-odds rule: paid scope, live context, no dedicated pick, not yet attempted. */
   inScope: number;
   /** ...of which carry a quote fresh enough for the gate to read. */
   freshlyPriced: number;
-  /** ...of which the market already prices at or above the VIP bar. */
+  /** ...of which the market already prices at or above the VIP bar, at enough books. */
   qualified: number;
-  /** Fixtures this run priced itself before reading the cache. */
+  /** api-football odds calls this run made (one per fixture priced on demand). */
+  oddsCalls: number;
+  /** ...of which returned a quote. */
   warmed: number;
+  /** Why each considered fixture was not targeted. */
+  skipped: Partial<Record<OverlaySkipReason | OddsSkipReason, number>>;
+  /** The core was thin, so this run also looked at the widened competitions. */
+  widened: boolean;
+  /** Covered core fixtures inside the window. */
+  coreFixtures: number;
 };
 
 /**
- * Which un-generated fixtures deserve a paid-tier attempt today — market first.
+ * Which covered fixtures deserve a paid-tier attempt now — market first.
  *
- * Mirrors selectBetOfTheDayTargets: read the same GenerationAttempt-backed
- * candidate list, keep only fixtures the cached market already qualifies, and
- * hand those to the worker through its matchKeys allow-list. Nothing is
- * generated speculatively and then discarded.
- *
- * FRESHNESS IS CHECKED HERE, not only in the gate. The gate will refuse a quote
- * older than MC_MAX_QUOTE_AGE_MS anyway, so targeting a stale fixture would
- * spend a model call on a draft that cannot pass — which is exactly the failure
- * that made the previous pipeline promote 3 rows in 90 days.
- *
- * Scoped to VIP_PROXY_LEAGUE_IDS, the same top-12 competition set the VIP
- * calibration route uses, so the population this generates over is the one the
- * yield forecast was measured on.
+ * Reads the ledger (SUCCEEDED rows only), the rows on each fixture, this pass's
+ * previous attempts and backoffs, then prices on demand only what the gate
+ * could not already read (vipPremiumOddsToWarm), then keeps fixtures the market
+ * puts at or above the VIP bar. Writes nothing but FixtureOddsCache, through
+ * refreshOddsCache — the odds workload's own writer, with its own back-off.
  */
 export async function selectVipPremiumTargets(
   now: Date = new Date(),
   limit = VIP_PREMIUM_DAILY_QUOTA,
   options: {
     warmOdds?: boolean;
-    /**
-     * VERIFICATION ONLY. Drops the top-12 league restriction so the generate ->
-     * gate -> promote path can be exercised end to end on whatever is claimable
-     * right now. Production always uses the default: a fixture stays PENDING a
-     * median of 23 minutes before ordinary generation claims it, so an in-scope
-     * candidate is often simply not available on demand.
-     */
+    /** VERIFICATION ONLY (scripts/verify-vip-premium-pass.ts): drops the paid-scope restriction. */
     anyLeague?: boolean;
   } = {},
 ): Promise<TargetSelection> {
-  const { getCandidateOddsTargets } = await import("@/lib/enrichment");
-  const candidates = await getCandidateOddsTargets(now);
-  const empty: TargetSelection = {
-    targets: [], considered: candidates.length, inScope: 0, freshlyPriced: 0, qualified: 0, warmed: 0,
-  };
-  if (candidates.length === 0) return empty;
+  const from = new Date(now.getTime() + GENERATE_FROM_HOURS * 3_600_000);
+  const until = new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000);
+  const [ledger, rows, attempts, backoffs] = await Promise.all([
+    prisma.generationAttempt.findMany({
+      where: { kickoff: { gte: from, lte: until }, status: "SUCCEEDED", fixtureApiId: { not: null } },
+      select: { matchKey: true, fixtureApiId: true, leagueApiId: true, leagueName: true, homeTeam: true, awayTeam: true, kickoff: true, round: true, status: true },
+    }),
+    prisma.prediction.findMany({
+      where: { kickoff: { gte: from, lte: until }, status: { not: "ARCHIVED" } },
+      select: { id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true, provenance: true, contextComplete: true },
+    }),
+    loadVipPremiumAttempts(now),
+    prisma.appLock.findMany({ where: { key: { startsWith: VIP_PREMIUM_BACKOFF_LOCK_PREFIX }, expiresAt: { gt: now } }, select: { key: true } }),
+  ]);
+  const backingOff = new Set(backoffs.map((b) => Number(b.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))).filter(Number.isFinite));
 
-  const ledger = await prisma.generationAttempt.findMany({
-    where: { matchKey: { in: candidates.map((c) => c.matchKey) } },
-    select: {
-      matchKey: true, leagueApiId: true, homeTeam: true, awayTeam: true,
-      kickoff: true, fixtureApiId: true, status: true,
-    },
+  const plan = planVipPremiumCandidates({
+    ledger: ledger.filter((l) => l.kickoff).map((l) => ({ ...l, kickoff: l.kickoff! })),
+    rows,
+    attempts,
+    backingOff,
+    now,
+    anyLeague: options.anyLeague,
   });
-  const metaByKey = new Map(ledger.map((l) => [l.matchKey, l]));
 
-  /**
-   * Only fixtures the worker can actually CLAIM.
-   *
-   * getCandidateOddsTargets deliberately includes SUCCEEDED rows, because the
-   * odds workload wants to keep pricing a fixture after it has been generated.
-   * Targeting must not: a fixture that already has predictions is not selected
-   * by selectCandidates, so generating for it is impossible and every slot
-   * spent on one is a slot wasted.
-   *
-   * This was not a theoretical concern. The first live run targeted six
-   * fixtures, all SUCCEEDED, and the worker claimed ZERO — the pass had spent
-   * its targeting on fixtures it could never generate for.
-   *
-   * The kickoff window is the selector's own, for the same reason: a fixture
-   * outside GENERATE_FROM_HOURS..GENERATE_UNTIL_HOURS is not a candidate there
-   * either, so it cannot be one here.
-   */
-  const fromMs = now.getTime() + GENERATE_FROM_HOURS * 3_600_000;
-  const untilMs = now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000;
-  const inScopeKeys = candidates
-    .map((c) => c.matchKey)
-    .filter((k) => {
-      const meta = metaByKey.get(k);
-      if (!meta?.fixtureApiId || meta.status !== "PENDING") return false;
-      if (!options.anyLeague && !(VIP_PROXY_LEAGUE_IDS as readonly number[]).includes(meta.leagueApiId ?? -1)) return false;
-      const ko = meta.kickoff.getTime();
-      return ko >= fromMs && ko <= untilMs;
-    });
-  if (inScopeKeys.length === 0) return { ...empty, inScope: 0 };
+  const readQuotes = async (keys: string[]) =>
+    keys.length
+      ? await prisma.fixtureOddsCache.findMany({
+          where: { matchKey: { in: keys } },
+          select: { matchKey: true, oddsJson: true, fetchedAt: true, lastAttemptAt: true },
+        })
+      : [];
+  const quotes = new Map<string, OverlayQuote>(
+    (await readQuotes(plan.candidates.map((c) => c.matchKey))).map((q) => [
+      q.matchKey,
+      { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt },
+    ]),
+  );
 
-  /**
-   * Warm this pass's OWN candidates before reading the cache.
-   *
-   * Without this the pass silently cannot fire. Measured on a live run before
-   * it existed: of 11 in-scope candidates — eight of them kicking off within
-   * four hours — ZERO had ever been priced, and the entire FixtureOddsCache
-   * held 0 rows fetched in the previous two hours. Targeting on "already
-   * priced" is only meaningful if something has actually priced, and depending
-   * on an external scheduler to have run the odds workload first is exactly the
-   * kind of unstated ordering dependency that let the predecessor pass fail
-   * quietly for 90 days.
-   *
-   * Uses refreshOddsCache, the same per-fixture function the cron's odds
-   * workload calls, and selectStaleOddsTargets, so the failed-fetch back-off
-   * still applies and fixtures the books never price are not re-requested every
-   * run. Nearest kickoff first, because a book that has priced anything has
-   * priced its soonest fixtures — though in practice every in-scope fixture in
-   * the generation window came back priced on the first live run.
-   *
-   * Cost is one api-football call per warmed fixture, capped below — a rounding
-   * error against the 7,500/day ceiling, and it replaces calls the odds
-   * workload would otherwise have spent on the same fixtures anyway.
-   */
+  let oddsCalls = 0;
   let warmed = 0;
   if (options.warmOdds) {
-    const { selectStaleOddsTargets, refreshOddsCache } = await import("@/lib/enrichment");
-    const inScopeSet = new Set(inScopeKeys);
-    const mine = candidates
-      .filter((c) => inScopeSet.has(c.matchKey))
-      .sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
-    const due = (await selectStaleOddsTargets(mine, now)).slice(0, VIP_PREMIUM_ODDS_WARM_LIMIT);
-    for (const t of due) {
-      try {
-        await refreshOddsCache(t);
-        warmed++;
-      } catch {
-        // A fixture the provider will not price is not a failure of the pass.
-        // refreshOddsCache records its own lastError/back-off; the target simply
-        // does not qualify below.
+    const due = vipPremiumOddsToWarm(plan.candidates, quotes, now);
+    if (due.length) {
+      const { refreshOddsCache } = await import("@/lib/enrichment");
+      for (const c of due) {
+        oddsCalls++;
+        try {
+          const r = await refreshOddsCache({ matchKey: c.matchKey, fixtureApiId: c.fixtureApiId, kickoff: c.kickoff, kind: "candidate" });
+          if (r.result === "ok") warmed++;
+        } catch {
+          // A fixture the provider will not price is not a failure of the pass;
+          // refreshOddsCache records its own lastError, and the target simply
+          // does not qualify below.
+        }
+      }
+      for (const q of await readQuotes(due.map((c) => c.matchKey))) {
+        quotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt });
       }
     }
   }
 
-  const cached = await prisma.fixtureOddsCache.findMany({
-    where: { matchKey: { in: inScopeKeys }, fetchedAt: { not: null } },
-    select: { matchKey: true, oddsJson: true, fetchedAt: true },
-  });
-
-  let freshlyPriced = 0;
-  const qualified: VipPremiumTarget[] = [];
-  for (const c of cached) {
-    const quoteAgeMs = now.getTime() - c.fetchedAt!.getTime();
-    if (quoteAgeMs > MC_MAX_QUOTE_AGE_MS) continue;
-    freshlyPriced++;
-
-    const best = lopsidednessSignal((c.oddsJson as unknown as FixtureOdds | null) ?? null);
-    if (!best || best.probability < VIP_MARKET_FLOOR) continue;
-
-    const meta = metaByKey.get(c.matchKey)!;
-    qualified.push({
-      matchKey: c.matchKey,
-      fixtureApiId: meta.fixtureApiId!,
-      leagueApiId: meta.leagueApiId,
-      homeTeam: meta.homeTeam,
-      awayTeam: meta.awayTeam,
-      kickoff: meta.kickoff,
-      marketProbability: best.probability,
-      market: best.market,
-      selection: best.value,
-      bookmakers: best.bookmakers,
-      quoteAgeMs,
-    });
-  }
-
-  // Strongest market conviction first — unlike Bet of the Day, which ranks by
-  // league priority, because here the market's own confidence IS the thing
-  // being bought and a 91% leg in a mid-table fixture is a better paid-tier
-  // candidate than a 76% one in a marquee tie. League rank breaks ties.
-  qualified.sort(
-    (a, b) =>
-      b.marketProbability - a.marketProbability ||
-      leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId) ||
-      a.kickoff.getTime() - b.kickoff.getTime() ||
-      a.matchKey.localeCompare(b.matchKey),
-  );
-
+  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit);
   return {
-    targets: qualified.slice(0, limit),
-    considered: candidates.length,
-    inScope: inScopeKeys.length,
-    freshlyPriced,
-    qualified: qualified.length,
+    targets: odds.targets,
+    considered: plan.considered,
+    inScope: plan.candidates.length,
+    freshlyPriced: odds.freshlyPriced,
+    qualified: odds.qualified,
+    oddsCalls,
     warmed,
+    skipped: { ...plan.skipped, ...odds.skipped },
+    widened: plan.widened,
+    coreFixtures: plan.coreFixtures,
   };
 }
 
-export type PaidTier = "VIP" | "PREMIUM";
+/**
+ * Leave a fixture alone for VIP_PREMIUM_RETRY_BACKOFF_MS after its generation
+ * threw before an AIJob was written. A draft that was generated needs no
+ * backoff: its AIJob already marks the fixture attempted.
+ */
+export async function backOffVipPremiumFixture(fixtureApiId: number, now: Date = new Date()): Promise<void> {
+  const key = `${VIP_PREMIUM_BACKOFF_LOCK_PREFIX}${fixtureApiId}`;
+  const expiresAt = new Date(now.getTime() + VIP_PREMIUM_RETRY_BACKOFF_MS);
+  await prisma.appLock
+    .upsert({ where: { key }, create: { key, holder: "vip-premium", acquiredAt: now, expiresAt }, update: { acquiredAt: now, expiresAt } })
+    .catch((error) => console.error("[vip-premium] could not record retry backoff", error));
+}
+
+// ── The gate ─────────────────────────────────────────────────────────────────
 
 export type GateOutcome = {
   predictionId: string;
@@ -399,6 +347,20 @@ export type GateRunResult = {
   rejected: GateOutcome[];
   /** Passing selections dropped only because another on the same fixture ranked higher. */
   runnersUp: GateOutcome[];
+  /** Passing selections not promoted because the fixture already has a live dedicated paid pick. */
+  duplicateFixture: GateOutcome[];
+  /** Drafts refused because the fixture already carries the same selection as a non-paid pick. */
+  repeatsExisting: GateOutcome[];
+  /** This pass's own drafts archived: a final rejection, a runner-up, or a fixture already decided. */
+  archived: number;
+  /** Drafts left in review because the quote was missing or stale when the gate read it. */
+  heldForRequote: number;
+  /** Dedicated picks published automatically (this run's promotions and earlier ones retried). */
+  published: string[];
+  /** Dedicated picks left in review because a publish-time check failed, with why. */
+  publishHeld: Array<{ predictionId: string; blocks: PaidPublishBlock[] }>;
+  /** Ordinary rows whose VIP/PREMIUM tag was removed because a dedicated pick was published on their fixture. */
+  ordinaryPaidTagsRemoved: number;
 };
 
 /** PREMIUM is a strict subset: it also carries VIP, so the higher tier is never a narrower feed. */
@@ -410,25 +372,168 @@ export function provenanceForTier(tier: PaidTier): string {
   return tier === "PREMIUM" ? PREMIUM_GENERATED_PROVENANCE : VIP_GENERATED_PROVENANCE;
 }
 
+type FixtureRef = { id: string; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; kickoff: Date | null };
+
+/** Every non-archived row on the same fixture as `ref`, with its paid tags. */
+async function liveRowsOnFixture(ref: FixtureRef) {
+  const byTeams = ref.homeTeamApiId != null && ref.awayTeamApiId != null && !!ref.kickoff;
+  if (!byTeams && ref.fixtureApiId == null) return [];
+  const key = paidFixtureKey(ref);
+  const dayMs = 36 * 3_600_000;
+  const candidates = await prisma.prediction.findMany({
+    where: {
+      status: { not: "ARCHIVED" },
+      OR: [
+        ...(ref.fixtureApiId != null ? [{ fixtureApiId: ref.fixtureApiId }] : []),
+        ...(ref.homeTeamApiId != null && ref.awayTeamApiId != null && ref.kickoff
+          ? [{ homeTeamApiId: ref.homeTeamApiId, awayTeamApiId: ref.awayTeamApiId, kickoff: { gte: new Date(ref.kickoff.getTime() - dayMs), lte: new Date(ref.kickoff.getTime() + dayMs) } }]
+          : []),
+      ],
+    },
+    select: {
+      id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, provenance: true, status: true,
+      marketType: true, selection: true, market: true, pick: true,
+      categories: { select: { category: true } },
+    },
+  });
+  return candidates.filter((r) => paidFixtureKey(r) === key || (ref.fixtureApiId != null && r.fixtureApiId === ref.fixtureApiId));
+}
+
 /**
- * Applies the odds-agreement gate to drafts this pass produced, and promotes
- * each survivor to the tier its market probability earns.
+ * The selections already live on a target's fixture, as "Market: Pick" labels
+ * for the prompt (lowerRiskPickBlock). Every non-archived row counts, hidden
+ * combo legs included: a paid pick that repeats a leg would still be a pick the
+ * reader can already see inside a free double.
+ */
+export async function existingPicksOnFixture(target: {
+  fixtureApiId: number;
+  homeTeamApiId: number;
+  awayTeamApiId: number;
+  kickoff: Date;
+}): Promise<string[]> {
+  const rows = await liveRowsOnFixture({ id: "", ...target });
+  return [...new Set(rows.filter((r) => r.marketType !== "SAME_GAME_DOUBLE").map((r) => `${r.market}: ${r.pick}`))];
+}
+
+const isDedicated = (provenance: string | null) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(provenance ?? "");
+
+/**
+ * Publish a dedicated paid pick with no reviewer, if and only if it clears
+ * paidAutoPublishVerdict — re-checked here against the row as persisted, the
+ * fixture as it stands and the quote in the cache NOW. Otherwise it stays
+ * PENDING_REVIEW, untouched; it claims no fixture while it waits (curation
+ * reads only PUBLISHED dedicated picks), so a valid ordinary paid pick is
+ * never suppressed by a draft nobody can see.
+ *
+ * Publication goes through applyReviewAction: the same transition, audit
+ * fields and NEW_PREDICTION event a human publish writes, attributed to
+ * `actorId`. Only once it has published does the pick take its fixture: any
+ * VIP/PREMIUM tag on an ordinary row there is removed (from PAID_TIER_CUTOVER's
+ * day on; earlier days are left alone). Every other category on those rows is
+ * kept.
+ */
+export async function autoPublishVipPremiumPrediction(
+  predictionId: string,
+  actorId: string,
+  now: Date = new Date(),
+): Promise<{ published: boolean; blocks: PaidPublishBlock[]; ordinaryPaidTagsRemoved: number }> {
+  const row = await prisma.prediction.findUnique({
+    where: { id: predictionId },
+    include: { categories: true, aiJob: { select: { prompt: true, createdAt: true } } },
+  });
+  if (!row) return { published: false, blocks: ["NOT_DEDICATED_PAID"], ordinaryPaidTagsRemoved: 0 };
+
+  const key = paidFixtureKey(row);
+  const [onFixture, ledger, quote, sameDayAttempts] = await Promise.all([
+    liveRowsOnFixture(row),
+    row.fixtureApiId != null
+      ? prisma.generationAttempt.findFirst({ where: { fixtureApiId: row.fixtureApiId }, orderBy: { lastAttemptAt: "desc" }, select: { status: true } })
+      : Promise.resolve(null),
+    prisma.fixtureOddsCache.findFirst({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true } }),
+    row.aiJob ? loadVipPremiumAttempts(row.aiJob.createdAt) : Promise.resolve([]),
+  ]);
+  const jobDay = row.aiJob ? lagosTodayBounds(row.aiJob.createdAt) : null;
+  const attemptNumber = jobDay
+    ? sameDayAttempts.filter((a) => a.createdAt >= jobDay.start && a.createdAt <= row.aiJob!.createdAt).length
+    : Infinity;
+  const others = onFixture.filter((r) => r.id !== row.id);
+
+  const verdict = evaluateMarketConfirmed({
+    marketType: row.marketType,
+    selection: row.selection as Selection,
+    confidence: row.confidence,
+    odds: (quote?.oddsJson as unknown as FixtureOdds | null) ?? null,
+    fetchedAt: quote?.fetchedAt ?? null,
+    now,
+  });
+  const { publish, blocks } = paidAutoPublishVerdict(
+    {
+      provenance: row.provenance,
+      intent: row.aiJob ? intentOf(row.aiJob.prompt) : null,
+      status: row.status,
+      rewriteCount: row.rewriteCount,
+      marketType: row.marketType,
+      confidence: row.confidence,
+      contextComplete: row.contextComplete,
+      leagueApiId: row.leagueApiId,
+      categories: row.categories.map((c) => c.category),
+    },
+    verdict,
+    paidPublishFixture(row, ledger?.status ?? null, onFixture, attemptNumber <= VIP_PREMIUM_DAILY_QUOTA),
+  );
+  if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
+
+  try {
+    await applyReviewAction(row, "PUBLISH", actorId);
+  } catch (error) {
+    // Kickoff passed between the read and the publish: not published, not a failed run.
+    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
+    throw error;
+  }
+
+  // The fixture's one paid pick is now this one.
+  const ordinaryPaid = isLegacyPaidTierDay(row.kickoff)
+    ? []
+    : others.filter((r) => !isDedicated(r.provenance) && r.categories.some((c) => (PAID_TIER_CATEGORIES as readonly string[]).includes(c.category)));
+  if (ordinaryPaid.length) {
+    await prisma.predictionCategoryLink.deleteMany({
+      where: { predictionId: { in: ordinaryPaid.map((r) => r.id) }, category: { in: [...PAID_TIER_CATEGORIES] } },
+    });
+  }
+  return { published: true, blocks: [], ordinaryPaidTagsRemoved: ordinaryPaid.length };
+}
+
+/**
+ * Applies the odds-agreement gate to drafts this pass produced, and promotes at
+ * most one per fixture to the tier it earns (paidTierFor).
  *
  * Runs AFTER generation rather than inside it, so the model is never told what
  * the market thinks — being shown the price would let it anchor to it, and the
- * agreement being measured would stop being independent. Targeting does not
- * break that: the model is handed a fixture, never a price.
+ * agreement being measured would stop being independent.
  *
  * Only rows whose own AIJob carried this pass's intent are considered. An
  * ordinary prediction that happens to agree with the market is not a paid-tier
  * pick; it was not generated for that purpose and was never held to this bar.
  *
- * Nothing here publishes. Drafts land PENDING_REVIEW as every generated row
- * does, and reach the feeds through the same editorial review as the rest; this
- * stamps the provenance and the tags that make a reviewed row land in the right
- * tier and survive the next curation pass.
+ * ONE PAID PICK PER FIXTURE. A fixture that already carries a live dedicated
+ * paid row keeps it; this pass does not promote a second.
+ *
+ * PUBLICATION. With an `actorId`, a promoted pick is published at once if it
+ * clears the full publish-time gate (autoPublishVipPremiumPrediction), and so
+ * are earlier promotions still waiting in review whose quote has since become
+ * readable. Only a PUBLISHED dedicated pick takes its fixture from ordinary
+ * paid picks; one left in review claims nothing.
+ *
+ * NO DUPLICATES LEFT IN REVIEW. The fixture already has ordinary coverage, so
+ * this pass's other drafts on it — final rejections, runners-up, or everything
+ * once the fixture is decided — are archived rather than left for a reviewer to
+ * publish beside the ordinary picks. Drafts rejected only for a missing or
+ * stale quote stay in review and are re-judged next run.
+ *
+ * Without an `actorId` (or on a dry run) nothing is published, and a promoted
+ * pick waits for a reviewer like any other row.
  */
-export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolean } = {}): Promise<GateRunResult> {
+export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolean; actorId?: string } = {}): Promise<GateRunResult> {
   const now = options.now ?? new Date();
 
   const drafts = await prisma.prediction.findMany({
@@ -440,7 +545,7 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
     },
     select: {
       id: true, marketType: true, selection: true, confidence: true, market: true, pick: true,
-      homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true,
+      homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, fixtureApiId: true,
       aiJob: { select: { prompt: true } },
     },
   });
@@ -449,27 +554,34 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
 
   // One odds read per fixture, not per draft: a multi-market job produces
   // several rows on one fixture and they all price against the same quote.
-  const keys = [...new Set(mine.map((d) => matchKey(d)).filter((k): k is string => k !== null))];
-  const cached = keys.length
+  const byFixture = new Map<string, typeof mine>();
+  for (const d of mine) {
+    const key = paidFixtureKey(d);
+    if (!byFixture.has(key)) byFixture.set(key, []);
+    byFixture.get(key)!.push(d);
+  }
+  const cached = byFixture.size
     ? await prisma.fixtureOddsCache.findMany({
-        where: { matchKey: { in: keys } },
+        where: { matchKey: { in: [...byFixture.keys()] } },
         select: { matchKey: true, oddsJson: true, fetchedAt: true },
       })
     : [];
   const oddsByKey = new Map(cached.map((c) => [c.matchKey, c]));
 
-  const promotedVip: GateOutcome[] = [];
-  const promotedPremium: GateOutcome[] = [];
-  const rejected: GateOutcome[] = [];
-  const runnersUp: GateOutcome[] = [];
+  const result: GateRunResult = {
+    evaluated: mine.length, fixtures: byFixture.size,
+    promotedVip: [], promotedPremium: [], rejected: [], runnersUp: [], duplicateFixture: [], repeatsExisting: [],
+    archived: 0, heldForRequote: 0, published: [], publishHeld: [], ordinaryPaidTagsRemoved: 0,
+  };
 
-  const byFixture = new Map<string, typeof mine>();
-  for (const d of mine) {
-    const key = matchKey(d);
-    if (!key) continue;
-    if (!byFixture.has(key)) byFixture.set(key, []);
-    byFixture.get(key)!.push(d);
-  }
+  const archive = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    result.archived += ids.length;
+    if (options.dryRun) return;
+    // A plain status change on rows that were never published: no review
+    // action, so no notification event — nobody has seen these drafts.
+    await prisma.prediction.updateMany({ where: { id: { in: ids }, status: "PENDING_REVIEW" }, data: { status: "ARCHIVED" } });
+  };
 
   for (const [key, group] of byFixture) {
     const entry = oddsByKey.get(key) ?? null;
@@ -497,49 +609,85 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
       verdict: s.verdict,
     });
 
-    for (const s of scored) if (!s.verdict.confirmed) rejected.push(describe(s));
+    // A paid pick is its own pick. A draft that repeats a selection the
+    // fixture already carries (a free pick, a Banker, a leg of a free double)
+    // is refused outright, whatever the market says: re-selling a pick a
+    // reader can already see is not a paid pick.
+    const onFixture = await liveRowsOnFixture(group[0]);
+    const groupIds = new Set(group.map((d) => d.id));
+    const others = onFixture.filter((r) => !groupIds.has(r.id));
+    const repeats = new Set(scored.filter((s) => repeatsExistingPick(s.row, others)).map((s) => s.id));
+    for (const s of scored) if (repeats.has(s.id)) result.repeatsExisting.push(describe(s));
+
+    const tierOf = (s: (typeof scored)[number]) => (repeats.has(s.id) ? null : paidTierFor(s.verdict, s.row.confidence));
+    for (const s of scored) if (!repeats.has(s.id) && !tierOf(s)) result.rejected.push(describe(s));
 
     // At most ONE passing selection per fixture. Two picks on one match, both
     // sold as market-confirmed, would read as two independent confirmations of
     // the same thing.
-    const passing = scored.filter((s) => s.verdict.confirmed).sort(compareMarketConfirmed);
-    if (passing.length === 0) continue;
+    const passing = scored.filter((s) => tierOf(s)).sort(compareMarketConfirmed);
+    if (passing.length === 0) {
+      const retryable = scored.filter(
+        (s) => !repeats.has(s.id) && (RETRYABLE_GATE_REASONS as readonly string[]).includes(s.verdict.reason ?? ""),
+      );
+      result.heldForRequote += retryable.length;
+      await archive(scored.filter((s) => !retryable.includes(s)).map((s) => s.id));
+      continue;
+    }
 
     const winner = passing[0];
-    for (const s of passing.slice(1)) runnersUp.push(describe(s));
+    const tier = tierOf(winner)!;
+    const existingDedicated = onFixture.find(
+      (r) => !groupIds.has(r.id) && (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? ""),
+    );
+    if (existingDedicated) {
+      for (const s of passing) result.duplicateFixture.push(describe(s, tierOf(s)!));
+      await archive(scored.map((s) => s.id));
+      continue;
+    }
 
-    const tier: PaidTier = (winner.verdict.marketProbability ?? 0) >= PREMIUM_MARKET_FLOOR ? "PREMIUM" : "VIP";
+    for (const s of passing.slice(1)) result.runnersUp.push(describe(s));
+    (tier === "PREMIUM" ? result.promotedPremium : result.promotedVip).push(describe(winner, tier));
 
     if (!options.dryRun) {
-      // Provenance and tags in ONE transaction: a row tagged VIP without the
-      // marker is a pick curation is free to strip, which is precisely the
-      // failure the provenance column exists to prevent.
-      await prisma.$transaction(async (tx) => {
-        await tx.prediction.update({
-          where: { id: winner.id },
-          data: {
-            provenance: provenanceForTier(tier),
-            // Frozen at promotion time — see the note on the column. The badge
-            // reports what the market said when the pick was made, not now.
-            marketConfirmation: {
-              modelProbability: winner.verdict.modelProbability,
-              marketProbability: winner.verdict.marketProbability,
-              gapPP: winner.verdict.gapPP,
-              bookmakers: winner.verdict.bookmakers,
-              market: winner.verdict.market,
-              value: winner.verdict.value,
-              tier,
-              quoteFetchedAt: entry?.fetchedAt?.toISOString() ?? null,
-              confirmedAt: now.toISOString(),
-            },
+      await prisma.prediction.update({
+        where: { id: winner.id },
+        data: {
+          provenance: provenanceForTier(tier),
+          // Frozen at promotion time — see the note on the column. The badge
+          // reports what the market said when the pick was made, not now.
+          marketConfirmation: {
+            modelProbability: winner.verdict.modelProbability,
+            marketProbability: winner.verdict.marketProbability,
+            gapPP: winner.verdict.gapPP,
+            bookmakers: winner.verdict.bookmakers,
+            market: winner.verdict.market,
+            value: winner.verdict.value,
+            tier,
+            quoteFetchedAt: entry?.fetchedAt?.toISOString() ?? null,
+            confirmedAt: now.toISOString(),
           },
-        });
+        },
       });
       await setPredictionCategories(winner.id, categoriesForTier(tier));
     }
-
-    (tier === "PREMIUM" ? promotedPremium : promotedVip).push(describe(winner, tier));
+    await archive(scored.filter((s) => s.id !== winner.id).map((s) => s.id));
   }
 
-  return { evaluated: mine.length, fixtures: byFixture.size, promotedVip, promotedPremium, rejected, runnersUp };
+  // Publish every promoted pick still in review that now clears the full gate:
+  // this run's promotions, and earlier ones whose quote was stale at the time.
+  if (options.actorId && !options.dryRun) {
+    const pending = await prisma.prediction.findMany({
+      where: { status: "PENDING_REVIEW", provenance: { in: [VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE] }, kickoff: { gt: now } },
+      select: { id: true },
+    });
+    for (const { id } of pending) {
+      const r = await autoPublishVipPremiumPrediction(id, options.actorId, now);
+      if (r.published) result.published.push(id);
+      else result.publishHeld.push({ predictionId: id, blocks: r.blocks });
+      result.ordinaryPaidTagsRemoved += r.ordinaryPaidTagsRemoved;
+    }
+  }
+
+  return result;
 }
