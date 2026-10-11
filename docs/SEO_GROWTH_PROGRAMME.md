@@ -13,7 +13,7 @@
 | SEO-003 | Define organic conversion events | Analytics/Product | SEO-002 | Registration, checkout and purchase events documented and tested | Implemented locally: successful email and newly created Google OAuth registrations emit `sign_up`; checkout emits `begin_checkout`; confirmed reference-backed activation emits a deduplicated `purchase`, all without contact/free-text PII. Dedicated offline analytics check and TypeScript check passed; browser event verification, deployment and GA4 key-event confirmation remain pending |
 | SEO-004 | Export 16-month GSC query/page baseline | SEO lead | SEO-001 | Brand/non-brand, country, device and page-template views saved | Complete for available history: 16-month request returned data from 29 August 2026 onward; query/page, country and device cuts recorded in `docs/SEO_SEARCH_CONSOLE_BASELINE.md` |
 | SEO-005 | Create weekly scorecard | SEO lead | SEO-002/004 | Visibility, traffic, conversion, index and CWV tabs populated | Implemented locally in `docs/SEO_WEEKLY_SCORECARD.md`; conversion and field-CWV rows remain unavailable until SEO-003/109 are complete |
-| SEO-006 | Record editorial and release workflow | SEO/Engineering | None | Named approver, QA gates and rollback owner documented | Ready |
+| SEO-006 | Record editorial and release workflow | SEO/Engineering | None | Named approver, QA gates and rollback owner documented | Documented: `docs/EDITORIAL_RELEASE_WORKFLOW.md` (approver and rollback owner `Voclain1`, QA gates for picks, guides and code, rollback table) |
 
 ## Phase 1 — Index control and technical foundations (Days 3–14)
 
