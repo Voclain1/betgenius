@@ -56,6 +56,7 @@
     "check:paid-tier-grace": "tsx scripts/check-paid-tier-grace.ts",
     "check:adaptive-coverage": "tsx scripts/check-adaptive-coverage.ts",
     "check:european-clubs": "tsx scripts/check-european-clubs.ts",
+    "check:engagement": "tsx scripts/check-engagement.ts",
     "check:track-record": "tsx scripts/check-track-record.ts",
     "check:odds-breadth": "tsx scripts/check-odds-breadth.ts",
     "check:match-insights": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-insights-render.tsx",

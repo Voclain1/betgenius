@@ -30,7 +30,7 @@
 | SEO-110 | Enforce metadata length budgets on dynamic templates | Engineering/SEO | SEO-107 | Concise titles and descriptions across match, team, league, H2H and cup templates | Implemented locally; typecheck passed and SEO regression suite passed 66/66; post-deployment crawl pending |
 | SEO-111 | Improve thin but useful public pages | Content/Engineering | SEO-107 | Evidence-led H2H interpretation and useful live scores, multi-bet and pricing guidance; low-evidence URLs remain excluded | Implemented locally; typecheck and 66/66 SEO checks passed; pricing desktop/390px visual QA passed with no browser errors; database-backed page QA and post-deployment crawl pending |
 | SEO-108 | Validate structured data on five representative templates | SEO/Engineering | SEO-001 | Rich Results/schema checks logged; visible content matches markup | Implemented locally: homepage WebSite added, false competition-as-organizer claim removed, homepage/match/league/team/H2H assertions added; typecheck and 76/76 SEO checks passed; preview Rich Results and production validation pending |
-| SEO-109 | Establish field CWV monitoring | Engineering | Traffic/GA4 | Mobile p75 LCP, INP and CLS available by template | Backlog |
+| SEO-109 | Establish field CWV monitoring | Engineering | Traffic/GA4 | Mobile p75 LCP, INP and CLS available by template | Implemented: field LCP, INP and CLS sent to GA4 per page template (`docs/SEO_ANALYTICS_EVENTS.md`); 24/24 engagement checks passed. Owner: register the GA4 custom dimensions; p75 needs the BigQuery link |
 
 ## Phase 2 — Core search hubs (Weeks 3–6)
 
@@ -38,7 +38,7 @@
 |---|---|---|---|
 | SEO-201 | Upgrade `/predictions` as the primary football-predictions hub | Unique answer, live inventory, method, track record and internal links | Implemented locally; desktop and 390px visual QA passed with no browser errors; production validation pending |
 | SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Implemented locally: Lagos date and freshness guidance, evidence links and responsible-use copy added without new database queries or ad-placement changes; targeted SEO checks (78/78), Adsterra checks and TypeScript check passed; isolated new-content visual QA passed at 1280px and 390px with no browser errors. Full data-backed page and production verification remain pending |
-| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Implemented locally: all-time outcomes, measurement dates, calculation rules, sample gates, publication-window definition and confidence/calibration limits; typecheck passed, database-backed visual and production validation pending |
+| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Reworked Oct 2026: `/track-record` reports the current calendar month (rates only, counted in the database) and VIP, Premium and Banker carry day-by-day results on their own pages; methodology unchanged; production validation pending |
 | SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Implemented locally; merged verification passes SEO checks (89/89), Adsterra checks and TypeScript; production verification pending |
 | SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (98/98), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (106/106), Adsterra checks and TypeScript passed; production verification pending |
@@ -73,7 +73,7 @@
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
 | SEO-501 | Map organic landing page journeys | Each priority page has one primary next action | Backlog |
-| SEO-502 | Instrument prediction and track-record engagement | Events visible in GA4 DebugView and standard reports | Backlog |
+| SEO-502 | Instrument prediction and track-record engagement | Events visible in GA4 DebugView and standard reports | Implemented: reasoning opens, view switches and VIP/Premium/Banker past-day results opens tracked per page template; GA4 custom dimensions and DebugView verification pending |
 | SEO-503 | Improve contextual internal links | Match → league/team/market/record pathways are relevant and crawlable | Backlog |
 | SEO-504 | Test organic registration CTA | Experiment has hypothesis, sample threshold and guardrails | Backlog |
 | SEO-505 | Report organic registration and subscription conversion | Weekly dashboard includes assisted and last-click outcomes | Backlog |

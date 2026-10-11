@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { MatchLink } from "@/components/MatchLink";
+import { trackEngagement } from "@/lib/engagement";
 import {
   FEED_RESULTS_MAX_DAYS_BACK,
   FEED_RESULTS_PAGE_DAYS,
@@ -49,6 +50,7 @@ export function FeedResults({
   async function toggle(key: string) {
     const next = open === key ? null : key;
     setOpen(next);
+    if (next) trackEngagement("track_record_day_open", { feed_category: category, days_ago: keys.indexOf(key) + 1 });
     if (!next || days[key]?.status === "done" || days[key]?.status === "loading") return;
     setDays((d) => ({ ...d, [key]: { status: "loading" } }));
     try {
@@ -136,7 +138,11 @@ export function FeedResults({
       {canShowMore && (
         <button
           type="button"
-          onClick={() => setShown((n) => Math.min(n + FEED_RESULTS_PAGE_DAYS, FEED_RESULTS_MAX_DAYS_BACK))}
+          onClick={() => {
+            const next = Math.min(shown + FEED_RESULTS_PAGE_DAYS, FEED_RESULTS_MAX_DAYS_BACK);
+            trackEngagement("track_record_more_days", { feed_category: category, days_shown: next });
+            setShown(next);
+          }}
           className="rounded-xl border border-brand-border px-4 py-2 text-sm font-bold text-gray-200 transition hover:border-brand hover:text-brand"
         >
           Show more days

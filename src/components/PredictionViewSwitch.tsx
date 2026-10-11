@@ -9,6 +9,7 @@ import {
   writePredictionView,
   type PredictionView,
 } from "@/lib/predictionView";
+import { trackEngagement } from "@/lib/engagement";
 
 const LABELS: Record<PredictionView, string> = {
   detailed: "Detailed",
@@ -70,6 +71,7 @@ export function PredictionViewSwitch({
   }, []);
 
   const choose = (next: PredictionView) => {
+    if (next !== view) trackEngagement("prediction_view_change", { view: next });
     setView(next);
     writePredictionView(localStore(), next);
   };
