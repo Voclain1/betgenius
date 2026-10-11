@@ -81,6 +81,7 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/methodology", priority: 0.7 },
   { path: "/editorial-policy", priority: 0.6 },
   { path: "/guides", priority: 0.7 },
+  { path: "/odds-calculator", priority: 0.6 },
 ];
 
 /**
@@ -107,7 +108,7 @@ async function staticEntries(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl("/"), lastModified: latest._max.publishedAt ?? undefined, changeFrequency: "daily", priority: 1 },
     ...staticPagesFor("static"),
   ];
-  entries.push(...GUIDES.map((guide) => ({ url: absoluteUrl(`/guides/${guide.slug}`), lastModified: guide.reviewedAt, changeFrequency: "monthly" as const, priority: 0.7 })));
+  entries.push(...GUIDES.map((guide) => ({ url: absoluteUrl(`/guides/${guide.slug}`), lastModified: new Date(`${guide.reviewedAt}T00:00:00Z`), changeFrequency: "monthly" as const, priority: 0.7 })));
 
   // Track record — only when it clears the same sample-size gate that makes
   // the page itself indexable (src/app/(public)/track-record/page.tsx). Both

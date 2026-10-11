@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { Analytics } from "@/components/Analytics";
+import { WebVitals } from "@/components/WebVitals";
 import { MetaPixel } from "@/components/MetaPixel";
 import { CookieConsent } from "@/components/CookieConsent";
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
@@ -121,6 +122,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             id is configured, so previews and local development stay out of
             the property. */}
         <Analytics />
+        {/* Field LCP, INP and CLS per page template, through the tag above. */}
+        <WebVitals />
         {/* Ad attribution; production deployment only — see MetaPixel.tsx. */}
         <MetaPixel />
         {/* Both tags above start restricted; this is where a visitor turns

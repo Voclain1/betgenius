@@ -128,6 +128,7 @@ async function main() {
   const describe = (e: MetadataRoute.Sitemap[number]) => `${e.url} | ${lastmodOf(e)} | ${e.changeFrequency ?? ""} | ${e.priority ?? ""}`;
   const ORDERED_TYPES = new Set<SitemapType>(["static", "categories", "cups"]);
 
+  const ADDED_SINCE_FREEZE = (url: string) => /^\/(guides(\/[a-z0-9-]+)?|odds-calculator)$/.test(new URL(url).pathname);
   async function compareWithLegacy(label: string) {
     fake.reset();
     const legacy = await legacyGetSitemapEntries();
@@ -136,7 +137,10 @@ async function main() {
       fake.reset();
       const fresh = await SITEMAP_BUILDERS[type]();
       const expected = legacy.filter((e) => sitemapType(e.url) === type).map(describe);
-      const actual = fresh.map(describe);
+      // Static pages added on purpose after the legacy copy was frozen: the
+      // guides (#39) and the odds calculator (SEO-403). Parity holds for
+      // everything else, in order.
+      const actual = fresh.filter((e) => type !== "static" || !ADDED_SINCE_FREEZE(e.url)).map(describe);
       const same = ORDERED_TYPES.has(type)
         ? JSON.stringify(actual) === JSON.stringify(expected)
         : JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort());

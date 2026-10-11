@@ -11,6 +11,7 @@ import {
   CATEGORY_SLUGS as SLUGS,
   CATEGORY_NAMES as NAMES,
   CATEGORY_BLURBS as BLURBS,
+  CATEGORY_CHIP_LABELS,
   getCategoryPredictions,
   parseFeedDay,
   dayShowsOutcomes,
@@ -28,6 +29,8 @@ import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/To
 import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/BankerPredictionsGuide";
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
+import { FeedResults } from "@/components/FeedResults";
+import { firstResultsDay } from "@/lib/feedResults";
 
 const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
@@ -269,6 +272,18 @@ export default async function CategoryPage(
 
       {cat === "BANKER" && <BankerPredictionsEvidence />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}
+
+      {/* The feed's own track record, last on the page: a list of past days,
+          each read only when a reader opens it (src/lib/feedResults.ts). */}
+      {(cat === "VIP" || cat === "PREMIUM" || cat === "BANKER") && (
+        <FeedResults
+          category={cat}
+          name={CATEGORY_CHIP_LABELS[cat]}
+          firstDay={firstResultsDay()}
+          unlockHref={cat === "BANKER" ? "/register" : "/pricing"}
+          unlockLabel={cat === "BANKER" ? "Sign up free to see the picks" : `Unlock ${CATEGORY_CHIP_LABELS[cat]}`}
+        />
+      )}
     </div>
   );
 }

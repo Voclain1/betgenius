@@ -13,7 +13,7 @@
 | SEO-003 | Define organic conversion events | Analytics/Product | SEO-002 | Registration, checkout and purchase events documented and tested | Implemented locally: successful email and newly created Google OAuth registrations emit `sign_up`; checkout emits `begin_checkout`; confirmed reference-backed activation emits a deduplicated `purchase`, all without contact/free-text PII. Dedicated offline analytics check and TypeScript check passed; browser event verification, deployment and GA4 key-event confirmation remain pending |
 | SEO-004 | Export 16-month GSC query/page baseline | SEO lead | SEO-001 | Brand/non-brand, country, device and page-template views saved | Complete for available history: 16-month request returned data from 29 August 2026 onward; query/page, country and device cuts recorded in `docs/SEO_SEARCH_CONSOLE_BASELINE.md` |
 | SEO-005 | Create weekly scorecard | SEO lead | SEO-002/004 | Visibility, traffic, conversion, index and CWV tabs populated | Implemented locally in `docs/SEO_WEEKLY_SCORECARD.md`; conversion and field-CWV rows remain unavailable until SEO-003/109 are complete |
-| SEO-006 | Record editorial and release workflow | SEO/Engineering | None | Named approver, QA gates and rollback owner documented | Ready |
+| SEO-006 | Record editorial and release workflow | SEO/Engineering | None | Named approver, QA gates and rollback owner documented | Documented: `docs/EDITORIAL_RELEASE_WORKFLOW.md` (approver and rollback owner `Voclain1`, QA gates for picks, guides and code, rollback table) |
 
 ## Phase 1 — Index control and technical foundations (Days 3–14)
 
@@ -30,7 +30,7 @@
 | SEO-110 | Enforce metadata length budgets on dynamic templates | Engineering/SEO | SEO-107 | Concise titles and descriptions across match, team, league, H2H and cup templates | Implemented locally; typecheck passed and SEO regression suite passed 66/66; post-deployment crawl pending |
 | SEO-111 | Improve thin but useful public pages | Content/Engineering | SEO-107 | Evidence-led H2H interpretation and useful live scores, multi-bet and pricing guidance; low-evidence URLs remain excluded | Implemented locally; typecheck and 66/66 SEO checks passed; pricing desktop/390px visual QA passed with no browser errors; database-backed page QA and post-deployment crawl pending |
 | SEO-108 | Validate structured data on five representative templates | SEO/Engineering | SEO-001 | Rich Results/schema checks logged; visible content matches markup | Implemented locally: homepage WebSite added, false competition-as-organizer claim removed, homepage/match/league/team/H2H assertions added; typecheck and 76/76 SEO checks passed; preview Rich Results and production validation pending |
-| SEO-109 | Establish field CWV monitoring | Engineering | Traffic/GA4 | Mobile p75 LCP, INP and CLS available by template | Backlog |
+| SEO-109 | Establish field CWV monitoring | Engineering | Traffic/GA4 | Mobile p75 LCP, INP and CLS available by template | Implemented: field LCP, INP and CLS sent to GA4 per page template (`docs/SEO_ANALYTICS_EVENTS.md`); 24/24 engagement checks passed. Owner: register the GA4 custom dimensions; p75 needs the BigQuery link |
 
 ## Phase 2 — Core search hubs (Weeks 3–6)
 
@@ -38,7 +38,7 @@
 |---|---|---|---|
 | SEO-201 | Upgrade `/predictions` as the primary football-predictions hub | Unique answer, live inventory, method, track record and internal links | Implemented locally; desktop and 390px visual QA passed with no browser errors; production validation pending |
 | SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Implemented locally: Lagos date and freshness guidance, evidence links and responsible-use copy added without new database queries or ad-placement changes; targeted SEO checks (78/78), Adsterra checks and TypeScript check passed; isolated new-content visual QA passed at 1280px and 390px with no browser errors. Full data-backed page and production verification remain pending |
-| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Implemented locally: all-time outcomes, measurement dates, calculation rules, sample gates, publication-window definition and confidence/calibration limits; typecheck passed, database-backed visual and production validation pending |
+| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Reworked Oct 2026: `/track-record` reports the current calendar month (rates only, counted in the database) and VIP, Premium and Banker carry day-by-day results on their own pages; methodology unchanged; production validation pending |
 | SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Implemented locally; merged verification passes SEO checks (89/89), Adsterra checks and TypeScript; production verification pending |
 | SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (98/98), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (106/106), Adsterra checks and TypeScript passed; production verification pending |
@@ -50,8 +50,8 @@
 
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
-| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Implemented locally with a first betting-literacy guide; 149/149 SEO checks, Adsterra checks and TypeScript passed; production verification pending |
-| SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Backlog |
+| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Merged (#39); production verification pending |
+| SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Drafted Oct 2026: seven guides added to the first (odds and implied probability, over/under goals, BTTS, double chance, accumulators, staking and limits, banker bets), each with worked examples whose arithmetic is checked in `check-seo.ts` and a pathway into the matching hub; owner editorial review pending before publication counts as done |
 | SEO-303 | Launch weekly NPFL analysis | Four consecutive editions published on schedule | Backlog |
 | SEO-304 | Publish monthly model-performance report | Reproducible data, samples, losses and corrections included | Backlog |
 | SEO-305 | Launch tournament hub framework | Stable URLs available 4–8 weeks before major events | Backlog |
@@ -63,7 +63,7 @@
 |---|---|---|---|
 | SEO-401 | Build Nigeria football-prediction data report | Original dataset, methodology and downloadable visuals published | Backlog |
 | SEO-402 | Build NPFL trend asset | Club-level insights are current, cited and embeddable | Backlog |
-| SEO-403 | Create responsible-betting probability calculator | Accurate calculation, disclaimer and mobile QA pass | Backlog |
+| SEO-403 | Create responsible-betting probability calculator | Accurate calculation, disclaimer and mobile QA pass | Implemented: `/odds-calculator` (decimal, fractional and American odds; implied chance and break-even; full-market margin and fair chances), responsible-betting disclaimer, in sitemap and footer; maths checked in `check-seo.ts`; 390px and 1280px visual QA passed with no overflow or browser errors; production verification pending |
 | SEO-404 | Build qualified outreach list | Relevant journalists, analysts and communities; no bulk lists | Backlog |
 | SEO-405 | Run one evidence-led campaign per month | Personalised outreach logged; earned links/mentions measured | Backlog |
 | SEO-406 | Monitor brand/entity consistency | BetGenius Nigeria identity and factual descriptions remain consistent | Backlog |
@@ -73,7 +73,7 @@
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
 | SEO-501 | Map organic landing page journeys | Each priority page has one primary next action | Backlog |
-| SEO-502 | Instrument prediction and track-record engagement | Events visible in GA4 DebugView and standard reports | Backlog |
+| SEO-502 | Instrument prediction and track-record engagement | Events visible in GA4 DebugView and standard reports | Implemented: reasoning opens, view switches and VIP/Premium/Banker past-day results opens tracked per page template; GA4 custom dimensions and DebugView verification pending |
 | SEO-503 | Improve contextual internal links | Match → league/team/market/record pathways are relevant and crawlable | Backlog |
 | SEO-504 | Test organic registration CTA | Experiment has hypothesis, sample threshold and guardrails | Backlog |
 | SEO-505 | Report organic registration and subscription conversion | Weekly dashboard includes assisted and last-click outcomes | Backlog |

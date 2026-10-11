@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Prose } from "@/components/Prose";
 import { reasoningExcerpt } from "@/lib/reasoningExcerpt";
+import { trackEngagement } from "@/lib/engagement";
 
 /**
  * A pick's reasoning, collapsed to its opening sentence or two with a
@@ -29,7 +30,10 @@ export function ReasoningExcerpt({ text }: { text: string | null | undefined }) 
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (!open) trackEngagement("prediction_reasoning_open");
+          setOpen((v) => !v);
+        }}
         className="mt-2 inline-flex items-center gap-1 text-sm font-bold text-gray-100 hover:text-brand"
       >
         {open ? "Show less" : "Show full reasoning"}

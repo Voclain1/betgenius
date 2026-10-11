@@ -32,8 +32,8 @@ export function BankerPredictionsEvidence() {
         strength of the available evidence; it is not a guaranteed probability of winning.
       </p>
       <p className="mt-3 text-sm leading-6 text-gray-300">
-        Results remain visible in the public track record. You can compare the Banker category across the
-        available 7, 30 and 90-day windows; percentages stay hidden until there are at least 20 decided results.
+        Every Banker result is listed day by day at the foot of this page, and the public track record shows the
+        category&apos;s win rate for the current month; a percentage stays hidden until there are at least 20 decided results.
       </p>
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record#category-banker" className="text-brand hover:underline">
