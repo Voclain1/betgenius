@@ -288,7 +288,7 @@ export async function selectLaneTarget(now: Date = new Date()): Promise<LaneSele
       selection.oddsCalls++;
       await refreshOddsCache({ matchKey: c.matchKey, fixtureApiId: c.fixtureApiId, kickoff: new Date(c.kickoff), kind: "candidate" });
       ({ odds, fetchedAt } = await readOdds(c.matchKey));
-      verdict = laneValueVerdict(odds, fetchedAt, c.clubSides, new Date());
+      verdict = laneValueVerdict(odds, fetchedAt, c.clubSides, now);
     }
     if (verdict.ok) {
       selection.evaluated.push({ fixture: label, ok: true, value: verdict.value });
