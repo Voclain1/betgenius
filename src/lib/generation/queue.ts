@@ -5,6 +5,7 @@ import { candidatesFromFixtures, selectCandidates, type Candidate } from "@/lib/
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { matchKey } from "@/lib/slug";
+import { laneFixtureIds } from "@/lib/europeanClubsPipeline";
 import {
   COVERAGE_POLICY,
   coverageHorizon,
@@ -121,7 +122,7 @@ async function queueCandidates(candidates: Candidate[]): Promise<number> {
  */
 export async function countViableSlate(now: Date): Promise<TierCounts> {
   const { from, until } = coverageHorizon(now);
-  const [ledger, predictions] = await Promise.all([
+  const [ledger, predictions, laneFixtures] = await Promise.all([
     prisma.generationAttempt.findMany({
       where: { kickoff: { gt: from, lte: until }, status: { not: "ABANDONED" }, leagueApiId: { not: null } },
       select: { matchKey: true, fixtureApiId: true, leagueApiId: true },
@@ -130,10 +131,17 @@ export async function countViableSlate(now: Date): Promise<TierCounts> {
       where: { kickoff: { gt: from, lte: until }, status: { not: "ARCHIVED" }, leagueApiId: { not: null } },
       select: { fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, leagueApiId: true },
     }),
+    // The European-club lane's picks sit in fallback-tier leagues but are not
+    // part of this decision: left in, they would count toward the fallback
+    // target and change what a thin day widens into. The lane never writes the
+    // ledger, so its predictions are the only rows to leave out.
+    laneFixtureIds(now),
   ]);
   return tallySlate([
     ...ledger.map((l) => ({ fixtureApiId: l.fixtureApiId, matchKey: l.matchKey, leagueApiId: l.leagueApiId })),
-    ...predictions.map((p) => ({ fixtureApiId: p.fixtureApiId, matchKey: matchKey(p), leagueApiId: p.leagueApiId })),
+    ...predictions
+      .filter((p) => p.fixtureApiId == null || !laneFixtures.has(p.fixtureApiId))
+      .map((p) => ({ fixtureApiId: p.fixtureApiId, matchKey: matchKey(p), leagueApiId: p.leagueApiId })),
   ]);
 }
 

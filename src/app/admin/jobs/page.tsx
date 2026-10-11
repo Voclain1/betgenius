@@ -54,6 +54,8 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "refresh-odds": 60,
   "generate-vip-premium": 60,
   "generate-goals": 60,
+  // Every 30 minutes (docs/EUROPEAN_CLUB_COVERAGE.md).
+  "generate-european-clubs": 60,
   "generate-ordinary": 60,
   "generate-bet-of-the-day": 26 * 60,
   "select-bet-of-the-day": 26 * 60,
@@ -73,6 +75,7 @@ const LABEL: Record<string, string> = {
   "refresh-odds": "Odds refresh",
   "generate-vip-premium": "VIP / Premium pass",
   "generate-goals": "Goals pass",
+  "generate-european-clubs": "European clubs lane",
   "generate-ordinary": "Ordinary generation",
   "generate-bet-of-the-day": "Bet of the Day generation",
   "select-bet-of-the-day": "Bet of the Day selection",

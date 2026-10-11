@@ -49,6 +49,8 @@ const db = {
   ledger: [] as Ledger[],
   predictions: [] as Pred[],
   odds: [] as Array<{ matchKey: string; bookmakerCount: number | null; fetchedAt: Date | null }>,
+  /** AIJob prompts, read by the European-club lane's slate exclusion. */
+  aiJobs: [] as Array<{ prompt: string; createdAt: Date }>,
   leaseFree: true,
   cursorHolder: "20",
   quotaRemaining: 5_000,
@@ -111,6 +113,12 @@ const prismaStub = {
     },
   },
   fixtureOddsCache: { findMany: () => Promise.resolve(db.odds) },
+  aIJob: {
+    findMany: (args: any) => {
+      const needle = args.where?.prompt?.contains;
+      return Promise.resolve(db.aiJobs.filter((j) => !needle || j.prompt.includes(needle)));
+    },
+  },
 };
 
 stub("../src/lib/prisma", { prisma: prismaStub });
@@ -155,6 +163,7 @@ function resetWorld() {
   db.ledger = [];
   db.predictions = [];
   db.odds = [];
+  db.aiJobs = [];
   db.leaseFree = true;
   db.quotaRemaining = 5_000;
   byDatePayload = {};
@@ -313,6 +322,19 @@ async function main() {
     { fixtureApiId: 3, matchKey: "d", leagueApiId: 1128 }, // untiered
   ]);
   eq("fixtures count once per tier; untiered leagues ignored", tally, counts(1, 1, 1, 0));
+
+  // The European-club lane's picks are invisible to this decision: the same
+  // DEEP_FALLBACK prediction counts when an ordinary path made it, and does
+  // not when the lane did (its EUROPEAN_CLUB-intent AIJob names the fixture).
+  resetWorld();
+  const deepKickoff = new Date(NOW.getTime() + 24 * H);
+  db.predictions.push({ fixtureApiId: 9001, homeTeamApiId: 11, awayTeamApiId: 12, kickoff: deepKickoff, leagueApiId: 419, status: "PENDING_REVIEW" });
+  eq("an ordinary DEEP_FALLBACK prediction counts toward the slate", await queue.countViableSlate(NOW), counts(0, 0, 0, 1));
+  db.aiJobs.push({ prompt: JSON.stringify({ intent: "EUROPEAN_CLUB", fixtureApiId: 9001 }), createdAt: new Date(NOW.getTime() - H) });
+  eq("the same prediction made by the European-club lane does not", await queue.countViableSlate(NOW), counts(0, 0, 0, 0));
+  db.aiJobs = [{ prompt: JSON.stringify({ intent: "GOALS", fixtureApiId: 9001 }), createdAt: new Date(NOW.getTime() - H) }];
+  eq("another pass's AIJob on the fixture changes nothing", await queue.countViableSlate(NOW), counts(0, 0, 0, 1));
+  resetWorld();
 
   console.log("\nprovider-call budget:");
   let maxDates = 0;

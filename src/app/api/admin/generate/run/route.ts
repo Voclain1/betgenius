@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   JOB_GENERATE,
   JOB_GENERATE_BET_OF_DAY,
+  JOB_GENERATE_EUROPEAN_CLUBS,
   JOB_GENERATE_GOALS,
   JOB_GENERATE_VIP_PREMIUM,
   recordRouteRun,
@@ -10,7 +11,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { runGeneration, runGoalsGeneration, runVipPremiumGeneration } from "@/lib/generation/worker";
+import { runEuropeanClubGeneration, runGeneration, runGoalsGeneration, runVipPremiumGeneration } from "@/lib/generation/worker";
 import { tooShortForPaid } from "@/lib/vipPremiumOverlay";
 import { probeGoalsFixture } from "@/lib/goalsPipeline";
 import {
@@ -107,6 +108,16 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
       return NextResponse.json(await probeGoalsFixture({ fixtureApiId: Number.isInteger(fixtureApiId) && fixtureApiId > 0 ? fixtureApiId : null }), { status: 200 });
     }
     return NextResponse.json(await runGoalsGeneration({ authorId, limit }), { status: 200 });
+  }
+
+  /**
+   * The European-club lane (src/lib/europeanClubs.ts). Like ?goals=1 it takes
+   * no categories or leagues: its fixtures come from its own sweep, gated by
+   * the market before anything is generated, and it never reaches the ledger
+   * path. One fixture per run at most.
+   */
+  if (url.searchParams.get("european") === "1") {
+    return NextResponse.json(await runEuropeanClubGeneration({ authorId }), { status: 200 });
   }
 
   /**
@@ -351,6 +362,8 @@ export async function GET(req: Request) {
       ? JOB_GENERATE_VIP_PREMIUM
       : url.searchParams.get("goals") === "1"
         ? JOB_GENERATE_GOALS
+      : url.searchParams.get("european") === "1"
+        ? JOB_GENERATE_EUROPEAN_CLUBS
       : categories.includes("BET_OF_THE_DAY")
         ? JOB_GENERATE_BET_OF_DAY
         : JOB_GENERATE;
@@ -369,6 +382,7 @@ export async function GET(req: Request) {
         (p?.reservedForPaidTier ? `, reserved ${p.reservedForPaidTier} for paid tier` : "") +
         (p?.coverage ? `, scope ${p.coverage.mode} (${p.coverage.higherTierCount} higher-tier)` : "") +
         (p?.vipPremium ? `, paid overlay${p.vipPremium.widened ? ` (widened: ${p.vipPremium.coreFixtures ?? 0} core)` : ""}: ${p.vipPremium.considered} covered, ${p.vipPremium.inScope} eligible, ${p.vipPremium.oddsCalls ?? 0} odds calls, ${p.vipPremium.freshlyPriced} fresh, ${p.vipPremium.qualified} qualified, promoted VIP ${p.vipPremium.promotedVip?.length ?? 0} / PREMIUM ${p.vipPremium.promotedPremium?.length ?? 0}, published ${p.vipPremium.published ?? 0}, held ${p.vipPremium.publishHeld?.length ?? 0}` : "") +
+        (p?.europeanClubs ? `, european clubs: ${p.europeanClubs.target ? `${p.europeanClubs.target.fixture} (${p.europeanClubs.target.club}), kept ${p.europeanClubs.judgement?.kept ? 1 : 0}, archived ${p.europeanClubs.judgement?.archived?.length ?? 0}` : `stood down: ${p.europeanClubs.stoodDown ?? "nothing to do"}`}` : "") +
         (p?.goals ? (p.goals.stoodDown ? `, goals stood down: ${p.goals.stoodDown}` : `, goals: ${p.goals.considered} covered fixtures considered, published ${p.goals.published ?? 0}, held for review ${p.goals.heldForReview ?? 0}`) : ""),
   );
   return response;

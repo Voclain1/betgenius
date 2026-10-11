@@ -54,6 +54,7 @@
     "check:betofday-targeting": "tsx scripts/check-betofday-targeting.ts",
     "check:paid-tier-grace": "tsx scripts/check-paid-tier-grace.ts",
     "check:adaptive-coverage": "tsx scripts/check-adaptive-coverage.ts",
+    "check:european-clubs": "tsx scripts/check-european-clubs.ts",
     "check:odds-breadth": "tsx scripts/check-odds-breadth.ts",
     "check:match-insights": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-insights-render.tsx",
     "check:admin-jobs": "tsx scripts/check-admin-jobs.ts",

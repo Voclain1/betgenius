@@ -103,6 +103,7 @@ All entries: **GET**, header `Authorization: Bearer <CRON_SECRET>`, timezone
 |---|---|---|---|
 | 1 | `/api/admin/generate/run?vipPremium=1` | `5,20,35,50 * * * *` | Overlay; order no longer matters (see the update above). |
 | 2 | `/api/admin/generate/run` | `10,25,40,55 * * * *` | Ordinary generation. Pre-existing; do not move. |
+| — | `/api/admin/generate/run?european=1` | `15,45 * * * *` | European-club lane (`docs/EUROPEAN_CLUB_COVERAGE.md`). No ordering constraint: it never reads or writes the ledger's claimable rows. Does nothing until scheduled. |
 
 The 5-minute lead is the whole mechanism. `10,25,40,55` is not a proposal — it is
 the cadence ordinary generation already runs on, inferred from 461 real `AIJob`

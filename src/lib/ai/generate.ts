@@ -402,8 +402,9 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // The dedicated paid passes ask for several markets so their odds gate has
   // more than one selection to judge, not so a double can be built: their
   // fixture already carries ordinary coverage, and a double is never a paid
-  // pick. Regular-combo and doubles jobs assemble exactly as before.
-  const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED" && input.intent !== "VIP_PREMIUM"
+  // pick. The European-club lane asks for several for the same reason and
+  // keeps at most one. Regular-combo and doubles jobs assemble exactly as before.
+  const combo = marketBreadth === "multi" && input.intent !== "MARKET_CONFIRMED" && input.intent !== "VIP_PREMIUM" && input.intent !== "EUROPEAN_CLUB"
     ? await assembleGeneratedSameGameDouble(created.map((prediction) => prediction.id), input.comboCategories ?? input.categories)
     : null;
 

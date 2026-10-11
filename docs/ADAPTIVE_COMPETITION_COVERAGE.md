@@ -19,6 +19,13 @@ Code: `src/lib/leagues.ts` (`GENERATION_TIERS`), `src/lib/generation/coverage.ts
 > time on production without a terminal: Actions → `diagnose-generation` → Run
 > workflow (read-only).
 
+> **Update, Oct 2026: European clubs.** Domestic league fixtures of clubs in a
+> main stage of the Champions League, Europa League or Conference League (Qarabağ,
+> The New Saints) are now considered every day through a separate, stricter lane,
+> even when their league is FALLBACK or DEEP_FALLBACK. Nothing on this page
+> changes: the lane never writes the ledger, and `countViableSlate` leaves its
+> picks out of the counts below. See `docs/EUROPEAN_CLUB_COVERAGE.md`.
+
 ## Why
 
 On 21 September 2026 API-Football listed 160 fixtures, 4 of them in scope, and
