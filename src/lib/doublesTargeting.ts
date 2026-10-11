@@ -143,6 +143,11 @@ export function marketBreadthForCategories(categories: readonly string[], intent
   // is retired, but leaving the arm costs nothing and removing it would silently
   // narrow any replay of an old job.
   if (intent === "VIP_PREMIUM" || intent === "MARKET_CONFIRMED") return "multi";
+  // The European-club lane (src/lib/europeanClubs.ts) for the same reason as
+  // VIP_PREMIUM: its drafts must each clear the Market-Confirmed gate, and one
+  // market would give the fixture one chance. Written out for the same
+  // import-cycle reason.
+  if (intent === "EUROPEAN_CLUB") return "multi";
   if (intent === REGULAR_COMBO_INTENT) return "multi";
   return categories.includes(SAME_GAME_DOUBLE) ? "multi" : "single";
 }
@@ -211,7 +216,7 @@ export function startCutoffMsForCategories(
   // run start a ~25s fixture with 8s of budget left. Kept in step with
   // marketBreadthForCategories — the two must not disagree about which intents
   // are multi-market.
-  if (intent === "VIP_PREMIUM" || intent === "MARKET_CONFIRMED") return DOUBLES_START_CUTOFF_MS;
+  if (intent === "VIP_PREMIUM" || intent === "MARKET_CONFIRMED" || intent === "EUROPEAN_CLUB") return DOUBLES_START_CUTOFF_MS;
   if (intent === REGULAR_COMBO_INTENT) return DOUBLES_START_CUTOFF_MS;
   return categories.includes(SAME_GAME_DOUBLE) ? DOUBLES_START_CUTOFF_MS : defaultCutoffMs;
 }
