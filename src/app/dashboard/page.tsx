@@ -13,6 +13,7 @@ import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { SignupUpsellModal } from "@/components/SignupUpsellModal";
 import { PaymentConfirmation } from "@/components/PaymentConfirmation";
+import { tierFromFlutterwaveReference } from "@/lib/payments/flutterwave";
 import { SignupConfirmation } from "@/components/SignupConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
@@ -188,7 +189,7 @@ async function OverviewSection({
 export default async function AccountDashboard({
   searchParams,
 }: {
-  searchParams: { section?: string; paid?: string; reference?: string; trxref?: string };
+  searchParams: { section?: string; paid?: string; reference?: string; trxref?: string; provider?: string; tx_ref?: string; transaction_id?: string };
 }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
@@ -217,8 +218,10 @@ export default async function AccountDashboard({
     ]),
   ) as Record<PredictionCategory, boolean>;
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
-  const paymentReference = searchParams.reference ?? searchParams.trxref ?? null;
-  const paymentTier = tierFromCheckoutReference(paymentReference) ??
+  // Paystack appends reference/trxref to the callback; Flutterwave appends
+  // tx_ref and transaction_id (lib/payments/flutterwave).
+  const paymentReference = searchParams.reference ?? searchParams.trxref ?? searchParams.tx_ref ?? null;
+  const paymentTier = tierFromCheckoutReference(paymentReference) ?? tierFromFlutterwaveReference(paymentReference) ??
     (sub?.tier === "VIP" || sub?.tier === "PREMIUM" ? sub.tier as PaidTier : null);
   // Whether THIS payment landed — not whether the viewer has access. The two
   // used to be the same test, so a subscriber who already had access and
@@ -280,6 +283,8 @@ export default async function AccountDashboard({
             <PaymentConfirmation
               activated={paymentApplied}
               reference={paymentReference}
+              provider={searchParams.provider ?? null}
+              transactionId={searchParams.transaction_id ?? null}
               tier={paymentTier}
               value={paymentTier ? PLAN_PRICING[paymentTier].ngn : null}
             />

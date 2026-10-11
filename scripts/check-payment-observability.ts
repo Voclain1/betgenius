@@ -299,6 +299,9 @@ assert.equal(attemptOrigin("bg_VIP_018c847a91cb5aed9a1af8f17f5d4e84", "u1"), "CH
 assert.equal(attemptOrigin("T781208455745086", "cmu6meep"), "LEGACY", "a pre-bg_ checkout with our metadata is ours");
 assert.equal(attemptOrigin("probe_render_1789746106", null), "EXTERNAL", "a script's probe is not a customer");
 assert.equal(attemptOrigin("T196391549214648", null), "EXTERNAL", "a payment BetGenius never initialised is not ours");
+assert.equal(attemptOrigin("fw_VIP_018c847a91cb5aed9a1af8f17f5d4e84", "u1"), "CHECKOUT", "a Flutterwave checkout we started is ours");
+assert.equal(attemptOrigin("manual_BG-7K3Q9A", "u1"), "CHECKOUT", "an approved bank/USDT transfer is ours");
+assert.equal(attemptOrigin("manual_whatever", null), "EXTERNAL");
 
 // Outcome: the P0 state is distinct from a plain success.
 assert.equal(attemptOutcome({ category: "SUCCESS", origin: "CHECKOUT", entitled: true }), "SUCCESS");

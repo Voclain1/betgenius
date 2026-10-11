@@ -12,6 +12,7 @@ import {
   accessEndedEmail,
   adminPaymentAlertEmail,
   dailyPicksEmail,
+  formatPaidAmount,
   paymentProblemEmail,
   receiptEmail,
   renewalReminderEmail,
@@ -71,7 +72,7 @@ export async function syncPaystackAttempts(now: Date): Promise<{ ran: boolean; r
 export async function queueReceipts(now: Date): Promise<number> {
   const granted = await prisma.paymentAttempt.findMany({
     where: { entitlementGrantedAt: { gte: new Date(now.getTime() - 2 * DAY) }, userId: { not: null } },
-    select: { reference: true, userId: true, tier: true, amountKobo: true, paidAt: true, entitlementGrantedAt: true },
+    select: { reference: true, userId: true, tier: true, amountKobo: true, currency: true, paidAt: true, entitlementGrantedAt: true },
     take: 200,
   });
   const done = await existingKeys(granted.map((g) => `receipt:${g.reference}`));
@@ -91,6 +92,7 @@ export async function queueReceipts(now: Date): Promise<number> {
       email: receiptEmail({
         tier: g.tier as PaidTier,
         amountNgn: Math.round((g.amountKobo ?? 0) / 100),
+        amountLabel: formatPaidAmount(g.amountKobo ?? 0, g.currency),
         reference: g.reference,
         paidAt: g.paidAt ?? g.entitlementGrantedAt!,
         accessUntil,
