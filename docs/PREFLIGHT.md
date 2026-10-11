@@ -68,6 +68,33 @@ npm run preflight:integration
 
 Run this from the usual checkout, where `.env` names the normal database, so the guard has an identity to compare against. `scripts/check-db-safety.ts` tests every refusal offline, using made-up hosts and an injected activity probe. It also checks that no hash or digest literal, and no local database identity, appears in the safety files.
 
+## Performance budgets (`npm run check:budgets`)
+
+SEO-604. After `next build`, `scripts/check-performance-budget.ts` reads
+`.next/app-build-manifest.json` and measures every page's first-load
+JavaScript, gzipped: the page's own chunks plus those of every layout above
+it, the same set Next.js reports as First Load JS. The budgets live in
+`scripts/perf-budgets.json`:
+
+- `sharedKb` (120): the JS every page pays, the root layout and the framework.
+- `defaultKb` (160): the ceiling for any one page.
+- `routes`: a higher ceiling for a named page (manifest key, for example
+  `/(public)/bet-builder/page`) that genuinely needs it. An override for a
+  page that no longer exists fails, so stale exceptions do not pile up.
+
+GitHub `preflight` runs it straight after the build, so a change that
+pushes a page over fails the PR. It needs a build, so it is not in
+`npm run preflight`; run `npx next build && npm run check:budgets` locally.
+The arithmetic is pinned without a build by `scripts/check-perf-budget-logic.ts`,
+which is in the pure tier.
+
+When a page fails: first look for what grew (a new client component, a
+library imported into a layout, a server-only module pulled into the
+client). Raise or add a budget only for a deliberate addition, in the same
+PR, and say why in its description. Field Core Web Vitals (LCP, INP, CLS at
+p75) are reported to GA4 by `src/components/WebVitals.tsx`; these budgets
+are the build-time guard that keeps them from drifting.
+
 ## Scripts outside the tiers
 
 The `verify-*` scripts guard themselves: they run only against `127.0.0.1:55432/betgenius_feature_test`. Several other `check-*`, `research-*` and `measure-*` scripts read or write the live database and are not in any tier. Examples are `check-bet-of-the-day*`, `check-doubles-quota`, `check-double-settlement`, `check-market-confirmed-curation` and `check-combo-date-gating`. Run them deliberately, never as part of a routine check. Before adding any of them to a tier, apply the rules above.
