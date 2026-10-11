@@ -130,6 +130,54 @@ export function feedDayHref(slug: string, day: FeedDay): string {
   return dayHref(`/predictions/${slug}`, day);
 }
 
+/**
+ * Which published rows belong to a feed, apart from the day: the tag, the
+ * hidden-combo-leg exclusion and the paid-only rule. Shared by the feed itself
+ * and the past-days results on the feed pages (src/lib/feedResults.ts), so a
+ * past day can never list a row the feed would not have shown.
+ */
+export function categoryFeedWhere(cat: PredictionCategory) {
+  return {
+    status: "PUBLISHED" as const,
+    // TODAY ignores category tags. Include the assembled double as part of
+    // the regular mix, but continue excluding its internally tagged source
+    // legs so one fixture never appears as three loose public picks.
+    ...(cat === "TODAY"
+      ? {
+          OR: [
+            { categories: { none: { category: "SAME_GAME_DOUBLE" } } },
+            { marketType: "SAME_GAME_DOUBLE" },
+          ],
+        }
+      : { categories: { some: { category: cat } } }),
+    // The Doubles feed shows assembled DOUBLES, not the legs they are built
+    // from. A multi-market generation tags its source rows SAME_GAME_DOUBLE
+    // so they stay out of every other feed, which would otherwise make them
+    // surface here as two loose single-market picks sitting beside the double
+    // that already quotes them both.
+    ...(cat === "SAME_GAME_DOUBLE" ? { marketType: "SAME_GAME_DOUBLE" } : {}),
+    // GOALS is derived from the market, so the tag and the market already
+    // agree; saying both keeps a mis-tagged row out rather than trusting
+    // every writer. Source legs never carry GOALS, but excluding them here
+    // too costs nothing. goalsFeedRows below re-checks line and direction.
+    ...(cat === "GOALS"
+      ? { marketType: "OVER_UNDER", categories: { some: { category: "GOALS" }, none: { category: "SAME_GAME_DOUBLE" } } }
+      : {}),
+    // Every other tag feed (Featured, Genius, Banker, VIP, Premium, Bet of the
+    // Day): a hidden combo leg is not a pick of its own and never shows here,
+    // whatever tag it carries. The one exception is a pre-cutover leg that is
+    // still live, which stays until it settles so no live pick vanishes
+    // mid-flight. Today, Combo Bets and Goals exclude legs above already. See
+    // src/lib/comboLegs.ts.
+    ...(TAG_FEEDS_EXCLUDING_LEGS.has(cat) ? tagFeedHiddenLegExclusion() : {}),
+    // A paid-only pick is shown in VIP/PREMIUM and nowhere else. Without
+    // this, Today (which ignores tags) and any feed whose tag a writer added
+    // would show it unlocked: those pages decide the padlock by the FEED's
+    // category, not the row's.
+    ...(PAID_FEEDS.has(cat) ? {} : NOT_PAID_ONLY),
+  };
+}
+
 // Shared between generateMetadata and the page body on /predictions/[category]
 // (and now the dashboard) so a given category's predictions are only fetched
 // once per request — React's cache() memoizes by arguments within a render pass.
@@ -140,46 +188,7 @@ export function feedDayHref(slug: string, day: FeedDay): string {
 export const getCategoryPredictions = cache(async (cat: PredictionCategory, day: FeedDay = "today") => {
   const today = lagosDayBounds(DAY_OFFSETS[day]);
   const found = await prisma.prediction.findMany({
-    where: {
-      status: "PUBLISHED",
-      kickoff: { gte: today.start, lt: today.end },
-      // TODAY ignores category tags. Include the assembled double as part of
-      // the regular mix, but continue excluding its internally tagged source
-      // legs so one fixture never appears as three loose public picks.
-      ...(cat === "TODAY"
-        ? {
-            OR: [
-              { categories: { none: { category: "SAME_GAME_DOUBLE" } } },
-              { marketType: "SAME_GAME_DOUBLE" },
-            ],
-          }
-        : { categories: { some: { category: cat } } }),
-      // The Doubles feed shows assembled DOUBLES, not the legs they are built
-      // from. A multi-market generation tags its source rows SAME_GAME_DOUBLE
-      // so they stay out of every other feed, which would otherwise make them
-      // surface here as two loose single-market picks sitting beside the double
-      // that already quotes them both.
-      ...(cat === "SAME_GAME_DOUBLE" ? { marketType: "SAME_GAME_DOUBLE" } : {}),
-      // GOALS is derived from the market, so the tag and the market already
-      // agree; saying both keeps a mis-tagged row out rather than trusting
-      // every writer. Source legs never carry GOALS, but excluding them here
-      // too costs nothing. goalsFeedRows below re-checks line and direction.
-      ...(cat === "GOALS"
-        ? { marketType: "OVER_UNDER", categories: { some: { category: "GOALS" }, none: { category: "SAME_GAME_DOUBLE" } } }
-        : {}),
-      // Every other tag feed (Featured, Genius, Banker, VIP, Premium, Bet of the
-      // Day): a hidden combo leg is not a pick of its own and never shows here,
-      // whatever tag it carries. The one exception is a pre-cutover leg that is
-      // still live, which stays until it settles so no live pick vanishes
-      // mid-flight. Today, Combo Bets and Goals exclude legs above already. See
-      // src/lib/comboLegs.ts.
-      ...(TAG_FEEDS_EXCLUDING_LEGS.has(cat) ? tagFeedHiddenLegExclusion() : {}),
-      // A paid-only pick is shown in VIP/PREMIUM and nowhere else. Without
-      // this, Today (which ignores tags) and any feed whose tag a writer added
-      // would show it unlocked: those pages decide the padlock by the FEED's
-      // category, not the row's.
-      ...(PAID_FEEDS.has(cat) ? {} : NOT_PAID_ONLY),
-    },
+    where: { ...categoryFeedWhere(cat), kickoff: { gte: today.start, lt: today.end } },
     // Deterministic, but not the order the page renders in — the ranking in
     // orderForDisplay decides that. This clause exists so the `take` below
     // always cuts the same 60 rows out of a larger day, rather than letting an

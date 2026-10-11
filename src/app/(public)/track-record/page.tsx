@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
-import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
+import { getMonthTrackRecord, getSettledTotals, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { TrackRecordView } from "@/components/TrackRecordView";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 
 export const revalidate = 300;
 
 export async function generateMetadata(): Promise<Metadata> {
-  const data = await getTrackRecordData();
-
-  if (data.totalSettledAllTime < MIN_SETTLED_SAMPLE_SIZE) {
+  // Indexability follows the all-time sample (a grouped count, never shown),
+  // so the page does not drop out of the index every time a month begins.
+  const totals = await getSettledTotals();
+  if (totals.total < MIN_SETTLED_SAMPLE_SIZE) {
     return {
       title: "Football Prediction Track Record",
       description: "Our real settled prediction results, published transparently once there's a fair sample size to judge.",
@@ -17,34 +18,31 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   }
 
-  const last30 = data.windows[30].headline;
-  const rateText = last30.decided >= MIN_SETTLED_SAMPLE_SIZE && last30.rate != null
-    ? `${Math.round(last30.rate * 100)}% win rate over the last 30 days, `
+  const data = await getMonthTrackRecord();
+  const rate = data.headline.decided >= MIN_SETTLED_SAMPLE_SIZE && data.headline.rate != null
+    ? `${Math.round(data.headline.rate * 100)}% win rate in ${data.monthLabel}. `
     : "";
   return {
     title: "Football Prediction Track Record",
-    description: `${rateText}${data.totalSettledAllTime} settled tips all-time — every result, win or lose, published transparently.`,
+    description: `${rate}Every settled BetGenius prediction this month, win or lose, by category and market.`,
     alternates: { canonical: "/track-record" },
   };
 }
 
 export default async function TrackRecordPage() {
-  const data = await getTrackRecordData();
+  const totals = await getSettledTotals();
 
-  if (data.totalSettledAllTime < MIN_SETTLED_SAMPLE_SIZE) {
+  if (totals.total < MIN_SETTLED_SAMPLE_SIZE) {
     return (
       <div className="space-y-8">
         <CategoryMasthead kicker="Public record" title="Track record" blurb="Every settled prediction, wins and losses alike, published once there is a fair sample to judge." stats={[]} />
         <div className="rounded-3xl border border-brand-border bg-brand-card p-6">
           <p className="text-lg font-black text-gray-100">Not enough data yet</p>
-          <p className="mt-2 text-sm text-gray-400">
-            We only publish real numbers once there's a meaningful sample to judge fairly — {data.totalSettledAllTime} of{" "}
-            {MIN_SETTLED_SAMPLE_SIZE} settled tips so far. Check back soon.
-          </p>
+          <p className="mt-2 text-sm text-gray-400">We only publish real numbers once there&apos;s a meaningful sample to judge fairly. Check back soon.</p>
         </div>
       </div>
     );
   }
 
-  return <TrackRecordView data={data} />;
+  return <TrackRecordView data={await getMonthTrackRecord()} />;
 }

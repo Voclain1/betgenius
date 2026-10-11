@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { MARKET_TYPES, type MarketType } from "@/lib/markets";
+import { lagosDateKey } from "@/lib/lagosDate";
 
 // Minimum settled (non-PENDING) predictions required before /track-record
 // shows real numbers instead of a "not enough data yet" placeholder — and,
@@ -12,8 +13,6 @@ export const MIN_SETTLED_SAMPLE_SIZE = 20;
 
 export const TRACK_RECORD_CATEGORIES = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM", "BET_OF_THE_DAY", "GOALS"] as const;
 export const TRACK_RECORD_MARKET_TYPES = MARKET_TYPES.filter((m) => m !== "OTHER") as Exclude<MarketType, "OTHER">[];
-export const WINDOW_OPTIONS = [7, 30, 90] as const;
-export type WindowDays = (typeof WINDOW_OPTIONS)[number];
 
 export type WinRateStat = {
   won: number;
@@ -45,27 +44,11 @@ export type RecentTip = {
   settledAt: string | null;
 };
 
-export type WindowStats = {
-  headline: WinRateStat;
-  byCategory: Record<string, WinRateStat>;
-  byMarketType: Record<string, WinRateStat>;
-  over25: WinRateStat;
-};
-
-export type TrackRecordData = {
-  totalSettledAllTime: number;
-  allTime: WinRateStat;
-  firstPublishedAt: string | null;
-  lastSettledAt: string | null;
-  windows: Record<WindowDays, WindowStats>;
-  recentTips: RecentTip[];
-};
-
 export type SettledTotals = {
   won: number;
   lost: number;
   void: number;
-  /** won + lost + void — the figure MIN_SETTLED_SAMPLE_SIZE gates /track-record on. */
+  /** won + lost + void — the figure MIN_SETTLED_SAMPLE_SIZE gates /track-record's indexability on. */
   total: number;
   /** Most recent settledAt across every published, non-PENDING prediction. */
   lastSettledAt: Date | null;
@@ -73,11 +56,10 @@ export type SettledTotals = {
 
 /**
  * All-time settled counts — the smallest read that answers "does /track-record
- * clear its sample-size gate?".
- *
- * getTrackRecordData builds its all-time stat from this and the sitemap reads
- * it directly, so the page's indexability and its sitemap entry come from one
- * count definition rather than two that could drift apart.
+ * clear its sample-size gate?". A grouped count in the database, never shown on
+ * the page: the page reports one calendar month (getMonthTrackRecord). The
+ * sitemap reads it too, so the page's indexability and its sitemap entry come
+ * from one count definition, and neither flips at the start of every month.
  */
 export const getSettledTotals = cache(async (): Promise<SettledTotals> => {
   const groups = await prisma.prediction.groupBy({
@@ -97,92 +79,116 @@ export const getSettledTotals = cache(async (): Promise<SettledTotals> => {
   return { won, lost, void: voided, total: won + lost + voided, lastSettledAt };
 });
 
-/**
- * Read-only aggregation over Prediction rows already settled by A1 (auto) or
- * A2 (manual admin override) — no schema of its own. Every stat here counts
- * settledById: null (auto) and settledById: set (manual) identically; nothing
- * in this module distinguishes settlement method in the numbers themselves.
- */
-export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
-  const maxWindowDays = Math.max(...WINDOW_OPTIONS);
-  const maxCutoff = new Date(Date.now() - maxWindowDays * 24 * 60 * 60 * 1000);
-  const settledWhere = { status: "PUBLISHED" as const, outcome: { not: "PENDING" as const } };
+// ---------------------------------------------------------------------------
+// The calendar-month record
+// ---------------------------------------------------------------------------
 
-  const [rows, settledTotals, dateRange, recent] = await Promise.all([
+const LAGOS_OFFSET = "+01:00";
+
+/**
+ * Half-open UTC bounds of a Lagos calendar month. `offsetMonths` 0 is the
+ * month `now` falls in, -1 the one before. Lagos has no DST, so the month
+ * starts at 00:00 +01:00 on the 1st, every month.
+ */
+export function lagosMonthBounds(now: Date = new Date(), offsetMonths = 0): { start: Date; end: Date; key: string } {
+  const [year, month] = lagosDateKey(now).split("-").map(Number);
+  const index = year * 12 + (month - 1) + offsetMonths;
+  const y = Math.floor(index / 12);
+  const m = index % 12;
+  const iso = (yy: number, mm: number) => `${yy}-${String(mm + 1).padStart(2, "0")}-01T00:00:00${LAGOS_OFFSET}`;
+  const next = index + 1;
+  return { start: new Date(iso(y, m)), end: new Date(iso(Math.floor(next / 12), next % 12)), key: `${y}-${String(m + 1).padStart(2, "0")}` };
+}
+
+/** "October 2026" for a month key ("2026-10"). Locale-independent of the server. */
+export function monthLabel(key: string): string {
+  return new Intl.DateTimeFormat("en-NG", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${key}-15T12:00:00Z`));
+}
+
+/** A WinRateStat from grouped outcome counts. */
+export function statFromCounts(counts: ReadonlyArray<{ outcome: string; count: number }>): WinRateStat {
+  const n = (o: string) => counts.filter((c) => c.outcome === o).reduce((sum, c) => sum + c.count, 0);
+  const won = n("WON");
+  const lost = n("LOST");
+  const voided = n("VOID");
+  const decided = won + lost;
+  return { won, lost, void: voided, total: won + lost + voided, decided, rate: decided > 0 ? won / decided : null };
+}
+
+export type MonthTrackRecord = {
+  /** "2026-10" */
+  monthKey: string;
+  /** "October 2026" */
+  monthLabel: string;
+  headline: WinRateStat;
+  byCategory: Record<string, WinRateStat>;
+  byMarketType: Record<string, WinRateStat>;
+  over25: WinRateStat;
+  /** The latest settled picks of the month, newest first. */
+  recentTips: RecentTip[];
+  /** How last month finished, or null below the sample gate. */
+  previousMonth: { label: string; rate: number } | null;
+  lastSettledAt: string | null;
+};
+
+/** Picks of a month: published, settled, kicked off inside the month. */
+function settledInMonth(bounds: { start: Date; end: Date }) {
+  return { status: "PUBLISHED" as const, outcome: { not: "PENDING" as const }, kickoff: { gte: bounds.start, lt: bounds.end } };
+}
+
+/**
+ * One Lagos calendar month of results, counted in the database.
+ *
+ * The page used to read every settled prediction of the last 90 days and
+ * count them in JavaScript, plus all-time totals. That grows with the site's
+ * whole history (4,000+ settled picks in October 2026); this grows with one
+ * month and returns a few dozen small aggregate rows whatever the volume. The
+ * month resets on the 1st: the record is "this month", not "ever".
+ */
+export const getMonthTrackRecord = cache(async (now: Date = new Date()): Promise<MonthTrackRecord> => {
+  const month = lagosMonthBounds(now);
+  const previous = lagosMonthBounds(now, -1);
+  const where = settledInMonth(month);
+  const grouped = (extra: Record<string, unknown> = {}) =>
+    prisma.prediction
+      .groupBy({ by: ["outcome"], where: { ...where, ...extra }, _count: { _all: true } })
+      .then((rows) => statFromCounts(rows.map((r) => ({ outcome: r.outcome, count: r._count._all }))));
+
+  const [headline, categoryStats, marketRows, over25, recent, previousStat] = await Promise.all([
+    grouped(),
+    Promise.all(TRACK_RECORD_CATEGORIES.map((category) => grouped({ categories: { some: { category } } }))),
+    prisma.prediction.groupBy({ by: ["marketType", "outcome"], where, _count: { _all: true } }),
+    grouped({ marketType: "OVER_UNDER", AND: [{ selection: { path: ["line"], equals: 2.5 } }, { selection: { path: ["direction"], equals: "OVER" } }] }),
     prisma.prediction.findMany({
-      where: { ...settledWhere, publishedAt: { gte: maxCutoff } },
-      select: {
-        outcome: true,
-        marketType: true,
-        selection: true,
-        category: true,
-        publishedAt: true,
-        categories: { select: { category: true } },
-      },
-    }),
-    getSettledTotals(),
-    prisma.prediction.aggregate({
-      where: settledWhere,
-      _min: { publishedAt: true },
-      _max: { settledAt: true },
-    }),
-    prisma.prediction.findMany({
-      where: settledWhere,
+      where,
       orderBy: { settledAt: "desc" },
-      take: 20,
+      take: 12,
       select: { id: true, homeTeam: true, awayTeam: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
     }),
+    prisma.prediction
+      .groupBy({ by: ["outcome"], where: settledInMonth(previous), _count: { _all: true } })
+      .then((rows) => statFromCounts(rows.map((r) => ({ outcome: r.outcome, count: r._count._all })))),
   ]);
 
-  const { won, lost, void: voided, total } = settledTotals;
-  const decided = won + lost;
-  const allTime: WinRateStat = {
-    won,
-    lost,
-    void: voided,
-    total,
-    decided,
-    rate: decided > 0 ? won / decided : null,
-  };
-  const totalSettledAllTime = allTime.total;
-
-  const windows = {} as Record<WindowDays, WindowStats>;
-  for (const days of WINDOW_OPTIONS) {
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const windowRows = rows.filter((r) => r.publishedAt && r.publishedAt >= cutoff);
-
-    const byCategory: Record<string, WinRateStat> = {};
-    for (const cat of TRACK_RECORD_CATEGORIES) {
-      byCategory[cat] = computeStat(windowRows.filter((r) => r.categories.some((c) => c.category === cat)).map((r) => r.outcome));
-    }
-
-    const byMarketType: Record<string, WinRateStat> = {};
-    for (const mt of TRACK_RECORD_MARKET_TYPES) {
-      byMarketType[mt] = computeStat(windowRows.filter((r) => r.marketType === mt).map((r) => r.outcome));
-    }
-
-    const over25 = computeStat(windowRows.filter((r) => {
-      if (r.marketType !== "OVER_UNDER" || !r.selection || typeof r.selection !== "object" || Array.isArray(r.selection)) return false;
-      const selection = r.selection as { line?: unknown; direction?: unknown };
-      return selection.line === 2.5 && selection.direction === "OVER";
-    }).map((r) => r.outcome));
-
-    windows[days] = { headline: computeStat(windowRows.map((r) => r.outcome)), byCategory, byMarketType, over25 };
+  const byCategory: Record<string, WinRateStat> = {};
+  TRACK_RECORD_CATEGORIES.forEach((category, i) => { byCategory[category] = categoryStats[i]; });
+  const byMarketType: Record<string, WinRateStat> = {};
+  for (const mt of TRACK_RECORD_MARKET_TYPES) {
+    byMarketType[mt] = statFromCounts(marketRows.filter((r) => r.marketType === mt).map((r) => ({ outcome: r.outcome, count: r._count._all })));
   }
 
-  const recentTips: RecentTip[] = recent.map((r) => ({
-    ...r,
-    kickoff: r.kickoff?.toISOString() ?? null,
-    settledAt: r.settledAt?.toISOString() ?? null,
-  }));
-
   return {
-    totalSettledAllTime,
-    allTime,
-    firstPublishedAt: dateRange._min.publishedAt?.toISOString() ?? null,
-    lastSettledAt: dateRange._max.settledAt?.toISOString() ?? null,
-    windows,
-    recentTips,
+    monthKey: month.key,
+    monthLabel: monthLabel(month.key),
+    headline,
+    byCategory,
+    byMarketType,
+    over25,
+    recentTips: recent.map((r) => ({ ...r, kickoff: r.kickoff?.toISOString() ?? null, settledAt: r.settledAt?.toISOString() ?? null })),
+    previousMonth: previousStat.decided >= MIN_SETTLED_SAMPLE_SIZE && previousStat.rate != null
+      ? { label: monthLabel(previous.key), rate: previousStat.rate }
+      : null,
+    lastSettledAt: recent[0]?.settledAt?.toISOString() ?? null,
   };
 });
 
@@ -195,7 +201,7 @@ export const getTrackRecordData = cache(async (): Promise<TrackRecordData> => {
  * be the least honest thing on the page. Below the bar this returns null and
  * callers render nothing — not a hedged number, not "too early to say".
  *
- * Reads the same PUBLISHED + settled rows as getTrackRecordData, scoped by
+ * Reads the same PUBLISHED + settled rows as the track record, scoped by
  * leagueApiId. No schema of its own, no new indexes: same full-scan-then-filter
  * posture the rest of this module and predictionScope.ts already take at this
  * data volume.

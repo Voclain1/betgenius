@@ -18,7 +18,7 @@ import { tierFromKorapayReference } from "@/lib/payments/korapay";
 import { SignupConfirmation } from "@/components/SignupConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
-import { getTrackRecordData, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
+import { getMonthTrackRecord, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES, type PredictionCategory, type SubscriptionStatus, type SubscriptionTier } from "@/lib/enums";
 import { tierFromCheckoutReference } from "@/lib/paystack/checkoutReference";
 import { PLAN_PRICING, type PaidTier } from "@/lib/pricing";
@@ -83,30 +83,25 @@ function LockedCategorySection({ category }: { category: PredictionCategory }) {
   );
 }
 
-// Embeds a short summary rather than only linking out — renders in one
-// request alongside the rest of the dashboard shell, reusing the same
-// getTrackRecordData() the public /track-record page is built on. Full
-// breakdowns (by window/category/market, recent tips) stay on that page.
+// Embeds a short summary rather than only linking out, from the same
+// calendar-month record the public /track-record page shows. Full breakdowns
+// (by category and market, recent results) stay on that page.
 async function TrackRecordSection() {
-  const data = await getTrackRecordData();
-  const enough = data.totalSettledAllTime >= MIN_SETTLED_SAMPLE_SIZE;
-  const rate30 = data.windows[30].headline.rate;
+  const data = await getMonthTrackRecord();
+  const rate = data.headline.decided >= MIN_SETTLED_SAMPLE_SIZE ? data.headline.rate : null;
   return (
     <div className="max-w-xl space-y-4">
       <h1 className="text-2xl font-bold">Track record</h1>
       <div className="card space-y-2">
-        {enough ? (
-          <>
-            <div className="text-lg font-semibold">
-              {rate30 != null ? `${Math.round(rate30 * 100)}% win rate` : "—"}{" "}
-              <span className="text-sm font-normal text-gray-400">last 30 days</span>
-            </div>
-            <div className="text-sm text-gray-400">{data.totalSettledAllTime} settled tips all-time</div>
-          </>
+        {rate != null ? (
+          <div className="text-lg font-semibold">
+            {Math.round(rate * 100)}% win rate <span className="text-sm font-normal text-gray-400">{data.monthLabel}</span>
+          </div>
         ) : (
-          <p className="text-sm text-gray-400">
-            Not enough settled tips yet for a fair sample — {data.totalSettledAllTime} of {MIN_SETTLED_SAMPLE_SIZE}.
-          </p>
+          <p className="text-sm text-gray-400">{data.monthLabel}&apos;s record is still building as matches settle.</p>
+        )}
+        {data.previousMonth && (
+          <div className="text-sm text-gray-400">{data.previousMonth.label} closed at {Math.round(data.previousMonth.rate * 100)}%</div>
         )}
         <Link href="/track-record" className="btn btn-ghost mt-2 inline-flex">View full track record</Link>
       </div>
