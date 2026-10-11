@@ -53,11 +53,17 @@ export function PaymentConfirmation({
   reference,
   tier,
   value,
+  provider,
+  transactionId,
 }: {
   activated: boolean;
   reference?: string | null;
   tier?: PaidTier | null;
   value?: number | null;
+  /** "flutterwave" or "korapay" when the payer is back from there rather than Paystack. */
+  provider?: string | null;
+  /** Flutterwave's transaction id from the redirect; absent when they cancelled. */
+  transactionId?: string | null;
 }) {
   const { update } = useSession();
   const router = useRouter();
@@ -87,12 +93,17 @@ export function PaymentConfirmation({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (reference && !activated) {
+      const flutterwave = provider === "flutterwave";
+      // Back from Flutterwave without a transaction: the checkout was cancelled.
+      if (flutterwave && !transactionId && !activated) {
+        if (!cancelled) setStatus("not_completed");
+      } else if ((reference || transactionId) && !activated) {
         try {
-          const res = await fetch("/api/subscription/verify", {
+          // Same contract from both verify routes: { activated, paymentStatus }.
+          const res = await fetch(flutterwave ? "/api/payments/flutterwave/verify" : provider === "korapay" ? "/api/payments/korapay/verify" : "/api/subscription/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reference }),
+            body: JSON.stringify(flutterwave ? { transactionId } : { reference }),
           });
           const json = (await res.json().catch(() => null)) as { activated?: boolean; paymentStatus?: PaymentStatus } | null;
           if (!cancelled && json && !json.activated && json.paymentStatus) setStatus(json.paymentStatus);

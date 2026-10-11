@@ -89,12 +89,18 @@ const TEXT_FOOTER = "\n\n18+ only. Predictions are informational and no outcome 
 
 // ---------------------------------------------------------------------------
 
-export function receiptEmail(input: { tier: PaidTier; amountNgn: number; reference: string; paidAt: Date; accessUntil: Date | null }): RenderedEmail {
+/** A paid amount as the customer paid it: naira, or USDT for a crypto payment. */
+export function formatPaidAmount(amountMinor: number, currency: string | null): string {
+  if (currency === "USDT") return `${(amountMinor / 100).toFixed(2)} USDT`;
+  return formatNgn(Math.round(amountMinor / 100));
+}
+
+export function receiptEmail(input: { tier: PaidTier; amountNgn: number; amountLabel?: string; reference: string; paidAt: Date; accessUntil: Date | null }): RenderedEmail {
   const name = TIER_NAME[input.tier];
   const until = input.accessUntil ? formatLagosDate(input.accessUntil) : null;
   const rows: [string, string][] = [
     ["Plan", `${name}, 30 days`],
-    ["Amount", formatNgn(input.amountNgn)],
+    ["Amount", input.amountLabel ?? formatNgn(input.amountNgn)],
     ["Paid on", formatLagosDate(input.paidAt)],
     ...(until ? ([["Access until", until]] as [string, string][]) : []),
     ["Reference", input.reference],
@@ -277,5 +283,35 @@ export function adminPaymentAlertEmail(input: { reference: string; tier: string 
     subject: `Action needed: a paid ${input.tier ?? ""} checkout has no access`.replace("  ", " "),
     html: layout({ preheader: `Reference ${input.reference}`, heading: "A customer paid but has no access", bodyHtml: paragraphsHtml(body) + button("Open Payments", absoluteUrl("/admin/payments")) }),
     text: `${body}\n\n${absoluteUrl("/admin/payments")}`,
+  };
+}
+
+const METHOD_NAME: Record<string, string> = { BANK: "bank transfer", USDT: "USDT" };
+
+/** To every admin: a customer says they have paid by bank transfer or USDT. */
+export function manualSubmittedAdminEmail(input: { code: string; method: string; tier: string; amount: string; customerEmail: string; payerDetails: string }): RenderedEmail {
+  const what = input.method === "USDT" ? "Transaction hash" : "Sent from";
+  const body = `${input.customerEmail} says they have paid for ${input.tier} by ${METHOD_NAME[input.method] ?? input.method}.\n\nCode: ${input.code}\nAmount: ${input.amount}\n${what}: ${input.payerDetails}\n\n${
+    input.method === "USDT"
+      ? "Check the transaction on the blockchain: the right amount, to our wallet, on the right network."
+      : "Check your bank app for a transfer of this amount with this code in the narration."
+  } Then approve or reject it in the admin area. Nothing is unlocked until you do.`;
+  return {
+    subject: `Payment to confirm: ${input.code} (${input.tier}, ${input.amount})`,
+    html: layout({ preheader: `${input.customerEmail} — ${input.amount}`, heading: "A customer says they have paid", bodyHtml: paragraphsHtml(body) + button("Review payments", absoluteUrl("/admin/manual-payments")) }),
+    text: `${body}\n\n${absoluteUrl("/admin/manual-payments")}`,
+  };
+}
+
+/** To the customer: an admin could not find their bank / USDT payment. */
+export function manualRejectedEmail(input: { code: string; method: string; tier: PaidTier; reason: string }): RenderedEmail {
+  const name = TIER_NAME[input.tier];
+  const body = `We checked for your ${METHOD_NAME[input.method] ?? "payment"} for ${name} (code ${input.code}) and couldn't confirm it, so your plan hasn't changed.\n\n${
+    input.reason ? `Reason: ${input.reason}\n\n` : ""
+  }If you did send the money, ${contactUs()} with the code and your proof of payment and we'll sort it out.`;
+  return {
+    subject: `We couldn't confirm your ${name} payment`,
+    html: layout({ preheader: `Code ${input.code}`, heading: "We couldn't confirm your payment", bodyHtml: paragraphsHtml(body) + button("See plans", absoluteUrl("/pricing")) }),
+    text: `${body}\n\n${absoluteUrl("/pricing")}${TEXT_FOOTER}`,
   };
 }

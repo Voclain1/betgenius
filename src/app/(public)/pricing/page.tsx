@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PLAN_PRICING, PLAN_TIERS, formatNgn, formatUsd, type PaidTier } from "@/lib/pricing";
 import { trackEvent } from "@/lib/clientAnalytics";
 
@@ -11,11 +12,50 @@ import { trackEvent } from "@/lib/clientAnalytics";
 // dashboard banner already use.
 const tiers = PLAN_TIERS;
 
+type Method = "PAYSTACK" | "KORAPAY" | "FLUTTERWAVE" | "BANK" | "USDT";
+
+function methodCopy(method: Method, tier: PaidTier, usdtNetwork: string): { title: string; detail: string } {
+  switch (method) {
+    case "PAYSTACK":
+      return { title: "Paystack", detail: "Pay on Paystack's secure checkout. Unlocks as soon as it's confirmed." };
+    case "KORAPAY":
+      return { title: "Korapay", detail: "Pay on Korapay's secure checkout, including by bank transfer to a one-time account. Unlocks as soon as it's confirmed." };
+    case "FLUTTERWAVE":
+      return { title: "Flutterwave", detail: "Pay on Flutterwave's secure checkout. Unlocks as soon as it's confirmed." };
+    case "BANK":
+      return { title: "Direct bank transfer", detail: `Pay ${formatNgn(PLAN_PRICING[tier].ngn)} into our account. Unlocks once we confirm, usually within a few hours.` };
+    case "USDT":
+      return { title: `USDT (${usdtNetwork})`, detail: `Pay ${formatUsd(PLAN_PRICING[tier].usd)} in USDT. Unlocks once we confirm, usually within a few hours.` };
+  }
+}
+
 export default function Pricing() {
   const { data } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
+  const router = useRouter();
+  // Which ways to pay are switched on (lib/payments/methods). Until it loads,
+  // Paystack alone — the behaviour before there was a choice.
+  const [methods, setMethods] = useState<Method[]>(["PAYSTACK"]);
+  const [usdtNetwork, setUsdtNetwork] = useState("TRC20");
+  const [choosing, setChoosing] = useState<PaidTier | null>(null);
+
+  // The chooser renders below both plan cards; on a phone that is off screen
+  // from the VIP button, so bring it into view when it opens.
+  useEffect(() => {
+    if (choosing) document.getElementById("pay-with")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [choosing]);
+
+  useEffect(() => {
+    fetch("/api/payments/methods")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { methods: Method[]; usdtNetwork: string } | null) => {
+        if (j?.methods?.length) setMethods(j.methods);
+        if (j?.usdtNetwork) setUsdtNetwork(j.usdtNetwork);
+      })
+      .catch(() => {});
+  }, []);
 
   // Paystack's "Cancel payment" link returns here (metadata.cancel_action, set
   // by the initialize route). Read after mount rather than via
@@ -28,6 +68,41 @@ export default function Pricing() {
   // Sends the tier only — the server derives the amount from lib/pricing.
   // Posting an amount from here would let anyone with devtools name their
   // own price.
+  // One method: straight to it, as before. Several: ask which.
+  const choose = (tier: PaidTier) => {
+    if (!data?.user) return (window.location.href = "/login");
+    setErr(null);
+    if (methods.length <= 1) return void pay(tier, methods[0] ?? "PAYSTACK");
+    setChoosing(tier);
+  };
+
+  const pay = async (tier: PaidTier, method: Method) => {
+    if (method === "PAYSTACK") return subscribe(tier);
+    setBusy(tier);
+    setErr(null);
+    try {
+      const manual = method === "BANK" || method === "USDT";
+      const res = await fetch(manual ? "/api/payments/manual" : `/api/payments/${method.toLowerCase()}/initialize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(manual ? { tier, method } : { tier }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Failed to start checkout");
+      trackEvent("begin_checkout", {
+        currency: "NGN",
+        value: PLAN_PRICING[tier].ngn,
+        payment_type: method.toLowerCase(),
+        items: [{ item_id: tier, item_name: `BetGenius ${tier}`, price: PLAN_PRICING[tier].ngn, quantity: 1 }],
+      });
+      if (manual) router.push(`/pay/${j.id}`);
+      else window.location.href = j.authorization_url;
+    } catch (e: any) {
+      setErr(e.message);
+      setBusy(null);
+    }
+  };
+
   const subscribe = async (tier: PaidTier) => {
     if (!data?.user) return (window.location.href = "/login");
     setBusy(tier);
@@ -56,7 +131,7 @@ export default function Pricing() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">BetGenius VIP and Premium pricing</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a plan for access to additional prediction categories and analysis tools. Each payment buys a single 30-day access period — there is no automatic renewal, so you renew yourself when the period ends. Prices shown in naira are the amounts charged through Paystack; the dollar figures are references only.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-300">Choose a plan for access to additional prediction categories and analysis tools. Each payment buys a single 30-day access period — there is no automatic renewal, so you renew yourself when the period ends. Prices are charged in naira; the dollar figure is what you pay if you choose USDT.</p>
       </div>
       {cancelled && (
         <div className="card border border-amber-500/30 text-sm text-amber-200">
@@ -82,7 +157,7 @@ export default function Pricing() {
                 {formatNgn(price.ngn)}
                 <span className="text-sm font-normal text-gray-400">/30 days</span>
               </div>
-              <div className="mt-0.5 text-sm text-gray-400">≈ {formatUsd(price.usd)} — billed in naira</div>
+              <div className="mt-0.5 text-sm text-gray-400">{formatUsd(price.usd)} if you pay in USDT</div>
               {/* Says what the payment actually buys. While recurring billing
                   is unavailable this is a single period, so the page must not
                   imply a card will be charged again. */}
@@ -92,7 +167,7 @@ export default function Pricing() {
               </ul>
               <button
                 disabled={busy === t.id}
-                onClick={() => subscribe(t.id)}
+                onClick={() => choose(t.id)}
                 className="btn btn-primary mt-4 w-full disabled:opacity-50">
                 {busy === t.id ? "Redirecting…" : `Get ${t.name} — 30 days`}
               </button>
@@ -100,15 +175,48 @@ export default function Pricing() {
           );
         })}
       </div>
+      {choosing && (
+        <section id="pay-with" className="card space-y-3" aria-live="polite">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-100">
+              Pay for {choosing === "PREMIUM" ? "Premium" : "VIP"} — choose how
+            </h2>
+            <button type="button" onClick={() => setChoosing(null)} className="text-sm text-gray-400 hover:text-gray-200">Cancel</button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {methods.map((m) => {
+              const copy = methodCopy(m, choosing, usdtNetwork);
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  disabled={busy === choosing}
+                  onClick={() => pay(choosing, m)}
+                  className="rounded-lg border border-brand-border p-4 text-left transition hover:bg-brand-card disabled:opacity-50"
+                >
+                  <div className="font-semibold text-gray-100">{copy.title}</div>
+                  <div className="mt-1 text-sm text-gray-400">{copy.detail}</div>
+                </button>
+              );
+            })}
+          </div>
+          {busy === choosing && <p className="text-sm text-gray-400">Opening checkout…</p>}
+        </section>
+      )}
       {/* What happens when they press the button. Deliberately does not list
           payment methods: Paystack decides which it offers on the account, and
           naming one that is then missing or declined breaks the promise. */}
       <section className="card space-y-2 text-sm leading-6 text-gray-300">
         <h2 className="text-lg font-semibold text-gray-100">How payment works</h2>
-        <p>You pay securely on Paystack&apos;s checkout page; BetGenius never sees your card or bank details. Paystack shows the payment methods available to you there, including bank transfer.</p>
-        <p>When Paystack confirms the payment you return to your dashboard and your plan unlocks straight away. A bank transfer can take a few minutes to confirm; access unlocks automatically when it does, even if you have closed the page.</p>
+        {/* Names no payment methods inside the gateways: each shows what it
+            offers on our account, and naming one that is missing there
+            breaks the promise. */}
+        <p>Online payments happen on {["Paystack", methods.includes("KORAPAY") && "Korapay", methods.includes("FLUTTERWAVE") && "Flutterwave"].filter(Boolean).join(" or ")}&apos;s secure checkout page, which shows the payment methods available to you; BetGenius never sees your card or bank details. Your plan unlocks as soon as the payment is confirmed, even if you have closed the page.</p>
+        {(methods.includes("BANK") || methods.includes("USDT")) && (
+          <p>You can also pay {methods.includes("BANK") ? "straight into our bank account" : ""}{methods.includes("BANK") && methods.includes("USDT") ? " or " : ""}{methods.includes("USDT") ? "in USDT" : ""}. Those payments are confirmed by our team, usually within a few hours, and you get an email when your plan is active.</p>
+        )}
         <p>If you cancel or leave checkout, nothing changes and you can start again from this page at any time.</p>
-      </section>
+        </section>
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Before choosing a plan</h2>
         <p className="text-sm leading-6 text-gray-300">VIP adds the VIP prediction category plus Bet Builder and StatsPad. Premium includes the VIP features, Premium-category selections, deeper match previews and priority support. Paid access provides analysis; it does not guarantee that any prediction will win.</p>

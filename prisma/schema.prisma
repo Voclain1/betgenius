@@ -66,6 +66,7 @@ model User {
   notificationDeliveries NotificationDelivery[]
   emailPreference EmailPreference?
   emailMessages   EmailMessage[]
+  manualPayments  ManualPayment[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -1021,6 +1022,10 @@ model PaymentAttempt {
   /// the webhook, the callback and a reconcile all converge on one row rather
   /// than logging the same attempt three times.
   reference       String    @unique
+  /// Who took the money: PAYSTACK, FLUTTERWAVE, BANK (direct transfer to our
+  /// account, approved by an admin) or USDT (likewise). Every row before this
+  /// column existed is Paystack, hence the default.
+  provider        String    @default("PAYSTACK")
   userId          String?
   tier            String?
   /// Paystack's channel: card, bank, bank_transfer, ussd, qr, mobile_money.
@@ -1143,4 +1148,38 @@ model EmailCampaign {
   messages    EmailMessage[]
 
   @@index([createdAt])
+}
+
+// A payment made outside a gateway: a bank transfer to the business account,
+// or USDT to our wallet. Nothing tells the site such money arrived, so an
+// admin confirms it against the bank app or the blockchain and approves it;
+// approval grants access through lib/payments/grant, the same exactly-once
+// path every other payment uses. See docs/PAYMENTS.md.
+model ManualPayment {
+  id             String    @id @default(cuid())
+  /// Shown to the customer to put in the transfer narration / memo, so an
+  /// admin can match a bank line to this request. Unique, short, unambiguous.
+  code           String    @unique
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier           String
+  /// BANK | USDT
+  method         String
+  amountNgn      Int
+  /// The USDT price, in cents, for method USDT.
+  amountUsdCents Int?
+  /// What the customer told us: the sending account name for BANK, the
+  /// transaction hash for USDT. Their claim, never proof — the admin checks.
+  payerDetails   String?
+  /// AWAITING_PAYMENT | SUBMITTED | APPROVED | REJECTED
+  status         String    @default("AWAITING_PAYMENT")
+  submittedAt    DateTime?
+  reviewedAt     DateTime?
+  reviewedById   String?
+  rejectReason   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, submittedAt])
+  @@index([userId, createdAt])
 }

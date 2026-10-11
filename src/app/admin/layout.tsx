@@ -19,6 +19,7 @@ const items = [
   { href: "/admin/bookmakers", label: "Bookmakers" },
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/payments", label: "Payments" },
+  { href: "/admin/manual-payments", label: "Bank & USDT" },
   { href: "/admin/emails", label: "Email" },
   { href: "/admin/admins", label: "Admins" },
   { href: "/admin/jobs", label: "Scheduled jobs" },

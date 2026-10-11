@@ -71,9 +71,14 @@ export type AttemptOrigin = "CHECKOUT" | "LEGACY" | "EXTERNAL";
 // imported because the admin page renders this module in the browser, and
 // that one imports Node's crypto to generate references.
 const OUR_REFERENCE = /^bg_(VIP|PREMIUM)_[0-9a-f]{32}$/;
+// The other ways to pay (lib/payments): a Flutterwave or Korapay checkout we started, and
+// a bank / USDT transfer an admin approved. Both are BetGenius checkouts.
+const FLUTTERWAVE_REFERENCE = /^fw_(VIP|PREMIUM)_[0-9a-f]{32}$/;
+const KORAPAY_REFERENCE = /^kp_(VIP|PREMIUM)_[0-9a-f]{32}$/;
+const MANUAL_REFERENCE = /^manual_BG-[A-Z0-9]{6}$/;
 
 export function attemptOrigin(reference: string, userId: string | null): AttemptOrigin {
-  if (OUR_REFERENCE.test(reference)) return "CHECKOUT";
+  if (OUR_REFERENCE.test(reference) || FLUTTERWAVE_REFERENCE.test(reference) || KORAPAY_REFERENCE.test(reference) || MANUAL_REFERENCE.test(reference)) return "CHECKOUT";
   if (userId) return "LEGACY";
   return "EXTERNAL";
 }
