@@ -57,3 +57,9 @@ jobs:
           # the real secrets here would put them in a build log for no gain.
           NEXTAUTH_SECRET: ci-placeholder-not-a-real-secret
           NEXTAUTH_URL: http://localhost:3000
+
+      # SEO-604. First-load JS per page, gzipped, against
+      # scripts/perf-budgets.json. A page that grows past its budget fails
+      # here instead of showing up weeks later as a worse field LCP/INP.
+      - name: Performance budgets
+        run: npm run check:budgets

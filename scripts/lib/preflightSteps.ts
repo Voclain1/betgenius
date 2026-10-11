@@ -35,6 +35,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-european-clubs.ts",
   "tsx scripts/check-track-record.ts",
   "tsx scripts/check-engagement.ts",
+  "tsx scripts/check-perf-budget-logic.ts",
   "tsx scripts/check-senior-womens.ts",
   "tsx scripts/check-goals-category.ts",
   "tsx scripts/check-goals-generation.ts",

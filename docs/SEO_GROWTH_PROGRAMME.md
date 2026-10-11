@@ -85,7 +85,7 @@
 | SEO-601 | Expand only validated topic clusters | Expansion requires impressions, engagement or conversion evidence | Backlog |
 | SEO-602 | Consolidate cannibalising pages monthly | Redirect/canonical decision documented; rankings monitored | Backlog |
 | SEO-603 | Prune weak index inventory quarterly | No useful page is removed without query/link/conversion review | Backlog |
-| SEO-604 | Protect performance budgets | Field CWV stays good at p75 as ads and features grow | Backlog |
+| SEO-604 | Protect performance budgets | Field CWV stays good at p75 as ads and features grow | In progress: build-time first-load JS budgets enforced in CI (`npm run check:budgets`, docs/PREFLIGHT.md); field p75 from GA4 web vitals still to be reviewed monthly |
 | SEO-605 | Review 10K traffic model quarterly | Forecast uses current CTR, rank, seasonality and conversion data | Backlog |
 
 ## Release gates
