@@ -22,6 +22,7 @@ import type { H2HMeeting } from "../src/lib/h2h";
 import type { LeagueStandingRow } from "../src/lib/enrichment";
 import { isSubstantiveH2H, MIN_H2H_INDEX_MEETINGS } from "../src/lib/h2hEvidence";
 import { lagosDayLabel } from "../src/lib/lagosDate";
+import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -161,6 +162,40 @@ check("guides: mobile contents are folded and desktop contents remain visible", 
 check("guides: visible reviewed date and organization attribution", guideArticle.includes("Reviewed {formatDate") && guideArticle.includes("<EditorialAttribution"));
 check("guides: first article has stable sections and related evidence links", guidesContent.includes('slug: "how-to-read-football-predictions"') && guidesContent.includes('href: "/track-record"') && guidesContent.includes('href: "/responsible-gambling"'));
 check("guides: index and published guides are sitemap entries", sitemapEntriesSource.includes('{ path: "/guides"') && sitemapEntriesSource.includes("GUIDES.map"));
+
+// SEO-302: the first eight evergreen guides. The content is JSX compiled
+// with the classic runtime here, so React must be in scope before loading it.
+(globalThis as { React?: unknown }).React = require("react");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { GUIDES } = require("../src/content/guides") as typeof import("../src/content/guides");
+check("guides: eight published", GUIDES.length === 8, String(GUIDES.length));
+check("guides: unique slugs", new Set(GUIDES.map((g) => g.slug)).size === GUIDES.length);
+check("guides: unique section ids within each guide", GUIDES.every((g) => new Set(g.sections.map((x) => x.id)).size === g.sections.length));
+check("guides: every guide has a description, summary and at least three related links", GUIDES.every((g) => g.description.length > 60 && g.summary.length > 40 && g.related.length >= 3));
+// Every related link resolves to a route that exists, or to another guide.
+const routeExists = (href: string) => {
+  const path = href.split("#")[0];
+  if (path.startsWith("/guides/")) return GUIDES.some((g) => `/guides/${g.slug}` === path);
+  const appDir = join(repoRoot, "src/app/(public)");
+  if (existsSync(join(appDir, path, "page.tsx"))) return true;
+  // /predictions/<category> feeds are one dynamic route.
+  const feed = path.match(/^\/predictions\/([a-z0-9-]+)$/);
+  return !!feed && ["banker", "goals", "vip", "premium", "today", "featured", "genius"].includes(feed[1]);
+};
+const brokenLinks = GUIDES.flatMap((g) => g.related.filter((r) => !routeExists(r.href)).map((r) => `${g.slug} -> ${r.href}`));
+check("guides: every related link resolves to a real page", brokenLinks.length === 0, brokenLinks.join(", "));
+check("guides: each guide leads into the product, not only to other guides", GUIDES.every((g) => g.related.some((r) => !r.href.startsWith("/guides/"))));
+// The worked arithmetic quoted in the copy, recomputed.
+const near = (a: number, b: number, tol = 0.05) => Math.abs(a - b) <= tol;
+check("guides: 2.50 implies 40%", near(100 / 2.5, 40));
+check("guides: margin example 2.10/3.40/3.60 totals 104.8%, home fair ~45.4%", near((1 / 2.1 + 1 / 3.4 + 1 / 3.6) * 100, 104.8) && near((100 / 2.1) / (1 / 2.1 + 1 / 3.4 + 1 / 3.6), 45.4));
+check("guides: 1X from 2.10 and 3.40 sits near 1.30 (77%)", near(1 / (1 / 2.1 + 1 / 3.4), 1.3, 0.01) && near((1 / 2.1 + 1 / 3.4) * 100, 77, 0.1));
+check("guides: 1.50 x 1.60 x 1.80 = 4.32", near(1.5 * 1.6 * 1.8, 4.32, 0.001));
+check("guides: four 70% legs land about 24% of the time", near(0.7 ** 4 * 100, 24, 0.1));
+check("guides: five straight losses at 60% wins is about 1%", near(0.4 ** 5 * 100, 1, 0.05));
+check("guides: 1.30 implies about 77%", near(100 / 1.3, 77, 0.1));
+const guideCopy = guidesContent.toLowerCase();
+check("guides: no certainty promises in the copy", !/\b(guaranteed (win|profit)|sure win|100% sure|risk-free|can't lose|cannot lose)\b/.test(guideCopy));
 
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.

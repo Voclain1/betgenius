@@ -50,8 +50,8 @@
 
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
-| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Implemented locally with a first betting-literacy guide; 149/149 SEO checks, Adsterra checks and TypeScript passed; production verification pending |
-| SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Backlog |
+| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Merged (#39); production verification pending |
+| SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Drafted Oct 2026: seven guides added to the first (odds and implied probability, over/under goals, BTTS, double chance, accumulators, staking and limits, banker bets), each with worked examples whose arithmetic is checked in `check-seo.ts` and a pathway into the matching hub; owner editorial review pending before publication counts as done |
 | SEO-303 | Launch weekly NPFL analysis | Four consecutive editions published on schedule | Backlog |
 | SEO-304 | Publish monthly model-performance report | Reproducible data, samples, losses and corrections included | Backlog |
 | SEO-305 | Launch tournament hub framework | Stable URLs available 4–8 weeks before major events | Backlog |
