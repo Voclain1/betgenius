@@ -30,6 +30,7 @@ export function TodayPredictionsEvidence() {
       <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
         <Link href="/methodology" className="text-brand hover:underline">Methodology</Link>
         <Link href="/track-record" className="text-brand hover:underline">Track record</Link>
+        <Link href="/guides" className="text-brand hover:underline">Betting guides</Link>
         <Link href="/fixtures" className="text-brand hover:underline">Fixtures</Link>
         <Link href="/responsible-gambling" className="text-brand hover:underline">Responsible gambling</Link>
       </div>

@@ -11,6 +11,7 @@ export function CompetitionHubLinks({ competition }: { competition: string }) {
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record" className="text-brand hover:underline">Check the public track record</Link>
         <Link href="/methodology" className="text-brand hover:underline">Read the methodology</Link>
+        <Link href="/guides/how-to-read-football-predictions" className="text-brand hover:underline">How to read a prediction</Link>
         <Link href="/predictions/today" className="text-brand hover:underline">Today&apos;s football predictions</Link>
         <Link href="/responsible-gambling" className="text-brand hover:underline">Responsible gambling</Link>
       </div>

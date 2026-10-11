@@ -210,6 +210,41 @@ check("calculator: an incomplete market is refused", calc.marketView([2.1]) === 
 const calcPage = readFileSync(join(repoRoot, "src/app/(public)/odds-calculator/page.tsx"), "utf8");
 check("calculator: canonical, breadcrumb and responsible-betting disclaimer", calcPage.includes('canonical: "/odds-calculator"') && calcPage.includes("breadcrumbJsonLd") && calcPage.includes("/responsible-gambling") && calcPage.includes("18 or over"));
 check("calculator: in the sitemap and the footer", sitemapEntriesSource.includes('{ path: "/odds-calculator"') && readFileSync(join(repoRoot, "src/components/SiteFooter.tsx"), "utf8").includes('"/odds-calculator"'));
+// SEO-503: contextual internal links.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const links = require("../src/lib/contextualLinks") as typeof import("../src/lib/contextualLinks");
+const pk = (marketType: string, selection: unknown = null, cats: string[] = []) => links.pathwayKey({ marketType, selection, categories: cats.map((category) => ({ category })) });
+check("links: over 2.5 maps to the Over 2.5 pathway", pk("OVER_UNDER", { line: 2.5, direction: "OVER" }) === "OVER_2_5");
+check("links: other goal lines map to the goals pathway", pk("OVER_UNDER", { line: 1.5, direction: "OVER" }) === "GOALS" && pk("OVER_UNDER", { line: 2.5, direction: "UNDER" }) === "GOALS");
+check("links: BTTS, double chance and match result map to their own", pk("BTTS") === "BTTS" && pk("DOUBLE_CHANCE") === "DOUBLE_CHANCE" && pk("MATCH_WINNER") === "MATCH_WINNER");
+check("links: a Banker-tagged pick leads to the Banker pathway, whatever its market", pk("MATCH_WINNER", null, ["BANKER"]) === "BANKER");
+check("links: a combo leads to multi bets", pk("SAME_GAME_DOUBLE") === "COMBO");
+check("links: markets with no explainer get none", pk("CORRECT_SCORE") === null && pk("OTHER") === null);
+const many = [{ marketType: "BTTS" }, { marketType: "BTTS" }, { marketType: "DOUBLE_CHANCE" }, { marketType: "MATCH_WINNER" }, { marketType: "SAME_GAME_DOUBLE" }];
+check("links: one pathway per market, in page order, at most three", JSON.stringify(links.marketPathways(many).map((p) => p.key)) === JSON.stringify(["BTTS", "DOUBLE_CHANCE", "MATCH_WINNER"]));
+const brokenTargets = links.ALL_PATHWAY_TARGETS.filter((t) => !routeExists(t.href)).map((t) => t.href);
+check("links: every hub, guide and record target resolves to a real page", brokenTargets.length === 0, brokenTargets.join(", "));
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { MARKET_TYPES } = require("../src/lib/markets") as typeof import("../src/lib/markets");
+const anchors = new Set([
+  "market-over-25", "category-banker",
+  ...MARKET_TYPES.filter((m) => m !== "OTHER").map((m) => `market-${m.toLowerCase().replaceAll("_", "-")}`),
+]);
+const badAnchors = links.ALL_PATHWAY_TARGETS.filter((t) => t.href.includes("#") && !anchors.has(t.href.split("#")[1])).map((t) => t.href);
+check("links: every track-record anchor exists on the page", badAnchors.length === 0, badAnchors.join(", "));
+const matchPageForLinks = readFileSync(join(repoRoot, "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");
+check("links: match pages build pathways from publicly visible picks only", matchPageForLinks.includes("pathways={marketPathways(rows.filter((r) => canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined)))}"));
+check("links: the match footer renders them", readFileSync(join(repoRoot, "src/components/MatchPageFooterLinks.tsx"), "utf8").includes("Understand these picks"));
+const hubGuide: Array<[string, string]> = [
+  ["src/components/BttsPredictionsGuide.tsx", "/guides/both-teams-to-score-explained"],
+  ["src/components/Over25PredictionsGuide.tsx", "/guides/over-under-goals-explained"],
+  ["src/components/DoubleChancePredictionsGuide.tsx", "/guides/double-chance-explained"],
+  ["src/components/BankerPredictionsGuide.tsx", "/guides/what-is-a-banker-bet"],
+  ["src/components/TodayPredictionsGuide.tsx", "/guides"],
+  ["src/components/CompetitionHubLinks.tsx", "/guides/how-to-read-football-predictions"],
+];
+const missingHubGuides = hubGuide.filter(([f, href]) => !readFileSync(join(repoRoot, f), "utf8").includes(`href="${href}"`)).map(([f]) => f);
+check("links: each market hub links to the guide for its market", missingHubGuides.length === 0, missingHubGuides.join(", "));
 check("guides: no certainty promises in the copy", !/\b(guaranteed (win|profit)|sure win|100% sure|risk-free|can't lose|cannot lose)\b/.test(guideCopy));
 
 // --- Lagos date labels ----------------------------------------------------

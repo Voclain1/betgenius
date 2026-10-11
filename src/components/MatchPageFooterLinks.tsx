@@ -4,6 +4,7 @@ import { matchKey, teamSlug, leagueSlug } from "@/lib/slug";
 import type { LeagueUpcomingFixture, LeagueStandingRow } from "@/lib/enrichment";
 import type { H2HMeeting } from "@/lib/h2h";
 import { PremiumPanel } from "@/components/PremiumPanel";
+import type { MarketPathway } from "@/lib/contextualLinks";
 
 /**
  * Onward links from a match page.
@@ -48,6 +49,7 @@ export async function MatchPageFooterLinks({
   standings,
   homeTeamApiId,
   awayTeamApiId,
+  pathways = [],
 }: {
   leagueApiId: number | null;
   leagueName: string | null;
@@ -56,6 +58,8 @@ export async function MatchPageFooterLinks({
   standings: LeagueStandingRow[] | null;
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
+  /** Hub, guide and record for each market on this page (src/lib/contextualLinks.ts). */
+  pathways?: MarketPathway[];
 }) {
   const league = await getLeagueEnrichment(leagueApiId);
   const upcomingFixtures = (league?.upcomingJson as unknown as LeagueUpcomingFixture[] | null) ?? [];
@@ -107,11 +111,31 @@ export async function MatchPageFooterLinks({
     .filter((r): r is LeagueStandingRow & { slug: string } => r !== null)
     .slice(0, 6);
 
-  if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0) return null;
+  if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0 && pathways.length === 0) return null;
 
   return (
     <PremiumPanel kicker="Explore" title="More from BetGenius" id="more">
       <div className="space-y-5">
+
+      {pathways.length > 0 && (
+        <Section title="Understand these picks">
+          <ul className="space-y-2">
+            {pathways.map((p) => (
+              <li key={p.key} className="text-sm">
+                <span className="font-semibold text-gray-200">{p.name}:</span>{" "}
+                {[p.hub, p.guide, p.record]
+                  .filter((t): t is NonNullable<typeof t> => t !== null)
+                  .map((t, i) => (
+                    <span key={t.href}>
+                      {i > 0 && <span className="text-gray-600"> · </span>}
+                      <Link href={t.href} className="text-brand hover:underline">{t.label}</Link>
+                    </span>
+                  ))}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       {previous.length > 0 && (
         <Section title="Our previous calls on this fixture">

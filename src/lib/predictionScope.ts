@@ -41,6 +41,10 @@ const SCOPED_SELECT = {
   awayTeamApiId: true,
   kickoff: true,
   market: true,
+  marketType: true,
+  // Small, and read only for rows the WHERE already matched: lets a match
+  // page link each pick's market to its hub, guide and record (SEO-503).
+  selection: true,
   pick: true,
   overUnder: true,
   odds: true,
@@ -94,6 +98,8 @@ export type ScopedResult = {
     awayTeamApiId: number | null;
     kickoff: Date | null;
     market: string;
+    marketType: string;
+    selection: unknown;
     pick: string;
     overUnder: string | null;
     odds: number | null;

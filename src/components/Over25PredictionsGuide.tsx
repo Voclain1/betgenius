@@ -31,6 +31,7 @@ export function Over25PredictionsEvidence() {
       </p>
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record#market-over-25" className="text-brand hover:underline">Check the Over 2.5 record</Link>
+        <Link href="/guides/over-under-goals-explained" className="text-brand hover:underline">How goals markets settle</Link>
         <Link href="/methodology" className="text-brand hover:underline">Read the methodology</Link>
         <Link href="/responsible-gambling" className="text-brand hover:underline">Responsible gambling</Link>
       </div>
