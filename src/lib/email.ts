@@ -22,6 +22,8 @@ export async function sendEmail(input: {
   subject: string;
   html: string;
   text: string;
+  /** Extra headers, e.g. List-Unsubscribe on the optional kinds (lib/mail). */
+  headers?: Record<string, string>;
 }): Promise<SendResult> {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
@@ -35,6 +37,10 @@ export async function sendEmail(input: {
       subject: input.subject,
       html: input.html,
       text: input.text,
+      ...(input.headers ? { headers: input.headers } : {}),
+      // Replies go to the published support inbox when there is one, rather
+      // than to a no-reply address nobody reads.
+      ...(process.env.NEXT_PUBLIC_CONTACT_EMAIL ? { replyTo: process.env.NEXT_PUBLIC_CONTACT_EMAIL } : {}),
     });
     if (error) {
       console.error("Email send failed", { to: input.to, error: error.message });

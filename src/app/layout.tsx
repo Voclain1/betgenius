@@ -3,6 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { Analytics } from "@/components/Analytics";
+import { MetaPixel } from "@/components/MetaPixel";
+import { CookieConsent } from "@/components/CookieConsent";
 import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
 import { SOCIAL_CARD_IMAGE } from "@/lib/brandAssets";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
@@ -119,6 +121,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             id is configured, so previews and local development stay out of
             the property. */}
         <Analytics />
+        {/* Ad attribution; production deployment only — see MetaPixel.tsx. */}
+        <MetaPixel />
+        {/* Both tags above start restricted; this is where a visitor turns
+            them on or keeps them off. See lib/consent.ts. */}
+        <CookieConsent />
         <Providers>{children}</Providers>
       </body>
     </html>

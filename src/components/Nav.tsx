@@ -4,7 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, Menu, X } from "lucide-react";
+import { ChevronDown, Menu, Smartphone, X } from "lucide-react";
+// Imported for its side effect too: it starts listening for the browser's
+// one-time install offer on every public page, so /app can use it later.
+import "@/lib/installStore";
 import { SearchBox } from "@/components/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandAssets";
@@ -258,6 +261,20 @@ export function Nav() {
           {/* Always visible, both breakpoints. Unlike the auth actions it is a
               single icon-width control, so it costs nothing in the mobile bar
               and does not need to hide in the drawer to fit. */}
+          {/* The permanent way back to the app offer once the bottom banner
+              has been dismissed. Web-only: inside the installed app it would
+              be offering the app to someone already using it. */}
+          <Link
+            href="/app"
+            prefetch={false}
+            data-web-only
+            aria-label="Get the app"
+            title="Get the app"
+            className="btn btn-ghost gap-1.5 p-2 text-sm lg:px-3"
+          >
+            <Smartphone size={18} aria-hidden="true" />
+            <span className="hidden lg:inline">Get the app</span>
+          </Link>
           <ThemeToggle />
           <NotificationBell />
 
@@ -359,6 +376,16 @@ export function Nav() {
                 </Link>
               ))}
             </nav>
+            <Link
+              href="/app"
+              prefetch={false}
+              data-web-only
+              onClick={() => setOpen(false)}
+              className="mt-2 flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-200 hover:bg-brand-card"
+            >
+              <Smartphone size={16} aria-hidden="true" />
+              Get the app
+            </Link>
             <AuthActions isAdmin={isAdmin} user={user} onNavigate={() => setOpen(false)} className="mt-4 flex flex-col gap-2 border-t border-brand-border pt-4" />
           </div>
         </div>

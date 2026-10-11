@@ -64,6 +64,8 @@ model User {
   pushSubscriptions PushSubscription[]
   notifications   UserNotification[]
   notificationDeliveries NotificationDelivery[]
+  emailPreference EmailPreference?
+  emailMessages   EmailMessage[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -1072,4 +1074,73 @@ model PaymentAttempt {
   @@index([occurredAt])
   @@index([category])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Email. See docs/EMAIL.md for the whole design.
+// ---------------------------------------------------------------------------
+
+// What a user has chosen to receive by email. Only the two optional kinds are
+// here: receipts, payment problems and renewal reminders are about the
+// account itself and are always sent. No row means the defaults below.
+model EmailPreference {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dailyPicks    Boolean  @default(true)
+  announcements Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+}
+
+// The outbox and the send log in one: every email is a row before it is sent,
+// and the row records what happened. `key` makes every email idempotent — a
+// receipt is keyed on its payment reference, a daily picks email on the user
+// and the Lagos date — so a job that runs twice cannot send twice.
+model EmailMessage {
+  id              String         @id @default(cuid())
+  key             String         @unique
+  /// RECEIPT | PAYMENT_PROBLEM | RENEWAL_REMINDER | ACCESS_ENDED | DAILY_PICKS | ANNOUNCEMENT | ADMIN_ALERT
+  kind            String
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaignId      String?
+  campaign        EmailCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  to              String
+  subject         String
+  html            String         @db.Text
+  text            String         @db.Text
+  /// The preference its unsubscribe link turns off (dailyPicks | announcements);
+  /// null for account emails, which carry no unsubscribe link.
+  unsubscribeKind String?
+  /// PENDING | SENT | FAILED | SKIPPED
+  status          String         @default("PENDING")
+  attempts        Int            @default(0)
+  nextAttemptAt   DateTime       @default(now())
+  /// Past this, an unsent email is dropped rather than sent late (yesterday's
+  /// picks, a reminder for a period that has already ended).
+  expiresAt       DateTime?
+  leasedUntil     DateTime?
+  lastError       String?
+  sentAt          DateTime?
+  createdAt       DateTime       @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([userId, kind, createdAt])
+  @@index([campaignId])
+}
+
+// An announcement written in the admin area. The recipients are its
+// EmailMessage rows; this row is what the admin page lists.
+model EmailCampaign {
+  id          String         @id @default(cuid())
+  subject     String
+  body        String         @db.Text
+  /// VIP | PREMIUM | ALL_PAID | LAPSED
+  audience    String
+  createdById String
+  queued      Int            @default(0)
+  createdAt   DateTime       @default(now())
+  messages    EmailMessage[]
+
+  @@index([createdAt])
 }

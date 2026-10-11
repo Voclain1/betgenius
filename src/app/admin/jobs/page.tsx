@@ -58,6 +58,8 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "generate-bet-of-the-day": 26 * 60,
   "select-bet-of-the-day": 26 * 60,
   "curate-accumulators": 26 * 60,
+  "email-dispatch": 60,
+  "paystack-sync": 2 * 60,
   settle: 26 * 60,
   // Every 15 minutes, every 5 and every 2 respectively; an hour of slack keeps
   // this reporting "not scheduled at all" rather than a single missed tick.
@@ -79,6 +81,8 @@ const LABEL: Record<string, string> = {
   "refresh-insights": "Match Insights refresh",
   "notifications-reminders": "Kickoff reminders",
   "notifications-dispatch": "Notification dispatch",
+  "email-dispatch": "Email (queue and send)",
+  "paystack-sync": "Paystack payment sync",
 };
 
 function ago(iso: string | null): string {

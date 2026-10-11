@@ -10,6 +10,7 @@ import { isDigestEvent } from "@/lib/notificationDigest";
 import { digestForViewer } from "@/lib/dailyDigests";
 import { PushSettings } from "@/components/PushSettings";
 import { NotificationPreferences } from "@/components/NotificationPreferences";
+import { EmailPreferences } from "@/components/EmailPreferences";
 import { MarkNotificationsRead } from "@/components/NotificationBell";
 
 export const metadata = { title: "Notifications", robots: { index: false, follow: false } };
@@ -85,6 +86,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
       </section>
 
       <NotificationPreferences />
+      <EmailPreferences />
       <PushSettings />
     </div>
   );

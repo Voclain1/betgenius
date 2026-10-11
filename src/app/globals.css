@@ -356,6 +356,13 @@ html[data-standalone="true"] body {
   padding-bottom: calc(3.5rem + env(safe-area-inset-bottom));
 }
 
+/* The cookie banner is bottom-fixed like the tab bar; in the installed app it
+   sits on top of the bar rather than covering it, so navigation still works
+   while the question is open. Same h-14 as the bar. */
+html[data-standalone="true"] .cookie-consent {
+  bottom: calc(3.5rem + env(safe-area-inset-bottom));
+}
+
 /* The nav's menu button is md:hidden in a browser tab, because the desktop
    link row covers the same destinations there. In the installed app that row
    is hidden at every width, so the drawer becomes the ONLY route to Standings,

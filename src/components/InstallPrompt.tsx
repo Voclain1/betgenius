@@ -5,6 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Share, X } from "lucide-react";
 import { BRAND_ICON_DARK, BRAND_ICON_LIGHT } from "@/lib/brandAssets";
+import { CONSENT_EVENT, readConsent } from "@/lib/consent";
 import {
   DISMISS_KEY,
   INSTALLED_KEY,
@@ -61,6 +62,15 @@ type BeforeInstallPromptEvent = Event & {
 export function InstallPrompt() {
   const pathname = usePathname();
   const [mode, setMode] = useState<InstallPromptMode | null>(null);
+  // The cookie banner occupies the same bottom strip, and it asks first: this
+  // waits until the visitor has answered it, so the two never stack.
+  const [consentAnswered, setConsentAnswered] = useState(false);
+  useEffect(() => {
+    setConsentAnswered(readConsent() !== null);
+    const answered = () => setConsentAnswered(true);
+    window.addEventListener(CONSENT_EVENT, answered);
+    return () => window.removeEventListener(CONSENT_EVENT, answered);
+  }, []);
   const [installing, setInstalling] = useState(false);
 
   // The captured event, held in a ref rather than state: storing it in state
@@ -243,7 +253,7 @@ export function InstallPrompt() {
     }
   }, [dismiss]);
 
-  if (!mode) return null;
+  if (!mode || !consentAnswered) return null;
 
   return (
     <div

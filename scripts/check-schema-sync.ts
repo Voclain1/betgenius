@@ -105,6 +105,19 @@ function endpointLabel(): string | null {
 }
 
 function main() {
+  // PREVIEW BUILDS ARE NOT CHECKED. A Vercel preview runs against its own
+  // database, which the db-push workflow (.github/workflows/db-push.yml) never
+  // touches — so every branch that adds a table failed its preview here even
+  // though production was in sync. What this check protects is PRODUCTION:
+  // that runs on Vercel production builds and in preflight on every PR and
+  // push to master, both against the live database. A preview missing a table
+  // only breaks that preview's own pages that use it.
+  if (process.env.VERCEL_ENV === "preview") {
+    console.log("SKIP  schema-sync — Vercel preview build; previews use their own database.");
+    console.log("      Production builds and preflight still run this check against the live database.");
+    return;
+  }
+
   const endpoint = endpointLabel();
   if (endpoint) console.log(`schema-sync — comparing against ${endpoint}`);
 
