@@ -53,7 +53,7 @@
 | SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Merged (#39); production verification pending |
 | SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Drafted Oct 2026: seven guides added to the first (odds and implied probability, over/under goals, BTTS, double chance, accumulators, staking and limits, banker bets), each with worked examples whose arithmetic is checked in `check-seo.ts` and a pathway into the matching hub; owner editorial review pending before publication counts as done |
 | SEO-303 | Launch weekly NPFL analysis | Four consecutive editions published on schedule | Backlog |
-| SEO-304 | Publish monthly model-performance report | Reproducible data, samples, losses and corrections included | Backlog |
+| SEO-304 | Publish monthly model-performance report | Reproducible data, samples, losses and corrections included | Implemented Oct 2026: `/track-record/<YYYY-MM>` for every closed month since the record began, built from the published picks with the live page's own month function (rates by category and market, written findings, corrections reflected on rebuild, rates only per the owner's rule); linked from `/track-record` under Past months; thin months noindex; 68/68 track-record checks; production verification pending |
 | SEO-305 | Launch tournament hub framework | Stable URLs available 4–8 weeks before major events | Backlog |
 | SEO-306 | Refresh pages ranking positions 4–20 | GSC query evidence recorded before and after update | Backlog |
 

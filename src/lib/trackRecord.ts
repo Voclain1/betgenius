@@ -145,9 +145,20 @@ function settledInMonth(bounds: { start: Date; end: Date }) {
  * month and returns a few dozen small aggregate rows whatever the volume. The
  * month resets on the 1st: the record is "this month", not "ever".
  */
-export const getMonthTrackRecord = cache(async (now: Date = new Date()): Promise<MonthTrackRecord> => {
-  const month = lagosMonthBounds(now);
-  const previous = lagosMonthBounds(now, -1);
+export const getMonthTrackRecord = cache(async (now: Date = new Date()): Promise<MonthTrackRecord> => getTrackRecordForMonth(lagosMonthBounds(now).key));
+
+/**
+ * The same record for any Lagos month by key ("2026-09"). Backs the live page
+ * (the current month) and the monthly reports at /track-record/<month>
+ * (SEO-304), so a closed month's report is computed exactly as the live page
+ * computed it, from the published picks themselves: nothing is copied or
+ * stored, and a settlement corrected later is reflected the next time the
+ * report is built.
+ */
+export const getTrackRecordForMonth = cache(async (key: string): Promise<MonthTrackRecord> => {
+  const mid = new Date(`${key}-15T12:00:00Z`);
+  const month = lagosMonthBounds(mid);
+  const previous = lagosMonthBounds(mid, -1);
   const where = settledInMonth(month);
   const grouped = (extra: Record<string, unknown> = {}) =>
     prisma.prediction
@@ -191,6 +202,76 @@ export const getMonthTrackRecord = cache(async (now: Date = new Date()): Promise
     lastSettledAt: recent[0]?.settledAt?.toISOString() ?? null,
   };
 });
+
+// ---------------------------------------------------------------------------
+// Monthly reports (SEO-304)
+// ---------------------------------------------------------------------------
+
+const MONTH_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/**
+ * A month key that may have a report: well formed and already closed (before
+ * the current Lagos month). The live month belongs to /track-record itself.
+ */
+export function closedMonthKey(key: string | null | undefined, now: Date = new Date()): string | null {
+  if (!key || !MONTH_KEY.test(key)) return null;
+  return key < lagosMonthBounds(now).key ? key : null;
+}
+
+/** Closed months from the one before `now` back to `startKey`, newest first. Pure. */
+export function closedMonthsSince(startKey: string | null, now: Date = new Date()): string[] {
+  if (!startKey || !MONTH_KEY.test(startKey)) return [];
+  const keys: string[] = [];
+  for (let offset = -1; offset >= -240; offset--) {
+    const key = lagosMonthBounds(now, offset).key;
+    if (key < startKey) break;
+    keys.push(key);
+  }
+  return keys;
+}
+
+/** The Lagos month of the earliest settled published pick: where the archive starts. One aggregate. */
+export const getRecordStartKey = cache(async (): Promise<string | null> => {
+  const first = await prisma.prediction.aggregate({
+    where: { status: "PUBLISHED", outcome: { not: "PENDING" }, kickoff: { not: null } },
+    _min: { kickoff: true },
+  });
+  return first._min.kickoff ? lagosMonthBounds(first._min.kickoff).key : null;
+});
+
+/**
+ * Plain-language findings for a month's report, from its rates alone: the
+ * month against the one before, and the strongest and weakest categories and
+ * markets that cleared the sample gate. Pure; never states a rate the page
+ * would hide.
+ */
+export function monthHighlights(record: Pick<MonthTrackRecord, "monthLabel" | "headline" | "byCategory" | "byMarketType" | "previousMonth">, labels: { category: Record<string, string>; market: Record<string, string> }): string[] {
+  const pct = (r: number) => `${Math.round(r * 100)}%`;
+  const rated = (stats: Record<string, WinRateStat>, names: Record<string, string>) =>
+    Object.entries(stats)
+      .filter(([, s]) => s.decided >= MIN_SETTLED_SAMPLE_SIZE && s.rate != null)
+      .map(([k, s]) => ({ name: names[k] ?? k, rate: s.rate! }))
+      .sort((a, b) => b.rate - a.rate || a.name.localeCompare(b.name));
+  const out: string[] = [];
+  const h = record.headline;
+  if (h.decided >= MIN_SETTLED_SAMPLE_SIZE && h.rate != null) {
+    const month = record.monthLabel.split(" ")[0];
+    if (record.previousMonth) {
+      const diff = Math.round((h.rate - record.previousMonth.rate) * 100);
+      const prev = record.previousMonth.label.split(" ")[0];
+      out.push(diff === 0
+        ? `${month} finished at ${pct(h.rate)}, level with ${prev}.`
+        : `${month} finished at ${pct(h.rate)}, ${Math.abs(diff)} point${Math.abs(diff) === 1 ? "" : "s"} ${diff > 0 ? "above" : "below"} ${prev}'s ${pct(record.previousMonth.rate)}.`);
+    } else {
+      out.push(`${month} finished at ${pct(h.rate)}.`);
+    }
+  }
+  const cats = rated(record.byCategory, labels.category);
+  if (cats.length >= 2) out.push(`${cats[0].name} was the strongest category at ${pct(cats[0].rate)}; ${cats[cats.length - 1].name} the weakest at ${pct(cats[cats.length - 1].rate)}.`);
+  const markets = rated(record.byMarketType, labels.market);
+  if (markets.length >= 2) out.push(`By market, ${markets[0].name} led at ${pct(markets[0].rate)} and ${markets[markets.length - 1].name} trailed at ${pct(markets[markets.length - 1].rate)}.`);
+  return out;
+}
 
 /**
  * Settled record for one league, or null when the sample is too small to publish.

@@ -109,6 +109,40 @@ async function main() {
   check("the other pages' rate cards keep their counts by default", view.includes("counts = true"));
   check("anchors other pages link to are kept", trackView.includes('id={`category-${cat.toLowerCase().replaceAll("_", "-")}`}') && trackView.includes('id="market-over-25"'));
 
+  console.log("\nmonthly reports (SEO-304):");
+  const n = new Date("2026-10-11T09:00:00Z");
+  eq("a closed month has a report", tr.closedMonthKey("2026-09", n), "2026-09");
+  eq("the live month does not (it is /track-record)", tr.closedMonthKey("2026-10", n), null);
+  eq("nor a future month", tr.closedMonthKey("2026-11", n), null);
+  for (const bad of ["2026-9", "2026-13", "2026-00", "abcd-ef", "", null]) eq(`malformed ${JSON.stringify(bad)} is refused`, tr.closedMonthKey(bad as string | null, n), null);
+  eq("archive: closed months back to the first, newest first", tr.closedMonthsSince("2026-08", n), ["2026-09", "2026-08"]);
+  eq("archive across a year end", tr.closedMonthsSince("2026-11", new Date("2027-02-03T10:00:00Z")), ["2027-01", "2026-12", "2026-11"]);
+  eq("no record yet: no archive", tr.closedMonthsSince(null, n), []);
+  eq("a record starting this month: no closed months yet", tr.closedMonthsSince("2026-10", n), []);
+  const st = (won: number, lost: number) => tr.statFromCounts([{ outcome: "WON", count: won }, { outcome: "LOST", count: lost }]);
+  const report = {
+    monthLabel: "September 2026",
+    headline: st(64, 36),
+    previousMonth: { label: "August 2026", rate: 0.6 },
+    byCategory: { BANKER: st(40, 10), VIP: st(30, 20), GENIUS: st(5, 5) },
+    byMarketType: { BTTS: st(30, 20), DOUBLE_CHANCE: st(45, 5) },
+  };
+  const labels = { category: { BANKER: "Banker", VIP: "VIP", GENIUS: "Genius" }, market: { BTTS: "Both Teams to Score", DOUBLE_CHANCE: "Double Chance" } };
+  eq("findings: the month against the one before, then categories and markets", tr.monthHighlights(report, labels), [
+    "September finished at 64%, 4 points above August's 60%.",
+    "Banker was the strongest category at 80%; VIP the weakest at 60%.",
+    "By market, Double Chance led at 90% and Both Teams to Score trailed at 60%.",
+  ]);
+  check("findings never quote a rate the page hides (Genius has 10 decided)", !tr.monthHighlights(report, labels).join(" ").includes("Genius"));
+  eq("a month below the gate yields no headline finding", tr.monthHighlights({ ...report, headline: st(5, 5), byCategory: {}, byMarketType: {} }, labels), []);
+  const reportPage = src("src/app/(public)/track-record/[month]/page.tsx");
+  check("report: unknown, live or pre-record months 404", reportPage.includes("closedMonthKey(param)") && reportPage.includes("key >= start") && reportPage.includes("notFound()"));
+  check("report: canonical per month, noindex when too thin to state a rate", reportPage.includes("canonical: `/track-record/${key}`") && reportPage.includes("robots: enough ? undefined : { index: false, follow: true }"));
+  check("report: rates only, like the live page", (reportPage.match(/<RateCard /g) ?? []).length === (reportPage.match(/counts=\{false\}/g) ?? []).length);
+  check("report: built from the same month function as the live page", lib.includes("getMonthTrackRecord = cache(async (now: Date = new Date()): Promise<MonthTrackRecord> => getTrackRecordForMonth("));
+  check("report: rebuilt at most every six hours", reportPage.includes("export const revalidate = 21600"));
+  check("the live page links to the archive", page.includes("closedMonthsSince(startKey)") && view.includes("href={`/track-record/${m.key}`}"));
+
   console.log(`\n${passed} passed, ${failures} failed`);
   if (failures) process.exit(1);
   console.log("All track record checks passed.");

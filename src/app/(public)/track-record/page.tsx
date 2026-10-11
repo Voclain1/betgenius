@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getMonthTrackRecord, getSettledTotals, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
+import { closedMonthsSince, getMonthTrackRecord, getRecordStartKey, getSettledTotals, monthLabel, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { TrackRecordView } from "@/components/TrackRecordView";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 
@@ -44,5 +44,7 @@ export default async function TrackRecordPage() {
     );
   }
 
-  return <TrackRecordView data={await getMonthTrackRecord()} />;
+  const [data, startKey] = await Promise.all([getMonthTrackRecord(), getRecordStartKey()]);
+  const pastMonths = closedMonthsSince(startKey).map((key) => ({ key, label: monthLabel(key) }));
+  return <TrackRecordView data={data} pastMonths={pastMonths} />;
 }

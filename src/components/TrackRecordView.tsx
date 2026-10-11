@@ -10,7 +10,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { MatchLink } from "@/components/MatchLink";
 
-const CATEGORY_LABELS: Record<string, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   FEATURED: "Featured",
   GENIUS: "Genius",
   TODAY: "Today",
@@ -21,7 +21,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   GOALS: "Goals",
 };
 
-const MARKET_LABELS: Record<string, string> = {
+export const MARKET_LABELS: Record<string, string> = {
   MATCH_WINNER: "Match Winner",
   DOUBLE_CHANCE: "Double Chance",
   OVER_UNDER: "Total Goals",
@@ -68,7 +68,26 @@ export function RateCard({ stat, label, big, counts = true }: {
 
 const OUTCOME_TEXT: Record<string, string> = { WON: "text-emerald-400", LOST: "text-red-400", VOID: "text-gray-400" };
 
-export function TrackRecordView({ data }: { data: MonthTrackRecord }) {
+/** Links to the closed months' reports (SEO-304), newest first. */
+export function PastMonths({ months }: { months: Array<{ key: string; label: string }> }) {
+  if (!months.length) return null;
+  return (
+    <PremiumPanel kicker="Archive" title="Past months" id="archive-heading" bare>
+      <p className="-mt-2 mb-4 max-w-3xl text-sm leading-relaxed text-gray-400">Each closed month keeps its own report: the final rates by category and market, worked out from the published picks themselves.</p>
+      <ul className="flex flex-wrap gap-3">
+        {months.map((m) => (
+          <li key={m.key}>
+            <Link href={`/track-record/${m.key}`} className="inline-flex rounded-2xl border border-brand-border bg-brand-card px-4 py-2.5 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand">
+              {m.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </PremiumPanel>
+  );
+}
+
+export function TrackRecordView({ data, pastMonths = [] }: { data: MonthTrackRecord; pastMonths?: Array<{ key: string; label: string }> }) {
   const formatDate = (value: string | null) => value
     ? new Intl.DateTimeFormat("en-NG", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Lagos" }).format(new Date(value))
     : "Not available";
@@ -150,6 +169,8 @@ export function TrackRecordView({ data }: { data: MonthTrackRecord }) {
           </table>
         </div>
       </PremiumPanel>
+
+      <PastMonths months={pastMonths} />
 
       <PremiumPanel kicker="Method" title="How these figures are calculated" id="calculation-heading">
         <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-gray-300 marker:text-brand">
