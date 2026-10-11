@@ -14,6 +14,7 @@ import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { SignupUpsellModal } from "@/components/SignupUpsellModal";
 import { PaymentConfirmation } from "@/components/PaymentConfirmation";
 import { tierFromFlutterwaveReference } from "@/lib/payments/flutterwave";
+import { tierFromKorapayReference } from "@/lib/payments/korapay";
 import { SignupConfirmation } from "@/components/SignupConfirmation";
 import { catStyles } from "@/components/PredictionCard";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
@@ -219,9 +220,10 @@ export default async function AccountDashboard({
   ) as Record<PredictionCategory, boolean>;
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
   // Paystack appends reference/trxref to the callback; Flutterwave appends
-  // tx_ref and transaction_id (lib/payments/flutterwave).
+  // tx_ref and transaction_id (lib/payments/flutterwave); Korapay returns to
+  // the reference we put in its redirect_url (lib/payments/korapay).
   const paymentReference = searchParams.reference ?? searchParams.trxref ?? searchParams.tx_ref ?? null;
-  const paymentTier = tierFromCheckoutReference(paymentReference) ?? tierFromFlutterwaveReference(paymentReference) ??
+  const paymentTier = tierFromCheckoutReference(paymentReference) ?? tierFromFlutterwaveReference(paymentReference) ?? tierFromKorapayReference(paymentReference) ??
     (sub?.tier === "VIP" || sub?.tier === "PREMIUM" ? sub.tier as PaidTier : null);
   // Whether THIS payment landed — not whether the viewer has access. The two
   // used to be the same test, so a subscriber who already had access and

@@ -67,6 +67,7 @@ async function main() {
   const { grantPayment } = await import("../src/lib/payments/grant");
   const { enabledMethods, newManualCode, manualReference } = await import("../src/lib/payments/methods");
   const { flutterwaveMismatches, tierFromFlutterwaveReference, newFlutterwaveReference, validFlutterwaveSignature } = await import("../src/lib/payments/flutterwave");
+  const { korapayMismatches, tierFromKorapayReference, newKorapayReference, validKorapaySignature } = await import("../src/lib/payments/korapay");
   const { attemptOrigin } = await import("../src/lib/paystack/attemptDiagnosis");
   const { PAID_PERIOD_MS } = await import("../src/lib/paystack/entitlement");
 
@@ -74,10 +75,11 @@ async function main() {
   assert.deepEqual(enabledMethods({}), []);
   assert.deepEqual(enabledMethods({ PAYSTACK_SECRET_KEY: "x" }), ["PAYSTACK"]);
   assert.deepEqual(enabledMethods({ FLUTTERWAVE_SECRET_KEY: "x" }), [], "no webhook secret, no Flutterwave");
+  assert.deepEqual(enabledMethods({ KORAPAY_SECRET_KEY: "sk" }), ["KORAPAY"]);
   assert.deepEqual(enabledMethods({ BANK_TRANSFER_BANK_NAME: "OPay", BANK_TRANSFER_ACCOUNT_NUMBER: "1" }), [], "half a bank account is not a bank account");
   assert.deepEqual(
-    enabledMethods({ PAYSTACK_SECRET_KEY: "x", FLUTTERWAVE_SECRET_KEY: "x", FLUTTERWAVE_SECRET_HASH: "h", BANK_TRANSFER_BANK_NAME: "OPay", BANK_TRANSFER_ACCOUNT_NUMBER: "1", BANK_TRANSFER_ACCOUNT_NAME: "BetGenius", USDT_WALLET_ADDRESS: "T..." }),
-    ["PAYSTACK", "FLUTTERWAVE", "BANK", "USDT"],
+    enabledMethods({ PAYSTACK_SECRET_KEY: "x", KORAPAY_SECRET_KEY: "k", FLUTTERWAVE_SECRET_KEY: "x", FLUTTERWAVE_SECRET_HASH: "h", BANK_TRANSFER_BANK_NAME: "OPay", BANK_TRANSFER_ACCOUNT_NUMBER: "1", BANK_TRANSFER_ACCOUNT_NAME: "BetGenius", USDT_WALLET_ADDRESS: "T..." }),
+    ["PAYSTACK", "KORAPAY", "FLUTTERWAVE", "BANK", "USDT"],
   );
 
   // --- References: ours, recognised by the admin view, tier recoverable.
@@ -97,6 +99,32 @@ async function main() {
   assert.deepEqual(flutterwaveMismatches({ ...good, currency: "USD" }, { reference: fwRef, email: "a@x.com" }), ["CURRENCY_MISMATCH"]);
   assert.deepEqual(flutterwaveMismatches(good, { reference: fwRef, email: "b@x.com" }), ["CUSTOMER_MISMATCH"]);
   assert.deepEqual(flutterwaveMismatches({ ...good, tx_ref: "fw_PREMIUM_x" }, { reference: fwRef, email: "a@x.com" }), ["REFERENCE_MISMATCH"]);
+
+  // --- Korapay: reference, verification rules, webhook signature.
+  const kpRef = newKorapayReference("VIP");
+  assert.equal(tierFromKorapayReference(kpRef), "VIP");
+  assert.equal(attemptOrigin(kpRef, "u1"), "CHECKOUT");
+  assert.equal(tierFromKorapayReference(fwRef), null);
+  const { PLAN_PRICING } = await import("../src/lib/pricing");
+  const kpGood = { status: "success", reference: kpRef, currency: "NGN", amount: PLAN_PRICING.VIP.ngn };
+  assert.deepEqual(korapayMismatches(kpGood, { reference: kpRef }), []);
+  assert.deepEqual(korapayMismatches({ ...kpGood, amount: String(PLAN_PRICING.VIP.ngn) }, { reference: kpRef }), [], "amount may arrive as a string");
+  assert.deepEqual(korapayMismatches({ ...kpGood, status: "processing" }, { reference: kpRef }), ["NOT_SUCCESSFUL"]);
+  assert.deepEqual(korapayMismatches({ ...kpGood, amount: PLAN_PRICING.VIP.ngn * 100 }, { reference: kpRef }), ["AMOUNT_MISMATCH"], "naira, not kobo");
+  assert.deepEqual(korapayMismatches({ ...kpGood, amount: PLAN_PRICING.VIP.ngn - 1 }, { reference: kpRef }), ["AMOUNT_MISMATCH"]);
+  assert.deepEqual(korapayMismatches({ ...kpGood, currency: "USD" }, { reference: kpRef }), ["CURRENCY_MISMATCH"]);
+  assert.deepEqual(korapayMismatches({ ...kpGood, reference: newKorapayReference("VIP") }, { reference: kpRef }), ["REFERENCE_MISMATCH"]);
+  {
+    const crypto = await import("node:crypto");
+    const body = JSON.stringify({ event: "charge.success", data: { reference: kpRef, status: "success" } });
+    const sign = (s: string) => crypto.createHmac("sha256", "sk_live").update(s).digest("hex");
+    assert.equal(validKorapaySignature(body, sign(JSON.stringify({ reference: kpRef, status: "success" })), "sk_live"), true, "the data object, as Korapay documents");
+    assert.equal(validKorapaySignature(body, sign(body), "sk_live"), true, "or the whole body");
+    assert.equal(validKorapaySignature(body, sign(body), "sk_other"), false);
+    assert.equal(validKorapaySignature(body, null, "sk_live"), false);
+    assert.equal(validKorapaySignature(body, sign(body), ""), false, "no key configured, nothing is trusted");
+    assert.equal(validKorapaySignature("not json", sign("not json"), "sk_live"), false);
+  }
 
   // --- Webhook secret.
   process.env.FLUTTERWAVE_SECRET_HASH = "s3cret";
@@ -139,7 +167,7 @@ async function main() {
     assert.equal(subs.get("u3").currentPeriodEnd.getTime(), now.getTime() + 2 * PAID_PERIOD_MS, "two payments, two months");
   }
 
-  console.log("Payment checks passed: method switches, references, Flutterwave verification rules and webhook secret, exactly-once grants that extend and never lose a month.");
+  console.log("Payment checks passed: method switches, references, Korapay and Flutterwave verification rules and webhook signatures, exactly-once grants that extend and never lose a month.");
 }
 
 main().catch((error) => {

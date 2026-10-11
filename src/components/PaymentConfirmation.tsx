@@ -60,7 +60,7 @@ export function PaymentConfirmation({
   reference?: string | null;
   tier?: PaidTier | null;
   value?: number | null;
-  /** "flutterwave" when the payer is back from Flutterwave rather than Paystack. */
+  /** "flutterwave" or "korapay" when the payer is back from there rather than Paystack. */
   provider?: string | null;
   /** Flutterwave's transaction id from the redirect; absent when they cancelled. */
   transactionId?: string | null;
@@ -100,7 +100,7 @@ export function PaymentConfirmation({
       } else if ((reference || transactionId) && !activated) {
         try {
           // Same contract from both verify routes: { activated, paymentStatus }.
-          const res = await fetch(flutterwave ? "/api/payments/flutterwave/verify" : "/api/subscription/verify", {
+          const res = await fetch(flutterwave ? "/api/payments/flutterwave/verify" : provider === "korapay" ? "/api/payments/korapay/verify" : "/api/subscription/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(flutterwave ? { transactionId } : { reference }),

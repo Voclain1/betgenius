@@ -4,7 +4,7 @@ import type { PaidTier } from "@/lib/pricing";
 
 /**
  * Grant a paid period for a payment that did NOT come through Paystack:
- * Flutterwave, or a bank / USDT transfer an admin has approved.
+ * Flutterwave, Korapay, or a bank / USDT transfer an admin has approved.
  *
  * Paystack keeps its own path (lib/paystack/applyCheckoutPayment), which is
  * bound to the checkout reference on the subscription row. Everything here
@@ -27,7 +27,7 @@ import type { PaidTier } from "@/lib/pricing";
  */
 export type GrantInput = {
   reference: string;
-  provider: "FLUTTERWAVE" | "BANK" | "USDT";
+  provider: "FLUTTERWAVE" | "KORAPAY" | "BANK" | "USDT";
   userId: string;
   tier: PaidTier;
   /** In the currency's minor unit: kobo for NGN, cents for USDT. */

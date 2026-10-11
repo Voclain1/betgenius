@@ -12,12 +12,14 @@ import { trackEvent } from "@/lib/clientAnalytics";
 // dashboard banner already use.
 const tiers = PLAN_TIERS;
 
-type Method = "PAYSTACK" | "FLUTTERWAVE" | "BANK" | "USDT";
+type Method = "PAYSTACK" | "KORAPAY" | "FLUTTERWAVE" | "BANK" | "USDT";
 
 function methodCopy(method: Method, tier: PaidTier, usdtNetwork: string): { title: string; detail: string } {
   switch (method) {
     case "PAYSTACK":
       return { title: "Paystack", detail: "Pay on Paystack's secure checkout. Unlocks as soon as it's confirmed." };
+    case "KORAPAY":
+      return { title: "Korapay", detail: "Pay on Korapay's secure checkout, including by bank transfer to a one-time account. Unlocks as soon as it's confirmed." };
     case "FLUTTERWAVE":
       return { title: "Flutterwave", detail: "Pay on Flutterwave's secure checkout. Unlocks as soon as it's confirmed." };
     case "BANK":
@@ -80,7 +82,7 @@ export default function Pricing() {
     setErr(null);
     try {
       const manual = method === "BANK" || method === "USDT";
-      const res = await fetch(manual ? "/api/payments/manual" : "/api/payments/flutterwave/initialize", {
+      const res = await fetch(manual ? "/api/payments/manual" : `/api/payments/${method.toLowerCase()}/initialize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(manual ? { tier, method } : { tier }),
@@ -209,7 +211,7 @@ export default function Pricing() {
         {/* Names no payment methods inside the gateways: each shows what it
             offers on our account, and naming one that is missing there
             breaks the promise. */}
-        <p>Online payments happen on Paystack&apos;s{methods.includes("FLUTTERWAVE") ? " or Flutterwave\u2019s" : ""} secure checkout page, which shows the payment methods available to you; BetGenius never sees your card or bank details. Your plan unlocks as soon as the payment is confirmed, even if you have closed the page.</p>
+        <p>Online payments happen on {["Paystack", methods.includes("KORAPAY") && "Korapay", methods.includes("FLUTTERWAVE") && "Flutterwave"].filter(Boolean).join(" or ")}&apos;s secure checkout page, which shows the payment methods available to you; BetGenius never sees your card or bank details. Your plan unlocks as soon as the payment is confirmed, even if you have closed the page.</p>
         {(methods.includes("BANK") || methods.includes("USDT")) && (
           <p>You can also pay {methods.includes("BANK") ? "straight into our bank account" : ""}{methods.includes("BANK") && methods.includes("USDT") ? " or " : ""}{methods.includes("USDT") ? "in USDT" : ""}. Those payments are confirmed by our team, usually within a few hours, and you get an email when your plan is active.</p>
         )}
