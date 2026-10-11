@@ -2,7 +2,7 @@ import Link from "next/link";
 import { CookieSettingsLink } from "@/components/CookieConsent";
 
 const groups = [
-  { title: "Company", links: [["Get the app", "/app"], ["About", "/about"], ["Contact", "/contact"], ["Methodology", "/methodology"], ["Editorial Policy", "/editorial-policy"]] },
+  { title: "Company", links: [["Get the app", "/app"], ["About", "/about"], ["Guides", "/guides"], ["Contact", "/contact"], ["Methodology", "/methodology"], ["Editorial Policy", "/editorial-policy"]] },
   { title: "Legal", links: [["Privacy Policy", "/privacy-policy"], ["Terms of Use", "/terms"], ["Cookie Policy", "/cookie-policy"], ["Betting Disclaimer", "/betting-disclaimer"], ["Affiliate Disclosure", "/affiliate-disclosure"]] },
   { title: "Responsible betting", links: [["Responsible Gambling", "/responsible-gambling"], ["Track Record", "/track-record"], ["Pricing", "/pricing"]] },
 ] as const;

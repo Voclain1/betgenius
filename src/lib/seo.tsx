@@ -573,6 +573,21 @@ export function organizationJsonLd() {
   };
 }
 
+export function articleJsonLd(input: { headline: string; description: string; path: string; datePublished: string; dateModified: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: input.headline,
+    description: input.description,
+    mainEntityOfPage: absoluteUrl(input.path),
+    datePublished: input.datePublished,
+    dateModified: input.dateModified,
+    author: { "@type": "Organization", "@id": `${SITE_URL}/#organization`, name: "BetGenius Editorial Desk" },
+    publisher: { "@id": `${SITE_URL}/#organization` },
+    image: absoluteUrl(SOCIAL_CARD),
+  };
+}
+
 /** Homepage-only site-name signal. No SearchAction: search has no crawlable query-result URL. */
 export function websiteJsonLd() {
   return {

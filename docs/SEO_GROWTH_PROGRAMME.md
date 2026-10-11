@@ -50,7 +50,7 @@
 
 | ID | Task | Acceptance gate | Status |
 |---|---|---|---|
-| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Backlog |
+| SEO-301 | Establish `/guides/` publishing architecture | Article schema, author, reviewed date, TOC and related links validate | Implemented locally with a first betting-literacy guide; 149/149 SEO checks, Adsterra checks and TypeScript passed; production verification pending |
 | SEO-302 | Publish first eight evergreen betting-literacy guides | Original examples, editorial review and product pathway on each | Backlog |
 | SEO-303 | Launch weekly NPFL analysis | Four consecutive editions published on schedule | Backlog |
 | SEO-304 | Publish monthly model-performance report | Reproducible data, samples, losses and corrections included | Backlog |
