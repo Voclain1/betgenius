@@ -81,6 +81,7 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/methodology", priority: 0.7 },
   { path: "/editorial-policy", priority: 0.6 },
   { path: "/guides", priority: 0.7 },
+  { path: "/odds-calculator", priority: 0.6 },
 ];
 
 /**

@@ -63,7 +63,7 @@
 |---|---|---|---|
 | SEO-401 | Build Nigeria football-prediction data report | Original dataset, methodology and downloadable visuals published | Backlog |
 | SEO-402 | Build NPFL trend asset | Club-level insights are current, cited and embeddable | Backlog |
-| SEO-403 | Create responsible-betting probability calculator | Accurate calculation, disclaimer and mobile QA pass | Backlog |
+| SEO-403 | Create responsible-betting probability calculator | Accurate calculation, disclaimer and mobile QA pass | Implemented: `/odds-calculator` (decimal, fractional and American odds; implied chance and break-even; full-market margin and fair chances), responsible-betting disclaimer, in sitemap and footer; maths checked in `check-seo.ts`; 390px and 1280px visual QA passed with no overflow or browser errors; production verification pending |
 | SEO-404 | Build qualified outreach list | Relevant journalists, analysts and communities; no bulk lists | Backlog |
 | SEO-405 | Run one evidence-led campaign per month | Personalised outreach logged; earned links/mentions measured | Backlog |
 | SEO-406 | Monitor brand/entity consistency | BetGenius Nigeria identity and factual descriptions remain consistent | Backlog |

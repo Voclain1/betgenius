@@ -195,6 +195,21 @@ check("guides: four 70% legs land about 24% of the time", near(0.7 ** 4 * 100, 2
 check("guides: five straight losses at 60% wins is about 1%", near(0.4 ** 5 * 100, 1, 0.05));
 check("guides: 1.30 implies about 77%", near(100 / 1.3, 77, 0.1));
 const guideCopy = guidesContent.toLowerCase();
+// SEO-403: the odds-to-probability calculator.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const calc = require("../src/lib/oddsCalculator") as typeof import("../src/lib/oddsCalculator");
+check("calculator: decimal, fractional and American odds all read as 2.50", [calc.parseOdds("2.5"), calc.parseOdds("6/4"), calc.parseOdds("+150")].every((d) => d != null && near(d, 2.5, 1e-9)));
+check("calculator: -200 reads as 1.50", near(calc.parseOdds("-200") ?? 0, 1.5, 1e-9));
+check("calculator: non-prices are refused", ["", "1", "1.00", "0.5", "abc", "6/0", "+50", "2.5.1"].every((x) => calc.parseOdds(x) === null));
+check("calculator: 2.50 implies 40%", near(calc.impliedProbability(2.5), 0.4, 1e-9));
+check("calculator: ₦1,000 at 2.50 returns ₦2,500, ₦1,500 profit", JSON.stringify(calc.returnOn(1000, 2.5)) === JSON.stringify({ total: 2500, profit: 1500 }));
+const mv = calc.marketView([2.1, 3.4, 3.6]);
+check("calculator: 2.10/3.40/3.60 carries a 4.8% margin", !!mv && near(mv.margin * 100, 4.8, 0.05));
+check("calculator: fair chances sum to 100%", !!mv && near(mv.fair.reduce((a, b) => a + b, 0), 1, 1e-9));
+check("calculator: an incomplete market is refused", calc.marketView([2.1]) === null && calc.marketView([2.1, 1]) === null);
+const calcPage = readFileSync(join(repoRoot, "src/app/(public)/odds-calculator/page.tsx"), "utf8");
+check("calculator: canonical, breadcrumb and responsible-betting disclaimer", calcPage.includes('canonical: "/odds-calculator"') && calcPage.includes("breadcrumbJsonLd") && calcPage.includes("/responsible-gambling") && calcPage.includes("18 or over"));
+check("calculator: in the sitemap and the footer", sitemapEntriesSource.includes('{ path: "/odds-calculator"') && readFileSync(join(repoRoot, "src/components/SiteFooter.tsx"), "utf8").includes('"/odds-calculator"'));
 check("guides: no certainty promises in the copy", !/\b(guaranteed (win|profit)|sure win|100% sure|risk-free|can't lose|cannot lose)\b/.test(guideCopy));
 
 // --- Lagos date labels ----------------------------------------------------

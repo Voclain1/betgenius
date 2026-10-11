@@ -51,8 +51,8 @@ export const GUIDES: Guide[] = [
       { id: "takeaways", title: "Key points", content: <ul><li>Implied probability is 1 divided by the decimal odds.</li><li>Every market carries a margin; remove it before comparing.</li><li>A short price is a likely outcome, not a certain one.</li><li>Judge any source over many settled picks, never one result.</li></ul> },
     ],
     related: [
+      { href: "/odds-calculator", label: "Odds to probability calculator", description: "Any price as a percentage, and a market's margin removed." },
       { href: "/guides/how-to-read-football-predictions", label: "How to read football predictions", description: "Market, confidence and evidence, in the order to check them." },
-      { href: "/track-record", label: "This month's track record", description: "Win rates by category and market for the current month." },
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits and support before you stake anything." },
     ],
   },
