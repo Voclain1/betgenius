@@ -34,6 +34,8 @@ export const JOB_GENERATE_VIP_PREMIUM = "generate-vip-premium" as const;
 export const JOB_GENERATE_BET_OF_DAY = "generate-bet-of-the-day" as const;
 /** The dedicated Goals pass (?goals=1) — src/lib/goalsGeneration.ts. */
 export const JOB_GENERATE_GOALS = "generate-goals" as const;
+/** The European-club lane (?european=1) — src/lib/europeanClubs.ts. */
+export const JOB_GENERATE_EUROPEAN_CLUBS = "generate-european-clubs" as const;
 export const JOB_BET_OF_DAY_SELECT = "select-bet-of-the-day" as const;
 export const JOB_REFRESH_ODDS = "refresh-odds" as const;
 /**
@@ -69,6 +71,7 @@ export const KNOWN_JOBS = [
   JOB_REFRESH_ODDS,
   JOB_GENERATE_VIP_PREMIUM,
   JOB_GENERATE_GOALS,
+  JOB_GENERATE_EUROPEAN_CLUBS,
   JOB_GENERATE,
   JOB_GENERATE_BET_OF_DAY,
   JOB_BET_OF_DAY_SELECT,

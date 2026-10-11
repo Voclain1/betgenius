@@ -38,6 +38,16 @@ import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPl
 import { autoPublishGoalsPrediction, backOffGoalsFixture, selectGoalsTargets } from "@/lib/goalsPipeline";
 import { VIP_PREMIUM_INTENT, VIP_PREMIUM_RUN_LIMIT } from "@/lib/vipPremiumOverlay";
 import { backOffVipPremiumFixture, existingPicksOnFixture, selectVipPremiumTargets, type TargetSelection } from "@/lib/vipPremiumPipeline";
+import { EUROPEAN_CLUB_INTENT, EUROPEAN_LANE_POLICY } from "@/lib/europeanClubs";
+import {
+  backOffLaneFixture,
+  judgeAndArchiveLaneDrafts,
+  selectLaneTarget,
+  sweepEuropeanLaneIfDue,
+  type LaneJudgementReport,
+  type LaneSelection,
+  type LaneSweepReport,
+} from "@/lib/europeanClubsPipeline";
 
 /**
  * Lease key for the generation run. A row id in AppLock, not a lock manager.
@@ -525,6 +535,145 @@ export async function runGoalsGeneration(opts: { authorId: string; limit?: numbe
 
     base.quotaRemaining = (await getUsageSnapshot()).remaining;
     return { ...base, elapsedMs: Date.now() - startedAt, goals };
+  } finally {
+    await releaseLock(holder);
+  }
+}
+
+export type EuropeanClubRunReport = RunReport & {
+  europeanClubs: {
+    /** Why nothing was generated this run, or null when a fixture was. */
+    stoodDown: string | null;
+    sweep: LaneSweepReport;
+    selection: Omit<LaneSelection, "ordered" | "target"> & { eligible: number } | null;
+    target: { fixture: string; league: string; kickoff: string; club: string; market: string; marketProbability: number; bookmakers: number } | null;
+    judgement: LaneJudgementReport | null;
+  };
+};
+
+/**
+ * The European-club lane (src/lib/europeanClubs.ts): domestic league fixtures
+ * of this season's main-stage UEFA clubs, in leagues outside the daily scope.
+ *
+ * Each poke does ONE of two things. When the sweep lease has expired it
+ * refreshes the candidate list (2–3 by-date calls) and stops there, so a run
+ * never pays for a sweep and a ~25s multi-market generation together.
+ * Otherwise it takes the first stored candidate that clears the market value
+ * gate, generates it, and judges the drafts: at most one survives, Market-
+ * Confirmed, for human review; the rest are archived.
+ *
+ * Shares the generation-run lease with every other pass. Never writes the
+ * GenerationAttempt ledger: its attempt record is the EUROPEAN_CLUB-intent
+ * AIJob, plus an AppLock backoff when a run throws before one is written.
+ */
+export async function runEuropeanClubGeneration(opts: { authorId: string; now?: Date }): Promise<EuropeanClubRunReport> {
+  const startedAt = Date.now();
+  const now = opts.now ?? new Date();
+  const europeanClubs: EuropeanClubRunReport["europeanClubs"] = {
+    stoodDown: null,
+    sweep: { ran: false, skippedReason: null, dates: [], providerCalls: 0, fixturesInPayload: 0, clubs: 0, considered: 0, rejected: {}, candidates: [] },
+    selection: null,
+    target: null,
+    judgement: null,
+  };
+  const base: RunReport = {
+    ok: true, claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
+    cacheHits: 0, fetches: 0, apiCallsSpent: 0, discoveryCalls: 0, quotaRemaining: 0,
+    elapsedMs: 0, results: [], kickoffMismatches: [],
+  };
+  const done = (extra: Partial<RunReport> = {}): EuropeanClubRunReport => ({ ...base, ...extra, elapsedMs: Date.now() - startedAt, europeanClubs });
+
+  const holder = await acquireLock(now);
+  if (!holder) return done({ ok: false, reason: "another generation run is already in progress" });
+
+  try {
+    const usage = await getUsageSnapshot();
+    base.quotaRemaining = usage.remaining;
+    if (usage.remaining < EUROPEAN_LANE_POLICY.MIN_QUOTA_REMAINING) {
+      europeanClubs.stoodDown = `api-football quota headroom too low (${usage.remaining} left, the lane needs ${EUROPEAN_LANE_POLICY.MIN_QUOTA_REMAINING})`;
+      return done();
+    }
+
+    europeanClubs.sweep = await sweepEuropeanLaneIfDue(now);
+    base.discoveryCalls = europeanClubs.sweep.providerCalls;
+    base.apiCallsSpent += europeanClubs.sweep.providerCalls;
+    if (europeanClubs.sweep.ran) {
+      europeanClubs.stoodDown = `refreshed the candidate list (${europeanClubs.sweep.candidates.length} fixture${europeanClubs.sweep.candidates.length === 1 ? "" : "s"}); generation resumes next run`;
+      base.quotaRemaining = (await getUsageSnapshot()).remaining;
+      return done();
+    }
+
+    const selection = await selectLaneTarget(now);
+    const { ordered, target, ...rest } = selection;
+    europeanClubs.selection = { ...rest, eligible: ordered.length };
+    base.apiCallsSpent += selection.oddsCalls;
+    if (!target) {
+      europeanClubs.stoodDown = selection.stoodDown;
+      base.quotaRemaining = (await getUsageSnapshot()).remaining;
+      return done();
+    }
+
+    const club = target.clubSides.map((s) => (s === "home" ? target.homeTeam : target.awayTeam)).join(" & ");
+    europeanClubs.target = {
+      fixture: `${target.homeTeam} vs ${target.awayTeam}`,
+      league: target.leagueName,
+      kickoff: target.kickoff,
+      club,
+      market: `${target.value.market}: ${target.value.value}`,
+      marketProbability: Number(target.value.probability.toFixed(1)),
+      bookmakers: target.value.bookmakers,
+    };
+    base.claimed = 1;
+
+    // One fixture, no start cutoff: with a limit of one there is nothing after
+    // it to protect, and a client that hangs up at 30s does not stop the work
+    // (see DOUBLES_START_CUTOFF_MS). The lease prevents a duplicate alongside it.
+    const label = `${target.homeTeam} vs ${target.awayTeam}`;
+    try {
+      const { predictions, sources } = await generateAndPersistPrediction({
+        home: target.homeTeam,
+        away: target.awayTeam,
+        league: target.leagueName,
+        leagueApiId: target.leagueApiId,
+        kickoff: target.kickoff,
+        round: target.round,
+        // Calibration and destination exactly as an ordinary pick: a kept
+        // draft is reviewed and published like any other FEATURED row.
+        categories: ["FEATURED"],
+        intent: EUROPEAN_CLUB_INTENT,
+        authorId: opts.authorId,
+        homeTeamApiId: target.homeTeamApiId,
+        awayTeamApiId: target.awayTeamApiId,
+        fixtureApiId: target.fixtureApiId,
+      });
+      for (const s of [sources.homeTeam, sources.awayTeam, sources.standings, sources.h2h]) {
+        if (s === "cache") base.cacheHits++;
+        else if (s === "fetched") base.fetches++;
+      }
+      base.apiCallsSpent += sources.apiCalls;
+      base.succeeded++;
+
+      const ids = predictions.map((p) => p.id);
+      europeanClubs.judgement = await judgeAndArchiveLaneDrafts(ids, target.matchKey, new Date());
+      base.predictionsCreated += europeanClubs.judgement.kept ? 1 : 0;
+
+      const written = await prisma.prediction.findMany({ where: { id: { in: ids } }, select: { id: true, kickoff: true } });
+      const mismatches = findKickoffMismatches(new Date(target.kickoff), written);
+      if (mismatches.length) {
+        base.kickoffMismatches.push(...mismatches);
+        console.error(formatKickoffMismatches(label, mismatches));
+      }
+      base.results.push({ fixture: label, kickoff: target.kickoff, ok: true, predictions: europeanClubs.judgement.kept ? 1 : 0 });
+      if (!europeanClubs.judgement.kept) europeanClubs.stoodDown = "generated, but no draft was Market-Confirmed; all drafts archived";
+    } catch (err: any) {
+      const message = err?.message ?? String(err);
+      await backOffLaneFixture(target.fixtureApiId, now);
+      base.failed++;
+      base.results.push({ fixture: label, kickoff: target.kickoff, ok: false, error: message });
+    }
+
+    base.quotaRemaining = (await getUsageSnapshot()).remaining;
+    return done();
   } finally {
     await releaseLock(holder);
   }
