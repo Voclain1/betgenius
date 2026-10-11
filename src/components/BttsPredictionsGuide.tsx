@@ -33,6 +33,7 @@ export function BttsPredictionsEvidence() {
       </p>
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record#market-btts" className="text-brand hover:underline">Check the BTTS record</Link>
+        <Link href="/guides/both-teams-to-score-explained" className="text-brand hover:underline">How BTTS settles</Link>
         <Link href="/methodology" className="text-brand hover:underline">Read the methodology</Link>
         <Link href="/responsible-gambling" className="text-brand hover:underline">Responsible gambling</Link>
       </div>

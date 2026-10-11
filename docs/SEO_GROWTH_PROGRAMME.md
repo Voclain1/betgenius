@@ -74,7 +74,7 @@
 |---|---|---|---|
 | SEO-501 | Map organic landing page journeys | Each priority page has one primary next action | Backlog |
 | SEO-502 | Instrument prediction and track-record engagement | Events visible in GA4 DebugView and standard reports | Implemented: reasoning opens, view switches and VIP/Premium/Banker past-day results opens tracked per page template; GA4 custom dimensions and DebugView verification pending |
-| SEO-503 | Improve contextual internal links | Match → league/team/market/record pathways are relevant and crawlable | Backlog |
+| SEO-503 | Improve contextual internal links | Match → league/team/market/record pathways are relevant and crawlable | Implemented Oct 2026: match pages link each publicly visible pick's market to its hub, explainer guide and track-record line (`src/lib/contextualLinks.ts`); BTTS, Over 2.5, Double Chance, Banker and Today hubs and the competition hubs link to their guides; every target and anchor verified in `check-seo.ts` (185); crawl verification pending |
 | SEO-504 | Test organic registration CTA | Experiment has hypothesis, sample threshold and guardrails | Backlog |
 | SEO-505 | Report organic registration and subscription conversion | Weekly dashboard includes assisted and last-click outcomes | Backlog |
 

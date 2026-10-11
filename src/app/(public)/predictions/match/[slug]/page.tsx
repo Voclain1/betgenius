@@ -19,6 +19,7 @@ import { MatchKeyPlayers } from "@/components/MatchKeyPlayers";
 import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
+import { marketPathways } from "@/lib/contextualLinks";
 import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
@@ -357,6 +358,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         standings={standings}
         homeTeamApiId={match.homeTeamApiId}
         awayTeamApiId={match.awayTeamApiId}
+        // From picks an anonymous reader can see: the page is cached and
+        // crawled, and a link must not reveal a locked pick's market.
+        pathways={marketPathways(rows.filter((r) => canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined)))}
       />
 
       {/* Page-level freshness, once, at the foot — the editorial published date,

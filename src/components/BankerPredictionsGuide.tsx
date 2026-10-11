@@ -39,6 +39,9 @@ export function BankerPredictionsEvidence() {
         <Link href="/track-record#category-banker" className="text-brand hover:underline">
           Check the Banker track record
         </Link>
+        <Link href="/guides/what-is-a-banker-bet" className="text-brand hover:underline">
+          What a banker bet is
+        </Link>
         <Link href="/methodology" className="text-brand hover:underline">
           Read the methodology
         </Link>
