@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HOME_CATEGORY_LINKS } from "@/lib/homeCategoryLinks";
+import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
 import type { Metadata } from "next";
 import { Lock } from "lucide-react";
 import { getServerSession } from "next-auth";
@@ -304,17 +304,40 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         </div>
       </section>
 
-      {/* The category shortcuts, as one row of quiet links under the hero. */}
-      <nav aria-label="Prediction categories" className="flex flex-wrap gap-2">
-        {HOME_CATEGORY_LINKS.map((c) => (
-          <Link
-            key={c.href}
-            href={c.href}
-            className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
-          >
-            {c.label}
-          </Link>
-        ))}
+      {/* The shortcuts under the hero, in two groups: today's card, then the
+          longer runs. The groups are told apart by a label and a rule, and the
+          longer-run links by their brand outline, so the row can keep growing
+          without one list of look-alike buttons. */}
+      <nav aria-label="Prediction categories" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
+          <div className="flex flex-wrap gap-2">
+            {HOME_CATEGORY_LINKS.map((c) => (
+              <Link
+                key={c.href}
+                href={c.href}
+                className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+        <span aria-hidden className="h-px w-full bg-brand-border lg:h-8 lg:w-px" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Longer runs</span>
+          <div className="flex flex-wrap gap-2">
+            {HOME_PERIOD_LINKS.map((c) => (
+              <Link
+                key={c.href}
+                href={c.href}
+                className="rounded-full border border-brand px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-on-brand"
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
+        </div>
       </nav>
 
       {genius.length > 0 && (

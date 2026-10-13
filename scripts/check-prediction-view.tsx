@@ -34,7 +34,7 @@ import {
   readPredictionView,
   writePredictionView,
 } from "../src/lib/predictionView";
-import { HOME_CATEGORY_LINKS } from "../src/lib/homeCategoryLinks";
+import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "../src/lib/homeCategoryLinks";
 import { feedAdPositions } from "../src/lib/ads";
 
 let passed = 0;
@@ -270,6 +270,8 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
 
   const home = readFileSync(join(__dirname, "..", "src", "app", "(public)", "page.tsx"), "utf8");
   check("homepage renders HOME_CATEGORY_LINKS", home.includes("HOME_CATEGORY_LINKS.map("));
+  check("homepage renders the weekend and midweek links as their own group", home.includes("HOME_PERIOD_LINKS.map(") &&
+    JSON.stringify(HOME_PERIOD_LINKS.map((l) => l.href)) === JSON.stringify(["/predictions/weekend", "/predictions/midweek"]));
   check("See all Genius Tips is unchanged",
     home.includes('<Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>'));
 }

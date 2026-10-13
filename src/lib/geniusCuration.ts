@@ -662,7 +662,11 @@ export function classifyPaidTierDrift(rows: readonly PaidTierDriftRow[]): PaidTi
  * earlier confidence-curated BANKER cohort (49 rows, 81% against 66.8%
  * site-wide; see VIP_ROUTE_CUTOVER) is the evidence for selecting this way.
  */
-export const BANKER_MAX_PICKS = 3;
+/**
+ * Up to seven a day. A good card gives five to seven; a scarce one gives what
+ * clears the floor, and three is a normal thin day. Never filled to a target.
+ */
+export const BANKER_MAX_PICKS = 7;
 
 /** A Banker must clear the VIP bar. The floor is hard: a thin day gets fewer bankers, not weaker ones. */
 export const BANKER_CONFIDENCE_FLOOR = VIP_CONFIDENCE_FLOOR;
@@ -674,7 +678,9 @@ export const BANKER_CURATION_DAYS = 2;
  * Highest confidence first. Competition priority only breaks ties, so a
  * Champions League 82 is chosen over a lower-league 82, but never over an 85.
  */
-export function compareBankerRank(a: CurationRow, b: CurationRow): number {
+type BankerRankable = { id: string; leagueApiId: number | null; confidence: number };
+
+export function compareBankerRank(a: BankerRankable, b: BankerRankable): number {
   return b.confidence - a.confidence || compareByEditorialRank(a, b);
 }
 

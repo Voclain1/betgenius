@@ -56,7 +56,7 @@ export const CATEGORY_BLURBS: Record<PredictionCategory, string> = {
   FEATURED: "Editor-picked, highest-conviction plays.",
   GENIUS: "Our highest-scoring picks of the day, ranked by confidence.",
   TODAY: "Football picks published for today's fixture card.",
-  BANKER: "Up to three higher-conviction picks from the day's fixture card.",
+  BANKER: "Up to seven of the day's highest-confidence picks, from any competition.",
   VIP: "Subscriber-only edge plays.",
   PREMIUM: "Top-tier tips + accumulators.",
   BET_OF_THE_DAY: "A single pick each day, taken from everything published that morning.",

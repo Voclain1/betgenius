@@ -48,17 +48,18 @@ function row(id: string, over: Partial<CurationRow> = {}): CurationRow {
   };
 }
 
-// Highest confidence wins, from any feed and any competition.
+// Highest confidence wins, from any feed and any competition, up to the cap.
 {
   const rows = [
     row("ucl", { leagueApiId: 2, confidence: 86, categories: ["VIP", "FEATURED"] }),
     row("latvia", { leagueApiId: 365, confidence: 84, categories: ["GENIUS"] }),
     row("epl", { leagueApiId: 39, confidence: 81 }),
-    row("championship", { leagueApiId: 40, confidence: 79 }),
+    ...Array.from({ length: BANKER_MAX_PICKS }, (_, i) => row(`filler${i}`, { confidence: 76 })),
   ];
   const plan = planBankerCuration(rows, NOW);
-  check("picks the top three by confidence, any feed", JSON.stringify(plan.selectedIds) === JSON.stringify(["ucl", "latvia", "epl"]));
+  check("the highest confidence picks lead, from any feed", JSON.stringify(plan.selectedIds.slice(0, 3)) === JSON.stringify(["ucl", "latvia", "epl"]));
   check(`never more than ${BANKER_MAX_PICKS}`, plan.selectedIds.length === BANKER_MAX_PICKS);
+  check("the daily cap allows a good day of five to seven", BANKER_MAX_PICKS === 7);
 }
 
 // Competition priority only breaks ties.
@@ -89,13 +90,11 @@ function row(id: string, over: Partial<CurationRow> = {}): CurationRow {
 {
   const rows = [
     row("startedWeak", { kickoff: EARLIER, confidence: 76, categories: ["FEATURED", "BANKER"] }),
-    row("strong1", { confidence: 90 }),
-    row("strong2", { confidence: 89 }),
-    row("strong3", { confidence: 88 }),
+    ...Array.from({ length: BANKER_MAX_PICKS }, (_, i) => row(`strong${i}`, { confidence: 90 - i })),
   ];
   const plan = planBankerCuration(rows, NOW);
   check("a banker that has kicked off is kept", plan.selectedIds.includes("startedWeak") && !plan.removed.includes("startedWeak"));
-  check("a kept banker uses a slot", plan.selectedIds.length === BANKER_MAX_PICKS && !plan.selectedIds.includes("strong3"));
+  check("a kept banker uses a slot", plan.selectedIds.length === BANKER_MAX_PICKS && !plan.selectedIds.includes(`strong${BANKER_MAX_PICKS - 1}`));
 }
 {
   const rows = [
@@ -110,12 +109,10 @@ function row(id: string, over: Partial<CurationRow> = {}): CurationRow {
 {
   const rows = [
     row("earlyPick", { confidence: 78, categories: ["FEATURED", "BANKER"] }),
-    row("a", { confidence: 90 }),
-    row("b", { confidence: 89 }),
-    row("c", { confidence: 88 }),
+    ...Array.from({ length: BANKER_MAX_PICKS }, (_, i) => row(`s${i}`, { confidence: 90 - i })),
   ];
   const plan = planBankerCuration(rows, NOW);
-  check("before kickoff a stronger pick replaces a weaker banker", plan.removed.includes("earlyPick") && plan.added.length === 3);
+  check("before kickoff a stronger pick replaces a weaker banker", plan.removed.includes("earlyPick") && plan.added.length === BANKER_MAX_PICKS);
   check("a match that has kicked off is never newly added", !planBankerCuration([row("late", { kickoff: EARLIER, confidence: 95 })], NOW).selectedIds.length);
 }
 
