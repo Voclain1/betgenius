@@ -22,7 +22,7 @@ export function PaidFeedCover({
   count: number;
   /** The tier's confidence floor (VIP_CONFIDENCE_FLOOR / PREMIUM_CONFIDENCE_FLOOR). */
   floor: number;
-  /** "today" or "tomorrow". */
+  /** "yesterday", "today" or "tomorrow". */
   dayWord: string;
   signedIn: boolean;
   /** This feed's path, to come back to after logging in. */
@@ -65,5 +65,30 @@ export function PaidFeedCover({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The past-results section of a VIP or PREMIUM page for a reader without
+ * access: the heading and an invitation, no days and no matches. The tier's
+ * win rate stays in the page masthead; the record behind it is for members.
+ */
+export function PaidResultsCover({ tier, signedIn }: { tier: "VIP" | "Premium"; signedIn: boolean }) {
+  return (
+    <section aria-labelledby="feed-results-heading" className="space-y-4">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Track record</p>
+        <h2 id="feed-results-heading" className="mt-1 text-2xl font-black tracking-tight text-gray-100 sm:text-3xl">Past {tier} results</h2>
+      </div>
+      <div className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <p className="flex items-start gap-3 text-sm leading-6 text-gray-300">
+          <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+          Every {tier} pick, win or lose, day by day, is for {tier} members.
+        </p>
+        <Link href="/pricing" className="btn btn-primary shrink-0 self-start sm:self-auto">
+          {signedIn ? `Upgrade to ${tier}` : `Subscribe to ${tier}`}
+        </Link>
+      </div>
+    </section>
   );
 }
