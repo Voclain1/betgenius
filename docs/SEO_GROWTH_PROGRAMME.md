@@ -38,12 +38,14 @@
 |---|---|---|---|
 | SEO-201 | Upgrade `/predictions` as the primary football-predictions hub | Unique answer, live inventory, method, track record and internal links | Implemented locally; desktop and 390px visual QA passed with no browser errors; production validation pending |
 | SEO-202 | Upgrade `/predictions/today` for daily intent | Date/freshness visible; no false guarantees; strong related navigation | Implemented locally: Lagos date and freshness guidance, evidence links and responsible-use copy added without new database queries or ad-placement changes; targeted SEO checks (78/78), Adsterra checks and TypeScript check passed; isolated new-content visual QA passed at 1280px and 390px with no browser errors. Full data-backed page and production verification remain pending |
-| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Reworked Oct 2026: `/track-record` reports the current calendar month (rates only, counted in the database) and VIP, Premium and Banker carry day-by-day results on their own pages; methodology unchanged; production validation pending |
-| SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Implemented locally; merged verification passes SEO checks (89/89), Adsterra checks and TypeScript; production verification pending |
+| SEO-203 | Upgrade `/track-record` and methodology | Immutable wins/losses, samples, calibration and limitations explained | Reworked Oct 2026: `/track-record` reports the current calendar month (rates only, counted in the database) and VIP, Premium and Banker carry day-by-day results on their own pages; since #86 the VIP/Premium day-by-day results are members-only (the API refuses non-members) while their win rates stay public, and Banker's results stay public with the pick locked; methodology unchanged; production validation pending |
+| SEO-204 | Build Banker market hub | Live picks plus historical performance and method | Merged. Since #81/#82 Banker is curated, not generated: the day's highest-confidence published singles from any feed and competition, at least 75%, one per match, up to seven; page copy and the banker guide describe that rule. Production verification pending |
 | SEO-205 | Build Over 2.5 market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (98/98), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-206 | Build BTTS market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (106/106), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-207 | Build Double Chance market hub | Live data, definition, evidence and record | Implemented locally; SEO checks (114/114), Adsterra checks and TypeScript passed; production verification pending |
 | SEO-208 | Upgrade top-tier domestic league, major domestic cup, UEFA and NPFL hubs | Query-led titles, useful mobile-safe intros, current modules, proof and links | Expanded locally; SEO checks (138/138), Adsterra checks and TypeScript passed; production verification pending |
+| SEO-210 | Build weekend and midweek tips hubs | Stable URLs, honest freshness, quality bar stated on the page, in the sitemap only while populated | Merged (#82, #83, #84): `/predictions/weekend` (Fri–Sun) and `/predictions/midweek` (Tue–Thu) list only picks at 75%+ (one per match, at most 30) with a period Banker at 80%+ (up to 15); compact rows link to the match page; empty periods are noindex and out of the sitemap; linked from the homepage. Targets "weekend football predictions" / "midweek predictions" demand, unmeasured: confirm impressions in GSC four weeks after release |
+| SEO-211 | Keep paid tiers indexable without exposing them | Paid hubs stay indexed; no paid match or pick in HTML, JSON-LD or meta description | Merged (#85, #86): VIP/Premium feeds show non-members a subscribe cover with the count and bar only; their SportsEvent markup and descriptions name no matches. Trade-off: those pages no longer rank for individual fixture names; the public match pages carry that demand |
 | SEO-209 | Add privacy-safe editorial attribution | Every editorial asset is attributable without exposing or inventing personal identities | Implemented locally: organization-level Editorial Desk profile and attribution added; 143/143 SEO checks, Adsterra checks and TypeScript passed; production verification pending |
 
 ## Phase 3 — Editorial authority (Weeks 5–12)
@@ -110,6 +112,19 @@ Lab checks are not field performance. Local HTML is not production. Search Conso
 - **Friday:** deploy approved batch, verify production, record learning and update forecast.
 
 ## Current execution order
+
+Status read 2026-10-13. Production verification (release gates 4–5) has not been run for most "implemented"/"merged" rows above. It cannot run from the cloud agent environment, whose network policy blocks `www.betgenius.ng`; allow that host there, or run from any machine:
+
+```
+node scripts/check-sitemap-parity.mjs            # every sitemap URL: 200, indexable, self-canonical
+node scripts/audit-production-metadata.mjs       # titles, descriptions, H1 by template
+```
+
+then Google's Rich Results Test on one homepage, match, league, team and H2H URL, and request validation in Search Console.
+
+Owner-only blockers: mark `sign_up`, `begin_checkout` and `purchase` as GA4 key events (SEO-003); register the GA4 custom dimensions and link BigQuery (SEO-109, SEO-502); review the seven drafted guides (SEO-302).
+
+Earlier order, kept for the record:
 
 1. Complete SEO-004/005 with the 16-month, country and device GSC cuts plus GA4 organic/conversion baseline.
 2. Implement SEO-112 using the live indexing evidence, then rerun sitemap parity and the Adsterra regression gate.
