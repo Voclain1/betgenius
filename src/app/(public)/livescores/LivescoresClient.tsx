@@ -94,19 +94,13 @@ export default function LivescoresClient({
   const filtered = useMemo(() => merged.filter((r) => tabOfStatus(r.fixture.status.short) === tab), [merged, tab]);
   const groups = useMemo(() => groupByLeague(filtered), [filtered]);
 
-  const figure = (n: number) => (loading ? "–" : String(n));
-
   return (
     <div className="space-y-8">
       <CategoryMasthead
         kicker="Live"
         title="Live football scores today"
         blurb="Follow in-play football scores, match minutes and goal updates by competition. Switch between live, upcoming and finished fixtures to see today's schedule and results in one place."
-        stats={[
-          { label: "Live now", value: figure(counts.live), accent: true },
-          { label: "Upcoming", value: figure(counts.upcoming) },
-          { label: "Finished", value: figure(counts.finished) },
-        ]}
+        stats={[]}
       />
 
       <div className="space-y-4">

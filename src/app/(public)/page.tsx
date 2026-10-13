@@ -257,7 +257,6 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     return canView ? { ...r, category, locked: false } : { ...r, category, pick: "LOCKED", confidence: null, locked: true };
   });
 
-  const dayWord = day === "today" ? "today" : day === "yesterday" ? "yesterday" : "tomorrow";
   const ARROW = "whitespace-nowrap text-sm font-semibold text-brand hover:underline";
 
   return (
@@ -303,23 +302,6 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           </div>
           {heroPick && <HeroPick pick={heroPick} />}
         </div>
-        {/* The day's card in numbers — the same counts the answer paragraph states. */}
-        {slate.pickCount > 0 && (
-          <dl className={`relative grid gap-px border-t border-brand-border bg-brand-border ${slate.bankerCount > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
-            {(
-              [
-                [`Picks ${dayWord}`, slate.pickCount],
-                ["Competitions", slate.leagueCount],
-                ...(slate.bankerCount > 0 ? [[slate.bankerCount === 1 ? "Banker" : "Bankers", slate.bankerCount]] : []),
-              ] as [string, number][]
-            ).map(([label, value]) => (
-              <div key={label} className="flex flex-col-reverse bg-brand-card px-2 py-3.5 text-center">
-                <dt className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">{label}</dt>
-                <dd className="text-2xl font-black tabular-nums text-gray-100 sm:text-3xl">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
       </section>
 
       {/* The category shortcuts, as one row of quiet links under the hero. */}
