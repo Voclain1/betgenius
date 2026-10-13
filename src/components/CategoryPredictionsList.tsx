@@ -30,6 +30,7 @@ export function CategoryPredictionsList({
   withAds = false,
   view = "detailed",
   reasoningExcerpt = false,
+  linkRows = false,
 }: {
   /** The feed's category. Omitted on team, league and cup pages, which mix categories. */
   category?: PredictionCategory;
@@ -38,6 +39,8 @@ export function CategoryPredictionsList({
   view?: PredictionView;
   /** Detailed cards show a short reasoning excerpt with "Show full reasoning" (team pages). */
   reasoningExcerpt?: boolean;
+  /** Compact rows link to the match's prediction page (see PredictionsTable). */
+  linkRows?: boolean;
 }) {
   if (rows.length === 0) {
     return <div className="card text-gray-400">{emptyFeedMessage(category)}</div>;
@@ -50,6 +53,7 @@ export function CategoryPredictionsList({
     return (
       <PredictionsTable
         rows={rows}
+        linkRows={linkRows}
         ads={positions.map((after, i) => ({ after, node: <AdInFeed index={i} /> }))}
       />
     );
