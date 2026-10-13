@@ -45,7 +45,7 @@ const categoryPredictions = readFileSync(join(repoRoot, "src/lib/categoryPredict
 const trackRecordView = readFileSync(join(repoRoot, "src/components/TrackRecordView.tsx"), "utf8");
 
 check("banker hub: does not claim there is only one pick", !categoryPredictions.includes("single most-confident"));
-check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to three may be published"));
+check("banker hub: accurately states the daily cap", bankerGuide.includes("Up to seven may be published"));
 check("banker hub: explains that days can have no selection", bankerGuide.includes("some days will have none"));
 // Banker renders through PredictionViewSwitch (Detailed / Compact), which
 // places `intro` above whichever list is showing — that rendered order is

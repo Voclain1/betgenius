@@ -14,3 +14,12 @@ export const HOME_CATEGORY_LINKS: { label: string; href: string }[] = [
   { label: "Goals Tips", href: "/predictions/goals" },
   { label: "Multi Bet Tips", href: "/multi-bets" },
 ];
+
+/**
+ * The longer-run pages, shown on the homepage as their own group after the
+ * daily links, so a reader can tell "today's card" from "the whole weekend".
+ */
+export const HOME_PERIOD_LINKS: { label: string; href: string }[] = [
+  { label: "Weekend Tips", href: "/predictions/weekend" },
+  { label: "Midweek Tips", href: "/predictions/midweek" },
+];
