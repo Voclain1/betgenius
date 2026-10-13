@@ -130,6 +130,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   const page = readFileSync(join(__dirname, "..", "src", "app", "(public)", "predictions", "[category]", "page.tsx"), "utf8");
   check("paid feed page: covered days render PaidFeedCover instead of the list", /paidCovered \? \([\s\S]*?<PaidFeedCover[\s\S]*?\) : \(\s*<PredictionViewSwitch/.test(page));
   check("paid feed page: no structured data names a paid feed's matches", page.includes("(paidFeed ? [] : rows)"));
+  check("paid feed page: yesterday is covered too", page.includes("const paidCovered = paidFeed && !canView && rows.length > 0;"));
+  check("paid feed page: past results are members-only", /paidFeed && !canView \? \(\s*<PaidResultsCover/.test(page));
+  const { PaidResultsCover } = require("../src/components/PaidFeedCover");
+  const resultsCover = html(<PaidResultsCover tier="VIP" signedIn={false} />);
+  check("paid results cover: an invitation, no days", resultsCover.includes("Past VIP results") && resultsCover.includes("Subscribe to VIP") && !resultsCover.includes("<button"));
+  const route = readFileSync(join(__dirname, "..", "src", "app", "api", "predictions", "results", "route.ts"), "utf8");
+  check("results API: refuses VIP/Premium days to non-members before reading any rows",
+    route.indexOf("MEMBERS_ONLY_RESULTS.includes(category)") > 0 && route.indexOf("MEMBERS_ONLY_RESULTS.includes(category)") < route.indexOf("getFeedDayResults(category"));
   check("paid feed page: the description names no paid matches", /cat === "VIP" \|\| cat === "PREMIUM" \? null : fixtureSample\(/.test(page));
 }
 

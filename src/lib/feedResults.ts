@@ -17,13 +17,17 @@ export { FEED_RESULTS_MAX_DAYS_BACK, FEED_RESULTS_PAGE_DAYS, resultsDayLabel, sh
  * costs nothing until someone asks for a specific day, however long the
  * record grows.
  *
- * SAME LOCK AS THE FEED. A reader who cannot view the category sees each
- * match and its result, never the pick, exactly as the feed's own "yesterday"
- * tab does (src/app/(public)/predictions/[category]/page.tsx). The route
- * applies that rule; nothing here decides access.
+ * SAME LOCK AS THE FEED. VIP and PREMIUM results are for members only
+ * (MEMBERS_ONLY_RESULTS): a reader who cannot view the tier gets no rows at
+ * all, as the feed's own tabs show them a subscribe cover. BANKER keeps its
+ * public record: match and result, never the pick. The route applies these
+ * rules; nothing here decides access.
  */
 
 export const FEED_RESULTS_CATEGORIES: readonly PredictionCategory[] = ["VIP", "PREMIUM", "BANKER"];
+
+/** Feeds whose past results, matches included, only their members may read. */
+export const MEMBERS_ONLY_RESULTS: readonly PredictionCategory[] = ["VIP", "PREMIUM"];
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const LAGOS_OFFSET = "+01:00";
 

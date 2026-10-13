@@ -30,7 +30,7 @@ import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
 import { FeedResults } from "@/components/FeedResults";
-import { PaidFeedCover } from "@/components/PaidFeedCover";
+import { PaidFeedCover, PaidResultsCover } from "@/components/PaidFeedCover";
 import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { firstResultsDay } from "@/lib/feedResults";
 
@@ -116,12 +116,12 @@ export default async function CategoryPage(
   const rows = await getCategoryPredictions(cat, day);
 
   const needsRegistration = !canView && cat === "BANKER" && !session?.user;
-  // VIP and PREMIUM, for a reader who cannot see them: the upcoming days show
-  // a subscribe cover instead of the list, and no match, league, kickoff or
-  // pick reaches the markup. Yesterday stays as the settled record (match and
-  // result, pick locked), like the past-results list at the foot of the page.
+  // VIP and PREMIUM, for a reader who cannot see them: every day, yesterday
+  // included, shows a subscribe cover instead of the list, and no match,
+  // league, kickoff or pick reaches the markup. The past-results section is
+  // members-only too (PaidResultsCover); the masthead's win rate stays.
   const paidFeed = cat === "VIP" || cat === "PREMIUM";
-  const paidCovered = paidFeed && !canView && day !== "yesterday" && rows.length > 0;
+  const paidCovered = paidFeed && !canView && rows.length > 0;
   const lockReason = needsRegistration
     ? "Sign up free to unlock this tip and full reasoning."
     : "Subscribe to VIP or Premium to unlock this tip and full reasoning.";
@@ -280,7 +280,7 @@ export default async function CategoryPage(
               tier={cat === "PREMIUM" ? "Premium" : "VIP"}
               count={shaped.length}
               floor={cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}
-              dayWord={day === "tomorrow" ? "tomorrow" : "today"}
+              dayWord={day}
               signedIn={!!session?.user}
               path={feedDayHref(slug, day)}
             />
@@ -300,7 +300,9 @@ export default async function CategoryPage(
 
       {/* The feed's own track record, last on the page: a list of past days,
           each read only when a reader opens it (src/lib/feedResults.ts). */}
-      {(cat === "VIP" || cat === "PREMIUM" || cat === "BANKER") && (
+      {paidFeed && !canView ? (
+        <PaidResultsCover tier={cat === "PREMIUM" ? "Premium" : "VIP"} signedIn={!!session?.user} />
+      ) : (cat === "VIP" || cat === "PREMIUM" || cat === "BANKER") && (
         <FeedResults
           category={cat}
           name={CATEGORY_CHIP_LABELS[cat]}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { canViewCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
-import { FEED_RESULTS_CATEGORIES, getFeedDayResults, resultsDayBounds, shapeDayResults } from "@/lib/feedResults";
+import { FEED_RESULTS_CATEGORIES, MEMBERS_ONLY_RESULTS, getFeedDayResults, resultsDayBounds, shapeDayResults } from "@/lib/feedResults";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,9 @@ export const dynamic = "force-dynamic";
  * the foot of that feed's page (src/components/FeedResults.tsx). Read only
  * when a reader opens the day.
  *
- * The pick is withheld from a reader who cannot view the category, the same
- * rule the feed's own "yesterday" tab applies. Because the answer depends on
+ * A reader who cannot view the category gets nothing for VIP and PREMIUM
+ * (members only, not even the matches) and, for BANKER, the matches and
+ * results with the pick withheld. Because the answer depends on
  * who is asking, it is cached privately in the browser only, never on a
  * shared cache that could hand one reader's view to another.
  */
@@ -27,6 +28,9 @@ export async function GET(req: Request) {
 
   const viewer = await getViewerEntitlement();
   const canView = canViewCategory(category, viewer.tier, viewer.status, viewer.role);
+  if (!canView && MEMBERS_ONLY_RESULTS.includes(category)) {
+    return NextResponse.json({ results: [], locked: true, membersOnly: true }, { status: 403, headers: { "Cache-Control": "private, no-store" } });
+  }
   const results = shapeDayResults(await getFeedDayResults(category, bounds), canView);
 
   return NextResponse.json({ results, locked: !canView }, { headers: { "Cache-Control": "private, max-age=300" } });
