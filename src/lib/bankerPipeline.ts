@@ -2,6 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 
 /**
+ * RETIRED (Oct 2026). The scheduled ?categories=BANKER call no longer generates;
+ * it runs Banker curation (curateBankerTips in src/lib/geniusCuration.ts),
+ * which picks the day's highest-confidence published picks from any feed.
+ * This pass could only target fixtures ordinary generation had not yet
+ * claimed, so it never saw the day's biggest matches. Kept for the history
+ * below and for reading past BANKER-intent jobs.
+ *
  * The dedicated BANKER pass: intent, quota, accounting.
  *
  * WHY THIS FILE EXISTS. BANKER has been an accepted generation category the

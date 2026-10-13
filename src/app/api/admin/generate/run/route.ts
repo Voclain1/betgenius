@@ -34,7 +34,7 @@ import {
   BET_OF_DAY_PRICE_BAND,
 } from "@/lib/betOfTheDay";
 import { z } from "zod";
-import { BANKER_INTENT, BANKER_DAILY_QUOTA, bankerQuotaRemaining } from "@/lib/bankerPipeline";
+import { curateBankerTips } from "@/lib/geniusCuration";
 
 /**
  * Scheduled generation. Same shape and auth as /api/admin/settle and
@@ -202,17 +202,15 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
    */
   const wantsBetOfTheDay = valid.includes("BET_OF_THE_DAY");
   /**
-   * The dedicated BANKER pass.
-   *
-   * Requested as an ordinary category (?categories=BANKER) rather than a flag,
-   * because unlike the VIP/PREMIUM pass its output IS a BANKER pick the moment
-   * it is generated — there is no gate standing between the draft and the tag, so
-   * nothing is being withheld from a feed while it waits to qualify.
-   *
-   * resolveGenerationRisk already routes BANKER intent to the bolder
-   * uncalibrated path; this branch is only what makes something actually ask.
+   * BANKER is no longer generated. ?categories=BANKER (the existing scheduled
+   * call) now runs Banker curation: the day's highest-confidence published
+   * picks from any feed. The old pass could only target fixtures ordinary
+   * generation had not claimed, so it only ever saw the leftovers. See
+   * BANKER_MAX_PICKS in src/lib/geniusCuration.ts.
    */
-  const wantsBanker = valid.includes("BANKER");
+  if (valid.includes("BANKER")) {
+    return NextResponse.json({ ok: true, banker: await curateBankerTips() }, { status: 200 });
+  }
   let matchKeys: string[] | undefined;
   let targeting: Record<string, unknown> | undefined;
 
@@ -277,26 +275,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
    * settlement without appearing as duplicate loose picks in FEATURED/TODAY.
    * Every other fixture takes the single-market path.
    */
-  let bankerTargeting: Record<string, unknown> | undefined;
-  if (wantsBanker) {
-    const remaining = await bankerQuotaRemaining();
-    if (remaining <= 0) {
-      return NextResponse.json({
-        ok: true,
-        skipped: "daily BANKER generation quota already spent",
-        quota: BANKER_DAILY_QUOTA,
-        generatedToday: BANKER_DAILY_QUOTA,
-        claimed: 0, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,
-      });
-    }
-    effectiveLimit = Math.min(remaining, effectiveLimit);
-    bankerTargeting = { quota: BANKER_DAILY_QUOTA, remainingBeforeRun: remaining, limitApplied: effectiveLimit };
-  }
-
-  // Excluded from the regular-combo path for the same reason the others are: a
-  // banker is a single high-conviction call, and the multi-market breadth that
-  // feeds double assembly is the opposite instruction.
-  //
   // The combo share is decided per fixture by the worker, from that fixture's
   // own kickoff day (adaptiveComboTarget in src/lib/comboQuota.ts), rather than
   // by putting the whole run into REGULAR_COMBO while the daily quota has room.
@@ -308,10 +286,9 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   // named explicitly. The ["FEATURED"] default below is generation
   // calibration, not a destination: an ordinary double is no longer put in
   // FEATURED by default.
-  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles && !wantsBanker;
+  const wantsRegularCombo = !wantsBetOfTheDay && !wantsDoubles;
   let regularComboTargeting: Record<string, unknown> | undefined;
   let adaptiveCombo: { dailyRemaining: number; comboCategories: string[] } | undefined;
-  const generationIntent: string | undefined = wantsBanker ? BANKER_INTENT : undefined;
   if (wantsRegularCombo) {
     const remaining = await doublesQuotaRemaining();
     adaptiveCombo = { dailyRemaining: remaining, comboCategories: valid.filter((c) => c !== SAME_GAME_DOUBLE) };
@@ -324,7 +301,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
 
   const report = await runGeneration({
     authorId,
-    intent: generationIntent,
     categories: valid.length ? valid : ["FEATURED"],
     leagueApiIds: leagueApiIds?.length ? leagueApiIds : undefined,
     matchKeys,
@@ -334,7 +310,6 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
   if (regularComboTargeting && report.comboPlan) regularComboTargeting.plan = report.comboPlan;
 
   if (targeting) return NextResponse.json({ ...report, betOfTheDay: targeting }, { status: 200 });
-  if (bankerTargeting) return NextResponse.json({ ...report, banker: bankerTargeting }, { status: 200 });
   if (doublesTargeting) return NextResponse.json({ ...report, sameGameDoubles: doublesTargeting }, { status: 200 });
   if (regularComboTargeting) return NextResponse.json({ ...report, regularCombo: regularComboTargeting }, { status: 200 });
 
