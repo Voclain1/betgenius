@@ -1,8 +1,9 @@
 import { Fragment } from "react";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
-import { leagueSlug } from "@/lib/slug";
+import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { textTone } from "@/lib/tone";
@@ -47,9 +48,16 @@ export type PredictionTableRow = {
 export function PredictionsTable({
   rows,
   ads = [],
+  linkRows = false,
 }: {
   rows: PredictionTableRow[];
   ads?: { after: number; node: React.ReactNode }[];
+  /**
+   * Opt-in: the pick links to the match's prediction page and each row ends in
+   * an arrow button to it, so the compact row is the way in to the full tip.
+   * Off by default, so every other caller keeps its markup.
+   */
+  linkRows?: boolean;
 }) {
   // The column appears only when a row actually carries a result, so the
   // default (today) table renders with precisely the columns it had before.
@@ -58,7 +66,7 @@ export function PredictionsTable({
   // would either leave a gap or stretch the table. Six fixed columns —
   // League, Match, Pick, Over/Under, Confidence, Kickoff — plus Result when
   // it is showing.
-  const columnCount = 6 + (showOutcome ? 1 : 0);
+  const columnCount = 6 + (showOutcome ? 1 : 0) + (linkRows ? 1 : 0);
   const adAfter = new Map(ads.map((a) => [a.after, a.node]));
   return (
     <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
@@ -72,6 +80,7 @@ export function PredictionsTable({
             <th className="hidden px-3 py-3 sm:table-cell">Over/Under</th>
             <th className="hidden px-3 py-3 text-right md:table-cell">Confidence</th>
             <th className="hidden px-3 py-3 md:table-cell">Kickoff</th>
+            {linkRows && <th className="px-3 py-3"><span className="sr-only">Open</span></th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-brand-border">
@@ -81,6 +90,8 @@ export function PredictionsTable({
             const kickoff = p.kickoff ?? p.fixture?.kickoff;
             const leagueName = p.leagueName ?? p.fixture?.league.name;
             const ad = adAfter.get(index + 1);
+            const slug = linkRows && home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
+            const matchHref = slug ? `/predictions/match/${slug}` : null;
             return (
               <Fragment key={p.id}>
               <tr className="transition hover:bg-brand-bg/40">
@@ -96,7 +107,11 @@ export function PredictionsTable({
                 <td className="px-3 py-3">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="px-3 py-3 font-black text-brand">{p.locked ? "LOCKED" : p.pick}</td>
+                <td className="px-3 py-3 font-black text-brand">
+                  {matchHref ? (
+                    <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : p.pick}</Link>
+                  ) : p.locked ? "LOCKED" : p.pick}
+                </td>
                 {showOutcome && (
                   <td className="px-3 py-3">
                     {p.outcome && p.outcome !== "PENDING" ? (
@@ -114,6 +129,19 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
+                {linkRows && (
+                  <td className="px-3 py-3 text-right">
+                    {matchHref && (
+                      <Link
+                        href={matchHref}
+                        aria-label={`Open the prediction for ${home} vs ${away}`}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-brand-border text-gray-300 transition hover:border-brand hover:text-brand"
+                      >
+                        <ChevronRight aria-hidden className="h-4 w-4" />
+                      </Link>
+                    )}
+                  </td>
+                )}
               </tr>
               {/* p-0 so the band's own padding is the only padding — a cell's
                   px-3 py-2 would inset the rule lines and stop it reading as a

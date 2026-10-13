@@ -162,7 +162,7 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
           The strongest calls across the {kind === "weekend" ? "weekend" : "three days"}, from any competition: at least {PERIOD_BANKER_FLOOR}% confidence, one per match, up to {PERIOD_MAX_BANKERS}. It grows as each day&apos;s picks are published.
         </p>
         {bankers.length > 0 ? (
-          <CategoryPredictionsList category="BANKER" rows={bankers as any} view="detailed" />
+          <CategoryPredictionsList category="BANKER" rows={bankers as any} view="compact" linkRows />
         ) : (
           <div className="card text-sm text-gray-400">No pick has cleared the {PERIOD_BANKER_FLOOR}% bar for this period yet.</div>
         )}
@@ -175,7 +175,7 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
           <section key={day.key} aria-labelledby={`${kind}-${day.key}`} className="border-t border-brand-border pt-8">
             <SectionHead kicker={day.key === todayKey ? "Today" : WEEKDAY.format(day.start)} title={label} id={`${kind}-${day.key}`} />
             {dayRows.length > 0 ? (
-              <CategoryPredictionsList category="TODAY" rows={dayRows as any} withAds={i === firstWithRows} />
+              <CategoryPredictionsList category="TODAY" rows={dayRows as any} withAds={i === firstWithRows} linkRows />
             ) : (
               <div className="card text-sm text-gray-400">
                 {notYet

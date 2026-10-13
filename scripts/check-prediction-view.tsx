@@ -107,6 +107,18 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
     `${order(detailed)} vs ${order(compact)}`);
 }
 
+// Weekend and midweek: compact only, and each row leads to the match's prediction page.
+{
+  const linked = html(<CategoryPredictionsList category="BANKER" rows={rows(3) as any} view="compact" linkRows />);
+  const plain = html(<CategoryPredictionsList category="BANKER" rows={rows(3) as any} view="compact" />);
+  check("linkRows: one arrow button per row to the match page", count(linked, /aria-label="Open the prediction for /g) === 3);
+  check("linkRows: the pick links to the match page", /href="\/predictions\/match\/[^"]+"[^>]*>Pick-1<\/a>/.test(linked), linked.slice(linked.indexOf("Pick-1") - 200, linked.indexOf("Pick-1") + 20));
+  check("linkRows is opt-in: the default compact table is unchanged", !plain.includes("Open the prediction for"));
+  const period = readFileSync(join(__dirname, "..", "src", "components", "PeriodPredictionsPage.tsx"), "utf8");
+  check("period pages render compact only, with linked rows",
+    !period.includes('view="detailed"') && (period.match(/<CategoryPredictionsList\b[^>]*\blinkRows\b/g) ?? []).length === 2);
+}
+
 // Yesterday's result chips survive into Compact (PredictionsTable's Result column).
 {
   const settled = rows(3).map((r, i) => ({ ...r, outcome: i === 0 ? "WON" : "LOST" }));
