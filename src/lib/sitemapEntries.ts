@@ -6,8 +6,7 @@ import { getSettledTotals, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { getSubstantiveH2HSlugs, getSubstantiveMatchSlugs } from "@/lib/predictionScope";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
-import { isPaidOnlyProvenance } from "@/lib/paidOnly";
-import { PERIODS, periodWindow } from "@/lib/periodPredictions";
+import { PERIODS, periodWindow, qualifiesForPeriod } from "@/lib/periodPredictions";
 import { isLagosToday, lagosDayBounds } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 import { GUIDES } from "@/content/guides";
@@ -201,15 +200,12 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
   // picks, the same gate as their noindex-when-empty metadata.
   for (const kind of ["weekend", "midweek"] as const) {
     const window = periodWindow(kind, now);
-    // The Today feed's rule, applied here rather than in the query: no hidden
-    // combo legs, no paid-only picks.
+    // The page's own bar (qualifiesForPeriod), applied here rather than in the
+    // query, plus the Today feed's exclusion of hidden combo legs.
     const periodRows = (await prisma.prediction.findMany({
       where: { status: "PUBLISHED", kickoff: { gte: window.start, lt: window.end } },
-      select: { publishedAt: true, marketType: true, provenance: true, categories: { select: { category: true } } },
-    })).filter((r) =>
-      !isPaidOnlyProvenance(r.provenance) &&
-      (r.marketType === "SAME_GAME_DOUBLE" || !r.categories.some((c) => c.category === "SAME_GAME_DOUBLE")),
-    );
+      select: { publishedAt: true, marketType: true, provenance: true, confidence: true, categories: { select: { category: true } } },
+    })).filter((r) => qualifiesForPeriod(r) && !r.categories.some((c) => c.category === "SAME_GAME_DOUBLE"));
     if (periodRows.length === 0) continue;
     entries.push({
       url: absoluteUrl(PERIODS[kind].path),

@@ -13,15 +13,26 @@ import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SectionHead } from "@/components/TeamProfile";
-import { BANKER_CONFIDENCE_FLOOR, BANKER_MAX_PICKS } from "@/lib/geniusCuration";
-import { PERIODS, periodWindow, picksArriveFrom, selectPeriodBankers, type PeriodKind, type PeriodWindow } from "@/lib/periodPredictions";
+import {
+  PERIODS,
+  PERIOD_BANKER_FLOOR,
+  PERIOD_MAX_BANKERS,
+  PERIOD_MAX_GAMES,
+  PERIOD_PICK_FLOOR,
+  periodWindow,
+  picksArriveFrom,
+  selectPeriodList,
+  type PeriodKind,
+  type PeriodWindow,
+} from "@/lib/periodPredictions";
 
 /**
  * /predictions/weekend and /predictions/midweek. The rules (which days, which
  * Banker) are in src/lib/periodPredictions.ts; this reads and renders.
  *
- * The rows are the Today feed's (every published pick, hidden combo legs and
- * paid-only picks excluded), across the period's days.
+ * The candidates are the Today feed's rows (hidden combo legs and paid-only
+ * picks excluded) across the period's days; selectPeriodList keeps the strong
+ * ones.
  */
 
 const DAY_LABEL = new Intl.DateTimeFormat("en-NG", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "long" });
@@ -53,18 +64,19 @@ function periodLabel(window: PeriodWindow): string {
 export async function periodMetadata(kind: PeriodKind): Promise<Metadata> {
   const period = PERIODS[kind];
   const window = periodWindow(kind);
-  const rows = await rowsFor(window);
-  if (rows.length === 0) {
+  const { bankers, picks } = selectPeriodList(await rowsFor(window));
+  const count = bankers.length + picks.length;
+  if (count === 0) {
     return {
       title: period.title,
-      description: `${period.name} are not published yet. Picks for each day are added up to two days before kickoff.`,
+      description: `${period.name} are not published yet. Picks for each day are added up to two days before kickoff, and only those at ${PERIOD_PICK_FLOOR}% confidence or more are listed.`,
       robots: { index: false, follow: true },
       alternates: { canonical: period.path },
     };
   }
   return {
     title: period.title,
-    description: `${rows.length} football predictions for ${periodLabel(window).replace(" · West Africa Time", "")}, day by day, with confidence ratings and the ${period.bankerTitle.toLowerCase()}.`,
+    description: `The ${count} strongest football predictions for ${periodLabel(window).replace(" · West Africa Time", "")}, each at ${PERIOD_PICK_FLOOR}% confidence or more, with the ${period.bankerTitle.toLowerCase()}.`,
     alternates: { canonical: period.path },
   };
 }
@@ -99,10 +111,14 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
       : base;
   };
 
-  const bankers = selectPeriodBankers(rows).map((r) => shape(r, "BANKER", !canViewBanker));
+  const list = selectPeriodList(rows);
+  const bankers = orderForDisplay(list.bankers).map((r) => shape(r, "BANKER", !canViewBanker));
+  // The rest of the list, by day, in the feeds' display order. Banker matches
+  // are listed once, in the Banker.
+  const listed = new Set(list.picks.map((r) => r.id));
   const byDay = window.days.map((day) => ({
     day,
-    rows: rows.filter((r) => r.kickoff && lagosDateKey(r.kickoff) === day.key).map((r) => shape(r, "TODAY", false)),
+    rows: rows.filter((r) => listed.has(r.id) && r.kickoff && lagosDateKey(r.kickoff) === day.key).map((r) => shape(r, "TODAY", false)),
   }));
   const firstWithRows = byDay.findIndex((d) => d.rows.length > 0);
 
@@ -136,17 +152,19 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
         }
       />
 
-      <p className="max-w-3xl text-sm leading-7 text-gray-400">{lead}</p>
+      <p className="max-w-3xl text-sm leading-7 text-gray-400">
+        {lead} This is a short list, not the whole card: only picks at {PERIOD_PICK_FLOOR}% confidence or more, the strongest pick per match, and no more than {PERIOD_MAX_GAMES} matches. A thin period gets fewer picks, never weaker ones.
+      </p>
 
       <section aria-labelledby={`${kind}-banker`}>
         <SectionHead kicker="Strongest calls" title={period.bankerTitle} id={`${kind}-banker`} />
         <p className="mb-4 max-w-3xl text-sm leading-6 text-gray-400">
-          The highest-confidence picks across the {kind === "weekend" ? "weekend" : "three days"}, from any competition: at least {BANKER_CONFIDENCE_FLOOR}% confidence, one per match, up to {BANKER_MAX_PICKS}. It grows as each day&apos;s picks are published.
+          The strongest calls across the {kind === "weekend" ? "weekend" : "three days"}, from any competition: at least {PERIOD_BANKER_FLOOR}% confidence, one per match, up to {PERIOD_MAX_BANKERS}. It grows as each day&apos;s picks are published.
         </p>
         {bankers.length > 0 ? (
           <CategoryPredictionsList category="BANKER" rows={bankers as any} view="detailed" />
         ) : (
-          <div className="card text-sm text-gray-400">No pick has cleared the {BANKER_CONFIDENCE_FLOOR}% bar for this period yet.</div>
+          <div className="card text-sm text-gray-400">No pick has cleared the {PERIOD_BANKER_FLOOR}% bar for this period yet.</div>
         )}
       </section>
 
@@ -162,7 +180,7 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
               <div className="card text-sm text-gray-400">
                 {notYet
                   ? `${WEEKDAY.format(day.start)}'s picks are added from ${WEEKDAY.format(picksArriveFrom(day))}, as matches come inside two days of kickoff.`
-                  : "No picks were published for this day."}
+                  : `No other pick for this day cleared the ${PERIOD_PICK_FLOOR}% bar.`}
               </div>
             )}
           </section>

@@ -1,11 +1,12 @@
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
-import { BANKER_CONFIDENCE_FLOOR, BANKER_MAX_PICKS, compareBankerRank, paidFixtureKey } from "@/lib/geniusCuration";
+import { compareBankerRank, paidFixtureKey } from "@/lib/geniusCuration";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 
 /**
- * Weekend (Friday–Sunday) and midweek (Tuesday–Thursday) tips: the ordinary
- * published picks for a run of days, grouped by day, with a period Banker.
+ * Weekend (Friday–Sunday) and midweek (Tuesday–Thursday) tips: a short list
+ * of the period's strongest published picks, grouped by day, with a period
+ * Banker at the top. See selectPeriodList for the bar.
  *
  * Nothing is generated for these pages. Picks are produced 12–48h before
  * kickoff (src/lib/generation/window.ts), so a period's later days fill in as
@@ -35,7 +36,7 @@ export const PERIODS: Record<PeriodKind, {
     path: "/predictions/weekend",
     name: "Weekend Tips",
     title: "Weekend football predictions",
-    blurb: "Every published pick from Friday to Sunday, day by day, with the weekend's strongest calls at the top.",
+    blurb: "The weekend's strongest picks from Friday to Sunday, at 75% confidence or more, with the Weekend Banker at the top.",
     bankerTitle: "Weekend Banker",
   },
   midweek: {
@@ -44,7 +45,7 @@ export const PERIODS: Record<PeriodKind, {
     path: "/predictions/midweek",
     name: "Midweek Tips",
     title: "Midweek football predictions",
-    blurb: "Every published pick from Tuesday to Thursday, including the European nights, with the strongest calls at the top.",
+    blurb: "The strongest picks from Tuesday to Thursday, including the European nights, at 75% confidence or more, with the Midweek Banker at the top.",
     bankerTitle: "Midweek Banker",
   },
 };
@@ -116,24 +117,42 @@ export type PeriodBankerRow = {
 };
 
 /**
- * The period's Banker: the same rule as the daily one, across the whole run
- * of days. Highest confidence first (competition priority breaks ties), at
- * least BANKER_CONFIDENCE_FLOOR, singles only, never a paid-only pick, one per
- * match, at most BANKER_MAX_PICKS. Started and settled picks stay in, so the
- * strip reads as a record once the period is under way.
+ * The bar for the weekend and midweek pages. These are short lists of the
+ * period's best picks, not every pick: a pick below the floor is left out,
+ * never used to reach a target count.
  */
-export function selectPeriodBankers<T extends PeriodBankerRow>(rows: readonly T[]): T[] {
-  const eligible = rows
-    .filter((r) => r.marketType !== "SAME_GAME_DOUBLE" && !isPaidOnlyProvenance(r.provenance) && r.confidence >= BANKER_CONFIDENCE_FLOOR)
-    .sort((a, b) => compareBankerRank(a, b));
+export const PERIOD_PICK_FLOOR = 75;
+/** At most this many matches on a page, Banker included. */
+export const PERIOD_MAX_GAMES = 30;
+/** A period Banker needs this much, above the list's own floor. */
+export const PERIOD_BANKER_FLOOR = 80;
+export const PERIOD_MAX_BANKERS = 15;
+
+/** May this row appear on a period page at all? Singles at or above the floor, never a paid-only pick. */
+export function qualifiesForPeriod(r: Pick<PeriodBankerRow, "confidence" | "marketType" | "provenance">): boolean {
+  return r.marketType !== "SAME_GAME_DOUBLE" && !isPaidOnlyProvenance(r.provenance) && r.confidence >= PERIOD_PICK_FLOOR;
+}
+
+/**
+ * The period's list. Highest confidence first (competition priority breaks
+ * ties), one pick per match (that match's strongest), at most
+ * PERIOD_MAX_GAMES matches. The Banker is the top of that list at
+ * PERIOD_BANKER_FLOOR or more, up to PERIOD_MAX_BANKERS; `picks` is the rest.
+ * Started and settled picks stay in, so the page reads as a record once the
+ * period is under way.
+ */
+export function selectPeriodList<T extends PeriodBankerRow>(rows: readonly T[]): { bankers: T[]; picks: T[] } {
+  const ranked = rows.filter(qualifiesForPeriod).sort((a, b) => compareBankerRank(a, b));
   const taken = new Set<string>();
-  const out: T[] = [];
-  for (const r of eligible) {
-    if (out.length >= BANKER_MAX_PICKS) break;
+  const list: T[] = [];
+  for (const r of ranked) {
+    if (list.length >= PERIOD_MAX_GAMES) break;
     const key = paidFixtureKey(r);
     if (taken.has(key)) continue;
     taken.add(key);
-    out.push(r);
+    list.push(r);
   }
-  return out;
+  const bankers = list.filter((r) => r.confidence >= PERIOD_BANKER_FLOOR).slice(0, PERIOD_MAX_BANKERS);
+  const bankerIds = new Set(bankers.map((r) => r.id));
+  return { bankers, picks: list.filter((r) => !bankerIds.has(r.id)) };
 }
