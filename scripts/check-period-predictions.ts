@@ -9,8 +9,18 @@ export {};
 const react = require("react");
 react.cache = (fn: any) => fn;
 
-import { periodWindow, picksArriveFrom, selectPeriodBankers, lagosWeekday, type PeriodBankerRow } from "../src/lib/periodPredictions";
-import { BANKER_MAX_PICKS, VIP_GENERATED_PROVENANCE } from "../src/lib/geniusCuration";
+import {
+  PERIOD_BANKER_FLOOR,
+  PERIOD_MAX_BANKERS,
+  PERIOD_MAX_GAMES,
+  PERIOD_PICK_FLOOR,
+  periodWindow,
+  picksArriveFrom,
+  selectPeriodList,
+  lagosWeekday,
+  type PeriodBankerRow,
+} from "../src/lib/periodPredictions";
+import { VIP_GENERATED_PROVENANCE } from "../src/lib/geniusCuration";
 import { lagosDateKey } from "../src/lib/lagosDate";
 
 let failures = 0;
@@ -58,30 +68,45 @@ for (const [date, want] of Object.entries(MIDWEEK)) {
   check("Sunday's picks arrive from Friday", lagosDateKey(picksArriveFrom(w.days[2])) === "2026-10-16");
 }
 
-// Period Banker.
+// The period list and its Banker.
 let n = 0;
 const row = (id: string, over: Partial<PeriodBankerRow> = {}): PeriodBankerRow => {
   n += 2;
   return { id, leagueApiId: 39, confidence: 80, provenance: null, marketType: "MATCH_WINNER", kickoff: at("2026-10-17"), fixtureApiId: n, homeTeamApiId: n, awayTeamApiId: n + 1, ...over };
 };
+check("the bars are 75 for the list and 80 for the Banker", PERIOD_PICK_FLOOR === 75 && PERIOD_BANKER_FLOOR === 80);
+check("at most 30 matches and 15 bankers", PERIOD_MAX_GAMES === 30 && PERIOD_MAX_BANKERS === 15);
 {
   const rows = [
     row("sun90", { confidence: 90, kickoff: at("2026-10-18") }),
     row("fri88", { confidence: 88, kickoff: at("2026-10-16") }),
-    row("weak", { confidence: 74 }),
+    row("p78", { confidence: 78 }),
+    row("p75", { confidence: PERIOD_PICK_FLOOR }),
+    row("weak", { confidence: PERIOD_PICK_FLOOR - 1 }),
     row("double", { confidence: 95, marketType: "SAME_GAME_DOUBLE" }),
     row("paid", { confidence: 95, provenance: VIP_GENERATED_PROVENANCE }),
-    ...Array.from({ length: BANKER_MAX_PICKS + 2 }, (_, i) => row(`f${i}`, { confidence: 80 })),
   ];
-  const picked = selectPeriodBankers(rows).map((r) => r.id);
-  check("period banker spans the days, strongest first", picked[0] === "sun90" && picked[1] === "fri88");
-  check(`period banker is capped at ${BANKER_MAX_PICKS}`, picked.length === BANKER_MAX_PICKS);
-  check("period banker skips sub-floor, doubles and paid-only picks", !picked.includes("weak") && !picked.includes("double") && !picked.includes("paid"));
+  const { bankers, picks } = selectPeriodList(rows);
+  const b = bankers.map((r) => r.id);
+  const p = picks.map((r) => r.id);
+  check("banker: 80+ only, strongest first, across the days", JSON.stringify(b) === JSON.stringify(["sun90", "fri88"]), b);
+  check("list: 75-79 picks below the Banker", JSON.stringify(p) === JSON.stringify(["p78", "p75"]), p);
+  check("below 75, doubles and paid-only picks are filtered out entirely", ![...b, ...p].some((id) => ["weak", "double", "paid"].includes(id)));
+  check("a thin period is not padded", b.length + p.length === 4);
+}
+{
+  const many = Array.from({ length: 50 }, (_, i) => row(`m${i}`, { confidence: 95 - Math.floor(i / 3) }));
+  const { bankers, picks } = selectPeriodList(many);
+  check(`never more than ${PERIOD_MAX_GAMES} matches in all`, bankers.length + picks.length === PERIOD_MAX_GAMES, bankers.length + picks.length);
+  check(`never more than ${PERIOD_MAX_BANKERS} bankers`, bankers.length === PERIOD_MAX_BANKERS);
+  check("an 80+ pick past the Banker cap stays in the list", picks[0]?.confidence >= PERIOD_BANKER_FLOOR);
+  check("no match appears in both", !bankers.some((r) => picks.includes(r)));
 }
 {
   const a = row("a", { confidence: 90 });
-  const b = { ...row("b", { confidence: 85 }), fixtureApiId: a.fixtureApiId, homeTeamApiId: a.homeTeamApiId, awayTeamApiId: a.awayTeamApiId, kickoff: a.kickoff };
-  check("period banker takes one pick per match", JSON.stringify(selectPeriodBankers([a, b]).map((r) => r.id)) === JSON.stringify(["a"]));
+  const b = { ...row("b", { confidence: 85, marketType: "BTTS" }), fixtureApiId: a.fixtureApiId, homeTeamApiId: a.homeTeamApiId, awayTeamApiId: a.awayTeamApiId, kickoff: a.kickoff };
+  const { bankers, picks } = selectPeriodList([a, b]);
+  check("one pick per match, its strongest", JSON.stringify([...bankers, ...picks].map((r) => r.id)) === JSON.stringify(["a"]));
 }
 
 if (failures) {
