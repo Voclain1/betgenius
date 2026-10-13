@@ -119,6 +119,20 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
     !period.includes('view="detailed"') && (period.match(/<CategoryPredictionsList\b[^>]*\blinkRows\b/g) ?? []).length === 2);
 }
 
+// VIP and PREMIUM for a reader without access: a subscribe cover, no data.
+{
+  const { PaidFeedCover } = require("../src/components/PaidFeedCover");
+  const out = html(<PaidFeedCover tier="VIP" count={6} floor={75} dayWord="today" signedIn={false} path="/predictions/vip" />);
+  const member = html(<PaidFeedCover tier="Premium" count={1} floor={80} dayWord="tomorrow" signedIn path="/predictions/premium" />);
+  check("paid cover: states the count and the bar", out.includes("6 VIP picks today") && out.includes("75% confidence"));
+  check("paid cover: signed out sees Subscribe and a log-in link back to the feed", out.includes("Subscribe to VIP") && out.includes("/login?callbackUrl=%2Fpredictions%2Fvip"));
+  check("paid cover: a free member sees Upgrade and no log-in link", member.includes("Upgrade to Premium") && !member.includes("Log in") && member.includes("1 Premium pick tomorrow"));
+  const page = readFileSync(join(__dirname, "..", "src", "app", "(public)", "predictions", "[category]", "page.tsx"), "utf8");
+  check("paid feed page: covered days render PaidFeedCover instead of the list", /paidCovered \? \([\s\S]*?<PaidFeedCover[\s\S]*?\) : \(\s*<PredictionViewSwitch/.test(page));
+  check("paid feed page: no structured data names a paid feed's matches", page.includes("(paidFeed ? [] : rows)"));
+  check("paid feed page: the description names no paid matches", /cat === "VIP" \|\| cat === "PREMIUM" \? null : fixtureSample\(/.test(page));
+}
+
 // Yesterday's result chips survive into Compact (PredictionsTable's Result column).
 {
   const settled = rows(3).map((r, i) => ({ ...r, outcome: i === 0 ? "WON" : "LOST" }));

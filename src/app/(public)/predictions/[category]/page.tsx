@@ -30,6 +30,8 @@ import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
 import { FeedResults } from "@/components/FeedResults";
+import { PaidFeedCover } from "@/components/PaidFeedCover";
+import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { firstResultsDay } from "@/lib/feedResults";
 
 const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
@@ -78,7 +80,8 @@ export async function generateMetadata(
     };
   }
 
-  const sample = fixtureSample(
+  // A paid feed's matches are for members: none are named in its description.
+  const sample = cat === "VIP" || cat === "PREMIUM" ? null : fixtureSample(
     rows.map((r) => ({
       homeTeam: r.homeTeam ?? r.fixture?.homeTeam?.name,
       awayTeam: r.awayTeam ?? r.fixture?.awayTeam?.name,
@@ -113,6 +116,12 @@ export default async function CategoryPage(
   const rows = await getCategoryPredictions(cat, day);
 
   const needsRegistration = !canView && cat === "BANKER" && !session?.user;
+  // VIP and PREMIUM, for a reader who cannot see them: the upcoming days show
+  // a subscribe cover instead of the list, and no match, league, kickoff or
+  // pick reaches the markup. Yesterday stays as the settled record (match and
+  // result, pick locked), like the past-results list at the foot of the page.
+  const paidFeed = cat === "VIP" || cat === "PREMIUM";
+  const paidCovered = paidFeed && !canView && day !== "yesterday" && rows.length > 0;
   const lockReason = needsRegistration
     ? "Sign up free to unlock this tip and full reasoning."
     : "Subscribe to VIP or Premium to unlock this tip and full reasoning.";
@@ -159,7 +168,9 @@ export default async function CategoryPage(
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
-  const eventRows = rows
+  // None for a paid feed: this markup describes what a signed-out reader sees,
+  // and a signed-out reader does not see a paid feed's matches.
+  const eventRows = (paidFeed ? [] : rows)
     .map((r) => {
       const home = r.homeTeam ?? r.fixture?.homeTeam?.name;
       const away = r.awayTeam ?? r.fixture?.awayTeam?.name;
@@ -262,12 +273,26 @@ export default async function CategoryPage(
         // Every other feed offers Detailed (the card grid) and Compact (the
         // Today table). Both are rendered here, on the server, from the same
         // shaped rows; the client switch only chooses which one to mount.
+        paidCovered ? (
+          <div className="space-y-4">
+            <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
+            <PaidFeedCover
+              tier={cat === "PREMIUM" ? "Premium" : "VIP"}
+              count={shaped.length}
+              floor={cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}
+              dayWord={day === "tomorrow" ? "tomorrow" : "today"}
+              signedIn={!!session?.user}
+              path={feedDayHref(slug, day)}
+            />
+          </div>
+        ) : (
         <PredictionViewSwitch
           tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
           intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}
           detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
         />
+        )
       )}
 
       {cat === "BANKER" && <BankerPredictionsEvidence />}
