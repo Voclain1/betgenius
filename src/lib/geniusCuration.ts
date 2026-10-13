@@ -535,26 +535,31 @@ async function loadPaidClaimedFixtures(start: Date, end: Date): Promise<Set<stri
   return paidClaimsFrom(dedicated);
 }
 
+/** One Lagos day's PUBLISHED rows, as curation ranks them. */
+async function loadCurationRows(start: Date, end: Date): Promise<CurationRow[]> {
+  const raw = await prisma.prediction.findMany({
+    where: {
+      status: "PUBLISHED",
+      kickoff: { gte: start, lt: end },
+      // Multi-market source legs are settlement inputs, not three separate
+      // editorial picks. The assembled double participates in curation; its
+      // internally tagged single-market legs do not.
+      NOT: {
+        marketType: { not: "SAME_GAME_DOUBLE" },
+        categories: { some: { category: "SAME_GAME_DOUBLE" } },
+      },
+    },
+    select: CURATION_ROW_SELECT,
+  });
+  return raw.map((r) => ({ ...r, categories: r.categories.map((c) => c.category) }));
+}
+
 async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) {
   const { start, end } = lagosDayBounds(dayOffset, now);
-  const [raw, paidClaimed] = await Promise.all([
-    prisma.prediction.findMany({
-      where: {
-        status: "PUBLISHED",
-        kickoff: { gte: start, lt: end },
-        // Multi-market source legs are settlement inputs, not three separate
-        // editorial picks. The assembled double participates in curation; its
-        // internally tagged single-market legs do not.
-        NOT: {
-          marketType: { not: "SAME_GAME_DOUBLE" },
-          categories: { some: { category: "SAME_GAME_DOUBLE" } },
-        },
-      },
-      select: CURATION_ROW_SELECT,
-    }),
+  const [rows, paidClaimed] = await Promise.all([
+    loadCurationRows(start, end),
     CURATION_RULES[category].paid ? loadPaidClaimedFixtures(start, end) : Promise.resolve(new Set<string>()),
   ]);
-  const rows: CurationRow[] = raw.map((r) => ({ ...r, categories: r.categories.map((c) => c.category) }));
 
   // Deferred import: vipPremiumPipeline imports this module.
   const awaiting = CURATION_RULES[category].paid
@@ -644,7 +649,118 @@ export function classifyPaidTierDrift(rows: readonly PaidTierDriftRow[]): PaidTi
   return out;
 }
 
+// ── Banker ────────────────────────────────────────────────────────────────
+
+/**
+ * BANKER is the day's highest-confidence picks, chosen from what is already
+ * published in any feed and any competition.
+ *
+ * It used to be a separate generation pass that could only target fixtures no
+ * ordinary job had claimed yet. Ordinary generation claims a fixture minutes
+ * after discovery, so that pass only ever saw the leftovers: the Champions
+ * League night was always taken, and Banker filled from lower leagues. The
+ * earlier confidence-curated BANKER cohort (49 rows, 81% against 66.8%
+ * site-wide; see VIP_ROUTE_CUTOVER) is the evidence for selecting this way.
+ */
+export const BANKER_MAX_PICKS = 3;
+
+/** A Banker must clear the VIP bar. The floor is hard: a thin day gets fewer bankers, not weaker ones. */
+export const BANKER_CONFIDENCE_FLOOR = VIP_CONFIDENCE_FLOOR;
+
+/** Kickoff days Banker is filled for: today and tomorrow, the feed's two live tabs. */
+export const BANKER_CURATION_DAYS = 2;
+
+/**
+ * Highest confidence first. Competition priority only breaks ties, so a
+ * Champions League 82 is chosen over a lower-league 82, but never over an 85.
+ */
+export function compareBankerRank(a: CurationRow, b: CurationRow): number {
+  return b.confidence - a.confidence || compareByEditorialRank(a, b);
+}
+
+export type BankerPlan = {
+  considered: number;
+  selectedIds: string[];
+  added: string[];
+  removed: string[];
+  /** Tagged rows kept without re-ranking (already kicked off, generated as bankers, or Banker is their only feed). */
+  fixed: number;
+};
+
+/**
+ * What Banker selects from one day's PUBLISHED rows. Pure.
+ *
+ * - Singles only, at or above BANKER_CONFIDENCE_FLOOR, one per fixture.
+ * - A paid-only pick (a dedicated VIP/PREMIUM row) is never shown free here.
+ * - A tagged row is a fixed point, never re-ranked or removed, once its match
+ *   has kicked off (a banker does not vanish mid-match), when it was generated
+ *   as a banker by the old pass, or when BANKER is its only feed (removing the
+ *   tag would unpublish it everywhere). Fixed rows fill slots first.
+ * - Any other tagged row may be replaced before kickoff by a stronger pick.
+ */
+export function planBankerCuration(rows: readonly CurationRow[], now: Date): BankerPlan {
+  const tagged = rows.filter((r) => r.categories.includes("BANKER"));
+  const started = (r: CurationRow) => !!r.kickoff && r.kickoff.getTime() <= now.getTime();
+  const fixed = tagged.filter(
+    (r) => started(r) || r.provenance === BANKER_INTENT_PROVENANCE || r.categories.length === 1,
+  );
+  const fixedIds = new Set(fixed.map((r) => r.id));
+  const taken = new Set(fixed.map(paidFixtureKey));
+
+  const eligible = rows
+    .filter(
+      (r) =>
+        !fixedIds.has(r.id) &&
+        !started(r) &&
+        r.marketType !== "SAME_GAME_DOUBLE" &&
+        !isPaidOnlyProvenance(r.provenance) &&
+        r.confidence >= BANKER_CONFIDENCE_FLOOR,
+    )
+    .sort(compareBankerRank);
+
+  const chosen: string[] = [];
+  for (const r of eligible) {
+    if (fixed.length + chosen.length >= BANKER_MAX_PICKS) break;
+    const key = paidFixtureKey(r);
+    if (taken.has(key)) continue;
+    taken.add(key);
+    chosen.push(r.id);
+  }
+
+  const selectedIds = [...fixedIds, ...chosen];
+  const selected = new Set(selectedIds);
+  const taggedIds = new Set(tagged.map((r) => r.id));
+  return {
+    considered: rows.length,
+    selectedIds,
+    added: chosen.filter((id) => !taggedIds.has(id)),
+    removed: [...taggedIds].filter((id) => !selected.has(id)),
+    fixed: fixedIds.size,
+  };
+}
+
+async function curateBankerDay(now: Date, dayOffset: number): Promise<BankerPlan> {
+  const { start, end } = lagosDayBounds(dayOffset, now);
+  const plan = planBankerCuration(await loadCurationRows(start, end), now);
+  await prisma.$transaction([
+    ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category: "BANKER" as const })), skipDuplicates: true })] : []),
+    ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category: "BANKER" } })] : []),
+  ]);
+  return plan;
+}
+
+/** Today's Banker plan, plus what changed for tomorrow. */
+export async function curateBankerTips(now: Date = new Date()) {
+  const today = await curateBankerDay(now, 0);
+  const ahead: Array<{ dayOffset: number; selected: number; added: number; removed: number }> = [];
+  for (let d = 1; d < BANKER_CURATION_DAYS; d++) {
+    const plan = await curateBankerDay(now, d);
+    ahead.push({ dayOffset: d, selected: plan.selectedIds.length, added: plan.added.length, removed: plan.removed.length });
+  }
+  return { ...today, ahead };
+}
+
 export async function curateAutomaticTips(now: Date = new Date()) {
-  const [genius, vip, premium] = await Promise.all([curateGeniusTips(now), curateVipTips(now), curatePremiumTips(now)]);
-  return { genius, vip, premium };
+  const [genius, vip, premium, banker] = await Promise.all([curateGeniusTips(now), curateVipTips(now), curatePremiumTips(now), curateBankerTips(now)]);
+  return { genius, vip, premium, banker };
 }

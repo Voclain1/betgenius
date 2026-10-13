@@ -27,9 +27,10 @@ export function BankerPredictionsEvidence() {
         How Banker picks are selected
       </h2>
       <p className="mt-3 text-sm leading-6 text-gray-300">
-        The daily card receives a dedicated Banker review. Each candidate is assessed independently, and the
-        list is capped at three selections rather than being filled to a target. Confidence compares the
-        strength of the available evidence; it is not a guaranteed probability of winning.
+        Bankers are the highest-confidence picks on the day&apos;s card, from any competition, including the
+        Champions League and Europa League. A pick needs a confidence rating of at least 75 to qualify, each match
+        can supply only one, and the list is capped at three rather than filled to a target. Confidence compares
+        the strength of the available evidence; it is not a guaranteed probability of winning.
       </p>
       <p className="mt-3 text-sm leading-6 text-gray-300">
         Every Banker result is listed day by day at the foot of this page, and the public track record shows the

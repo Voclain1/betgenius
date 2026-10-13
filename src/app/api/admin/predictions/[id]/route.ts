@@ -14,7 +14,7 @@ import { z } from "zod";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
-import { curateGeniusTips } from "@/lib/geniusCuration";
+import { curateBankerTips, curateGeniusTips } from "@/lib/geniusCuration";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -231,9 +231,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await recordPredictionEvents(tx, before, row, action);
     return row;
   });
-  // A newly published pick may belong in Genius: fill it now rather than at the
-  // next three-hourly settlement run. Never fails the publish.
-  if (action === "PUBLISH") await curateGeniusTips().catch((err) => console.error("[genius] curation after publish failed", err));
+  // A newly published pick may belong in Genius or Banker: fill them now rather
+  // than at the next three-hourly settlement run. Never fails the publish.
+  if (action === "PUBLISH") {
+    await curateGeniusTips().catch((err) => console.error("[genius] curation after publish failed", err));
+    await curateBankerTips().catch((err) => console.error("[banker] curation after publish failed", err));
+  }
   return NextResponse.json({ prediction: updated });
 }
 

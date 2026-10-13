@@ -142,6 +142,9 @@ eq("risk routing: cutoff contains exactly twelve priority entries", VIP_PROXY_LE
 eq("risk routing: top-priority league uses VIP calibration", resolveGenerationRisk(["FEATURED"], 39).calibration, "vip");
 eq("risk routing: first league below cutoff uses GENIUS calibration", resolveGenerationRisk(["FEATURED"], 307).calibration, "genius");
 eq("risk routing: unknown league uses GENIUS baseline", resolveGenerationRisk(["FEATURED"], 999999).calibration, "genius");
+eq("risk routing: Champions League uses VIP calibration", resolveGenerationRisk(["FEATURED"], 2).calibration, "vip");
+eq("risk routing: Europa League uses VIP calibration", resolveGenerationRisk(["FEATURED"], 3).calibration, "vip");
+eq("risk routing: Conference League uses VIP calibration", resolveGenerationRisk(["FEATURED"], 848).calibration, "vip");
 eq("risk routing: BANKER bypasses VIP proxy", resolveGenerationRisk(["FEATURED", "BANKER"], 39).calibration, "legacy");
 check("cup scope: FA Cup excludes qualifying rounds", !fixtureIsInCupScope(45, "3rd Round Qualifying"));
 check("cup scope: FA Cup includes Third Round Proper API value", fixtureIsInCupScope(45, "Round of 64"));

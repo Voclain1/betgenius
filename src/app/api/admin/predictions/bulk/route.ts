@@ -7,7 +7,7 @@ import { applyCategoryChanges, applyReviewAction, setPredictionCategories } from
 import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { z } from "zod";
-import { curateGeniusTips } from "@/lib/geniusCuration";
+import { curateBankerTips, curateGeniusTips } from "@/lib/geniusCuration";
 
 /**
  * Apply one review action to several predictions at once.
@@ -84,10 +84,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // Bulk publish is how most tips go live: fill Genius from them straight away
+  // Bulk publish is how most tips go live: fill Genius and Banker from them straight away
   // (see the single-row route). Never fails the publish.
   if (action === "PUBLISH" && results.some((r) => r.ok)) {
     await curateGeniusTips().catch((err) => console.error("[genius] curation after publish failed", err));
+    await curateBankerTips().catch((err) => console.error("[banker] curation after publish failed", err));
   }
 
   const missing = ids.filter((id) => !rows.some((r) => r.id === id));

@@ -50,6 +50,7 @@
     "check:prediction-slugs": "tsx scripts/check-prediction-slugs.ts",
     "preflight": "tsx scripts/preflight.ts",
     "check:tier-provenance": "tsx scripts/check-tier-provenance.ts",
+    "check:banker-curation": "tsx scripts/check-banker-curation.ts",
     "check:vip-premium": "tsx scripts/check-vip-premium-gate.ts",
     "verify:vip-premium": "tsx --env-file=.env scripts/verify-vip-premium-pass.ts",
     "check:betofday-targeting": "tsx scripts/check-betofday-targeting.ts",
