@@ -140,6 +140,21 @@ for (const [themeName, selector] of [
   console.log(`  page background luminance: ${bgLum.toFixed(3)} (${bgLum < 0.5 ? "dark" : "light"})`);
 }
 
+// The light theme's brand surface (class "brand-surface"): the same pairings
+// that matter inside a masthead, hero or footer, scored on its deep green.
+{
+  const light = tokens(":root[data-theme=\"light\"]");
+  const surface = { ...light, ...tokens(":root[data-theme=\"light\"] .brand-surface") };
+  console.log("\n=== LIGHT BRAND SURFACE ===");
+  for (const p of PAIRS.filter((p) => !["vip", "premium"].includes(p.fg))) {
+    const ratio = contrast(surface[p.fg], surface[p.bg]);
+    checks++;
+    const ok = ratio >= p.min;
+    if (!ok) failures.push(`LIGHT BRAND SURFACE: ${p.label} is ${ratio.toFixed(2)}:1, needs ${p.min}:1`);
+    console.log(`  ${ok ? "PASS" : "FAIL"}  ${p.label.padEnd(32)} ${ratio.toFixed(2)}:1 (min ${p.min})`);
+  }
+}
+
 // Cross-theme sanity: the two palettes must not be identical.
 const dark = tokens(":root[data-theme=\"dark\"]");
 const light = tokens(":root[data-theme=\"light\"]");

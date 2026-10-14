@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
+import { ScoreCell } from "@/components/LiveScores";
 import { leagueSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
@@ -30,6 +31,9 @@ export type PredictionRow = {
   reasoning: string;
   matchPreview?: string | null;
   locked?: boolean;
+  /** The match's final score, stored when the tip settles. */
+  finalHomeScore?: number | null;
+  finalAwayScore?: number | null;
   leagueApiId?: number | null;
   leagueName?: string | null;
   homeTeam?: string | null;
@@ -103,8 +107,25 @@ export function PredictionCard({
           )}
           {!leagueName && <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} />}
           {home && (
-            <div className="text-lg font-black leading-snug tracking-tight text-gray-100">
-              <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} />
+            // Teams on the left, the score opposite them once the match has
+            // started, as a row on the Livescores page. Before kickoff the
+            // score renders nothing and the teams keep the full width.
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 text-lg font-black leading-snug tracking-tight text-gray-100">
+                <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} />
+              </div>
+              <div className="shrink-0">
+                <ScoreCell
+                  homeTeamApiId={p.homeTeamApiId}
+                  awayTeamApiId={p.awayTeamApiId}
+                  kickoff={kickoff}
+                  finalHomeScore={p.finalHomeScore}
+                  finalAwayScore={p.finalAwayScore}
+                  align="right"
+                  size="lg"
+                  hideWhenEmpty
+                />
+              </div>
             </div>
           )}
         </div>

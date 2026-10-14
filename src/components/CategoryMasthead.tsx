@@ -21,7 +21,7 @@ export function CategoryMasthead({
   actions?: React.ReactNode;
 }) {
   return (
-    <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+    <header className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
       <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
       <div className="relative space-y-3 p-5 sm:p-8">
         <div className="flex items-center gap-2">
