@@ -57,7 +57,7 @@ export default function LivescoresClient({
     };
     loadDate();
     loadLive();
-    const liveTimer = setInterval(loadLive, 20_000);
+    const liveTimer = setInterval(loadLive, 15_000);
     const dateTimer = setInterval(loadDate, 60_000);
     return () => {
       alive = false;
@@ -127,7 +127,7 @@ export default function LivescoresClient({
 
       <PremiumPanel kicker="How it works" title="How the live score page updates" id="livescores-updates">
         <div className="space-y-3">
-          <p className="text-sm leading-7 text-gray-300">Live matches refresh approximately every 20 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
+          <p className="text-sm leading-7 text-gray-300">Live matches refresh approximately every 15 seconds, while the complete daily fixture list refreshes every minute. A score can briefly trail the event at the stadium because updates depend on the upstream match feed.</p>
           <p className="text-sm leading-7 text-gray-300">Where BetGenius has published match analysis, the fixture links to its preview. You can also browse the full <Link href="/fixtures" className="font-semibold text-brand hover:underline">football fixtures calendar</Link> or review <Link href="/predictions/today" className="font-semibold text-brand hover:underline">today&apos;s football predictions</Link> before kick-off.</p>
         </div>
       </PremiumPanel>

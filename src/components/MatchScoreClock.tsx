@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { classifyStatus, isIrregular, statusLabel } from "@/lib/matchStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
-const LIVE_POLL_MS = 60_000;
+/** Matches the shared snapshot's fastest refresh (LIVE_POLICY.MIN_REFRESH_SECONDS). */
+const LIVE_POLL_MS = 15_000;
 
 /**
  * The centre of the match masthead: the kickoff time before the match, the
