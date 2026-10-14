@@ -129,9 +129,11 @@ async function main() {
   const ORDERED_TYPES = new Set<SitemapType>(["static", "categories", "cups"]);
 
   const ADDED_SINCE_FREEZE = (url: string) => /^\/(guides(\/[a-z0-9-]+)?|odds-calculator)$/.test(new URL(url).pathname);
-  // Category-sitemap pages added on purpose after the freeze: the weekend and
-  // midweek pages. Their gate is checked by scripts/check-period-predictions.ts.
-  const CATEGORY_ADDED_SINCE_FREEZE = (url: string) => /^\/predictions\/(weekend|midweek)$/.test(new URL(url).pathname);
+  // Category-sitemap entries changed on purpose after the freeze: the weekend
+  // and midweek pages (added; gate in scripts/check-period-predictions.ts),
+  // and Bet of the Day, now listed only while its pick has not kicked off,
+  // matching the page's own noindex (gate asserted in check-betofday-lifecycle.ts).
+  const CATEGORY_ADDED_SINCE_FREEZE = (url: string) => /^\/predictions\/(weekend|midweek|bet-of-the-day)$/.test(new URL(url).pathname);
   async function compareWithLegacy(label: string) {
     fake.reset();
     const legacy = await legacyGetSitemapEntries();
@@ -139,7 +141,10 @@ async function main() {
     for (const type of SITEMAP_TYPES) {
       fake.reset();
       const fresh = await SITEMAP_BUILDERS[type]();
-      const expected = legacy.filter((e) => sitemapType(e.url) === type).map(describe);
+      const expected = legacy
+        .filter((e) => sitemapType(e.url) === type)
+        .filter((e) => type !== "categories" || !CATEGORY_ADDED_SINCE_FREEZE(e.url))
+        .map(describe);
       // Static pages added on purpose after the legacy copy was frozen: the
       // guides (#39) and the odds calculator (SEO-403); in categories, the
       // weekend and midweek pages. Parity holds for everything else, in order.
