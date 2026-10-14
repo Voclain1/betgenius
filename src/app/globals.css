@@ -86,9 +86,12 @@
   :root:not([data-theme]) {
     color-scheme: light;
 
-    --bg: 247 248 250; /* #f7f8fa — off-white; pure white makes the green glare */
+    /* #f0f6f2: a faint brand-green tint rather than a neutral grey, so the
+       page reads as BetGenius before any green element appears. Cards stay
+       pure white, which is what lifts them off it. */
+    --bg: 240 246 242;
     --card: 255 255 255;
-    --border: 226 231 237;
+    --border: 210 226 216;
 
     /* #007c33. Darker than it looks necessary: white-on-brand must clear WCAG
        AA (4.5:1) because it is the primary button, and `text-brand` is
@@ -140,9 +143,9 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: 247 248 250;
+  --bg: 240 246 242; /* see the note in the prefers-color-scheme block above */
   --card: 255 255 255;
-  --border: 226 231 237;
+  --border: 210 226 216;
 
   --brand: 0 124 51; /* see the note in the prefers-color-scheme block above */
   --brand-dark: 0 97 41;
@@ -180,6 +183,52 @@
 
   --surface: 255 255 255;
   --surface-alpha: 0.72;
+}
+
+/* BRAND SURFACE (light theme only)
+   A deep brand-green band for the page's headline areas: the homepage hero,
+   every page masthead and the footer (class "brand-surface"). It works by
+   redefining the tokens INSIDE the element, so everything already in it,
+   written with the usual gray-*, brand and card classes, renders legibly on
+   green with no per-component edits. In the dark theme the class does nothing.
+   Contrast for these values is checked in scripts/check-theme-contrast.ts. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .brand-surface {
+    --bg: 0 61 30;
+    --card: 0 77 38; /* #004d26 */
+    --border: 22 104 60;
+    --brand: 110 231 160;
+    --brand-dark: 74 210 130;
+    --on-brand: 0 40 20;
+    --gray-100: 255 255 255;
+    --gray-200: 236 248 240;
+    --gray-300: 209 235 218;
+    --gray-400: 176 214 190;
+    --gray-500: 150 196 168;
+    --gray-600: 110 160 130;
+    background-color: rgb(var(--card));
+    color: rgb(var(--gray-200));
+  }
+}
+:root[data-theme="light"] .brand-surface {
+  --bg: 0 61 30;
+  --card: 0 77 38;
+  --border: 22 104 60;
+  --brand: 110 231 160;
+  --brand-dark: 74 210 130;
+  --on-brand: 0 40 20;
+  --gray-100: 255 255 255;
+  --gray-200: 236 248 240;
+  --gray-300: 209 235 218;
+  --gray-400: 176 214 190;
+  --gray-500: 150 196 168;
+  --gray-600: 110 160 130;
+  /* Solid, whatever translucent card class the element carries: a see-through
+     green over the pale page would sit between the two palettes. */
+  background-color: rgb(var(--card));
+  /* Text with no colour class of its own inherits the page's dark ink;
+     restate it so it inherits the surface's light ink instead. */
+  color: rgb(var(--gray-200));
 }
 
 /* DEFAULT-SWAP: an explicit dark choice must restore the dark tokens even when

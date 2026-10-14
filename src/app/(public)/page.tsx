@@ -1,19 +1,16 @@
 import Link from "next/link";
 import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
 import type { Metadata } from "next";
-import { Lock } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
-import { LeagueBadge } from "@/components/LeagueBadge";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
-import { MatchLink } from "@/components/MatchLink";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { homeSummary, homeHeadline } from "@/lib/answerSummary";
@@ -21,7 +18,6 @@ import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getHomepageBetOfTheDay } from "@/lib/betOfTheDay";
 import { getLeaguesWithPublishedPredictions, popularLeagues, getPublishedMatchIndex, getFixtureEventContext } from "@/lib/predictionScope";
 import { matchKey } from "@/lib/slug";
-import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { SITE_NAME, JsonLd, websiteJsonLd } from "@/lib/seo";
 import { leagueSlug } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
@@ -37,7 +33,7 @@ import {
   HOMEPAGE_FEATURED_LIMIT,
 } from "@/lib/homepageFeatured";
 import { AdLeaderboard, AdNativeBand } from "@/components/ads/AdPlacements";
-import { PremiumPanel, textTone } from "@/components/PremiumPanel";
+import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
 
@@ -254,7 +250,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     // Fetched by its GENIUS tag, so GENIUS is a category it may present under.
     const category = presentedCategory(r.category, ["GENIUS"]);
     const canView = canViewCategory(category, viewer.tier, viewer.status, viewer.role);
-    return canView ? { ...r, category, locked: false } : { ...r, category, pick: "LOCKED", confidence: null, locked: true };
+    const outcome = showOutcomes ? r.outcome : null;
+    return canView ? { ...r, category, outcome, locked: false } : { ...r, category, outcome, pick: "LOCKED", confidence: null, locked: true };
   });
 
   const ARROW = "whitespace-nowrap text-sm font-semibold text-brand hover:underline";
@@ -266,7 +263,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           real published pick as its evidence on the right. Collapses to the
           original single column when nothing public is available, so the hero
           never renders a hole. */}
-      <section className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+      <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
         <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
         <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
         <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
@@ -350,61 +347,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <FeedDayTabs basePath="/" active={day} />
             </div>
           </div>
-          <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
-            <table className="w-full text-sm">
-              <thead className="border-b border-brand-border text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
-                <tr>
-                  <th className="px-4 py-3">Match</th>
-                  <th className="px-4 py-3">League</th>
-                  <th className="px-4 py-3">Market / Pick</th>
-                  <th className="px-4 py-3 text-right">Confidence</th>
-                  <th className="px-4 py-3 text-right">Result</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-brand-border">
-                {genius.map((p) => {
-                  const home = p.homeTeam ?? p.fixture?.homeTeam.name;
-                  const away = p.awayTeam ?? p.fixture?.awayTeam.name;
-                  const leagueName = p.leagueName ?? p.fixture?.league.name;
-                  const kickoff = p.kickoff ?? p.fixture?.kickoff;
-                  return (
-                    <tr key={p.id} className="transition hover:bg-brand-bg/40">
-                      <td className="px-4 py-3 font-semibold text-gray-100">
-                        <MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} />
-                      </td>
-                      <td className="px-4 py-3">
-                        {leagueName ? (
-                          <Link href={`/predictions/league/${leagueSlug(leagueName, p.leagueApiId)}`}>
-                            <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
-                          </Link>
-                        ) : (
-                          <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 font-black text-brand">
-                          {p.locked ? <><Lock size={14} /> Locked</> : p.pick}
-                        </div>
-                        <div className="text-xs text-gray-400">{p.market}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-base font-black tabular-nums text-gray-100">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
-                      <td className="px-4 py-3 text-right">
-                        {p.outcome !== "PENDING" ? (
-                          <span className={`text-[11px] font-black uppercase tracking-[0.14em] ${textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}`}>{p.outcome}</span>
-                        ) : kickoff ? (
-                          <span className="text-xs font-semibold text-gray-400">
-                            {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* The same tip table as every feed (crests, Score column, rows
+              that open the match), so the homepage never falls behind it. */}
+          <PredictionsTable rows={genius as any} linkRows />
           <div className="mt-4">
             <Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>
           </div>
@@ -467,7 +412,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             <Link href="/predictions/featured" className="underline">Browse all Featured picks</Link>.
           </p>
         ) : (
-          <PredictionsTable rows={featuredRows} />
+          <PredictionsTable rows={featuredRows} linkRows />
         )}
       </section>
 

@@ -129,30 +129,42 @@ export function ScoreCell({
   kickoff,
   finalHomeScore,
   finalAwayScore,
+  align = "left",
+  size = "sm",
+  hideWhenEmpty = false,
 }: {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
   finalHomeScore?: number | null;
   finalAwayScore?: number | null;
+  /** "right" for the detailed card, where the score sits opposite the team names. */
+  align?: "left" | "right";
+  /** "lg" sets the score at the card's heading size. */
+  size?: "sm" | "lg";
+  /** Render nothing (not a dash) before kickoff: the card has no column to hold. */
+  hideWhenEmpty?: boolean;
 }) {
   const live = useLive(homeTeamApiId, awayTeamApiId, kickoff);
+  const right = align === "right";
+  const wrap = `space-y-0.5 ${right ? "text-right" : ""}`;
   const score = (h: number | null | undefined, a: number | null | undefined, tone: string) => (
-    <div className={`text-sm font-black tabular-nums ${tone}`}>
+    <div className={`${size === "lg" ? "text-xl" : "text-sm"} font-black tabular-nums ${tone}`}>
       {h ?? "-"}
       <span className="mx-1 text-gray-500">-</span>
       {a ?? "-"}
     </div>
   );
+  const label = (text: string, tone: string) => <div className={`${STATUS} ${tone}`}>{text}</div>;
 
   if (live && !live.ended) {
     const halfTime = live.short === "HT";
     return (
-      <div className="space-y-0.5">
+      <div className={wrap}>
         {halfTime ? (
-          <span className={`${STATUS} text-amber-400`}>HT</span>
+          label("HT", "text-amber-400")
         ) : (
-          <div className="flex items-center gap-1.5 text-red-400">
+          <div className={`flex items-center gap-1.5 text-red-400 ${right ? "justify-end" : ""}`}>
             <LiveDot />
             <span className="text-xs font-bold tabular-nums">{live.elapsed != null ? `${live.elapsed}'` : statusLabel(live.short)}</span>
           </div>
@@ -163,19 +175,19 @@ export function ScoreCell({
   }
   if (finalHomeScore != null && finalAwayScore != null) {
     return (
-      <div className="space-y-0.5">
-        <span className={`${STATUS} text-gray-500`}>FT</span>
+      <div className={wrap}>
+        {label("FT", "text-gray-500")}
         {score(finalHomeScore, finalAwayScore, "text-gray-200")}
       </div>
     );
   }
   if (live?.ended) {
     return (
-      <div className="space-y-0.5">
-        <span className={`${STATUS} text-gray-500`}>FT</span>
+      <div className={wrap}>
+        {label("FT", "text-gray-500")}
         {score(live.home, live.away, "text-gray-200")}
       </div>
     );
   }
-  return <span className="text-xs text-gray-500">—</span>;
+  return hideWhenEmpty ? null : <span className="text-xs text-gray-500">—</span>;
 }

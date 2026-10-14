@@ -151,6 +151,23 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("score column: the match name keeps its vs", upcoming.includes('<span class="text-gray-500">vs</span>'));
 }
 
+// Detailed cards: the score opposite the team names once there is one, nothing before.
+{
+  const settled = html(<CategoryPredictionsList category="BANKER" rows={rows(1, { finalHomeScore: 3, finalAwayScore: 0 }) as any} view="detailed" />);
+  const upcoming = html(<CategoryPredictionsList category="BANKER" rows={rows(1) as any} view="detailed" />);
+  check("card: a settled tip shows FT and its result beside the teams", settled.includes(">FT<") && /3<span[^>]*>-<\/span>0/.test(settled));
+  check("card: before kickoff the score adds nothing (no dash, no FT)", !upcoming.includes(">FT<") && !upcoming.includes('<span class="text-xs text-gray-500">—</span>'));
+  const home = readFileSync(join(__dirname, "..", "src", "app", "(public)", "page.tsx"), "utf8");
+  check("homepage Genius uses the shared tip table (crests, Score column, linked rows)", home.includes("<PredictionsTable rows={genius as any} linkRows />") && !home.includes("Market / Pick"));
+  const css = readFileSync(join(__dirname, "..", "src", "app", "globals.css"), "utf8");
+  const masthead = readFileSync(join(__dirname, "..", "src", "components", "CategoryMasthead.tsx"), "utf8");
+  const footer = readFileSync(join(__dirname, "..", "src", "components", "SiteFooter.tsx"), "utf8");
+  check("light theme: hero, mastheads and footer carry the brand surface",
+    home.includes('className="brand-surface relative') && masthead.includes('className="brand-surface relative') && footer.includes('className="brand-surface '));
+  check("light theme: the brand surface is defined for both light selectors and never for dark",
+    css.includes(':root:not([data-theme]) .brand-surface') && css.includes(':root[data-theme="light"] .brand-surface') && !css.includes('[data-theme="dark"] .brand-surface'));
+}
+
 // Yesterday's result chips survive into Compact (PredictionsTable's Result column).
 {
   const settled = rows(3).map((r, i) => ({ ...r, outcome: i === 0 ? "WON" : "LOST" }));
