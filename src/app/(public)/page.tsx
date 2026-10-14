@@ -9,6 +9,7 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
+import { getRecentResults } from "@/lib/recentResultsSnapshot";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
 import { HeroPick, type HeroPickData } from "@/components/HeroPick";
@@ -222,7 +223,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
-  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay, slate] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay, slate, recentResults] = await Promise.all([
     fetchFeatured(day),
     fetchGeniusPreview(day),
     getServerSession(authOptions),
@@ -231,6 +232,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     fetchHeroPick(),
     getHomepageBetOfTheDay(),
     fetchDaySlate(day),
+    // Never throws: a failed read serves the last stored copy, or nothing.
+    getRecentResults(),
   ]);
   // Crests for the Bet of the Day card: one batched read, only when a pick holds the slot.
   const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;
@@ -436,19 +439,23 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           chrome. See the placement rule in AdPlacements.tsx. */}
       <AdLeaderboard />
 
-      <PremiumPanel
-        kicker="Final scores"
-        title="Recent results"
-        id="home-results"
-        aside={
-          <Link href="/livescores" className={ARROW}>
-            Livescores →
-          </Link>
-        }
-        bare
-      >
-        <RecentResults linkIndex={matchIndex} />
-      </PremiumPanel>
+      {/* Only when something has actually finished: an empty "no results"
+          box is not worth the space it takes. */}
+      {recentResults.length > 0 && (
+        <PremiumPanel
+          kicker="Final scores"
+          title="Recent results"
+          id="home-results"
+          aside={
+            <Link href="/livescores" className={ARROW}>
+              Livescores →
+            </Link>
+          }
+          bare
+        >
+          <RecentResults rows={recentResults} linkIndex={matchIndex} />
+        </PremiumPanel>
+      )}
 
       <PremiumPanel
         kicker="Every competition"

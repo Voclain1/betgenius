@@ -412,7 +412,7 @@ export function isSeniorWomensCompetition(leagueApiId?: number | null): boolean 
 
 export type LeagueVisual = { src: string; alt: string; name: string; country: string };
 
-/** True if `leagueApiId` is one of the headline competitions — backs the major-league default on /fixtures and the homepage's Recent results filter. NOT a test of whether we can display the league; that's getLeagueVisual. */
+/** True if `leagueApiId` is one of the headline competitions — backs the major-league default on /fixtures. (The homepage's Recent results covers every men's CORE and SECONDARY competition; see src/lib/recentResultsSnapshot.ts.) NOT a test of whether we can display the league; that's getLeagueVisual. */
 export function isMajorLeague(leagueApiId?: number | null): boolean {
   if (leagueApiId == null) return false;
   return (MAJOR_LEAGUE_IDS as readonly number[]).includes(leagueApiId);
