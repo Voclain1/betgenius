@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
+import { LiveKickoff } from "@/components/LiveScores";
 import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
@@ -127,7 +128,9 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
                 <td className="hidden px-3 py-3 text-right font-black tabular-nums text-gray-100 md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
-                  {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  <LiveKickoff homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} kickoff={kickoff}>
+                    {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </LiveKickoff>
                 </td>
                 {linkRows && (
                   <td className="px-3 py-3 text-right">

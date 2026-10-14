@@ -1,0 +1,58 @@
+# Read-only production SEO check, runnable without a terminal (release gate 4
+# in docs/SEO_GROWTH_PROGRAMME.md):
+#
+#   sitemap-parity     every sitemap URL resolves to an indexable,
+#                      self-canonical HTML page (scripts/check-sitemap-parity.mjs)
+#   metadata-audit     titles, descriptions and H1 by page template
+#                      (scripts/audit-production-metadata.mjs); the JSON report
+#                      is kept as a run artifact
+#
+# Only GET requests to the public site; no secrets. Trigger it from the Actions
+# tab ("Run workflow"), or by pushing a change to either script or this file on
+# a claude/* branch.
+
+name: seo-production-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: "Site to check"
+        default: "https://www.betgenius.ng"
+  push:
+    branches: ["claude/**"]
+    paths:
+      - scripts/check-sitemap-parity.mjs
+      - scripts/audit-production-metadata.mjs
+      - .github/workflows/seo-production-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sitemap-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-sitemap-parity.mjs --origin="${{ github.event.inputs.origin || 'https://www.betgenius.ng' }}"
+
+  metadata-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: mkdir -p artifacts
+      - run: node scripts/audit-production-metadata.mjs --origin="${{ github.event.inputs.origin || 'https://www.betgenius.ng' }}" --json=artifacts/seo-metadata.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seo-metadata
+          path: artifacts/seo-metadata.json
+          if-no-files-found: ignore

@@ -7,6 +7,7 @@ import { PushOnboarding } from "@/components/PushOnboarding";
 import { GoogleOneTap } from "@/components/GoogleOneTap";
 import { AppTabBar } from "@/components/AppTabBar";
 import { Preloader } from "@/components/Preloader";
+import { LiveScoresProvider } from "@/components/LiveScores";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -27,7 +28,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           space — the heading sits exactly where it always did. */}
       <main className="mx-auto max-w-7xl px-4 py-6">
         <BackButton />
-        {children}
+        {/* Live scores on tips (src/components/LiveScores.tsx): renders no
+            element of its own, and polls only while a match on the page is
+            in play. */}
+        <LiveScoresProvider>{children}</LiveScoresProvider>
       </main>
       <SiteFooter />
       {/* The push onboarding prompt. Mounted here rather than in the root

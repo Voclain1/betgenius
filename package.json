@@ -52,6 +52,7 @@
     "check:tier-provenance": "tsx scripts/check-tier-provenance.ts",
     "check:banker-curation": "tsx scripts/check-banker-curation.ts",
     "check:period-predictions": "tsx scripts/check-period-predictions.ts",
+    "check:live-snapshot": "tsx scripts/check-live-snapshot.ts",
     "check:vip-premium": "tsx scripts/check-vip-premium-gate.ts",
     "verify:vip-premium": "tsx --env-file=.env scripts/verify-vip-premium-pass.ts",
     "check:betofday-targeting": "tsx scripts/check-betofday-targeting.ts",
