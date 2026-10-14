@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { matchSlug, teamSlug } from "@/lib/slug";
 import { TeamCrest } from "@/components/TeamCrest";
-import { LiveVs } from "@/components/LiveScores";
 
 /**
  * Renders "Home vs Away" pointing at that fixture's match page — the single
@@ -40,7 +39,7 @@ export function MatchLink({
     return (
       <Link href={`/predictions/match/${slug}`} className={className}>
         {homeCrest}
-        {homeTeam} <LiveVs homeTeamApiId={homeTeamApiId} awayTeamApiId={awayTeamApiId} kickoff={kickoff} /> {awayCrest}
+        {homeTeam} <span className="text-gray-500">vs</span> {awayCrest}
         {awayTeam}
       </Link>
     );

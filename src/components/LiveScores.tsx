@@ -4,9 +4,8 @@ import { classifyStatus, statusLabel } from "@/lib/matchStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 /**
- * Live scores on tips, in place of what is already there: the score replaces
- * the "vs" between the team names, and the minute replaces the kickoff time.
- * No row, badge or spacing is added, so nothing on the page moves.
+ * Live scores and results on tips, in their own Score column (ScoreCell),
+ * styled as on the Livescores page.
  *
  * ONE poll per page, and only while a match on it can be in play: from kickoff
  * to LIVE_WINDOW_MS after. A page of upcoming or settled tips never polls. The
@@ -104,30 +103,79 @@ function useLive(home?: number | null, away?: number | null, kickoff?: string | 
   return ctx.scores.get(keyOf(home, away)) ?? null;
 }
 
-/** "vs" until the match is live, then the score in the same place. */
-export function LiveVs({ homeTeamApiId, awayTeamApiId, kickoff }: { homeTeamApiId?: number | null; awayTeamApiId?: number | null; kickoff?: string | Date | null }) {
-  const live = useLive(homeTeamApiId, awayTeamApiId, kickoff);
-  if (!live || live.home == null || live.away == null) return <span className="text-gray-500">vs</span>;
+function LiveDot() {
   return (
-    <span className="font-black tabular-nums text-gray-100" aria-label={`score ${live.home} to ${live.away}`}>
-      {live.home}–{live.away}
+    <span className="relative flex h-2 w-2 shrink-0">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
     </span>
   );
 }
 
-/** The kickoff time until the match is live, then the minute (or HT) in the same place. */
-export function LiveKickoff({
+const STATUS = "whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em]";
+
+/**
+ * The Score column on a tip row, in the Livescores page's language
+ * (src/components/MatchList.tsx): in play, the pulsing dot and the minute over
+ * the score; half-time in amber; finished, "FT" in grey over the result.
+ * Before kickoff, a dash.
+ *
+ * A finished match drops out of the in-play feed, so the result comes from the
+ * last score seen on this page, or from the settled tip's stored final score.
+ */
+export function ScoreCell({
   homeTeamApiId,
   awayTeamApiId,
   kickoff,
-  children,
+  finalHomeScore,
+  finalAwayScore,
 }: {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
-  children: React.ReactNode;
+  finalHomeScore?: number | null;
+  finalAwayScore?: number | null;
 }) {
   const live = useLive(homeTeamApiId, awayTeamApiId, kickoff);
-  if (!live || live.ended) return <>{children}</>;
-  return <span className="font-bold text-red-400">{live.elapsed != null && live.short !== "HT" ? `${live.elapsed}'` : statusLabel(live.short)}</span>;
+  const score = (h: number | null | undefined, a: number | null | undefined, tone: string) => (
+    <div className={`text-sm font-black tabular-nums ${tone}`}>
+      {h ?? "-"}
+      <span className="mx-1 text-gray-500">-</span>
+      {a ?? "-"}
+    </div>
+  );
+
+  if (live && !live.ended) {
+    const halfTime = live.short === "HT";
+    return (
+      <div className="space-y-0.5">
+        {halfTime ? (
+          <span className={`${STATUS} text-amber-400`}>HT</span>
+        ) : (
+          <div className="flex items-center gap-1.5 text-red-400">
+            <LiveDot />
+            <span className="text-xs font-bold tabular-nums">{live.elapsed != null ? `${live.elapsed}'` : statusLabel(live.short)}</span>
+          </div>
+        )}
+        {score(live.home, live.away, "text-gray-100")}
+      </div>
+    );
+  }
+  if (finalHomeScore != null && finalAwayScore != null) {
+    return (
+      <div className="space-y-0.5">
+        <span className={`${STATUS} text-gray-500`}>FT</span>
+        {score(finalHomeScore, finalAwayScore, "text-gray-200")}
+      </div>
+    );
+  }
+  if (live?.ended) {
+    return (
+      <div className="space-y-0.5">
+        <span className={`${STATUS} text-gray-500`}>FT</span>
+        {score(live.home, live.away, "text-gray-200")}
+      </div>
+    );
+  }
+  return <span className="text-xs text-gray-500">—</span>;
 }
