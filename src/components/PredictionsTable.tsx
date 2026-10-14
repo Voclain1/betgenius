@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
-import { LiveKickoff } from "@/components/LiveScores";
+import { ScoreCell } from "@/components/LiveScores";
 import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
@@ -25,6 +25,9 @@ export type PredictionTableRow = {
   /** Settled result; populated only on the Yesterday view. See PredictionRow. */
   outcome?: string | null;
   locked?: boolean;
+  /** The match's final score, stored when the tip settles. */
+  finalHomeScore?: number | null;
+  finalAwayScore?: number | null;
   fixture?: {
     kickoff: string | Date;
     league: { name: string };
@@ -64,10 +67,10 @@ export function PredictionsTable({
   // default (today) table renders with precisely the columns it had before.
   const showOutcome = rows.some((r) => r.outcome && r.outcome !== "PENDING");
   // Counted, not hard-coded: an ad row spanning the wrong number of columns
-  // would either leave a gap or stretch the table. Six fixed columns —
-  // League, Match, Pick, Over/Under, Confidence, Kickoff — plus Result when
-  // it is showing.
-  const columnCount = 6 + (showOutcome ? 1 : 0) + (linkRows ? 1 : 0);
+  // would either leave a gap or stretch the table. Seven fixed columns —
+  // League, Match, Pick, Score, Over/Under, Confidence, Kickoff — plus Result
+  // when it is showing and the open arrow when rows link.
+  const columnCount = 7 + (showOutcome ? 1 : 0) + (linkRows ? 1 : 0);
   const adAfter = new Map(ads.map((a) => [a.after, a.node]));
   return (
     <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
@@ -77,6 +80,7 @@ export function PredictionsTable({
             <th className="px-3 py-3">League</th>
             <th className="px-3 py-3">Match</th>
             <th className="px-3 py-3">Pick</th>
+            <th className="px-3 py-3">Score</th>
             {showOutcome && <th className="px-3 py-3">Result</th>}
             <th className="hidden px-3 py-3 sm:table-cell">Over/Under</th>
             <th className="hidden px-3 py-3 text-right md:table-cell">Confidence</th>
@@ -113,6 +117,15 @@ export function PredictionsTable({
                     <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : p.pick}</Link>
                   ) : p.locked ? "LOCKED" : p.pick}
                 </td>
+                <td className="whitespace-nowrap px-3 py-3">
+                  <ScoreCell
+                    homeTeamApiId={p.homeTeamApiId}
+                    awayTeamApiId={p.awayTeamApiId}
+                    kickoff={kickoff}
+                    finalHomeScore={p.finalHomeScore}
+                    finalAwayScore={p.finalAwayScore}
+                  />
+                </td>
                 {showOutcome && (
                   <td className="px-3 py-3">
                     {p.outcome && p.outcome !== "PENDING" ? (
@@ -128,9 +141,7 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
                 <td className="hidden px-3 py-3 text-right font-black tabular-nums text-gray-100 md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
-                  <LiveKickoff homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} kickoff={kickoff}>
-                    {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </LiveKickoff>
+                  {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
                 {linkRows && (
                   <td className="px-3 py-3 text-right">

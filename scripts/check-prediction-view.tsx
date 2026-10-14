@@ -141,6 +141,16 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("paid feed page: the description names no paid matches", /cat === "VIP" \|\| cat === "PREMIUM" \? null : fixtureSample\(/.test(page));
 }
 
+// The Score column: its own column after Pick, never folded into the match name.
+{
+  const settled = html(<CategoryPredictionsList category="TODAY" rows={rows(1, { finalHomeScore: 2, finalAwayScore: 1 }) as any} />);
+  const upcoming = html(<CategoryPredictionsList category="TODAY" rows={rows(1) as any} />);
+  check("score column: header sits right after Pick", /Pick<\/th><th[^>]*>Score<\/th>/.test(settled), settled.slice(0, 600));
+  check("score column: a settled tip shows FT and its result", settled.includes(">FT<") && /2<span[^>]*>-<\/span>1/.test(settled));
+  check("score column: a tip not yet played shows a dash", /Score<\/th>[\s\S]*<td class="whitespace-nowrap px-3 py-3"><span class="text-xs text-gray-500">—<\/span>/.test(upcoming));
+  check("score column: the match name keeps its vs", upcoming.includes('<span class="text-gray-500">vs</span>'));
+}
+
 // Yesterday's result chips survive into Compact (PredictionsTable's Result column).
 {
   const settled = rows(3).map((r, i) => ({ ...r, outcome: i === 0 ? "WON" : "LOST" }));
