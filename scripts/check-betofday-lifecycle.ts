@@ -114,6 +114,9 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
   const page = readFileSync("src/app/(public)/predictions/bet-of-the-day/page.tsx", "utf8");
   check("the dedicated page labels a finished pick", page.includes("has finished — result:") && page.includes("inactive={!live}"));
   check("...and does not index it as a recommendation", /!isCurrentBetOfTheDay\(row\)[\s\S]*?index: false/.test(page));
+  const sitemap = readFileSync("src/lib/sitemapEntries.ts", "utf8");
+  check("...and the sitemap lists the page only while the pick is current (same gate as its noindex)",
+    /cat !== "BET_OF_THE_DAY" \|\| isCurrentBetOfTheDay\(r, now\)/.test(sitemap));
 
   if (failures) {
     console.error(`\n${failures} Bet of the Day lifecycle check(s) failed`);

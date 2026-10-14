@@ -7,6 +7,7 @@ import { getSubstantiveH2HSlugs, getSubstantiveMatchSlugs } from "@/lib/predicti
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
 import { PERIODS, periodWindow, qualifiesForPeriod } from "@/lib/periodPredictions";
+import { isCurrentBetOfTheDay } from "@/lib/betOfTheDayStatus";
 import { isLagosToday, lagosDayBounds } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 import { GUIDES } from "@/content/guides";
@@ -136,6 +137,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
       publishedAt: true,
       marketType: true,
       selection: true,
+      outcome: true,
       categories: { select: { category: true } },
     },
   });
@@ -146,7 +148,14 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
   // One entry per category that actually has published rows — mirrors the
   // noindex-when-empty gate on /predictions/[category].
   for (const cat of PREDICTION_CATEGORIES) {
-    const catRows = rows.filter((r) => cat === "TODAY" || r.categories.some((c) => c.category === cat));
+    const catRows = rows.filter(
+      (r) =>
+        (cat === "TODAY" || r.categories.some((c) => c.category === cat)) &&
+        // The Bet of the Day page is noindex once its pick has kicked off or
+        // settled (isCurrentBetOfTheDay, the page's own metadata gate), so it
+        // is listed only while the pick is still a live recommendation.
+        (cat !== "BET_OF_THE_DAY" || isCurrentBetOfTheDay(r, now)),
+    );
     if (catRows.length === 0) continue;
     // CATEGORY_TO_SLUG, not cat.toLowerCase(). The enum and the route slug are
     // not the same string: SAME_GAME_DOUBLE lives at /predictions/combo-bets
