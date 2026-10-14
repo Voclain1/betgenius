@@ -11,8 +11,8 @@ react.cache = (fn: any) => fn;
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { LIVE_POLICY, callsToday, mayRefresh, parseLiveSnapshot, trimLiveRow, type LiveSnapshot } from "../src/lib/liveSnapshot";
-import { DAILY_LIMIT } from "../src/lib/football/usage";
+import { LIVE_POLICY, callsToday, parseLiveSnapshot, refreshIntervalSeconds, trimLiveRow, type LiveSnapshot } from "../src/lib/liveSnapshot";
+import { DAILY_LIMIT, RESERVE } from "../src/lib/football/usage";
 import { anyInPlayWindow, LIVE_WINDOW_MS } from "../src/components/LiveScores";
 
 let failures = 0;
@@ -24,28 +24,41 @@ function check(name: string, ok: boolean, got?: unknown) {
 const NOW = new Date("2026-10-14T19:00:00Z");
 const snap = (over: Partial<LiveSnapshot> = {}): LiveSnapshot => ({ version: 1, day: "2026-10-14", calls: 0, fetchedAt: null, rows: [], ...over });
 
-// The ceiling, independent of readers.
-check("refresh is at most once per 30 seconds site-wide", LIVE_POLICY.REFRESH_SECONDS >= 30);
-check("the daily cap is a small share of the plan", LIVE_POLICY.DAILY_CALL_CAP <= DAILY_LIMIT * 0.2, LIVE_POLICY.DAILY_CALL_CAP);
-check("refused at the daily cap", !mayRefresh(snap({ calls: LIVE_POLICY.DAILY_CALL_CAP }), NOW, 5_000).ok);
-check("allowed below the cap with headroom", mayRefresh(snap({ calls: LIVE_POLICY.DAILY_CALL_CAP - 1 }), NOW, 5_000).ok);
-check("refused when quota headroom is low", !mayRefresh(snap(), NOW, LIVE_POLICY.MIN_QUOTA_REMAINING - 1).ok);
-check("refused when the quota cannot be read (fails closed)", !mayRefresh(snap(), NOW, null).ok);
-check("yesterday's count does not block today", callsToday(snap({ day: "2026-10-13", calls: 9_999 }), NOW) === 0);
+// Freshness: as fast as the plan allows, all day.
+check("the fastest refresh is every 15 seconds", LIVE_POLICY.MIN_REFRESH_SECONDS === 15);
+check("plenty of quota: refresh every 15 seconds", refreshIntervalSeconds(4_000, NOW) === 15, refreshIntervalSeconds(4_000, NOW));
+{
+  // 19:00 UTC, 5 hours left; 600 calls above the reserve: spread to one per 30 s, not frozen.
+  const i = refreshIntervalSeconds(LIVE_POLICY.GENERATION_RESERVE + 600, NOW);
+  check("low quota slows the refresh instead of freezing it", i === 30, i);
+}
+check("nothing left above the reserve: no refresh", refreshIntervalSeconds(LIVE_POLICY.GENERATION_RESERVE, NOW) === null);
+check("quota unknown: no refresh (fails closed)", refreshIntervalSeconds(null, NOW) === null);
+check("the reserve kept for generation is a small, real share", LIVE_POLICY.GENERATION_RESERVE >= 300 && LIVE_POLICY.GENERATION_RESERVE <= 1_000);
+check("yesterday's count does not carry into today", callsToday(snap({ day: "2026-10-13", calls: 9_999 }), NOW) === 0);
 check("a corrupt stored copy reads as empty, not as a licence to call", parseLiveSnapshot("{oops").calls === 0 && parseLiveSnapshot("{oops").rows.length === 0);
 
-// Worst case: a reader every second all day. Calls = lease windows that pass mayRefresh.
+// Worst case: a reader every second all day, other jobs spending 3,000 calls.
+// Live never takes the reserve, and never stops before midnight while there is budget.
 {
-  let s = snap({ day: "" });
-  let calls = 0;
-  for (let t = 0; t < 86_400; t += LIVE_POLICY.REFRESH_SECONDS) {
+  const usable = DAILY_LIMIT - RESERVE;
+  let used = 3_000;
+  let live = 0;
+  let next = 0;
+  let lastRefresh = -1;
+  for (let t = 0; t < 86_400; t++) {
+    if (t < next) continue;
     const at = new Date(Date.parse("2026-10-14T00:00:00Z") + t * 1_000);
-    if (mayRefresh(s, at, 5_000).ok) {
-      calls++;
-      s = { ...s, day: "2026-10-14", calls: callsToday(s, at) + 1 };
-    }
+    const i = refreshIntervalSeconds(usable - used, at);
+    if (i == null) break;
+    used++;
+    live++;
+    lastRefresh = t;
+    next = t + i;
   }
-  check(`a full day of constant readers spends at most ${LIVE_POLICY.DAILY_CALL_CAP} calls`, calls === LIVE_POLICY.DAILY_CALL_CAP, calls);
+  check("a full day of constant readers never spends the generation reserve", usable - used >= LIVE_POLICY.GENERATION_RESERVE - 1, usable - used);
+  check("live scores keep refreshing into the last hour of the day", lastRefresh >= 86_400 - 3_600, lastRefresh);
+  console.log(`      (simulated: ${live} live calls, ${usable - used} left at midnight)`);
 }
 
 // The stored row carries only what the views read.
@@ -76,7 +89,7 @@ check("a corrupt stored copy reads as empty, not as a licence to call", parseLiv
   const route = readFileSync(join(__dirname, "..", "src", "app", "api", "livescores", "route.ts"), "utf8");
   check("/api/livescores reads the shared snapshot, never the provider directly", route.includes("getLiveSnapshot()") && !route.includes("getLiveFixtures"));
   const lib = readFileSync(join(__dirname, "..", "src", "lib", "liveSnapshot.ts"), "utf8");
-  check("the provider call sits behind the lease and the cap", lib.indexOf("claimRefresh(now)") < lib.indexOf("getLiveFixtures()") && lib.indexOf("mayRefresh(previous") < lib.indexOf("await getLiveFixtures()"));
+  check("the provider call sits behind the quota-paced lease", lib.indexOf("refreshIntervalSeconds(usage") < lib.indexOf("claimRefresh(now, interval)") && lib.indexOf("claimRefresh(now, interval)") < lib.indexOf("await getLiveFixtures()"));
 }
 
 if (failures) {

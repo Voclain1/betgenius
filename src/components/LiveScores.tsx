@@ -13,7 +13,8 @@ import type { FixtureRow } from "@/lib/football/api-football";
  * add provider calls (src/lib/liveSnapshot.ts).
  */
 
-const POLL_MS = 30_000;
+/** Matches the shared snapshot's fastest refresh (LIVE_POLICY.MIN_REFRESH_SECONDS). */
+const POLL_MS = 15_000;
 /** Kickoff to full time with stoppage and a half-time over-run. */
 export const LIVE_WINDOW_MS = 150 * 60_000;
 
