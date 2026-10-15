@@ -6,6 +6,7 @@ import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { getUsageSnapshot } from "@/lib/football/usage";
+import { excludeCoveredFixtures } from "@/lib/generation/existingCoverage";
 import { z } from "zod";
 
 // A bulk run is sequential and already slow: ~11 throttled api-football calls
@@ -53,14 +54,18 @@ export async function POST(req: Request) {
   const { remaining } = await getUsageSnapshot();
   const affordable = Math.floor(remaining / CALLS_PER_FIXTURE);
 
-  const candidates = fixturesByLeague
+  const notStarted = fixturesByLeague
     .flat()
     .filter((f): f is FixtureRow => !!f && f.fixture.status.short === "NS");
+  // Fixtures that already have live or in-review tips (from the scheduler or an
+  // earlier run) are left out BEFORE the limit, so "Max fixtures" counts only
+  // matches that need tips and no fixture gets a second set.
+  const { open: candidates, covered } = await excludeCoveredFixtures(notStarted);
   const upcoming = candidates.slice(0, Math.min(limit, affordable));
 
   if (candidates.length > 0 && upcoming.length === 0) {
     return NextResponse.json(
-      { error: "api-football daily quota exhausted — no budget left to generate today.", found: candidates.length, quotaRemaining: remaining },
+      { error: "api-football daily quota exhausted — no budget left to generate today.", found: candidates.length, alreadyCovered: covered, quotaRemaining: remaining },
       { status: 429 },
     );
   }
@@ -97,6 +102,8 @@ export async function POST(req: Request) {
     // Surfaced so a truncated batch is visible to the admin rather than looking
     // like the league simply had fewer fixtures than expected.
     skippedForQuota: Math.max(0, Math.min(limit, candidates.length) - upcoming.length),
+    // Not generated because they already have tips; each links to the existing one.
+    alreadyCovered: covered,
     quotaRemaining: (await getUsageSnapshot()).remaining,
     results,
   });
