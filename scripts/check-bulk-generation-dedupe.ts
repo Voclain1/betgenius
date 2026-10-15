@@ -10,6 +10,7 @@ export {};
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { splitByCoverage } from "../src/lib/generation/existingCoverage";
+import { BULK_TIME_BUDGET_MS, bulkFailureReason } from "../src/lib/generation/bulkRun";
 import type { FixtureRow } from "../src/lib/football/api-football";
 
 let failures = 0;
@@ -63,6 +64,16 @@ check(
   route.indexOf("excludeCoveredFixtures(notStarted)") > 0 && route.indexOf("excludeCoveredFixtures(notStarted)") < route.indexOf("candidates.slice(0"),
 );
 check("the bulk route reports what it skipped", /alreadyCovered: covered/.test(route));
+
+// A run must answer before the server's 300 s cut-off, with room for the fixture in flight.
+check("the time budget leaves at least a minute under maxDuration", BULK_TIME_BUDGET_MS <= 240_000 && /maxDuration = 300/.test(route), BULK_TIME_BUDGET_MS);
+check("the budget is counted from the start of the request", route.indexOf("const startedAt = Date.now()") < route.indexOf("resolveSeason("));
+check("fixtures past the budget are reported, not dropped", /notReached\.push/.test(route) && /notReached,/.test(route));
+const named = (name: string, message = "") => Object.assign(new Error(message), { name });
+check("a rejected draft says so", /writing checks/.test(bulkFailureReason(named("CertaintyLanguageError"))));
+check("an unavailable model says so", /did not respond/.test(bulkFailureReason(named("AllProvidersFailedError"))));
+check("failure reasons never name a provider", !/gemini|groq/i.test(bulkFailureReason(named("Error", "gemini 503 from groq"))));
+check("the full error is logged", /console\.error\("\[api\/admin\/ai\/bulk\]"/.test(route));
 
 if (failures) {
   console.error(`\n${failures} check(s) failed`);
