@@ -7,6 +7,7 @@ import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/footb
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { excludeCoveredFixtures } from "@/lib/generation/existingCoverage";
+import { BULK_TIME_BUDGET_MS, bulkFailureReason } from "@/lib/generation/bulkRun";
 import { z } from "zod";
 
 // A bulk run is sequential and already slow: ~11 throttled api-football calls
@@ -28,6 +29,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
   const session = await getServerSession(authOptions);
   if (!isAdmin(session?.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -71,8 +73,17 @@ export async function POST(req: Request) {
   }
 
   // Generate sequentially — avoids hammering the AI/football APIs with a burst of parallel calls.
+  //
+  // Stops starting new fixtures once BULK_TIME_BUDGET_MS has gone (counted from the start of the request), so a long batch
+  // returns what it finished instead of being killed at maxDuration (which the
+  // panel saw as the whole run failing, with nothing reported).
   const results: Array<{ home: string; away: string; ok: boolean; predictionIds?: string[]; contextComplete?: boolean; error?: string }> = [];
+  const notReached: Array<{ home: string; away: string }> = [];
   for (const f of upcoming) {
+    if (Date.now() - startedAt > BULK_TIME_BUDGET_MS) {
+      notReached.push({ home: f.teams.home.name, away: f.teams.away.name });
+      continue;
+    }
     try {
       const { predictions } = await generateAndPersistPrediction({
         home: f.teams.home.name,
@@ -93,7 +104,8 @@ export async function POST(req: Request) {
         contextComplete: predictions[0]?.contextComplete,
       });
     } catch (err: any) {
-      results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: false, error: "Prediction generation failed. Try again shortly." });
+      console.error("[api/admin/ai/bulk]", `${f.teams.home.name} v ${f.teams.away.name}`, err);
+      results.push({ home: f.teams.home.name, away: f.teams.away.name, ok: false, error: bulkFailureReason(err) });
     }
   }
 
@@ -104,6 +116,8 @@ export async function POST(req: Request) {
     skippedForQuota: Math.max(0, Math.min(limit, candidates.length) - upcoming.length),
     // Not generated because they already have tips; each links to the existing one.
     alreadyCovered: covered,
+    // Left for the next run: the time budget ran out before they started.
+    notReached,
     quotaRemaining: (await getUsageSnapshot()).remaining,
     results,
   });

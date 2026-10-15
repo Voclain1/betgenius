@@ -69,13 +69,16 @@ export async function excludeCoveredFixtures(fixtures: readonly FixtureRow[]): P
   const ids = fixtures.map((f) => f.fixture.id);
   const homeIds = fixtures.map((f) => f.teams.home.id);
   const times = fixtures.map((f) => new Date(f.fixture.date).getTime()).filter((t) => !Number.isNaN(t));
-  // The matchKey fallback compares UTC days, so read a day either side of the slate.
-  const from = new Date(Math.min(...times) - 86_400_000);
-  const to = new Date(Math.max(...times) + 86_400_000);
+  // The matchKey fallback compares UTC days, so read a day either side of the
+  // slate. No readable kickoff (never seen from the provider): id match only,
+  // rather than an Invalid Date that would fail the whole run.
+  const byTeams = times.length
+    ? [{ homeTeamApiId: { in: homeIds }, kickoff: { gte: new Date(Math.min(...times) - 86_400_000), lte: new Date(Math.max(...times) + 86_400_000) } }]
+    : [];
   const existing = await prisma.prediction.findMany({
     where: {
       status: { not: "ARCHIVED" },
-      OR: [{ fixtureApiId: { in: ids } }, { homeTeamApiId: { in: homeIds }, kickoff: { gte: from, lte: to } }],
+      OR: [{ fixtureApiId: { in: ids } }, ...byTeams],
     },
     select: { id: true, status: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });

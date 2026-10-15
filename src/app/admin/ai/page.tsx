@@ -81,7 +81,14 @@ export default function AIPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bulkForm),
       });
-      const j = await res.json();
+      // A run the server cut off answers with an HTML error page, not JSON.
+      const j = await res.json().catch(() => {
+        throw new Error(
+          res.status === 504 || res.status === 502
+            ? "The run took too long and was stopped by the server. Tips finished before the cut-off are saved; run again with fewer fixtures for the rest."
+            : `Bulk generate failed (HTTP ${res.status}).`,
+        );
+      });
       if (!res.ok) throw new Error(j.error?.message || j.error || "Failed");
       setBulkResult(j);
     } catch (e: any) {
@@ -278,6 +285,7 @@ export default function AIPanel() {
           <h3 className="text-sm uppercase text-gray-400">
             {bulkResult.found} fixture{bulkResult.found === 1 ? "" : "s"} found · {bulkResult.results.filter((r: any) => r.ok).length} generated
             {bulkResult.alreadyCovered?.length ? ` · ${bulkResult.alreadyCovered.length} skipped, already have tips` : ""}
+            {bulkResult.notReached?.length ? ` · ${bulkResult.notReached.length} left for the next run (time limit)` : ""}
           </h3>
           {bulkResult.results.length === 0 ? (
             <p className="text-sm text-gray-400">
