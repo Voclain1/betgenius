@@ -220,7 +220,7 @@ export default function AIPanel() {
           VIP and Premium tips stay manual, one at a time, above. Everything lands as Pending review — nothing publishes automatically.
         </p>
         <p className="mt-1 text-xs text-gray-500">
-          Each fixture costs roughly 11 football-data requests to research, against a daily budget of 7,500 — a run is trimmed automatically if the day's quota can't cover it. Leagues on their off-season (no scheduled matches on the chosen date) will just come back with 0 found.
+          Each fixture costs roughly 11 football-data requests to research, against a daily budget of 7,500 — a run is trimmed automatically if the day's quota can't cover it. Leagues on their off-season (no scheduled matches on the chosen date) will just come back with 0 found. Fixtures that already have tips (live or in review) are skipped, so a run never makes a second set for the same match.
         </p>
       </div>
 
@@ -277,9 +277,14 @@ export default function AIPanel() {
         <div className="card space-y-2">
           <h3 className="text-sm uppercase text-gray-400">
             {bulkResult.found} fixture{bulkResult.found === 1 ? "" : "s"} found · {bulkResult.results.filter((r: any) => r.ok).length} generated
+            {bulkResult.alreadyCovered?.length ? ` · ${bulkResult.alreadyCovered.length} skipped, already have tips` : ""}
           </h3>
           {bulkResult.results.length === 0 ? (
-            <p className="text-sm text-gray-400">No upcoming fixtures found for that date/league selection.</p>
+            <p className="text-sm text-gray-400">
+              {bulkResult.alreadyCovered?.length
+                ? "Every upcoming fixture in that selection already has tips. Nothing new was generated."
+                : "No upcoming fixtures found for that date/league selection."}
+            </p>
           ) : (
             <ul className="divide-y divide-brand-border">
               {bulkResult.results.map((r: any, i: number) => (
@@ -302,6 +307,21 @@ export default function AIPanel() {
                 </li>
               ))}
             </ul>
+          )}
+          {bulkResult.alreadyCovered?.length > 0 && (
+            <div className="border-t border-brand-border pt-3">
+              <div className="mb-1 text-xs uppercase text-gray-500">Already have tips, not generated again</div>
+              <ul className="divide-y divide-brand-border">
+                {bulkResult.alreadyCovered.map((c: any) => (
+                  <li key={c.fixtureApiId} className="flex items-center justify-between py-2 text-sm text-gray-400">
+                    <span>{c.home} vs {c.away}</span>
+                    <Link href={`/admin/predictions/${c.predictionId}`} className="text-xs text-brand hover:underline">
+                      {c.status === "PUBLISHED" ? "Live" : c.status === "APPROVED" ? "Approved" : "In review"} →
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}
