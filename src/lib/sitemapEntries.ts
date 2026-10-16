@@ -12,6 +12,7 @@ import { isLagosToday, lagosDayBounds } from "@/lib/lagosDate";
 import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 import { GUIDES } from "@/content/guides";
 import { sitemapType, type SitemapType } from "@/lib/sitemapXml";
+import { isFreeTierRow, isStraightWinSelection } from "@/lib/marketHubs";
 
 // One builder per child sitemap (/sitemaps/<type>.xml), each reading only what
 // its own URLs need. There used to be a single function that read every
@@ -138,6 +139,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
       marketType: true,
       selection: true,
       outcome: true,
+      category: true,
       categories: { select: { category: true } },
     },
   });
@@ -172,7 +174,18 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
 
   // Market hubs follow the same inventory gate as their page metadata. The
   // URL is listed only while its exact selection has published picks today.
-  const over25Rows = rows.filter((r) => {
+  // Like the pages, they count free-tier tips only (no VIP or Premium).
+  const freeRows = rows.filter(isFreeTierRow);
+  const straightWinRows = freeRows.filter((r) => r.marketType === "MATCH_WINNER" && isStraightWinSelection(r.selection));
+  if (straightWinRows.length) {
+    entries.push({
+      url: absoluteUrl("/predictions/straight-wins"),
+      lastModified: maxDate(straightWinRows.map((r) => r.publishedAt)),
+      changeFrequency: "daily",
+      priority: 0.8,
+    });
+  }
+  const over25Rows = freeRows.filter((r) => {
     if (r.marketType !== "OVER_UNDER") return false;
     if (!r.selection || typeof r.selection !== "object" || Array.isArray(r.selection)) return false;
     const selection = r.selection as { line?: unknown; direction?: unknown };
@@ -186,7 +199,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     });
   }
-  const bttsRows = rows.filter((r) => r.marketType === "BTTS");
+  const bttsRows = freeRows.filter((r) => r.marketType === "BTTS");
   if (bttsRows.length) {
     entries.push({
       url: absoluteUrl("/predictions/btts"),
@@ -195,7 +208,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     });
   }
-  const doubleChanceRows = rows.filter((r) => r.marketType === "DOUBLE_CHANCE");
+  const doubleChanceRows = freeRows.filter((r) => r.marketType === "DOUBLE_CHANCE");
   if (doubleChanceRows.length) {
     entries.push({
       url: absoluteUrl("/predictions/double-chance"),

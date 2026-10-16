@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandAssets";
 import { NotificationBell } from "@/components/NotificationBell";
 import { LogoutButton } from "@/components/LogoutButton";
+import { MARKET_HUBS } from "@/lib/marketHubs";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -42,6 +43,9 @@ const TIP_LINKS: NavLink[] = [
   { href: "/predictions/vip", label: "VIP", pill: "vip" },
   { href: "/predictions/premium", label: "Premium", pill: "premium" },
 ];
+
+/** Every free tip of the day in one market (src/lib/marketHubs.ts), under Tips. */
+const MARKET_LINKS: NavLink[] = MARKET_HUBS.map((m) => ({ href: m.href, label: m.label }));
 
 const PRIMARY_LINKS: NavLink[] = [
   { href: "/match-insights", label: "Insights" },
@@ -115,7 +119,7 @@ function NavPill({ pill }: { pill?: string }) {
  * Desktop dropdown. Click to open rather than hover: hover menus have no
  * touch equivalent, and this same bar is what a tablet at md gets.
  */
-function NavDropdown({ label, items }: { label: string; items: NavLink[] }) {
+function NavDropdown({ label, items, section }: { label: string; items: NavLink[]; section?: { heading: string; items: NavLink[] } }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -161,6 +165,23 @@ function NavDropdown({ label, items }: { label: string; items: NavLink[] }) {
               <NavPill pill={l.pill} />
             </Link>
           ))}
+          {section && (
+            <>
+              <div className="mx-3 my-1 border-t border-brand-border" />
+              <div className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{section.heading}</div>
+              {section.items.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  prefetch={false}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+                >
+                  {l.label}
+                </Link>
+              ))}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -237,7 +258,7 @@ export function Nav() {
               Multi Bets, the VIP/Premium tiers) stays reachable through the
               drawer, which is why the drawer is NOT marked web-only. */}
           <nav data-web-only className="hidden items-center gap-1 md:flex">
-            <NavDropdown label="Tips" items={TIP_LINKS} />
+            <NavDropdown label="Tips" items={TIP_LINKS} section={{ heading: "By market", items: MARKET_LINKS }} />
             {PRIMARY_LINKS.map((l) => (
               <Link key={l.href} href={l.href} prefetch={false} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
                 {l.label}
@@ -345,6 +366,18 @@ export function Nav() {
                     >
                       {l.label}
                       <NavPill pill={l.pill} />
+                    </Link>
+                  ))}
+                  <div className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">By market</div>
+                  {MARKET_LINKS.map((l) => (
+                    <Link
+                      key={l.href}
+                      href={l.href}
+                      prefetch={false}
+                      onClick={() => setOpen(false)}
+                      className="rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+                    >
+                      {l.label}
                     </Link>
                   ))}
                 </div>

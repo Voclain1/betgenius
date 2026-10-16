@@ -13,6 +13,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { lagosDayLabel } from "@/lib/lagosDate";
 import { DoubleChancePredictionsEvidence, DoubleChancePredictionsGuide } from "@/components/DoubleChancePredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
+import { MarketChips } from "@/components/MarketChips";
 
 const PATH = "/predictions/double-chance";
 
@@ -108,6 +109,7 @@ export default async function DoubleChancePage({ searchParams }: { searchParams?
           { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
         ]}
       />
+      <MarketChips active="DOUBLE_CHANCE" />
       <PredictionViewSwitch
         tabs={<FeedDayTabs basePath={PATH} active={day} />}
         intro=<DoubleChancePredictionsGuide />

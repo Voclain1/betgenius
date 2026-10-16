@@ -13,6 +13,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { lagosDayLabel } from "@/lib/lagosDate";
 import { Over25PredictionsEvidence, Over25PredictionsGuide } from "@/components/Over25PredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
+import { MarketChips } from "@/components/MarketChips";
 
 const PATH = "/predictions/over-2-5-goals";
 
@@ -109,6 +110,7 @@ export default async function Over25GoalsPage({ searchParams }: { searchParams?:
           { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
         ]}
       />
+      <MarketChips active="OVER_2_5" />
       <PredictionViewSwitch
         tabs={<FeedDayTabs basePath={PATH} active={day} />}
         intro=<Over25PredictionsGuide />
