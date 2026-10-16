@@ -182,6 +182,29 @@ export const GUIDES: Guide[] = [
       { href: "/guides/football-odds-and-implied-probability", label: "Odds and implied probability", description: "How a short price turns into a percentage." },
     ],
   },
+  {
+    slug: "sure-odds-and-correct-score-scams",
+    title: "Sure odds and correct score tips are scams",
+    description: "Why paid sure odds, fixed matches and guaranteed correct score tips are fraud, how the scam works, and how to protect your money.",
+    summary: "No one can sell a guaranteed result. Here is how sure-odds and correct-score sellers take your money, the warning signs, and what to do if you have paid.",
+    publishedAt: "2026-10-16",
+    reviewedAt: "2026-10-16",
+    readingTime: "6 min read",
+    sections: [
+      { id: "no-sure-odds", title: "There is no such thing as sure odds", content: <><p>Every football match can be decided by a deflection, a red card, an injury or a goal in the 94th minute. Bookmakers know this, which is why even the shortest favourite is priced to lose some of the time. A seller who promises &quot;sure odds&quot;, a &quot;100% banker&quot; or a &quot;sure win&quot; is claiming to know something the whole betting market does not.</p><p>If anyone really could predict results with certainty, they would quietly bet on them, not sell them to strangers on WhatsApp, Telegram or Instagram.</p></> },
+      { id: "correct-score", title: "Why paid correct score tips are a con", content: <><p>Correct score is a real market, but it is the hardest one to call. Even the most likely scoreline in a typical match, often 1–0 or 1–1, usually happens only around one time in eight to one time in ten. That is why correct score prices of 6.00 to 10.00 and higher are normal.</p><p>A seller offering &quot;guaranteed correct scores&quot; or &quot;fixed matches&quot; for a fee is selling something that does not exist. Genuine match-fixing is a crime investigated by football authorities and the police; its organisers do not advertise it to the public for a subscription.</p></> },
+      { id: "how-it-works", title: "How the scam usually works", content: <ul><li><strong>Shotgun tipping:</strong> the seller sends different scorelines to different groups of buyers. Whichever group happens to win becomes the &quot;proof&quot;, and the losers are blocked or told they were unlucky.</li><li><strong>Edited winning slips:</strong> screenshots of huge winning tickets are easy to fake or to book after the match has finished.</li><li><strong>Escalating fees:</strong> a small first payment is followed by &quot;VIP&quot; or &quot;fixed game&quot; fees, then a &quot;refund&quot; charge when the tip loses.</li><li><strong>Pressure:</strong> &quot;only three slots left&quot;, &quot;pay before kickoff&quot;, &quot;send to this account now&quot;.</li></ul> },
+      { id: "warning-signs", title: "Warning signs", content: <ul><li>Words like &quot;sure&quot;, &quot;guaranteed&quot;, &quot;fixed&quot;, &quot;100%&quot; or &quot;risk-free&quot;.</li><li>No full record of every tip, losses included, published before kickoff.</li><li>Payment only by direct bank transfer or airtime to a personal account.</li><li>Requests for your betting account login, BVN, card details or one-time codes.</li><li>Accounts that change names, numbers or channels after a run of losses.</li></ul> },
+      { id: "what-honest-tips-look-like", title: "What honest tips look like", content: <><p>An honest prediction service shows a confidence rating, explains its reasoning and publishes every result, including the losses. BetGenius does exactly that: no pick is described as certain, and every settled tip stays in the public track record so you can judge the method over a full month, not a single slip.</p><p>Even a strong 80% assessment is expected to lose about one time in five. Anyone who tells you otherwise is not being honest with you.</p></> },
+      { id: "if-you-paid", title: "If you have already paid", content: <ul><li>Stop paying. A &quot;refund fee&quot; or &quot;unlock fee&quot; is part of the same scam.</li><li>Keep screenshots of the chats, account numbers and payment receipts.</li><li>Contact your bank straight away and ask them to flag the receiving account.</li><li>Report the account to the platform it used, and report the fraud to the police or the EFCC.</li><li>Never share your PIN, password or one-time codes with anyone who promises to recover your money.</li></ul> },
+      { id: "takeaways", title: "Key points", content: <ul><li>No football result can be guaranteed, so &quot;sure odds&quot; cannot exist.</li><li>Paid fixed matches and guaranteed correct scores are fraud.</li><li>Trust only tips with a full, public record of wins and losses.</li><li>Never stake money you cannot afford to lose.</li></ul> },
+    ],
+    related: [
+      { href: "/track-record", label: "Public track record", description: "Every settled BetGenius tip, wins and losses alike." },
+      { href: "/guides/football-odds-and-implied-probability", label: "Odds and implied probability", description: "Why even short prices lose some of the time." },
+      { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits, warning signs and where to get support." },
+    ],
+  },
 ];
 
 export function guideBySlug(slug: string): Guide | null {
