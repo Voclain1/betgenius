@@ -1,11 +1,18 @@
 import Link from "next/link";
 
+/**
+ * Closed by default, like the Today guide: the picks come first and the
+ * explainer opens on request. The text stays in the page for search engines.
+ */
 export function BankerPredictionsIntro() {
   return (
-    <section className="card" aria-labelledby="banker-definition-heading">
-      <h2 id="banker-definition-heading" className="text-lg font-semibold">
-        What is a Banker prediction?
-      </h2>
+    <details className="card group">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold marker:hidden sm:text-lg">
+        <h2 className="text-base font-semibold sm:text-lg">What is a Banker prediction?</h2>
+        <span aria-hidden="true" className="shrink-0 text-sm font-normal text-brand group-open:hidden">Read guide +</span>
+        <span aria-hidden="true" className="hidden shrink-0 text-sm font-normal text-brand group-open:inline">Close −</span>
+      </summary>
+      <div className="mt-4 border-t border-brand-border pt-1">
       <p className="mt-3 text-sm leading-6 text-gray-300">
         Banker predictions are a short list of higher-conviction football picks selected from the day&apos;s
         fixture card. Up to seven may be published in a day, fewer on a thin card, and some days will have none when the available
@@ -16,7 +23,8 @@ export function BankerPredictionsIntro() {
         late team news before making your own decision. The full pick and reasoning are available after free
         registration.
       </p>
-    </section>
+      </div>
+    </details>
   );
 }
 

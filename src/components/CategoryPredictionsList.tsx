@@ -108,9 +108,8 @@ export function CategoryPredictionsList({
  */
 export function emptyFeedMessage(category?: PredictionCategory): string {
   if (category === "VIP" || category === "PREMIUM") {
-    const bar = category === "PREMIUM" ? "80%" : "75%";
     const name = category === "PREMIUM" ? "Premium" : "VIP";
-    return `No ${name} pick has cleared the bar for this day yet. Every ${name} pick needs a confidence of ${bar} or better, and that floor is never lowered to fill the feed, so on quiet days, such as international breaks, there may be none. Picks are added through the day as bookmakers open their markets.`;
+    return `No ${name} tips for this day yet. New ${name} predictions are added through the day as bookmakers open their markets.`;
   }
   return "No published tips in this category yet.";
 }

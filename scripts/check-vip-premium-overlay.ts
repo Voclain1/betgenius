@@ -653,9 +653,11 @@ async function main() {
     check("isolation: free accumulators never take a paid-only leg", /\.\.\.NOT_PAID_ONLY \}/.test(code("src/lib/accumulatorPipeline.ts")));
     const { NOT_PAID_ONLY, PAID_ONLY_PROVENANCES } = require("../src/lib/paidOnly");
     eq("isolation: the filter excludes exactly the two dedicated markers", [NOT_PAID_ONLY, [...PAID_ONLY_PROVENANCES]], [{ provenance: { notIn: ["VIP_GENERATED", "PREMIUM_GENERATED"] } }, ["VIP_GENERATED", "PREMIUM_GENERATED"]]);
-    const list = code("src/components/CategoryPredictionsList.tsx");
-    check("empty state: the paid feeds quote their real floors",
-      list.includes(`category === "PREMIUM" ? "${curation.PREMIUM_CONFIDENCE_FLOOR}%" : "${curation.VIP_CONFIDENCE_FLOOR}%"`));
+    // The floors are quoted in the feeds' one-line descriptions, read from the
+    // constants so the copy can never drift from the gate.
+    const blurbs = code("src/lib/categoryPredictions.ts");
+    check("paid feed copy quotes their real floors",
+      /VIP: `[^`]*\$\{VIP_CONFIDENCE_FLOOR\}%/.test(blurbs) && /PREMIUM: `[^`]*\$\{PREMIUM_CONFIDENCE_FLOOR\}%/.test(blurbs));
     check("worker: the overlay run never records a ledger attempt or reads the queue", !/recordAttempt\(|selectQueuedCandidates\(|generationAttempt\./.test(paidRun));
     const ordinaryRun = workerSrc.slice(workerSrc.indexOf("export async function runGeneration"), workerSrc.indexOf("export type GoalsRunReport"));
     check("worker: ordinary generation still claims from the queue and records attempts", /selectQueuedCandidates\(/.test(ordinaryRun) && /recordAttempt\(c, \{ ok: true/.test(ordinaryRun));
