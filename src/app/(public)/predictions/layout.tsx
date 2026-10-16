@@ -1,5 +1,6 @@
 import { TopTrendsPanel } from "@/components/TopTrendsPanel";
 import { RAIL_SLOT_ID } from "@/components/ads/railSlot";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 
 /**
  * Puts the Top trends panel beside every prediction page.
@@ -18,6 +19,7 @@ export default function PredictionsLayout({ children }: { children: React.ReactN
         {/* A page's rail ad (WithAdRail) is placed here, under the panel. */}
         <div id={RAIL_SLOT_ID} className="mt-4" />
       </aside>
+      <AdStickyMobile />
     </div>
   );
 }

@@ -259,7 +259,7 @@ export function InstallPrompt() {
     <div
       role="region"
       aria-label="Install BetGenius"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-brand-border bg-brand-card/95 backdrop-blur"
+      className="install-prompt fixed inset-x-0 bottom-0 z-50 border-t border-brand-border bg-brand-card/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">

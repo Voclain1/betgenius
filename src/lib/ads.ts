@@ -184,20 +184,20 @@ export type AdUnitId = keyof typeof AD_UNITS;
  *     rarely as the rule allows. On a desktop three-column grid six cards is
  *     two full rows, which is the smallest gap that still reads as a break
  *     between groups rather than as a divider inside one.
- *   AT MOST 3 — the cap is what keeps a 95-row feed from turning into an ad
- *     rail. It does mean the ads on a very long feed all sit in its first 18
- *     rows; that is deliberate, since that is the part of a long feed anyone
+ *   AT MOST 5 — the cap is what keeps a 95-row feed from turning into an ad
+ *     rail (raised from 3 for revenue). It does mean the ads on a very long
+ *     feed all sit in its first 30 rows; that is deliberate, since that is the part of a long feed anyone
  *     actually reads.
  *   LEAVE 3 BEHIND — no insertion that would strand fewer than three picks
  *     after it. Without this an 8-row feed gets an ad after row 6 with two
  *     cards trailing under it, which reads as the page having ended.
  *
- * Returns the row counts AFTER which an ad belongs, e.g. [6, 12, 18]. An empty
+ * Returns the row counts AFTER which an ad belongs, e.g. [6, 12, 18, 24, 30]. An empty
  * array means the feed is too short to interrupt at all — every feed under 9
  * rows, which on a normal day is BANKER, VIP and PREMIUM.
  */
 export const FEED_AD_INTERVAL = 6;
-export const FEED_AD_MAX = 3;
+export const FEED_AD_MAX = 5;
 export const FEED_AD_MIN_TAIL = 3;
 
 export function feedAdPositions(rowCount: number): number[] {

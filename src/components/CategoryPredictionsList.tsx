@@ -46,8 +46,10 @@ export function CategoryPredictionsList({
     return <div className="card text-gray-400">{emptyFeedMessage(category)}</div>;
   }
 
-  // Empty on the dashboard, and on any feed too short to interrupt.
-  const positions = withAds ? feedAdPositions(rows.length) : [];
+  // Empty on the dashboard. A feed too short to interrupt (Banker, VIP,
+  // Premium on most days) gets one band after its last pick instead of none.
+  const between = withAds ? feedAdPositions(rows.length) : [];
+  const positions = withAds && between.length === 0 ? [rows.length] : between;
 
   if (category === "TODAY" || view === "compact") {
     return (
@@ -87,11 +89,13 @@ export function CategoryPredictionsList({
     <div className="space-y-4">
       {groups.map((group, i) => (
         <Fragment key={i}>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {group.map((p) => (
-              <PredictionCard key={p.id} p={p} reasoningExcerpt={reasoningExcerpt} />
-            ))}
-          </div>
+          {group.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {group.map((p) => (
+                <PredictionCard key={p.id} p={p} reasoningExcerpt={reasoningExcerpt} />
+              ))}
+            </div>
+          )}
           {i < groups.length - 1 && <AdInFeed index={i} />}
         </Fragment>
       ))}

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
@@ -480,6 +481,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           is to look like the content around it, so it is only ever given a
           position where the content around it is the footer. */}
       <AdNativeBand />
+      <AdStickyMobile />
     </div>
   );
 }

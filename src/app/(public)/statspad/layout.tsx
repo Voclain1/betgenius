@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 
 export const metadata: Metadata = {
   title: "StatsPad — Team Form & Stats",
@@ -25,6 +26,7 @@ export default function StatsPadLayout({ children }: { children: React.ReactNode
       <div className="mt-8">
         <AdLeaderboard />
       </div>
+      <AdStickyMobile />
     </>
   );
 }
