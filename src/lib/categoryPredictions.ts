@@ -6,6 +6,7 @@ import { lagosDayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { goalsFeedRows } from "@/lib/goalsCategory";
 import { tagFeedHiddenLegExclusion } from "@/lib/comboLegs";
+import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 
 /** Tag-based feeds that must not surface hidden combo legs. TODAY, SAME_GAME_DOUBLE and GOALS handle legs in their own filters. */
 /** The feeds a paid-only pick may appear in. */
@@ -57,8 +58,8 @@ export const CATEGORY_BLURBS: Record<PredictionCategory, string> = {
   GENIUS: "Our highest-scoring picks of the day, ranked by confidence.",
   TODAY: "Football picks published for today's fixture card.",
   BANKER: "Up to seven of the day's highest-confidence picks, from any competition.",
-  VIP: "Subscriber-only edge plays.",
-  PREMIUM: "Top-tier tips + accumulators.",
+  VIP: `VIP football tips and predictions for members, each rated ${VIP_CONFIDENCE_FLOOR}% confidence or higher.`,
+  PREMIUM: `Premium football predictions and accumulators, each tip rated ${PREMIUM_CONFIDENCE_FLOOR}% confidence or higher.`,
   BET_OF_THE_DAY: "A single pick each day, taken from everything published that morning.",
   SAME_GAME_DOUBLE: "Two picks on the same match, combined into one selection.",
   GOALS: "Over 1.5 and Over 2.5 total-goals picks, and no other market.",
