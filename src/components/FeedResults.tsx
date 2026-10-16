@@ -115,7 +115,7 @@ export function FeedResults({
                             <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-3">
                               <div className="min-w-0">
                                 <div className="font-semibold text-gray-100">
-                                  <MatchLink homeTeam={r.homeTeam} awayTeam={r.awayTeam} kickoff={r.kickoff} />
+                                  <MatchLink homeTeam={r.homeTeam} awayTeam={r.awayTeam} kickoff={r.kickoff} homeTeamApiId={r.homeTeamApiId} awayTeamApiId={r.awayTeamApiId} />
                                 </div>
                                 <div className="text-xs text-gray-400">
                                   {r.pick ? <><span className="font-bold text-gray-200">{r.pick}</span> · {r.market}</> : r.market}

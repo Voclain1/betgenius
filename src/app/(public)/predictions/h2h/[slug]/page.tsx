@@ -304,7 +304,7 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
             {rows.map((r) => (
               <div key={r.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
                 <div className="min-w-0 text-sm font-semibold text-gray-100">
-                  <MatchLink homeTeam={r.homeTeam} awayTeam={r.awayTeam} kickoff={r.kickoff} />
+                  <MatchLink homeTeam={r.homeTeam} awayTeam={r.awayTeam} kickoff={r.kickoff} homeTeamApiId={r.homeTeamApiId} awayTeamApiId={r.awayTeamApiId} />
                   <div className="mt-0.5 text-xs font-normal text-gray-500">
                     {r.market}
                     {r.kickoff ? ` · ${new Date(r.kickoff).toLocaleDateString(undefined, DATE)}` : ""}

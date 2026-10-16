@@ -147,7 +147,7 @@ export function TrackRecordView({ data, pastMonths = [] }: { data: MonthTrackRec
               {data.recentTips.map((t) => (
                 <tr key={t.id}>
                   <td className="px-4 py-3 font-semibold text-gray-100">
-                    <MatchLink homeTeam={t.homeTeam} awayTeam={t.awayTeam} kickoff={t.kickoff} />
+                    <MatchLink homeTeam={t.homeTeam} awayTeam={t.awayTeam} kickoff={t.kickoff} homeTeamApiId={t.homeTeamApiId} awayTeamApiId={t.awayTeamApiId} />
                   </td>
                   <td className="px-4 py-3 text-gray-400">{CATEGORY_LABELS[t.category] ?? t.category}</td>
                   <td className="px-4 py-3">
