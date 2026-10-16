@@ -78,7 +78,7 @@ import { RailPortal } from "@/components/ads/RailPortal";
  * disclosure rather than decoration, and an opacity modifier or gray-500
  * would put it back under. Re-measure if the band's background changes.
  */
-function AdLabel() {
+export function AdLabel() {
   return (
     <span className="pointer-events-none absolute left-3 top-1.5 select-none text-[10px] font-medium leading-none text-gray-400">
       Ad

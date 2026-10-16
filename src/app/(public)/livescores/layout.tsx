@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 
 export const metadata: Metadata = {
   // "live score nigeria" rather than "livescore" or "live scores today". The
@@ -30,6 +31,7 @@ export default function LivescoresLayout({ children }: { children: React.ReactNo
       <div className="mt-8">
         <AdHalfBanner />
       </div>
+      <AdStickyMobile />
     </>
   );
 }

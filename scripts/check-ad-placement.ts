@@ -400,7 +400,17 @@ eq("a feed too short to interrupt gets nothing", feedAdPositions(5), []);
 eq("no insertion that strands fewer than three picks", feedAdPositions(8), []);
 eq("the first insertion lands at the interval", feedAdPositions(9), [FEED_AD_INTERVAL]);
 eq("a mid-length feed gets two", feedAdPositions(20), [6, 12]);
-eq("a long feed is capped, not filled", feedAdPositions(95), [6, 12, 18]);
+eq("a long feed is capped, not filled", feedAdPositions(95), [6, 12, 18, 24, 30]);
+// Short feeds (Banker, VIP, Premium most days) get one band after the list.
+const listSrc = code(join(ROOT, "src", "components", "CategoryPredictionsList.tsx"));
+check("a feed too short to interrupt still gets one band after its last pick", /between\.length === 0 \? \[rows\.length\] : between/.test(listSrc));
+// The phone sticky bar: never site-wide, and it yields to the install banner and cookie notice.
+const css = readFileSync(join(ROOT, "src", "app", "globals.css"), "utf8");
+check("the sticky bar is not mounted by the public layout", !/AdStickyMobile/.test(code(join(APP, "(public)", "layout.tsx"))));
+check("the sticky bar hides while the cookie notice is open", /body:has\(\.cookie-consent\) \.ad-sticky \{\s*display: none;/.test(css));
+check("the install card sits above the sticky bar on phones, not over it", /body:has\(\.ad-sticky\) \.install-prompt \{\s*bottom: calc\(76px/.test(css));
+check("the sticky bar sits above the installed app's tab bar", /html\[data-standalone="true"\] \.ad-sticky \{\s*bottom: calc\(3\.5rem/.test(css));
+check("the install card carries the class its position rules use", /className="install-prompt /.test(code(join(ROOT, "src", "components", "InstallPrompt.tsx"))));
 check("the cap is what bounds a long feed", feedAdPositions(95).length === FEED_AD_MAX);
 check("positions are strictly increasing", feedAdPositions(95).every((p, i, a) => i === 0 || p > a[i - 1]));
 check(

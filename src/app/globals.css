@@ -412,6 +412,39 @@ html[data-standalone="true"] .cookie-consent {
   bottom: calc(3.5rem + env(safe-area-inset-bottom));
 }
 
+/* The install card (src/components/InstallPrompt.tsx) floats at the
+   bottom-right corner, clear of the safe area; in the installed app it never
+   shows. On a phone with the sticky ad bar showing, it sits just above the bar
+   instead of over it. */
+.install-prompt {
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+}
+@media (max-width: 639px) {
+  body:has(.ad-sticky) .install-prompt {
+    bottom: calc(76px + 0.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* The phone's sticky ad bar (src/components/ads/AdStickyMobile.tsx) yields the
+   bottom edge to the cookie notice (hidden while it is open), sits above the
+   tab bar in the installed app, and the page gets matching bottom padding
+   while it shows. 76px = 50px unit + its label and spacing. */
+body:has(.cookie-consent) .ad-sticky {
+  display: none;
+}
+html[data-standalone="true"] .ad-sticky {
+  bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  padding-bottom: 0 !important;
+}
+@media (max-width: 639px) {
+  body:has(.ad-sticky):not(:has(.cookie-consent)) {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+  html[data-standalone="true"] body:has(.ad-sticky):not(:has(.cookie-consent)) {
+    padding-bottom: calc(3.5rem + 76px + env(safe-area-inset-bottom));
+  }
+}
+
 /* The nav's menu button is md:hidden in a browser tab, because the desktop
    link row covers the same destinations there. In the installed app that row
    is hidden at every width, so the drawer becomes the ONLY route to Standings,

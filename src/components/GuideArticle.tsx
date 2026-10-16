@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { EditorialAttribution } from "@/components/EditorialAttribution";
+import { Fragment } from "react";
+import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import type { Guide } from "@/content/guides";
 
 const formatDate = (value: string) => new Date(`${value}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
@@ -24,7 +26,8 @@ export function GuideArticle({ guide }: { guide: Guide }) {
           <div className="card hidden lg:block"><h2 className="text-sm font-semibold text-gray-100">In this guide</h2><GuideToc guide={guide} className="mt-3" /></div>
         </aside>
         <div className="min-w-0 space-y-10">
-          {guide.sections.map((section) => <section key={section.id} id={section.id} className="scroll-mt-24"><h2 className="text-xl font-semibold text-gray-100 sm:text-2xl">{section.title}</h2><div className="mt-3 space-y-4 text-[15px] leading-7 text-gray-300 [&_li]:pl-1 [&_ul]:ml-5 [&_ul]:list-disc">{section.content}</div></section>)}
+          {/* One band after the second section: between complete sections, never inside one. */}
+          {guide.sections.map((section, i) => <Fragment key={section.id}><section id={section.id} className="scroll-mt-24"><h2 className="text-xl font-semibold text-gray-100 sm:text-2xl">{section.title}</h2><div className="mt-3 space-y-4 text-[15px] leading-7 text-gray-300 [&_li]:pl-1 [&_ul]:ml-5 [&_ul]:list-disc">{section.content}</div></section>{i === 1 && guide.sections.length > 2 && <AdLeaderboard />}</Fragment>)}
           <section aria-labelledby="related-guides"><h2 id="related-guides" className="text-xl font-semibold text-gray-100">Continue checking the evidence</h2><div className="mt-4 grid gap-3 sm:grid-cols-3">{guide.related.map((item) => <Link key={item.href} href={item.href} className="card block hover:border-brand/50"><span className="font-semibold text-brand">{item.label}</span><span className="mt-2 block text-sm leading-6 text-gray-400">{item.description}</span></Link>)}</div></section>
         </div>
       </div>

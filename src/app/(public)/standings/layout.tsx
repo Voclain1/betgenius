@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 
 export const metadata: Metadata = {
   // "Live" is dropped from the title: the table is fetched fresh on load, but
@@ -31,6 +32,7 @@ export default function StandingsLayout({ children }: { children: React.ReactNod
       <div className="mt-8">
         <AdLeaderboard />
       </div>
+      <AdStickyMobile />
     </>
   );
 }

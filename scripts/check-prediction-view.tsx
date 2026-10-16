@@ -150,7 +150,13 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   // The dash shows from sm up; on phones the row reflows and an empty score takes no space.
   check("score column: a tip not yet played shows a dash", /Score<\/th>[\s\S]*<td class="[^"]*whitespace-nowrap[^"]*"><span class="text-xs text-gray-500 hidden sm:inline">—<\/span>/.test(upcoming));
   // Phones: one table reflowed into stacked rows, not a second copy of the list.
-  check("phone layout: rows reflow into a grid on small screens", /<tr class="grid [^"]*sm:table-row/.test(upcoming));
+  check("phone layout: rows reflow into a grid on small screens", /<tr class="[^"]*\bgrid [^"]*sm:table-row/.test(upcoming));
+  // Every tip opens its prediction, on every page, with or without linkRows:
+  // on phones the teams are a link stretched over the whole row.
+  check("links: a phone row without linkRows still links to its match page", /<a class="block[^"]*after:absolute after:inset-0[^"]*" href="\/predictions\/match\/home0side-vs-away0side-/.test(upcoming), upcoming.slice(0, 600));
+  check("links: the pick links to the match page too", /<a [^>]*href="\/predictions\/match\/[^"]*"[^>]*>[^<]*<\/a><\/td>/.test(upcoming));
+  const card = html(<CategoryPredictionsList category="FEATURED" rows={rows(1) as any} view="detailed" />);
+  check("links: a detailed card has a Full prediction link", /href="\/predictions\/match\/[^"]*"[^>]*>Full prediction/.test(card));
   check("phone layout: the column headers hide on small screens", /<thead class="hidden [^"]*sm:table-header-group/.test(upcoming));
   // Every team shows a crest: the CDN image by id, or an initials badge without one.
   const noIds = html(<CategoryPredictionsList category="TODAY" rows={rows(1, { homeTeamApiId: null, awayTeamApiId: null }) as any} />);

@@ -107,13 +107,14 @@ export function PredictionsTable({
             const kickoff = p.kickoff ?? p.fixture?.kickoff;
             const leagueName = p.leagueName ?? p.fixture?.league.name;
             const ad = adAfter.get(index + 1);
-            const slug = linkRows && home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
+            // Every row links to its match page; `linkRows` only adds the arrow column.
+            const slug = home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
             const matchHref = slug ? `/predictions/match/${slug}` : null;
             const visual = getLeagueVisual(p.leagueApiId);
             const when = kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : null;
             return (
               <Fragment key={p.id}>
-              <tr className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition hover:bg-brand-bg/40 sm:table-row sm:p-0">
+              <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition hover:bg-brand-bg/40 active:bg-brand-bg/40 sm:static sm:table-row sm:p-0">
                 {/* Phone: competition and kickoff on the row's top line. */}
                 <td className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-gray-500 sm:hidden">
                   {visual && (
@@ -132,17 +133,28 @@ export function PredictionsTable({
                     <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
                   )}
                 </td>
-                {/* Phone: one line per team, never broken mid-name. */}
-                <td className="col-start-1 row-start-2 min-w-0 space-y-1 sm:hidden">
-                  {[
-                    { name: home, id: p.homeTeamApiId },
-                    { name: away, id: p.awayTeamApiId },
-                  ].map((t, i) => (
-                    <div key={i} className="flex min-w-0 items-center gap-2">
-                      <TeamCrest teamApiId={t.id} name={t.name} size={16} />
-                      <span className="truncate text-[15px] font-bold text-gray-100">{t.name ?? "—"}</span>
-                    </div>
-                  ))}
+                {/* Phone: one line per team, never broken mid-name. The teams
+                    are the row's link, stretched (after:inset-0) over the whole
+                    row so a tap anywhere on the tip opens its prediction. */}
+                <td className="col-start-1 row-start-2 min-w-0 sm:hidden">
+                  {(() => {
+                    const teams = [
+                      { name: home, id: p.homeTeamApiId },
+                      { name: away, id: p.awayTeamApiId },
+                    ].map((t, i) => (
+                      <span key={i} className="flex min-w-0 items-center gap-2">
+                        <TeamCrest teamApiId={t.id} name={t.name} size={16} />
+                        <span className="truncate text-[15px] font-bold text-gray-100">{t.name ?? "—"}</span>
+                      </span>
+                    ));
+                    return matchHref ? (
+                      <Link href={matchHref} className="block space-y-1 after:absolute after:inset-0 after:content-['']">
+                        {teams}
+                      </Link>
+                    ) : (
+                      <div className="space-y-1">{teams}</div>
+                    );
+                  })()}
                 </td>
                 <td className="hidden px-3 py-3 sm:table-cell">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
@@ -180,8 +192,14 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
+                {/* Phone, without the arrow column: a chevron that says the row opens. */}
+                {!linkRows && matchHref && (
+                  <td aria-hidden className="col-start-3 row-span-3 row-start-1 text-gray-500 sm:hidden">
+                    <ChevronRight className="h-4 w-4" />
+                  </td>
+                )}
                 {linkRows && (
-                  <td className="col-start-3 row-span-3 row-start-1 text-right sm:px-3 sm:py-3">
+                  <td className="relative z-10 col-start-3 row-span-3 row-start-1 text-right sm:static sm:px-3 sm:py-3">
                     {matchHref && (
                       <Link
                         href={matchHref}

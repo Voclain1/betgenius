@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Lock } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
 import { ScoreCell } from "@/components/LiveScores";
-import { leagueSlug } from "@/lib/slug";
+import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
 import { Prose } from "@/components/Prose";
@@ -77,6 +77,9 @@ export function PredictionCard({
   const home = p.homeTeam ?? p.fixture?.homeTeam.name;
   const away = p.awayTeam ?? p.fixture?.awayTeam.name;
   const kickoff = p.kickoff ?? p.fixture?.kickoff;
+  // The card's way in to the full prediction. Not on the match page itself
+  // (hideMatchHeader), where the reader is already there.
+  const matchSlugValue = !hideMatchHeader && home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
   const leagueName = p.leagueName ?? p.fixture?.league.name;
 
   const isDouble = p.marketType === "SAME_GAME_DOUBLE";
@@ -179,6 +182,14 @@ export function PredictionCard({
         app renders markdown by design - see src/components/Prose.tsx.
       */}
       {reasoningExcerpt ? <ReasoningExcerpt text={p.reasoning} /> : <Prose text={p.reasoning} />}
+      {matchSlugValue && !p.locked && (
+        <Link
+          href={`/predictions/match/${matchSlugValue}`}
+          className="mt-auto inline-flex items-center gap-1 self-start text-sm font-bold text-brand hover:underline"
+        >
+          Full prediction <ChevronRight aria-hidden className="h-4 w-4" />
+        </Link>
+      )}
       {p.locked && (
         <Link href="/pricing" className="flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-black text-on-brand transition hover:bg-brand-dark">
           Upgrade to unlock

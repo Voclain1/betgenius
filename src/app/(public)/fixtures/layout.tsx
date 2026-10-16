@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
+import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 
 export const metadata: Metadata = {
   // No keyword targeted here on purpose — the realistic difficulty on the raw
@@ -30,6 +31,7 @@ export default function FixturesLayout({ children }: { children: React.ReactNode
       <div className="mt-8">
         <AdHalfBanner />
       </div>
+      <AdStickyMobile />
     </>
   );
 }

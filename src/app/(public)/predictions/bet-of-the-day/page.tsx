@@ -9,6 +9,7 @@ import { getFixtureEventContext } from "@/lib/predictionScope";
 import { canViewCategory } from "@/lib/access";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
+import { AdRectangle } from "@/components/ads/AdPlacements";
 import { LinkTile } from "@/components/LinkTile";
 import { Prose } from "@/components/Prose";
 
@@ -148,6 +149,8 @@ export default async function BetOfTheDayPage() {
       <PremiumPanel kicker={live ? "Today's pick" : "Latest pick"} title={`${row.homeTeam} vs ${row.awayTeam}`} id="botd-pick" bare>
         <BetOfTheDayCard data={data} variant="page" inactive={!live} />
       </PremiumPanel>
+
+      <AdRectangle />
 
       {row.matchPreview && (
         <PremiumPanel kicker="Context" title="Match preview" id="botd-preview">
