@@ -72,6 +72,8 @@ export function InstallPrompt() {
     return () => window.removeEventListener(CONSENT_EVENT, answered);
   }, []);
   const [installing, setInstalling] = useState(false);
+  // iOS: the Share-sheet instruction, opened from the pill.
+  const [iosHelp, setIosHelp] = useState(false);
 
   // The captured event, held in a ref rather than state: storing it in state
   // would re-render on capture, and capture happens during load — before the
@@ -255,47 +257,57 @@ export function InstallPrompt() {
 
   if (!mode || !consentAnswered) return null;
 
+  // A small pill floating at the bottom-right corner rather than a full-width
+  // bar, so it covers as little of the page as possible. It sits above the
+  // phone's sticky ad bar when that is showing (globals.css, .install-prompt).
+  // On iOS there is no install button to press, so tapping the pill opens the
+  // two-step Share instruction in place.
   return (
     <div
       role="region"
       aria-label="Install BetGenius"
-      className="install-prompt fixed inset-x-0 bottom-0 z-50 border-t border-brand-border bg-brand-card/95 backdrop-blur"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="install-prompt fixed right-3 z-50 max-w-[calc(100vw-1.5rem)] rounded-2xl border border-brand-border bg-brand-card/95 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.6)] backdrop-blur sm:right-5"
     >
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-2 py-1.5 pl-2 pr-1">
         {/* Same two-colourway mark as the nav, swapped in CSS — a white mark
             would vanish against the light theme's card. */}
-        <Image src={BRAND_ICON_DARK} alt="" width={520} height={530} sizes="32px" className="brand-mark-dark h-8 w-auto shrink-0" />
-        <Image src={BRAND_ICON_LIGHT} alt="" width={520} height={530} sizes="32px" className="brand-mark-light h-8 w-auto shrink-0" />
-
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-100">Get the BetGenius app</p>
-          {mode === "native" ? (
-            <p className="truncate text-xs text-gray-400">Faster access to today&apos;s tips, straight from your home screen.</p>
-          ) : (
-            <p className="text-xs text-gray-400">
-              Tap <Share size={12} className="mx-0.5 inline align-[-1px]" aria-hidden="true" />
-              <span className="font-medium text-gray-300">Share</span>, then{" "}
-              <span className="font-medium text-gray-300">Add to Home Screen</span>.
-            </p>
-          )}
-        </div>
-
-        {mode === "native" && (
-          <button type="button" onClick={install} disabled={installing} className="btn btn-primary shrink-0 text-sm disabled:opacity-60">
-            {installing ? "Opening…" : "Install app"}
+        <Image src={BRAND_ICON_DARK} alt="" width={520} height={530} sizes="22px" className="brand-mark-dark h-[22px] w-auto shrink-0" />
+        <Image src={BRAND_ICON_LIGHT} alt="" width={520} height={530} sizes="22px" className="brand-mark-light h-[22px] w-auto shrink-0" />
+        {mode === "native" ? (
+          <button
+            type="button"
+            onClick={install}
+            disabled={installing}
+            className="whitespace-nowrap rounded-lg bg-brand px-2.5 py-1 text-xs font-black text-on-brand transition hover:bg-brand-dark disabled:opacity-60"
+          >
+            {installing ? "Opening…" : "Get the app"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIosHelp((v) => !v)}
+            aria-expanded={iosHelp}
+            className="whitespace-nowrap rounded-lg bg-brand px-2.5 py-1 text-xs font-black text-on-brand transition hover:bg-brand-dark"
+          >
+            Get the app
           </button>
         )}
-
         <button
           type="button"
           onClick={dismiss}
           aria-label="Dismiss install prompt"
-          className="shrink-0 rounded-md p-2 text-gray-400 hover:bg-brand-bg hover:text-gray-100"
+          className="shrink-0 rounded-md p-1.5 text-gray-400 hover:bg-brand-bg hover:text-gray-100"
         >
-          <X size={18} />
+          <X size={14} />
         </button>
       </div>
+      {mode !== "native" && iosHelp && (
+        <p className="max-w-[14rem] border-t border-brand-border px-3 py-2 text-xs leading-snug text-gray-400">
+          Tap <Share size={12} className="mx-0.5 inline align-[-1px]" aria-hidden="true" />
+          <span className="font-medium text-gray-300">Share</span>, then{" "}
+          <span className="font-medium text-gray-300">Add to Home Screen</span>.
+        </p>
+      )}
     </div>
   );
 }

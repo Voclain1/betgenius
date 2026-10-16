@@ -407,9 +407,10 @@ check("a feed too short to interrupt still gets one band after its last pick", /
 // The phone sticky bar: never site-wide, and it yields to the install banner and cookie notice.
 const css = readFileSync(join(ROOT, "src", "app", "globals.css"), "utf8");
 check("the sticky bar is not mounted by the public layout", !/AdStickyMobile/.test(code(join(APP, "(public)", "layout.tsx"))));
-check("the sticky bar hides while the install banner or cookie notice is open", /body:has\(\.install-prompt, \.cookie-consent\) \.ad-sticky \{\s*display: none;/.test(css));
+check("the sticky bar hides while the cookie notice is open", /body:has\(\.cookie-consent\) \.ad-sticky \{\s*display: none;/.test(css));
+check("the install card sits above the sticky bar on phones, not over it", /body:has\(\.ad-sticky\) \.install-prompt \{\s*bottom: calc\(76px/.test(css));
 check("the sticky bar sits above the installed app's tab bar", /html\[data-standalone="true"\] \.ad-sticky \{\s*bottom: calc\(3\.5rem/.test(css));
-check("the install banner carries the class the sticky bar yields to", /className="install-prompt /.test(code(join(ROOT, "src", "components", "InstallPrompt.tsx"))));
+check("the install card carries the class its position rules use", /className="install-prompt /.test(code(join(ROOT, "src", "components", "InstallPrompt.tsx"))));
 check("the cap is what bounds a long feed", feedAdPositions(95).length === FEED_AD_MAX);
 check("positions are strictly increasing", feedAdPositions(95).every((p, i, a) => i === 0 || p > a[i - 1]));
 check(
