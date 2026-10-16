@@ -36,6 +36,9 @@ export type RecentTip = {
   id: string;
   homeTeam: string | null;
   awayTeam: string | null;
+  /** API-Football team ids, for the crests. */
+  homeTeamApiId: number | null;
+  awayTeamApiId: number | null;
   market: string;
   pick: string;
   outcome: string;
@@ -174,7 +177,7 @@ export const getTrackRecordForMonth = cache(async (key: string): Promise<MonthTr
       where,
       orderBy: { settledAt: "desc" },
       take: 12,
-      select: { id: true, homeTeam: true, awayTeam: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
+      select: { id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
     }),
     prisma.prediction
       .groupBy({ by: ["outcome"], where: settledInMonth(previous), _count: { _all: true } })

@@ -80,6 +80,10 @@ async function main() {
   const locked = fr.shapeDayResults([row], false)[0];
   eq("a reader who cannot sees no pick", locked.pick, null);
   check("...but still sees the match, market and result", locked.homeTeam === "A" && locked.market === "Match Winner" && locked.outcome === "WON");
+  const crested = fr.shapeDayResults([{ ...row, homeTeamApiId: 33, awayTeamApiId: 40 }], true)[0];
+  check("past results carry both team ids, so each team shows its crest", crested.homeTeamApiId === 33 && crested.awayTeamApiId === 40);
+  check("the past-results query reads the team ids", /homeTeamApiId: true, awayTeamApiId: true/.test(src("src/lib/feedResults.ts")));
+  check("the past-results row passes the ids to MatchLink", /homeTeamApiId=\{r\.homeTeamApiId\} awayTeamApiId=\{r\.awayTeamApiId\}/.test(src("src/components/FeedResults.tsx")));
   const route = src("src/app/api/predictions/results/route.ts");
   check("the route decides access with canViewCategory", route.includes("canViewCategory(category, viewer.tier, viewer.status, viewer.role)"));
   check("the route never lets a shared cache hold one reader's view", route.includes('"Cache-Control": "private') && !/s-maxage|public,/.test(route));

@@ -25,6 +25,9 @@ export type DayResult = {
   id: string;
   homeTeam: string | null;
   awayTeam: string | null;
+  /** API-Football team ids, for the crests; null on rows saved without them. */
+  homeTeamApiId: number | null;
+  awayTeamApiId: number | null;
   kickoff: string | null;
   market: string;
   /** null when the reader cannot view the category. */

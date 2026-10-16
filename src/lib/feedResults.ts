@@ -52,13 +52,25 @@ export function resultsDayBounds(key: string | null | undefined, now: Date = new
 
 /** Shape a day's rows for one reader. The only place the lock is applied. */
 export function shapeDayResults(
-  rows: ReadonlyArray<{ id: string; homeTeam: string | null; awayTeam: string | null; kickoff: Date | null; market: string; pick: string; outcome: string }>,
+  rows: ReadonlyArray<{
+    id: string;
+    homeTeam: string | null;
+    awayTeam: string | null;
+    homeTeamApiId?: number | null;
+    awayTeamApiId?: number | null;
+    kickoff: Date | null;
+    market: string;
+    pick: string;
+    outcome: string;
+  }>,
   canView: boolean,
 ): DayResult[] {
   return rows.map((r) => ({
     id: r.id,
     homeTeam: r.homeTeam,
     awayTeam: r.awayTeam,
+    homeTeamApiId: r.homeTeamApiId ?? null,
+    awayTeamApiId: r.awayTeamApiId ?? null,
     kickoff: r.kickoff?.toISOString() ?? null,
     market: r.market,
     pick: canView ? r.pick : null,
@@ -71,7 +83,7 @@ export async function getFeedDayResults(category: PredictionCategory, bounds: { 
   return prisma.prediction.findMany({
     where: { ...categoryFeedWhere(category), kickoff: { gte: bounds.start, lt: bounds.end } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
-    select: { id: true, homeTeam: true, awayTeam: true, kickoff: true, market: true, pick: true, outcome: true },
+    select: { id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, market: true, pick: true, outcome: true },
     take: 60,
   });
 }
