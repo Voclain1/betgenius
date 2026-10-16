@@ -29,8 +29,8 @@ export function MatchLink({
   awayTeamApiId?: number | null;
   className?: string;
 }) {
-  const homeCrest = <TeamCrest teamApiId={homeTeamApiId} className="mr-1.5" />;
-  const awayCrest = <TeamCrest teamApiId={awayTeamApiId} className="mr-1.5" />;
+  const homeCrest = <TeamCrest teamApiId={homeTeamApiId} name={homeTeam} className="mr-1.5" />;
+  const awayCrest = <TeamCrest teamApiId={awayTeamApiId} name={awayTeam} className="mr-1.5" />;
 
   if (!homeTeam) return <>—</>;
 

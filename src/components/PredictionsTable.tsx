@@ -139,7 +139,7 @@ export function PredictionsTable({
                     { name: away, id: p.awayTeamApiId },
                   ].map((t, i) => (
                     <div key={i} className="flex min-w-0 items-center gap-2">
-                      <TeamCrest teamApiId={t.id} size={16} />
+                      <TeamCrest teamApiId={t.id} name={t.name} size={16} />
                       <span className="truncate text-[15px] font-bold text-gray-100">{t.name ?? "—"}</span>
                     </div>
                   ))}
