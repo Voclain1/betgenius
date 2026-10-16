@@ -147,7 +147,15 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   const upcoming = html(<CategoryPredictionsList category="TODAY" rows={rows(1) as any} />);
   check("score column: header sits right after Pick", /Pick<\/th><th[^>]*>Score<\/th>/.test(settled), settled.slice(0, 600));
   check("score column: a settled tip shows FT and its result", settled.includes(">FT<") && /2<span[^>]*>-<\/span>1/.test(settled));
-  check("score column: a tip not yet played shows a dash", /Score<\/th>[\s\S]*<td class="whitespace-nowrap px-3 py-3"><span class="text-xs text-gray-500">—<\/span>/.test(upcoming));
+  // The dash shows from sm up; on phones the row reflows and an empty score takes no space.
+  check("score column: a tip not yet played shows a dash", /Score<\/th>[\s\S]*<td class="[^"]*whitespace-nowrap[^"]*"><span class="text-xs text-gray-500 hidden sm:inline">—<\/span>/.test(upcoming));
+  // Phones: one table reflowed into stacked rows, not a second copy of the list.
+  check("phone layout: rows reflow into a grid on small screens", /<tr class="grid [^"]*sm:table-row/.test(upcoming));
+  check("phone layout: the column headers hide on small screens", /<thead class="hidden [^"]*sm:table-header-group/.test(upcoming));
+  // Every team shows a crest: the CDN image by id, or an initials badge without one.
+  const noIds = html(<CategoryPredictionsList category="TODAY" rows={rows(1, { homeTeamApiId: null, awayTeamApiId: null }) as any} />);
+  check("crest: a team without an id still shows an initials badge", /ring-brand-border[^"]*"[^>]*>HO<\/span>/.test(noIds) || noIds.includes(">HO</span>"), noIds.slice(0, 400));
+  check("phone layout: home and away each get their own line", (upcoming.match(/truncate text-\[15px\] font-bold/g) ?? []).length === 2);
   check("score column: the match name keeps its vs", upcoming.includes('<span class="text-gray-500">vs</span>'));
 }
 

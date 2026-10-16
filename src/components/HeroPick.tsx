@@ -48,8 +48,8 @@ export function HeroPick({ pick }: { pick: HeroPickData }) {
       <div className="space-y-1.5">
         <LeagueBadge leagueApiId={pick.leagueApiId} leagueName={pick.leagueName} />
         <div className="text-lg font-black leading-snug tracking-tight text-gray-100">
-          <TeamCrest teamApiId={pick.homeTeamApiId} className="mr-1.5" />
-          {pick.homeTeam} <span className="font-bold text-gray-500">vs</span> <TeamCrest teamApiId={pick.awayTeamApiId} className="mr-1.5" />
+          <TeamCrest teamApiId={pick.homeTeamApiId} name={pick.homeTeam} className="mr-1.5" />
+          {pick.homeTeam} <span className="font-bold text-gray-500">vs</span> <TeamCrest teamApiId={pick.awayTeamApiId} name={pick.awayTeam} className="mr-1.5" />
           {pick.awayTeam}
         </div>
       </div>

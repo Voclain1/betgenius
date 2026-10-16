@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { MatchLink } from "@/components/MatchLink";
+import { TeamCrest } from "@/components/TeamCrest";
+import { getLeagueVisual } from "@/lib/leagues";
 import { ScoreCell } from "@/components/LiveScores";
 import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
@@ -72,10 +74,20 @@ export function PredictionsTable({
   // when it is showing and the open arrow when rows link.
   const columnCount = 7 + (showOutcome ? 1 : 0) + (linkRows ? 1 : 0);
   const adAfter = new Map(ads.map((a) => [a.after, a.node]));
+  // PHONES (below sm) get the same table, re-flowed: every row is a grid
+  //
+  //   [flag] Competition · Sat 15:00        74%   >
+  //   [crest] Home team                  (score)
+  //   [crest] Away team
+  //   TIP  Home team or Draw              (result)
+  //
+  // so team names and the pick each keep a full line instead of breaking over
+  // four squeezed columns. One table, not a second phone-only list: a second
+  // copy would also render every in-feed ad twice, one of them hidden.
   return (
     <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
-      <table className="w-full text-sm">
-        <thead className="bg-brand-bg/60 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">
+      <table className="block w-full text-sm sm:table">
+        <thead className="hidden bg-brand-bg/60 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:table-header-group">
           <tr>
             <th className="px-3 py-3">League</th>
             <th className="px-3 py-3">Match</th>
@@ -88,7 +100,7 @@ export function PredictionsTable({
             {linkRows && <th className="px-3 py-3"><span className="sr-only">Open</span></th>}
           </tr>
         </thead>
-        <tbody className="divide-y divide-brand-border">
+        <tbody className="block divide-y divide-brand-border sm:table-row-group">
           {rows.map((p, index) => {
             const home = p.homeTeam ?? p.fixture?.homeTeam.name;
             const away = p.awayTeam ?? p.fixture?.awayTeam.name;
@@ -97,10 +109,21 @@ export function PredictionsTable({
             const ad = adAfter.get(index + 1);
             const slug = linkRows && home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
             const matchHref = slug ? `/predictions/match/${slug}` : null;
+            const visual = getLeagueVisual(p.leagueApiId);
+            const when = kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : null;
             return (
               <Fragment key={p.id}>
-              <tr className="transition hover:bg-brand-bg/40">
-                <td className="px-3 py-3">
+              <tr className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition hover:bg-brand-bg/40 sm:table-row sm:p-0">
+                {/* Phone: competition and kickoff on the row's top line. */}
+                <td className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-gray-500 sm:hidden">
+                  {visual && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={visual.src} alt="" width={14} height={14} loading="lazy" className="shrink-0 rounded-sm object-contain" />
+                  )}
+                  <span className="truncate">{visual?.name ?? leagueName ?? "—"}</span>
+                  {when && <span className="shrink-0">· {when}</span>}
+                </td>
+                <td className="hidden px-3 py-3 sm:table-cell">
                   {leagueName ? (
                     <Link href={competitionPredictionsHref(p.leagueApiId, leagueSlug(leagueName, p.leagueApiId))}>
                       <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
@@ -109,29 +132,43 @@ export function PredictionsTable({
                     <LeagueBadge leagueApiId={p.leagueApiId} leagueName={leagueName} showName={false} />
                   )}
                 </td>
-                <td className="px-3 py-3">
+                {/* Phone: one line per team, never broken mid-name. */}
+                <td className="col-start-1 row-start-2 min-w-0 space-y-1 sm:hidden">
+                  {[
+                    { name: home, id: p.homeTeamApiId },
+                    { name: away, id: p.awayTeamApiId },
+                  ].map((t, i) => (
+                    <div key={i} className="flex min-w-0 items-center gap-2">
+                      <TeamCrest teamApiId={t.id} name={t.name} size={16} />
+                      <span className="truncate text-[15px] font-bold text-gray-100">{t.name ?? "—"}</span>
+                    </div>
+                  ))}
+                </td>
+                <td className="hidden px-3 py-3 sm:table-cell">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="px-3 py-3 font-black text-brand">
+                <td className="col-start-1 row-start-3 min-w-0 font-black text-brand sm:px-3 sm:py-3">
+                  <span className="mr-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:hidden">Tip</span>
                   {matchHref ? (
                     <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : p.pick}</Link>
                   ) : p.locked ? "LOCKED" : p.pick}
                 </td>
-                <td className="whitespace-nowrap px-3 py-3">
+                <td className="col-start-2 row-start-2 whitespace-nowrap text-right sm:px-3 sm:py-3 sm:text-left">
                   <ScoreCell
                     homeTeamApiId={p.homeTeamApiId}
                     awayTeamApiId={p.awayTeamApiId}
                     kickoff={kickoff}
                     finalHomeScore={p.finalHomeScore}
                     finalAwayScore={p.finalAwayScore}
+                    emptyClassName="hidden sm:inline"
                   />
                 </td>
                 {showOutcome && (
-                  <td className="px-3 py-3">
+                  <td className="col-start-2 row-start-3 text-right sm:px-3 sm:py-3 sm:text-left">
                     {p.outcome && p.outcome !== "PENDING" ? (
                       <span className={`text-[11px] font-black uppercase tracking-[0.1em] ${textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}`}>{p.outcome}</span>
                     ) : (
-                      <span className="text-xs text-gray-500">—</span>
+                      <span className="hidden text-xs text-gray-500 sm:inline">—</span>
                     )}
                   </td>
                 )}
@@ -139,12 +176,12 @@ export function PredictionsTable({
                     itself ("Over 2.5"), so showing it on a locked row would
                     hand over the tip the lock is withholding. */}
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
-                <td className="hidden px-3 py-3 text-right font-black tabular-nums text-gray-100 md:table-cell">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                <td className="col-start-2 row-start-1 text-right text-[11px] font-black tabular-nums text-gray-300 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm md:text-gray-100">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
                 {linkRows && (
-                  <td className="px-3 py-3 text-right">
+                  <td className="col-start-3 row-span-3 row-start-1 text-right sm:px-3 sm:py-3">
                     {matchHref && (
                       <Link
                         href={matchHref}
@@ -161,8 +198,8 @@ export function PredictionsTable({
                   px-3 py-2 would inset the rule lines and stop it reading as a
                   full-width break in the table. */}
               {ad && (
-                <tr>
-                  <td colSpan={columnCount} className="p-0">
+                <tr className="block sm:table-row">
+                  <td colSpan={columnCount} className="block p-0 sm:table-cell">
                     {ad}
                   </td>
                 </tr>

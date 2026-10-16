@@ -133,6 +133,7 @@ export function ScoreCell({
   align = "left",
   size = "sm",
   hideWhenEmpty = false,
+  emptyClassName = "",
 }: {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
@@ -145,6 +146,8 @@ export function ScoreCell({
   size?: "sm" | "lg";
   /** Render nothing (not a dash) before kickoff: the card has no column to hold. */
   hideWhenEmpty?: boolean;
+  /** Extra classes on the before-kickoff dash, e.g. to show it only on wider screens. */
+  emptyClassName?: string;
 }) {
   const live = useLive(homeTeamApiId, awayTeamApiId, kickoff);
   const right = align === "right";
@@ -190,5 +193,5 @@ export function ScoreCell({
       </div>
     );
   }
-  return hideWhenEmpty ? null : <span className="text-xs text-gray-500">—</span>;
+  return hideWhenEmpty ? null : <span className={`text-xs text-gray-500 ${emptyClassName}`}>—</span>;
 }
