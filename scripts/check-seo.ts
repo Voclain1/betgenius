@@ -168,7 +168,7 @@ check("guides: index and published guides are sitemap entries", sitemapEntriesSo
 (globalThis as { React?: unknown }).React = require("react");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { GUIDES } = require("../src/content/guides") as typeof import("../src/content/guides");
-check("guides: eight published", GUIDES.length === 8, String(GUIDES.length));
+check("guides: nine published", GUIDES.length === 9, String(GUIDES.length));
 check("guides: unique slugs", new Set(GUIDES.map((g) => g.slug)).size === GUIDES.length);
 check("guides: unique section ids within each guide", GUIDES.every((g) => new Set(g.sections.map((x) => x.id)).size === g.sections.length));
 check("guides: every guide has a description, summary and at least three related links", GUIDES.every((g) => g.description.length > 60 && g.summary.length > 40 && g.related.length >= 3));
@@ -245,7 +245,11 @@ const hubGuide: Array<[string, string]> = [
 ];
 const missingHubGuides = hubGuide.filter(([f, href]) => !readFileSync(join(repoRoot, f), "utf8").includes(`href="${href}"`)).map(([f]) => f);
 check("links: each market hub links to the guide for its market", missingHubGuides.length === 0, missingHubGuides.join(", "));
-check("guides: no certainty promises in the copy", !/\b(guaranteed (win|profit)|sure win|100% sure|risk-free|can't lose|cannot lose)\b/.test(guideCopy));
+// Phrases inside &quot;...&quot; are quoted, not promised: the scam guide names
+// them as warning signs. Everything outside quotation marks must still be clean.
+const unquotedGuideCopy = guideCopy.replace(/&quot;[^&]*?&quot;/g, "");
+check("guides: no certainty promises in the copy", !/\b(guaranteed (win|profit)|sure win|100% sure|risk-free|can't lose|cannot lose)\b/.test(unquotedGuideCopy));
+check("guides: the quoted-phrase exemption still sees unquoted text", /\bsure win\b/.test("a sure win here &quot;quoted&quot;".replace(/&quot;[^&]*?&quot;/g, "")));
 
 // --- Lagos date labels ----------------------------------------------------
 // Server locale must not move or rename the date shown on the daily hub.
