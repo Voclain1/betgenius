@@ -4,6 +4,7 @@ import { LinkTile } from "@/components/LinkTile";
 import type { Metadata } from "next";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
+import { MARKET_HUBS } from "@/lib/marketHubs";
 
 export const metadata: Metadata = {
   title: "Football Predictions & Betting Tips",
@@ -34,23 +35,9 @@ const evidenceLinks = [
   { href: "/responsible-gambling", name: "Responsible gambling", desc: "Use predictions as information, never as a guarantee of an outcome." },
 ];
 
-const marketHubs = [
-  {
-    href: "/predictions/over-2-5-goals",
-    name: "Over 2.5 Goals predictions",
-    desc: "Matches assessed for at least three total goals, with the supporting evidence and settled record.",
-  },
-  {
-    href: "/predictions/btts",
-    name: "BTTS predictions",
-    desc: "Both Teams to Score Yes and No picks, with match evidence and the settled market record.",
-  },
-  {
-    href: "/predictions/double-chance",
-    name: "Double Chance predictions",
-    desc: "Home-or-Draw, Away-or-Draw and Home-or-Away picks with supporting evidence and settled results.",
-  },
-];
+// From the shared list (src/lib/marketHubs.ts), so the index, the menu and the
+// feed chips always name the same market pages.
+const marketHubs = MARKET_HUBS.map((m) => ({ href: m.href, name: `${m.label} predictions`, desc: m.desc }));
 
 export default function PredictionsIndex() {
   return (

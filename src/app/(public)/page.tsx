@@ -8,6 +8,7 @@ import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { MarketChips } from "@/components/MarketChips";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
@@ -418,6 +419,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         ) : (
           <PredictionsTable rows={featuredRows} linkRows />
         )}
+        {/* After Genius and Featured, never above them: one compact line on to
+            the market pages, so it adds no buttons and no scrolling up top. */}
+        <MarketChips className="mt-4" />
       </section>
 
       <PremiumPanel kicker="Where we publish most" title="Popular leagues" id="home-popular" bare>

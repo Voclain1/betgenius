@@ -133,7 +133,10 @@ async function main() {
   // and midweek pages (added; gate in scripts/check-period-predictions.ts),
   // and Bet of the Day, now listed only while its pick has not kicked off,
   // matching the page's own noindex (gate asserted in check-betofday-lifecycle.ts).
-  const CATEGORY_ADDED_SINCE_FREEZE = (url: string) => /^\/predictions\/(weekend|midweek|bet-of-the-day)$/.test(new URL(url).pathname);
+  // The market hubs too: they now count free-tier tips only (no VIP or
+  // Premium) and Straight Wins is new (gate asserted in check-seo.ts).
+  const CATEGORY_ADDED_SINCE_FREEZE = (url: string) =>
+    /^\/predictions\/(weekend|midweek|bet-of-the-day|straight-wins|btts|double-chance|over-2-5-goals)$/.test(new URL(url).pathname);
   async function compareWithLegacy(label: string) {
     fake.reset();
     const legacy = await legacyGetSitemapEntries();

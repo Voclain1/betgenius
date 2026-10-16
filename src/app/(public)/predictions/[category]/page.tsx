@@ -33,6 +33,7 @@ import { FeedResults } from "@/components/FeedResults";
 import { PaidFeedCover, PaidResultsCover } from "@/components/PaidFeedCover";
 import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { firstResultsDay } from "@/lib/feedResults";
+import { MarketChips } from "@/components/MarketChips";
 
 const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
@@ -257,6 +258,9 @@ export default async function CategoryPage(
           day,
         })}
       />
+
+      {/* The broad free feeds point on to the market pages, one compact line. */}
+      {(cat === "TODAY" || cat === "FEATURED" || cat === "GENIUS") && <MarketChips />}
 
       {/* Ads are IN the feed now, between groups of picks, rather than in a
           single band under it — see feedAdPositions in src/lib/ads.ts for the

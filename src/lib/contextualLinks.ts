@@ -37,8 +37,8 @@ const PATHWAYS: Record<string, Omit<MarketPathway, "key">> = {
     record: { href: "/track-record#market-double-chance", label: "Double chance record" },
   },
   MATCH_WINNER: {
-    name: "Match result",
-    hub: null,
+    name: "Straight win",
+    hub: { href: "/predictions/straight-wins", label: "Straight win predictions" },
     guide: { href: "/guides/football-odds-and-implied-probability", label: "Reading odds and probability" },
     record: { href: "/track-record#market-match-winner", label: "Match result record" },
   },
@@ -66,8 +66,14 @@ export function pathwayKey(row: { marketType: string; selection?: unknown; categ
     }
     case "BTTS":
     case "DOUBLE_CHANCE":
-    case "MATCH_WINNER":
       return row.marketType;
+    // A draw pick is a match result but not a straight win, and the straight
+    // wins page does not list it, so it gets no pathway rather than a hub that
+    // would not contain it.
+    case "MATCH_WINNER": {
+      const v = (row.selection as { value?: unknown } | null)?.value;
+      return v === "HOME" || v === "AWAY" ? "MATCH_WINNER" : null;
+    }
     case "SAME_GAME_DOUBLE":
       return "COMBO";
     default:

@@ -69,6 +69,7 @@ const over25Page = readFileSync(join(repoRoot, "src/app/(public)/predictions/ove
 const over25Guide = readFileSync(join(repoRoot, "src/components/Over25PredictionsGuide.tsx"), "utf8");
 const marketPredictions = readFileSync(join(repoRoot, "src/lib/marketPredictions.ts"), "utf8");
 const predictionsIndex = readFileSync(join(repoRoot, "src/app/(public)/predictions/page.tsx"), "utf8");
+const marketHubsSrc = readFileSync(join(repoRoot, "src/lib/marketHubs.ts"), "utf8");
 const sitemapEntries = readFileSync(join(repoRoot, "src/lib/sitemapEntries.ts"), "utf8");
 check("over 2.5 hub: query uses structured market fields", marketPredictions.includes('marketType: "OVER_UNDER"') && marketPredictions.includes('["line"]') && marketPredictions.includes('["direction"]'));
 check("over 2.5 hub: query stays bounded", marketPredictions.includes("take: 60"));
@@ -77,7 +78,7 @@ check("over 2.5 hub: avoids a guaranteed outcome claim", over25Guide.includes("n
 check("over 2.5 hub: evidence renders after the ad-enabled feed", over25Page.indexOf("<Over25PredictionsEvidence") > over25Page.indexOf("<CategoryPredictionsList"));
 check("over 2.5 hub: keeps the existing ad-enabled list", (over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && over25Page.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("over 2.5 hub: links to an exact public record", over25Guide.includes("/track-record#market-over-25") && trackRecordView.includes('id="market-over-25"'));
-check("over 2.5 hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/over-2-5-goals"'));
+check("over 2.5 hub: receives an internal link from the predictions index", predictionsIndex.includes("MARKET_HUBS.map") && marketHubsSrc.includes('href: "/predictions/over-2-5-goals"'));
 check("over 2.5 hub: sitemap inclusion uses the exact structured selection", sitemapEntries.includes("const over25Rows") && sitemapEntries.includes('direction === "OVER"'));
 
 // --- BTTS hub ------------------------------------------------------------
@@ -89,7 +90,7 @@ check("btts hub: does not confuse BTTS with the match winner", bttsGuide.include
 check("btts hub: evidence renders after the ad-enabled feed", bttsPage.indexOf("<BttsPredictionsEvidence") > bttsPage.indexOf("<CategoryPredictionsList"));
 check("btts hub: keeps the existing ad-enabled list", (bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("btts hub: links to the exact market record", bttsGuide.includes("/track-record#market-btts") && trackRecordView.includes('id={`market-${mt.toLowerCase().replaceAll("_", "-")}`}'));
-check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/btts"'));
+check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes("MARKET_HUBS.map") && marketHubsSrc.includes('href: "/predictions/btts"'));
 check("btts hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('r.marketType === "BTTS"'));
 
 // --- Double Chance hub ---------------------------------------------------
@@ -101,8 +102,21 @@ check("double chance hub: does not imply certainty", doubleChanceGuide.includes(
 check("double chance hub: evidence renders after the ad-enabled feed", doubleChancePage.indexOf("<DoubleChancePredictionsEvidence") > doubleChancePage.indexOf("<CategoryPredictionsList"));
 check("double chance hub: keeps the existing ad-enabled list", (doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("double chance hub: links to the exact market record", doubleChanceGuide.includes("/track-record#market-double-chance"));
-check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes('href: "/predictions/double-chance"'));
+check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes("MARKET_HUBS.map") && marketHubsSrc.includes('href: "/predictions/double-chance"'));
 check("double chance hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('r.marketType === "DOUBLE_CHANCE"'));
+
+// --- Straight Wins hub and the free-tier rule (all market hubs) ------------
+const straightPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/straight-wins/page.tsx"), "utf8");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const hubs = require("../src/lib/marketHubs") as typeof import("../src/lib/marketHubs");
+check("straight wins hub: query is home or away wins only", /marketType: "MATCH_WINNER"/.test(marketPredictions) && /path: \["value"\], equals: "HOME"/.test(marketPredictions) && /path: \["value"\], equals: "AWAY"/.test(marketPredictions) && !/equals: "DRAW"/.test(marketPredictions));
+check("straight wins hub: draws are not straight wins", hubs.isStraightWinSelection({ value: "HOME" }) && hubs.isStraightWinSelection({ value: "AWAY" }) && !hubs.isStraightWinSelection({ value: "DRAW" }) && !hubs.isStraightWinSelection(null));
+check("straight wins hub: canonical, noindex when empty, ad-enabled list", straightPage.includes('feedDayHref("straight-wins", day)') && straightPage.includes("rows.length === 0 || day !== \"today\"") && straightPage.includes("withAds view=\"compact\""));
+check("straight wins hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const straightWinRows") && sitemapEntries.includes("isStraightWinSelection(r.selection)"));
+check("market hubs: every query leaves out VIP and Premium tips", (marketPredictions.match(/\.\.\.FREE_TIERS_ONLY,/g) ?? []).length === 4 && /categories: \{ none: \{ category: \{ in: \[\.\.\.MARKET_HUB_EXCLUDED_CATEGORIES\] \} \} \}/.test(marketPredictions));
+check("market hubs: the sitemap counts free-tier tips only", sitemapEntries.includes("const freeRows = rows.filter(isFreeTierRow)"));
+check("market hubs: VIP and Premium rows are not free-tier", !hubs.isFreeTierRow({ category: "VIP", categories: [] }) && !hubs.isFreeTierRow({ category: "FEATURED", categories: [{ category: "PREMIUM" }] }) && hubs.isFreeTierRow({ category: "GENIUS", categories: [{ category: "GENIUS" }] }));
+check("market hubs: the menu, the feed chips and the homepage link to them", /MARKET_HUBS/.test(readFileSync(join(repoRoot, "src/components/Nav.tsx"), "utf8")) && /<MarketChips/.test(readFileSync(join(repoRoot, "src/app/(public)/page.tsx"), "utf8")) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8")));
 
 // --- Priority competition hubs ------------------------------------------
 const leaguePageSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/league/[slug]/page.tsx"), "utf8");
@@ -216,11 +230,12 @@ const links = require("../src/lib/contextualLinks") as typeof import("../src/lib
 const pk = (marketType: string, selection: unknown = null, cats: string[] = []) => links.pathwayKey({ marketType, selection, categories: cats.map((category) => ({ category })) });
 check("links: over 2.5 maps to the Over 2.5 pathway", pk("OVER_UNDER", { line: 2.5, direction: "OVER" }) === "OVER_2_5");
 check("links: other goal lines map to the goals pathway", pk("OVER_UNDER", { line: 1.5, direction: "OVER" }) === "GOALS" && pk("OVER_UNDER", { line: 2.5, direction: "UNDER" }) === "GOALS");
-check("links: BTTS, double chance and match result map to their own", pk("BTTS") === "BTTS" && pk("DOUBLE_CHANCE") === "DOUBLE_CHANCE" && pk("MATCH_WINNER") === "MATCH_WINNER");
+check("links: BTTS, double chance and straight wins map to their own", pk("BTTS") === "BTTS" && pk("DOUBLE_CHANCE") === "DOUBLE_CHANCE" && pk("MATCH_WINNER", { value: "HOME" }) === "MATCH_WINNER" && pk("MATCH_WINNER", { value: "AWAY" }) === "MATCH_WINNER");
+check("links: a draw pick gets no straight-win pathway", pk("MATCH_WINNER", { value: "DRAW" }) === null);
 check("links: a Banker-tagged pick leads to the Banker pathway, whatever its market", pk("MATCH_WINNER", null, ["BANKER"]) === "BANKER");
 check("links: a combo leads to multi bets", pk("SAME_GAME_DOUBLE") === "COMBO");
 check("links: markets with no explainer get none", pk("CORRECT_SCORE") === null && pk("OTHER") === null);
-const many = [{ marketType: "BTTS" }, { marketType: "BTTS" }, { marketType: "DOUBLE_CHANCE" }, { marketType: "MATCH_WINNER" }, { marketType: "SAME_GAME_DOUBLE" }];
+const many = [{ marketType: "BTTS" }, { marketType: "BTTS" }, { marketType: "DOUBLE_CHANCE" }, { marketType: "MATCH_WINNER", selection: { value: "AWAY" } }, { marketType: "SAME_GAME_DOUBLE" }];
 check("links: one pathway per market, in page order, at most three", JSON.stringify(links.marketPathways(many).map((p) => p.key)) === JSON.stringify(["BTTS", "DOUBLE_CHANCE", "MATCH_WINNER"]));
 const brokenTargets = links.ALL_PATHWAY_TARGETS.filter((t) => !routeExists(t.href)).map((t) => t.href);
 check("links: every hub, guide and record target resolves to a real page", brokenTargets.length === 0, brokenTargets.join(", "));

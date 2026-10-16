@@ -13,6 +13,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { lagosDayLabel } from "@/lib/lagosDate";
 import { BttsPredictionsEvidence, BttsPredictionsGuide } from "@/components/BttsPredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
+import { MarketChips } from "@/components/MarketChips";
 
 const PATH = "/predictions/btts";
 
@@ -108,6 +109,7 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
           { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },
         ]}
       />
+      <MarketChips active="BTTS" />
       <PredictionViewSwitch
         tabs={<FeedDayTabs basePath={PATH} active={day} />}
         intro=<BttsPredictionsGuide />
