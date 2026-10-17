@@ -313,16 +313,22 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       <nav aria-label="Prediction categories" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
-          <div className="flex flex-wrap gap-2">
-            {HOME_CATEGORY_LINKS.map((c) => (
-              <Link
-                key={c.href}
-                href={c.href}
-                className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
-              >
-                {c.label}
-              </Link>
-            ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              {HOME_CATEGORY_LINKS.map((c) => (
+                <Link
+                  key={c.href}
+                  href={c.href}
+                  className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </div>
+            {/* Today's tips by market, directly under the Today buttons: one
+                slim line of small chips (MarketChips), so it costs a single
+                row and never pushes Genius or Featured down by more. */}
+            <MarketChips />
           </div>
         </div>
         <span aria-hidden className="h-px w-full bg-brand-border lg:h-8 lg:w-px" />
@@ -419,9 +425,6 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         ) : (
           <PredictionsTable rows={featuredRows} linkRows />
         )}
-        {/* After Genius and Featured, never above them: one compact line on to
-            the market pages, so it adds no buttons and no scrolling up top. */}
-        <MarketChips className="mt-4" />
       </section>
 
       <PremiumPanel kicker="Where we publish most" title="Popular leagues" id="home-popular" bare>
