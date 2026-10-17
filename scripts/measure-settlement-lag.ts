@@ -32,6 +32,9 @@ async function main() {
   });
   console.log(`\npublished, still PENDING, kickoff >2h ago: ${pending.length} (manual-only ${pending.filter((p) => p.manualSettlementOnly).length})`);
   for (const p of pending.slice(0, 15)) console.log(`  ${p.kickoff!.toISOString().slice(0, 16)} attempts ${p.settlementAttempts} manual=${p.manualSettlementOnly} ${p.homeTeam} v ${p.awayTeam}`);
+  const jobs = await prisma.jobRun.groupBy({ by: ["job"], where: { ranAt: { gte: new Date(Date.now() - 24 * 3600_000) } }, _count: true, _max: { ranAt: true, ms: true } });
+  console.log("\nall jobs, last 24h:");
+  for (const j of jobs) console.log(`  ${j.job}: ${j._count} runs, last ${j._max.ranAt?.toISOString().slice(0, 16)}, max ${j._max.ms}ms`);
   console.log(`\nnow ${new Date().toISOString()}`);
 }
 main().finally(() => prisma.$disconnect());
