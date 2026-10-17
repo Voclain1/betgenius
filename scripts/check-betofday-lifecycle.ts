@@ -25,7 +25,7 @@ function check(label: string, ok: boolean, detail?: unknown) {
   }
 }
 
-type Row = { id: string; status: string; outcome: string; kickoff: Date | null; tags: string[] };
+type Row = { id: string; status: string; outcome: string; kickoff: Date | null; tags: string[]; pinned?: boolean };
 
 (async () => {
   const { prisma } = await import("../src/lib/prisma");
@@ -53,7 +53,7 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
       ? {
           id: row.id, homeTeam: "Home", awayTeam: "Away", leagueApiId: 39, leagueName: "Premier League", kickoff: row.kickoff,
           market: "Goals", pick: "Over 2.5", marketType: "OVER_UNDER", selection: null, confidence: 70, reasoning: "",
-          matchPreview: null, outcome: row.outcome, category: "FEATURED", homeTeamApiId: 1, awayTeamApiId: 2, betOfDayPinnedAt: null,
+          matchPreview: null, outcome: row.outcome, category: "FEATURED", homeTeamApiId: 1, awayTeamApiId: 2, betOfDayPinnedAt: row.pinned ? NOW : null,
         }
       : null;
   };
@@ -61,8 +61,26 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
 
   const { getBetOfTheDay, getCurrentBetOfTheDay, getHomepageBetOfTheDay } = await import("../src/lib/betOfTheDay");
 
-  const today: Row = { id: "botd-today", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(NOW.getTime() + 2 * hour), tags: ["BET_OF_THE_DAY"] };
+  // Pinned by an admin: the stub has no odds, and a pin stands in for the price gate.
+  const today: Row = { id: "botd-today", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(NOW.getTime() + 2 * hour), tags: ["BET_OF_THE_DAY"], pinned: true };
   rows.push(today);
+
+  console.log("\nonly today's pick, only inside the price rule:");
+  {
+    // A tag that is neither pinned nor priced 2.20-4.50 is never a recommendation.
+    const unpriced: Row = { id: "unpriced", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(NOW.getTime() + 2 * hour), tags: ["BET_OF_THE_DAY"] };
+    rows.unshift(unpriced);
+    check("an unpinned pick outside the price band is not current", (await getCurrentBetOfTheDay(NOW)) === null);
+    check("...and not on the homepage before kickoff", (await getHomepageBetOfTheDay(NOW)) === null);
+    rows.shift();
+    // Tomorrow's pick on the day before: Saturday must not show Sunday's game.
+    const tomorrowPick: Row = { id: "tmrw", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(NOW.getTime() + 26 * hour), tags: ["BET_OF_THE_DAY"], pinned: true };
+    rows.unshift(tomorrowPick);
+    check("tomorrow's pick is not today's Bet of the Day", (await getCurrentBetOfTheDay(NOW)) === null);
+    check("...and is not on today's homepage", (await getHomepageBetOfTheDay(NOW)) === null);
+    check("...it shows on its own day", (await getCurrentBetOfTheDay(new Date(NOW.getTime() + 20 * hour)))?.row.id === "tmrw");
+    rows.shift();
+  }
 
   console.log("\nhomepage slot follows the pick's lifecycle, through the end of its kickoff day:");
   check("before kickoff it is current", (await getCurrentBetOfTheDay(NOW))?.row.id === "botd-today");
@@ -91,8 +109,9 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
   console.log("\na new valid selection reactivates the slot:");
   // What setBetOfTheDay does: the tag moves; the old row itself is untouched.
   today.tags = [];
-  rows.unshift({ id: "botd-tomorrow", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(evening.getTime() + 20 * hour), tags: ["BET_OF_THE_DAY"] });
-  check("the new pick appears on the homepage", (await getCurrentBetOfTheDay(evening))?.row.id === "botd-tomorrow");
+  rows.unshift({ id: "botd-tomorrow", status: "PUBLISHED", outcome: "PENDING", kickoff: new Date(evening.getTime() + 20 * hour), tags: ["BET_OF_THE_DAY"], pinned: true });
+  check("the new pick waits for its own day", (await getCurrentBetOfTheDay(evening)) === null);
+  check("...and appears on its day", (await getCurrentBetOfTheDay(new Date(evening.getTime() + 14 * hour)))?.row.id === "botd-tomorrow");
   check("the settled row still exists with its outcome", rows.some((r) => r.id === "botd-today" && r.outcome === "WON"));
 
   console.log("\nno current pick renders no homepage section:");
@@ -100,6 +119,8 @@ type Row = { id: string; status: string; outcome: string; kickoff: Date | null; 
   check("nothing tagged is null", (await getCurrentBetOfTheDay(evening)) === null);
 
   console.log("\nwiring:");
+  const gen = readFileSync("src/lib/ai/generate.ts", "utf8");
+  check("generation never persists the Bet of the Day tag", /input\.categories\.filter\(\(c\) => c !== "BET_OF_THE_DAY"\)/.test(gen));
   const home = readFileSync("src/app/(public)/page.tsx", "utf8");
   check("homepage reads the end-of-day helper", home.includes("getHomepageBetOfTheDay()") && !/\bgetBetOfTheDay\(\)/.test(home));
   check("homepage passes the state, so the card shows upcoming / in play / result", /state=\{betOfTheDay\.state\}/.test(home));

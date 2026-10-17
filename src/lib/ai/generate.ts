@@ -356,7 +356,13 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       const isolatesComboLegs = input.intent === REGULAR_COMBO_INTENT || input.categories.includes(SAME_GAME_DOUBLE);
       // A Goals pick is filed under GOALS alone — never FEATURED — and GOALS is
       // still derived from the market by setPredictionCategories below.
-      const persistedCategories = goalsOnly ? [...GOALS_PERSISTED_CATEGORIES] : isolatesComboLegs ? [SAME_GAME_DOUBLE] : input.categories;
+      // BET_OF_THE_DAY is never persisted at generation: the tag is only ever
+      // set by setBetOfTheDay (auto-selection behind the odds gate, or an
+      // admin pin). A generated row carrying it skipped both the 2.20-4.50
+      // price gate and the today-only rule, and reached the homepage slot
+      // (a Sunday Double Chance at 1.18 shown on Saturday).
+      const requested = input.categories.filter((c) => c !== "BET_OF_THE_DAY");
+      const persistedCategories = goalsOnly ? [...GOALS_PERSISTED_CATEGORIES] : isolatesComboLegs ? [SAME_GAME_DOUBLE] : requested.length ? requested : ["FEATURED"];
       const pred = await prisma.prediction.create({
         data: {
           fixtureId: input.fixtureId,

@@ -138,7 +138,16 @@ export const getBetOfTheDay = cache(async (): Promise<BetOfTheDayView | null> =>
  */
 export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<BetOfTheDayView | null> {
   const view = await getBetOfTheDay();
-  return view && isCurrentBetOfTheDay(view.row, now) ? view : null;
+  return view && isCurrentBetOfTheDay(view.row, now) && meetsPriceRule(view) ? view : null;
+}
+
+/**
+ * Shown as a recommendation only when its own selection is priced inside the
+ * Bet of the Day band (2.20-4.50, qualifiesForBetOfDay), or an admin pinned it
+ * by hand. A tag that reached a row by any other route is never presented.
+ */
+export function meetsPriceRule(view: Pick<BetOfTheDayView, "gate" | "row">): boolean {
+  return view.gate?.qualifies === true || view.row.betOfDayPinnedAt != null;
 }
 
 /**
@@ -148,7 +157,11 @@ export async function getCurrentBetOfTheDay(now: Date = new Date()): Promise<Bet
  */
 export async function getHomepageBetOfTheDay(now: Date = new Date()): Promise<(BetOfTheDayView & { state: BetOfTheDayState }) | null> {
   const view = await getBetOfTheDay();
-  return view && showBetOfTheDayOnHomepage(view.row, now) ? { ...view, state: betOfTheDayState(view.row, now) } : null;
+  if (!view || !showBetOfTheDayOnHomepage(view.row, now)) return null;
+  const state = betOfTheDayState(view.row, now);
+  // Before kickoff it is a recommendation, so it must clear the price rule.
+  if (state === "LIVE" && !meetsPriceRule(view)) return null;
+  return { ...view, state };
 }
 
 /**

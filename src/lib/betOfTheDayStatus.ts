@@ -27,8 +27,14 @@ export function betOfTheDayState(
   return "LIVE";
 }
 
+/** Kicks off on the current Lagos day. The Bet of the Day is TODAY's pick. */
+export function kicksOffToday(row: { kickoff: Date | null }, now: Date = new Date()): boolean {
+  return !!row.kickoff && lagosDateKey(row.kickoff) === lagosDateKey(now);
+}
+
 export function isCurrentBetOfTheDay(row: { outcome: string; kickoff: Date | null; status?: string }, now: Date = new Date()) {
-  return betOfTheDayState(row, now) === "LIVE";
+  // Today's pick only: a tagged row for tomorrow is not today's Bet of the Day.
+  return betOfTheDayState(row, now) === "LIVE" && kicksOffToday(row, now);
 }
 
 /**
@@ -44,6 +50,6 @@ export function isCurrentBetOfTheDay(row: { outcome: string; kickoff: Date | nul
 export function showBetOfTheDayOnHomepage(row: { outcome: string; kickoff: Date | null; status?: string }, now: Date = new Date()): boolean {
   const state = betOfTheDayState(row, now);
   if (state === "WITHDRAWN") return false;
-  if (state === "LIVE") return true;
-  return !!row.kickoff && lagosDateKey(row.kickoff) === lagosDateKey(now);
+  // Every state, upcoming included, is limited to today's kickoff.
+  return kicksOffToday(row, now);
 }
