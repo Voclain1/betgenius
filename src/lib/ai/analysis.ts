@@ -647,6 +647,12 @@ export async function generatePredictionForFixture(input: {
    * byte-identical to ordinary generation's.
    */
   lowerRisk?: { avoidPicks: readonly string[] };
+  /**
+   * The SHORT-PRICE RULE section (src/lib/shortPriceGuard.ts): a heavy
+   * favourite's Double Chance is not worth tipping, so back the win when the
+   * evidence supports it. Empty or absent, the prompt is unchanged.
+   */
+  shortPriceBlock?: string;
 }): Promise<AIPredictionResult> {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
@@ -743,7 +749,7 @@ Fixture:
 Evidence digest (JSON):
 ${JSON.stringify(d)}
 ${revisionBlock}${directionBlock}
-${handicapBlock}${goalsBlock}
+${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock ?? "") : ""}
 ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;

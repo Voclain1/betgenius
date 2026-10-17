@@ -125,7 +125,7 @@ check("closing instruction allows only 1.5 / 2.5 OVER, or nothing", /\{"line": 1
 const analysis = read("src/lib/ai/analysis.ts");
 check("the constraint is added only for goalsOnly (and never beside a handicap line)", /const goalsBlock = input\.goalsOnly && !hc \? goalsMarketBlock\(\) : input\.lowerRisk && !hc \? lowerRiskPickBlock\(input\.lowerRisk\.avoidPicks\) : "";/.test(analysis));
 check("...and the paid pass's lower-risk block only for that pass, so ordinary prompts are unchanged", /\.\.\.\(input\.intent === "VIP_PREMIUM" \? \{ lowerRisk: \{ avoidPicks: input\.avoidPicks \?\? \[\] \} \} : \{\}\)/.test(read("src/lib/ai/generate.ts")));
-check("ordinary generation keeps its instruction and its prompt layout", /: `Return JSON only\. marketType must be one of: \$\{AUTO_MARKET_TYPES\.join\(", "\)\}\.`;/.test(analysis) && /\$\{handicapBlock\}\$\{goalsBlock\}\r?\n\$\{marketInstruction\}`;/.test(analysis));
+check("ordinary generation keeps its instruction and its prompt layout", /: `Return JSON only\. marketType must be one of: \$\{AUTO_MARKET_TYPES\.join\(", "\)\}\.`;/.test(analysis) && /\$\{handicapBlock\}\$\{goalsBlock\}\$\{!hc && !input\.goalsOnly \? \(input\.shortPriceBlock \?\? ""\) : ""\}\r?\n\$\{marketInstruction\}`;/.test(analysis));
 check("the shared base prompt is untouched (still its original O/U example)", /"OVER_UNDER"     -> selection: \{ "line": number, "direction": "OVER" \| "UNDER" \}   \/\/ e\.g\. line 2\.5/.test(read("src/lib/ai/analysis.ts")));
 
 // ── 3. Persistence ─────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ console.log("\n3. Persistence (generate.ts)");
 const generate = code("src/lib/ai/generate.ts");
 check("Goals intent turns the constraint on", /const goalsOnly = input\.intent === GOALS_INTENT;/.test(generate) && /\.\.\.\(goalsOnly \? \{ goalsOnly: true \} : \{\}\)/.test(generate));
 check("single market breadth — a Goals job can never assemble a double", /const marketBreadth = goalsOnly \? "single"/.test(generate) && /marketBreadth === "multi"/.test(generate));
-check("only pickGoalsDraft's survivor is persisted", /const drafts = goalsSelection \? \(goalsSelection\.pick \? \[goalsSelection\.pick\] : \[\]\) : output\.predictions;/.test(generate) && /drafts\.map\(async \(p\) =>/.test(generate));
+check("only pickGoalsDraft's survivor is persisted", /const modelDrafts = goalsSelection \? \(goalsSelection\.pick \? \[goalsSelection\.pick\] : \[\]\) : output\.predictions;/.test(generate) && /const drafts = odds \? modelDrafts\.filter/.test(generate) && /guardsShortPrice = !goalsOnly/.test(generate) && /drafts\.map\(async \(p\) =>/.test(generate));
 check("persisted under GOALS only — never FEATURED", /const persistedCategories = goalsOnly \? \[\.\.\.GOALS_PERSISTED_CATEGORIES\]/.test(generate) && same([...GOALS_PERSISTED_CATEGORIES], [GOALS]));
 check("GOALS still comes from the shared deterministic helper", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(generate));
 check("stamped GOALS_GENERATED", /goalsOnly\s*\?\s*GOALS_GENERATED_PROVENANCE/.test(generate));
