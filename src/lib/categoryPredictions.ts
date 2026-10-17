@@ -112,9 +112,14 @@ export function parseFeedDay(value: string | string[] | undefined): FeedDay {
   return (FEED_DAYS as readonly string[]).includes(raw ?? "") ? (raw as FeedDay) : "today";
 }
 
-/** Only yesterday is settled enough to carry outcomes; today matches its current behaviour. */
+/**
+ * Yesterday and today carry WON/LOST/VOID as soon as a pick is settled (the
+ * results pass settles within minutes of the final whistle). Today used to
+ * hide them until the day rolled over, so a finished match read as still
+ * pending all evening. Tomorrow has nothing settled to show.
+ */
 export function dayShowsOutcomes(day: FeedDay): boolean {
-  return day === "yesterday";
+  return day !== "tomorrow";
 }
 
 /**

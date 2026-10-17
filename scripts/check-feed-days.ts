@@ -51,7 +51,7 @@ async function main() {
 
   console.log("\noutcomes are shown on yesterday only:");
   check("yesterday shows outcomes", dayShowsOutcomes("yesterday"));
-  check("today does NOT (unchanged behaviour)", !dayShowsOutcomes("today"));
+  check("today shows outcomes as soon as a pick is settled", dayShowsOutcomes("today"));
   check("tomorrow does NOT", !dayShowsOutcomes("tomorrow"));
 
   console.log("\nONE query per day, and the day is in the WHERE clause:");
