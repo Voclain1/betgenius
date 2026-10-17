@@ -18,6 +18,9 @@ export function bulkFailureReason(err: unknown): string {
   if (name === "CertaintyLanguageError" || name === "HouseVoiceError") {
     return "Draft rejected by the writing checks. Run it again for a new draft.";
   }
+  if (name === "ShortPriceError") {
+    return "Only a Double Chance priced under 1.10 was drafted, which is not worth tipping. Run it again or skip this match.";
+  }
   if (name === "AllProvidersFailedError" || name === "ModelUnavailableError" || name === "AbortError") {
     return "The generation service did not respond. Try again shortly.";
   }

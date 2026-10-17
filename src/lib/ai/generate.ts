@@ -9,7 +9,9 @@ import { searchTeam } from "@/lib/football/api-football";
 import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
-import { normalizeName } from "@/lib/slug";
+import { normalizeName, matchKey } from "@/lib/slug";
+import type { FixtureOdds } from "@/lib/odds";
+import { shortPriceSides, shortPriceBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
@@ -212,12 +214,18 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // same-game double can be assembled from independently-reasoned rows.
   // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = goalsOnly ? "single" : marketBreadthForCategories(input.categories, input.intent);
+  // Short-price rule (src/lib/shortPriceGuard.ts): ordinary generation only.
+  // The Goals pass has one fixed market, a handicap job one fixed line, and the
+  // VIP/PREMIUM pass its own odds gate.
+  const guardsShortPrice = !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
+  const odds = guardsShortPrice ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
     marketBreadth,
     handicapLine: input.handicapLine,
+    shortPriceBlock: shortPriceBlock(shortPriceSides(odds, input.home, input.away)),
     ...(goalsOnly ? { goalsOnly: true } : {}),
     ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
   });
@@ -256,7 +264,14 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // read only these, so a discarded draft's prose cannot sink the kept one.
   const goalsSelection = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []) : null;
   const goalsRejections: GoalsDraftRejection[] = goalsSelection?.rejected ?? [];
-  const drafts = goalsSelection ? (goalsSelection.pick ? [goalsSelection.pick] : []) : output.predictions;
+  const modelDrafts = goalsSelection ? (goalsSelection.pick ? [goalsSelection.pick] : []) : output.predictions;
+  // A Double Chance the market prices under 1.10 is dropped whatever the
+  // prompt said: it pays nothing. If that was all the model drafted, nothing
+  // is saved and the run says why.
+  const drafts = odds ? modelDrafts.filter((p) => !isUnpayableDoubleChance(odds, p.marketType, p.selection)) : modelDrafts;
+  if (modelDrafts.length > 0 && drafts.length === 0) {
+    throw new ShortPriceError(`${input.home} v ${input.away}`);
+  }
 
   // Deterministic certainty scan, BEFORE anything is persisted.
   //
@@ -415,4 +430,36 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
     : null;
 
   return { job, preview: output.matchPreview, predictions: created, combo, sources, durationMs, handicapRejections, goalsRejections };
+}
+
+/**
+ * The fixture's bookmaker prices for the short-price rule: the cached quote,
+ * or one api-football call to fetch it when the fixture has never been priced
+ * (a failed attempt in the last 6 hours is not retried). Null when there is no
+ * quote; generation then runs as it did before the rule.
+ */
+async function loadFixtureOdds(
+  homeTeamApiId: number | null,
+  awayTeamApiId: number | null,
+  kickoff: string,
+  fixtureApiId: number | undefined,
+): Promise<FixtureOdds | null> {
+  const key = matchKey({ homeTeamApiId, awayTeamApiId, kickoff });
+  if (!key) return null;
+  try {
+    const cached = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true, lastAttemptAt: true } });
+    if (cached?.fetchedAt && cached.oddsJson) return cached.oddsJson as unknown as FixtureOdds;
+    const kickoffDate = new Date(kickoff);
+    const triedRecently = cached?.lastAttemptAt && Date.now() - cached.lastAttemptAt.getTime() < 6 * 3_600_000;
+    if (fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
+    // Dynamic: enrichment is a large module the rest of generation never needs.
+    const { refreshOddsCache } = await import("@/lib/enrichment");
+    const res = await refreshOddsCache({ matchKey: key, fixtureApiId, kickoff: kickoffDate, kind: "candidate" });
+    if (res.result !== "ok") return null;
+    const fresh = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true } });
+    return (fresh?.oddsJson as unknown as FixtureOdds | null) ?? null;
+  } catch (err) {
+    console.warn("[generate] odds lookup failed; short-price rule skipped", err);
+    return null;
+  }
 }
