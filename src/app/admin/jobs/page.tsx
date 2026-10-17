@@ -63,6 +63,7 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "email-dispatch": 60,
   "paystack-sync": 2 * 60,
   settle: 26 * 60,
+  "results-pass": 60,
   // Every 15 minutes, every 5 and every 2 respectively; an hour of slack keeps
   // this reporting "not scheduled at all" rather than a single missed tick.
   "refresh-insights": 60,
@@ -81,6 +82,7 @@ const LABEL: Record<string, string> = {
   "select-bet-of-the-day": "Bet of the Day selection",
   "curate-accumulators": "Accumulator curation",
   settle: "Settlement",
+  "results-pass": "Results (every 10 min)",
   "refresh-insights": "Match Insights refresh",
   "notifications-reminders": "Kickoff reminders",
   "notifications-dispatch": "Notification dispatch",
