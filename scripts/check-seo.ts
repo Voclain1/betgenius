@@ -116,7 +116,7 @@ check("straight wins hub: sitemap inclusion is inventory-gated", sitemapEntries.
 check("market hubs: every query leaves out VIP and Premium tips", (marketPredictions.match(/\.\.\.FREE_TIERS_ONLY,/g) ?? []).length === 4 && /categories: \{ none: \{ category: \{ in: \[\.\.\.MARKET_HUB_EXCLUDED_CATEGORIES\] \} \} \}/.test(marketPredictions));
 check("market hubs: the sitemap counts free-tier tips only", sitemapEntries.includes("const freeRows = rows.filter(isFreeTierRow)"));
 check("market hubs: VIP and Premium rows are not free-tier", !hubs.isFreeTierRow({ category: "VIP", categories: [] }) && !hubs.isFreeTierRow({ category: "FEATURED", categories: [{ category: "PREMIUM" }] }) && hubs.isFreeTierRow({ category: "GENIUS", categories: [{ category: "GENIUS" }] }));
-check("market hubs: the menu, the feed chips and the homepage link to them", /MARKET_HUBS/.test(readFileSync(join(repoRoot, "src/components/Nav.tsx"), "utf8")) && /<MarketChips/.test(readFileSync(join(repoRoot, "src/app/(public)/page.tsx"), "utf8")) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8")));
+check("market hubs: the menu, the feed chips and the homepage link to them", /MARKET_HUBS/.test(readFileSync(join(repoRoot, "src/components/Nav.tsx"), "utf8")) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/page.tsx"), "utf8")) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8")));
 
 // --- Priority competition hubs ------------------------------------------
 const leaguePageSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/league/[slug]/page.tsx"), "utf8");
