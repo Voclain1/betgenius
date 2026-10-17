@@ -35,6 +35,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-live-snapshot.ts",
   "tsx scripts/check-bulk-generation-dedupe.ts",
   "tsx scripts/check-short-price-guard.ts",
+  "tsx scripts/check-results-pass.ts",
   "tsx scripts/check-recent-results.ts",
   "tsx scripts/check-vip-premium-overlay.ts",
   "tsx scripts/check-adaptive-coverage.ts",

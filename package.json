@@ -55,6 +55,7 @@
     "check:live-snapshot": "tsx scripts/check-live-snapshot.ts",
     "check:bulk-generation-dedupe": "tsx scripts/check-bulk-generation-dedupe.ts",
     "check:short-price-guard": "tsx scripts/check-short-price-guard.ts",
+    "check:results-pass": "tsx scripts/check-results-pass.ts",
     "check:recent-results": "tsx scripts/check-recent-results.ts",
     "check:vip-premium": "tsx scripts/check-vip-premium-gate.ts",
     "verify:vip-premium": "tsx --env-file=.env scripts/verify-vip-premium-pass.ts",

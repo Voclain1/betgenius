@@ -20,6 +20,8 @@ import { prisma } from "@/lib/prisma";
 /** Job identifiers. A constant so a typo cannot silently split one job's history in two. */
 export const JOB_CURATE_ACCUMULATORS = "curate-accumulators" as const;
 export const JOB_SETTLE = "settle" as const;
+/** Settling finished picks every 10 minutes, inside the notifications dispatch request. See lib/resultsPass. */
+export const JOB_RESULTS_PASS = "results-pass" as const;
 /**
  * The generation-reliability jobs.
  *
@@ -77,6 +79,7 @@ export const KNOWN_JOBS = [
   JOB_BET_OF_DAY_SELECT,
   JOB_CURATE_ACCUMULATORS,
   JOB_SETTLE,
+  JOB_RESULTS_PASS,
   JOB_REFRESH_INSIGHTS,
   JOB_NOTIFICATIONS_REMINDERS,
   JOB_NOTIFICATIONS_DISPATCH,
