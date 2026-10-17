@@ -242,12 +242,30 @@ type CurationRule = {
    * curation did not choose itself undid that work three-hourly.
    */
   keepExisting?: boolean;
+  /**
+   * GENIUS: rank by confidence alone (competition priority only breaks ties),
+   * so the list is always the day's highest-confidence free tips, and a better
+   * one published later displaces the lowest. The paid tiers keep the
+   * league-first editorial ranking.
+   */
+  confidenceFirst?: boolean;
+  /** GENIUS: never select a tip tagged VIP or PREMIUM; Genius is the free list. */
+  freeOnly?: boolean;
 };
 
 const CURATION_RULES: Record<AutoCategory, CurationRule> = {
   // GENIUS is the free tier and takes no route requirement: the genius route is
   // where most fixtures legitimately land, so gating it would empty the feed.
-  GENIUS: { floor: GENIUS_CONFIDENCE_FLOOR, keepExisting: true },
+  //
+  // The day's highest-confidence free tips, at most CURATION_MAX, re-ranked
+  // from scratch on every run. It used to keep every tagged row (keepExisting)
+  // and rank league-first, with a top-up below the floor: a 55% tip tagged at
+  // generation held its slot all day while better tips went unlisted. Now
+  // nothing is kept for having been tagged, the ranking is confidence-first,
+  // and the 70 floor is hard: a thin day lists fewer tips, never weaker ones.
+  // Same-game doubles are left out (their number is a ceiling, not an
+  // estimate comparable with a single pick's; they have Combo Bets).
+  GENIUS: { floor: GENIUS_CONFIDENCE_FLOOR, hardFloor: true, confidenceFirst: true, freeOnly: true },
   VIP: { floor: VIP_CONFIDENCE_FLOOR, requireVipRoute: true, hardFloor: true, paid: true },
   PREMIUM: { floor: PREMIUM_CONFIDENCE_FLOOR, requireVipRoute: true, hardFloor: true, paid: true },
 };
@@ -262,13 +280,14 @@ export function selectCuratedIds<T extends Rankable>(
   floor: number,
   min = CURATION_MIN,
   max = CURATION_MAX,
-  opts: { hardFloor?: boolean } = {},
+  opts: { hardFloor?: boolean; confidenceFirst?: boolean } = {},
 ): string[] {
   // Competition priority first, then confidence — the editorial ranking for
   // CHOOSING which picks get featured. Deliberately not the display order,
   // which leads with confidence; see the note in src/lib/predictionOrdering.ts
   // on why selecting a pick and ordering a list are different questions.
-  const ranked = [...rows].sort(compareByEditorialRank);
+  // confidenceFirst (GENIUS) inverts it: confidence decides, priority breaks ties.
+  const ranked = [...rows].sort(opts.confidenceFirst ? compareByConfidenceRank : compareByEditorialRank);
   const aboveFloor = ranked.filter((r) => r.confidence >= floor);
   const chosen = aboveFloor.slice(0, max);
   const chosenIds = new Set(chosen.map((row) => row.id));
@@ -287,6 +306,11 @@ export function selectCuratedIds<T extends Rankable>(
     }
   }
   return ranked.filter((row) => chosenIds.has(row.id)).slice(0, max).map((row) => row.id);
+}
+
+/** Confidence first, then competition priority, then id: the GENIUS ranking. */
+export function compareByConfidenceRank(a: Rankable, b: Rankable): number {
+  return b.confidence - a.confidence || compareByEditorialRank(a, b);
 }
 
 /** A published row curation may rank: today's kickoff, not a hidden combo leg. */
@@ -433,7 +457,11 @@ export function planCuration(
 
   // A paid-only pick belongs to VIP/PREMIUM alone: the free tiers never select
   // it, and if one somehow carries a free tag, it is removed below.
-  const belongsHere = (r: CurationRow) => rule.paid || !isPaidOnlyProvenance(r.provenance);
+  const belongsHere = (r: CurationRow) =>
+    (rule.paid || !isPaidOnlyProvenance(r.provenance)) &&
+    // The free list: no tip that sits in a paid feed, and no same-game double.
+    (!rule.freeOnly ||
+      (!r.categories.some((c) => (PAID_TIER_CATEGORIES as readonly string[]).includes(c)) && r.marketType !== "SAME_GAME_DOUBLE"));
   const open = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r));
   const doublesExcluded = open.filter((r) => !isPaidEligible(r)).length;
   const routeExcluded = open.filter((r) => isPaidEligible(r) && !hasRequiredRoute(r)).length;
@@ -478,7 +506,7 @@ export function planCuration(
   const remainingMax = Math.max(0, CURATION_MAX - protectedIds.size);
   const remainingMin = Math.max(0, CURATION_MIN - protectedIds.size);
 
-  const curatedIds = selectCuratedIds(curatable, rule.floor, remainingMin, remainingMax, { hardFloor: rule.hardFloor });
+  const curatedIds = selectCuratedIds(curatable, rule.floor, remainingMin, remainingMax, { hardFloor: rule.hardFloor, confidenceFirst: rule.confidenceFirst });
   const selectedIds = [...protectedIds, ...curatedIds];
   const selected = new Set(selectedIds);
   return {

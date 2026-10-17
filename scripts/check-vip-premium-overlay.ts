@@ -352,20 +352,30 @@ async function main() {
     eq("curation: PREMIUM selects only rows at or above 80", plan("PREMIUM", pool).selectedIds, ["c90"]);
     check("curation: VIP carries a hard floor", curation.curationRuleFor("VIP").hardFloor === true);
     check("curation: a two-pick VIP day stays a two-pick day", plan("VIP", [row("x90", 90), row("x80", 80), row("x74", 74)]).selected === 2);
-    eq("curation: GENIUS is unchanged — 70 floor, still topped up to five",
-      plan("GENIUS", pool).selectedIds, curation.selectCuratedIds(pool, curation.GENIUS_CONFIDENCE_FLOOR));
-    eq("curation: GENIUS rule: 70 floor, keeps what is already tagged", curation.curationRuleFor("GENIUS"), { floor: 70, keepExisting: true });
+    // GENIUS: the day's highest-confidence free tips, at most 15, re-ranked
+    // every run, with a hard 70 floor (no top-up, nothing kept for being tagged).
+    eq("curation: GENIUS takes only rows at or above 70 — no top-up below it", plan("GENIUS", pool).selectedIds, ["c90", "c78", "c70"]);
+    eq("curation: GENIUS rule: hard 70 floor, confidence first, free tips only",
+      curation.curationRuleFor("GENIUS"), { floor: 70, hardFloor: true, confidenceFirst: true, freeOnly: true });
     {
-      // Hand-tagged Genius picks survive curation and fill slots; it only adds.
       const manual = row("m55", 55, { prov: null, tags: ["GENIUS"] });
       const g = plan("GENIUS", [manual, ...pool]);
-      eq("genius: a hand-tagged pick below the floor is never removed", g.removed, []);
-      check("genius: ...and stays selected", g.selectedIds.includes("m55"));
-      check("genius: ...and fills a slot (the top-up to five counts it)", g.selected === 5, g.selectedIds);
-      const full = Array.from({ length: 15 }, (_, i) => row(`t${i}`, 71, { prov: null, tags: ["GENIUS"] }));
+      eq("genius: a 55% tip tagged Genius is removed", g.removed, ["m55"]);
+      check("genius: ...and not selected", !g.selectedIds.includes("m55"));
+      // Confidence decides, not the league: an 80% tip from a smaller league
+      // beats a 72% tip from a top league when only one slot is left.
+      const cap = Array.from({ length: 14 }, (_, i) => row(`k${i}`, 90, { prov: null }));
+      const top = row("epl72", 72, { prov: null, league: 39 });
+      const small = row("small80", 80, { prov: null, league: 9999 });
+      const c = plan("GENIUS", [...cap, top, small]);
+      check("genius: confidence beats league priority for the last slot", c.selectedIds.includes("small80") && !c.selectedIds.includes("epl72"), c.selectedIds);
+      check("genius: never more than 15", c.selected === 15);
+      check("genius: a tip in VIP or PREMIUM is never a Genius tip", !plan("GENIUS", [row("v85", 85, { prov: null, tags: ["VIP"] }), row("g72", 72)]).selectedIds.includes("v85"));
+      // A better tip published later replaces the lowest one on a full list.
+      const full = Array.from({ length: 15 }, (_, i) => row(`t${i}`, 71 + (i === 0 ? 0 : 5), { prov: null, tags: ["GENIUS"] }));
       const g2 = plan("GENIUS", [...full, row("n95", 95, { prov: null })]);
-      eq("genius: a full day of fifteen tagged picks takes nothing more", g2.added, []);
-      eq("genius: ...and loses nothing", g2.removed, []);
+      eq("genius: a better tip on a full list is added", g2.added, ["n95"]);
+      eq("genius: ...and the lowest-confidence tip makes way", g2.removed, ["t0"]);
     }
 
     const dbl = row("dbl85", 85, { prov: null, market: "SAME_GAME_DOUBLE" });
@@ -375,7 +385,7 @@ async function main() {
     // Refused as a double, not merely as a row without a route marker.
     const routedDouble = row("rdbl90", 90, { prov: "VIP_ROUTE_CONFIRMED", market: "SAME_GAME_DOUBLE" });
     check("curation: a double is refused even if it carries a route marker", !plan("VIP", [routedDouble]).selectedIds.includes("rdbl90") && !plan("PREMIUM", [routedDouble]).selectedIds.includes("rdbl90"));
-    check("curation: GENIUS may still take a double (Combo Bets untouched)", plan("GENIUS", [dbl]).selectedIds.includes("dbl85"));
+    check("curation: GENIUS does not take a double (its number is a ceiling; it has Combo Bets)", !plan("GENIUS", [dbl]).selectedIds.includes("dbl85"));
     const taggedDouble = row("tdbl", 72, { prov: null, market: "SAME_GAME_DOUBLE", tags: ["VIP"] });
     eq("curation: a double already in VIP on a new-rules day is removed", plan("VIP", [taggedDouble, row("s80", 80)]).removed, ["tdbl"]);
 
