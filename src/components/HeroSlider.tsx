@@ -122,16 +122,18 @@ function Slide({ slide: s, index, total }: { slide: HeroSlideData; index: number
           </div>
         </div>
 
-        {/* The picture: both crests on a lit tile, like the artwork on a promo slide. */}
+        {/* The picture: both crests on a lit tile, like the artwork on a promo slide.
+            Shown at every width (it was hidden under 380px, so 360px phones had no
+            crests); a little smaller there so the team names keep their room. */}
         <div
           aria-hidden
-          className="relative hidden h-[112px] w-[112px] shrink-0 rotate-[-4deg] rounded-[26px] bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))] shadow-[0_24px_50px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/15 min-[380px]:block sm:h-[150px] sm:w-[150px]"
+          className="relative block h-[96px] w-[96px] shrink-0 rotate-[-4deg] rounded-[26px] bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))] shadow-[0_24px_50px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/15 min-[380px]:h-[112px] min-[380px]:w-[112px] sm:h-[150px] sm:w-[150px]"
         >
           <div className="absolute left-3 top-3 drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)] sm:left-4 sm:top-4">
-            <TeamCrest teamApiId={s.homeTeamApiId} name={s.homeTeam} size={56} className="sm:!h-16 sm:!w-16" />
+            <TeamCrest teamApiId={s.homeTeamApiId} name={s.homeTeam} size={56} className="max-[379px]:!h-[46px] max-[379px]:!w-[46px] sm:!h-16 sm:!w-16" />
           </div>
           <div className="absolute bottom-3 right-3 drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)] sm:bottom-4 sm:right-4">
-            <TeamCrest teamApiId={s.awayTeamApiId} name={s.awayTeam} size={56} className="sm:!h-16 sm:!w-16" />
+            <TeamCrest teamApiId={s.awayTeamApiId} name={s.awayTeam} size={56} className="max-[379px]:!h-[46px] max-[379px]:!w-[46px] sm:!h-16 sm:!w-16" />
           </div>
         </div>
       </div>
