@@ -726,9 +726,7 @@ async function main() {
   const initialize = readFileSync("src/app/api/subscription/initialize/route.ts", "utf8");
   const call = initialize.slice(initialize.indexOf("initializeTransaction({"), initialize.indexOf("} catch (error)"));
   assert(!/^\s*plan\s*:/m.test(call), "the one-time fallback sends no plan");
-  // Narrowed on purpose since Oct 2026 (owner's decision, docs/PAYMENTS_OBSERVABILITY.md
-  // "Channels"): card, bank transfer and USSD; Pay with Bank / OPay never completed a payment.
-  assert(/channels:\s*CHECKOUT_CHANNELS,/.test(call), "checkout offers the CHECKOUT_CHANNELS list");
+  assert(!/channels\s*:/.test(call), "channels are left to the Paystack account, not narrowed in code");
   assert(/amountKobo:\s*koboFor\(tier\)/.test(call), "the amount is the server's price for the tier");
   assert(/reference,/.test(call), "the checkout uses our tier-carrying reference");
   assert(/cancel_action:.*\/pricing\?checkout=cancelled/.test(call), "a cancelled checkout returns to the plans");

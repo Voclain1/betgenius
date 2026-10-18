@@ -80,13 +80,6 @@ on a small sample. As of this writing no channel has completed a subscription
 payment on the live account, and the one-time fallback is what is being
 measured.
 
-**Decision, October 2026.** Checkout now offers card, bank transfer and USSD
-only (`CHECKOUT_CHANNELS` in `src/lib/paystack/paystack.ts`), on the owner's
-call. Over 43 checkouts (Aug-Oct 2026) the one payment that completed was a
-bank transfer; every attempt that reached OPay timed out waiting for approval
-in the OPay app, and all three fraud-system blocks came through Pay with Bank.
-Revisit if the breakdown shows card or USSD failing the same way.
-
 ## Schema
 
 `PaymentAttempt` is a standalone table with no relations to existing models.

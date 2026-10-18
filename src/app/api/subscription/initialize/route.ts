@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { CHECKOUT_CHANNELS, initializeTransaction } from "@/lib/paystack/paystack";
+import { initializeTransaction } from "@/lib/paystack/paystack";
 import { koboFor } from "@/lib/pricing";
 import { newCheckoutReference } from "@/lib/paystack/checkoutReference";
 import { recordCheckoutStart } from "@/lib/paystack/recordCheckoutStart";
@@ -66,8 +66,6 @@ export async function POST(req: Request) {
       // NO `plan` — see the block comment at the top of this file.
       reference,
       callback_url: `${process.env.NEXTAUTH_URL}/dashboard?paid=1`,
-      // Card, bank transfer and USSD only: see CHECKOUT_CHANNELS.
-      channels: CHECKOUT_CHANNELS,
       // cancel_action is Paystack's documented redirect for the "Cancel
       // payment" link on its hosted page. Without it a payer who cancels is
       // left on Paystack with nowhere to go. It lands on the plans with a
