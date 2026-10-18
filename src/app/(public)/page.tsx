@@ -362,7 +362,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               that open the match), so the homepage never falls behind it. */}
           <PredictionsTable rows={genius as any} linkRows />
           <div className="mt-4">
-            <Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>
+            <Link href="/predictions/genius" className="btn btn-primary w-full justify-center sm:w-auto">See all Genius Tips</Link>
           </div>
         </section>
       )}
