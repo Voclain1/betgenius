@@ -387,6 +387,18 @@ export function describeComboLeg(
   return pick;
 }
 
+/**
+ * A pick's text where no market heading sits above it: the compact tip
+ * table, which has a "Tip" label but no market line. BTTS is the one market
+ * whose stored pick is a bare "Yes"/"No", which read as "TIP No" there; it
+ * becomes "BTTS No". Every other pick already names its bet and passes
+ * through. Takes the stored strings, so rows need no selection parsing.
+ */
+export function standalonePickText(pick: string, marketType?: string | null, market?: string | null): string {
+  const isBtts = marketType === "BTTS" || (!marketType && market === MARKET_LABELS.BTTS);
+  return isBtts && (pick === "Yes" || pick === "No") ? `BTTS ${pick}` : pick;
+}
+
 export function deriveOverUnderText(line?: number | null, direction?: string | null): string | null {
   if (line == null || !direction) return null;
   return `${direction === "OVER" ? "Over" : "Under"} ${line} Goals`;

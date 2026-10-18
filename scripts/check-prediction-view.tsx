@@ -347,8 +347,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("homepage renders HOME_CATEGORY_LINKS", home.includes("HOME_CATEGORY_LINKS.map("));
   check("homepage renders the weekend and midweek links as their own group", home.includes("HOME_PERIOD_LINKS.map(") &&
     JSON.stringify(HOME_PERIOD_LINKS.map((l) => l.href)) === JSON.stringify(["/predictions/weekend", "/predictions/midweek"]));
-  check("See all Genius Tips is unchanged",
-    home.includes('<Link href="/predictions/genius" className="btn btn-primary">See all Genius Tips</Link>'));
+  check("See all Genius Tips still links to the Genius feed (full width on phones)",
+    home.includes('<Link href="/predictions/genius" className="btn btn-primary w-full justify-center sm:w-auto">See all Genius Tips</Link>'));
+  {
+    const { standalonePickText } = require("../src/lib/markets");
+    check("a bare BTTS pick reads \"BTTS No\" in the tip table", standalonePickText("No", "BTTS") === "BTTS No" && standalonePickText("Yes", null, "Both Teams to Score") === "BTTS Yes");
+    check("other picks pass through", standalonePickText("Over 1.5 Goals", "OVER_UNDER") === "Over 1.5 Goals" && standalonePickText("No", "OTHER") === "No");
+    check("the tip table uses it", readFileSync(join(__dirname, "../src/components/PredictionsTable.tsx"), "utf8").includes("standalonePickText(p.pick, p.marketType, p.market)"));
+  }
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

@@ -10,6 +10,7 @@ import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { textTone } from "@/lib/tone";
+import { standalonePickText } from "@/lib/markets";
 
 export type PredictionTableRow = {
   id: string;
@@ -22,6 +23,9 @@ export type PredictionTableRow = {
   awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
   pick: string;
+  /** With `market`, lets a bare BTTS "Yes"/"No" read "BTTS No" (standalonePickText). */
+  marketType?: string | null;
+  market?: string | null;
   overUnder?: string | null;
   confidence: number | null;
   /** Settled result; populated only on the Yesterday view. See PredictionRow. */
@@ -85,7 +89,9 @@ export function PredictionsTable({
   // four squeezed columns. One table, not a second phone-only list: a second
   // copy would also render every in-feed ad twice, one of them hidden.
   return (
-    <div className="overflow-x-auto rounded-3xl border border-brand-border bg-brand-card">
+    // Phone: each tip is its own card with space between, rather than rows
+    // ruled off inside one box. From sm up, the one bordered table.
+    <div className="sm:overflow-x-auto sm:rounded-3xl sm:border sm:border-brand-border sm:bg-brand-card">
       <table className="block w-full text-sm sm:table">
         <thead className="hidden bg-brand-bg/60 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:table-header-group">
           <tr>
@@ -100,7 +106,7 @@ export function PredictionsTable({
             {linkRows && <th className="px-3 py-3"><span className="sr-only">Open</span></th>}
           </tr>
         </thead>
-        <tbody className="block divide-y divide-brand-border sm:table-row-group">
+        <tbody className="block space-y-3 sm:table-row-group sm:space-y-0 sm:divide-y sm:divide-brand-border">
           {rows.map((p, index) => {
             const home = p.homeTeam ?? p.fixture?.homeTeam.name;
             const away = p.awayTeam ?? p.fixture?.awayTeam.name;
@@ -114,7 +120,7 @@ export function PredictionsTable({
             const when = kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : null;
             return (
               <Fragment key={p.id}>
-              <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2 px-4 py-3.5 transition hover:bg-brand-bg/40 active:bg-brand-bg/40 sm:static sm:table-row sm:p-0">
+              <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2.5 rounded-2xl bg-brand-card px-4 py-4 ring-1 ring-brand-border transition active:ring-brand/60 sm:static sm:table-row sm:rounded-none sm:bg-transparent sm:p-0 sm:ring-0 sm:hover:bg-brand-bg/40">
                 {/* Phone: competition and kickoff on the row's top line. */}
                 <td className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-gray-500 sm:hidden">
                   {visual && (
@@ -159,11 +165,11 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="col-start-1 row-start-3 min-w-0 font-black text-brand sm:px-3 sm:py-3">
+                <td className="col-start-1 row-start-3 min-w-0 pt-0.5 text-[15px] font-black text-brand sm:px-3 sm:py-3 sm:text-sm">
                   <span className="mr-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:hidden">Tip</span>
                   {matchHref ? (
-                    <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : p.pick}</Link>
-                  ) : p.locked ? "LOCKED" : p.pick}
+                    <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : standalonePickText(p.pick, p.marketType, p.market)}</Link>
+                  ) : p.locked ? "LOCKED" : standalonePickText(p.pick, p.marketType, p.market)}
                 </td>
                 <td className="col-start-2 row-start-2 whitespace-nowrap text-right sm:px-3 sm:py-3 sm:text-left">
                   <ScoreCell
@@ -188,7 +194,7 @@ export function PredictionsTable({
                     itself ("Over 2.5"), so showing it on a locked row would
                     hand over the tip the lock is withholding. */}
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
-                <td className="col-start-2 row-start-1 text-right text-[11px] font-black tabular-nums text-gray-300 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm md:text-gray-100">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </td>
