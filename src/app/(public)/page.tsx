@@ -14,7 +14,8 @@ import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
-import { HeroPick, type HeroPickData } from "@/components/HeroPick";
+import { HeroSlider } from "@/components/HeroSlider";
+import { getHeroSlides } from "@/lib/heroSlides";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { homeSummary, homeHeadline } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
@@ -26,7 +27,6 @@ import { leagueSlug } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER } from "@/lib/leagues";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
-import { comparePredictionsForDisplay } from "@/lib/predictionOrdering";
 import {
   selectHomepageFeatured,
   selectHomepageGenius,
@@ -124,53 +124,6 @@ async function fetchGeniusPreview(day: FeedDay) {
 }
 
 /**
- * The pick shown beside the hero headline.
- *
- * Chosen as the STRONGEST upcoming pick from a category any visitor can read
- * (FEATURED/GENIUS/TODAY are public per canViewCategory) — not the most
- * recent. A hero is an argument for the product, so it should lead with the
- * strongest call currently standing, and it must not be a locked row: a
- * headline promising football tips whose only example is padlocked argues
- * against itself.
- *
- * "Strongest" means the site-wide DISPLAY order — highest confidence first —
- * so the hero shows the same pick that leads the feeds beneath it. Using the
- * editorial (league-priority-first) rank here instead would make the hero the
- * one surface disagreeing with every list on the page.
- *
- * Falls back to the highest-confidence public pick regardless of kickoff when
- * nothing upcoming is published, and to nothing at all when there are no
- * public picks — the hero then renders its original single-column form.
- */
-async function fetchHeroPick(): Promise<HeroPickData | null> {
-  // Deliberately today, whatever day the excerpts below are showing. The hero
-  // is the argument for the product, not part of the browsing surface.
-  const today = lagosDayBounds(0);
-  const base = {
-    status: "PUBLISHED" as const,
-    homeTeam: { not: null },
-    awayTeam: { not: null },
-    kickoff: { gte: today.start, lt: today.end },
-    categories: { some: { category: { in: ["FEATURED", "GENIUS"] } } },
-  };
-  const select = {
-    homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, leagueName: true, leagueApiId: true,
-    market: true, pick: true, confidence: true,
-  };
-  // `id` is selected only so the ranking has its stable tiebreaker; it is not
-  // part of HeroPickData and never reaches the component.
-  const rank = <T extends { id: string; leagueApiId: number | null; confidence: number }>(rows: T[]): T | null =>
-    [...rows].sort(comparePredictionsForDisplay)[0] ?? null;
-
-  const upcoming = await prisma.prediction.findMany({
-    where: { ...base, kickoff: { gte: new Date(), lt: today.end } },
-    select: { ...select, id: true },
-  });
-  const row = rank(upcoming) ?? rank(await prisma.prediction.findMany({ where: base, select: { ...select, id: true } }));
-  return row ? ({ ...row, homeTeam: row.homeTeam!, awayTeam: row.awayTeam! } as HeroPickData) : null;
-}
-
-/**
  * The day's slate as counts — what the answer paragraph under the H1 states.
  *
  * Its own query rather than a derivation from the Featured/Genius excerpts
@@ -225,13 +178,14 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
-  const [featured, geniusPreview, session, leagues, matchIndex, heroPick, betOfTheDay, slate, recentResults] = await Promise.all([
+  const [featured, geniusPreview, session, leagues, matchIndex, heroSlides, betOfTheDay, slate, recentResults] = await Promise.all([
     fetchFeatured(day),
     fetchGeniusPreview(day),
     getServerSession(authOptions),
     getLeaguesWithPublishedPredictions(),
     getPublishedMatchIndex(),
-    fetchHeroPick(),
+    // Today's top picks, fixed for the day once chosen (lib/heroSlides).
+    getHeroSlides().catch(() => []),
     getHomepageBetOfTheDay(),
     fetchDaySlate(day),
     // Never throws: a failed read serves the last stored copy, or nothing.
@@ -271,7 +225,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
         <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
         <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
-        <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroPick ? "lg:grid-cols-[1.3fr,1fr]" : ""}`}>
+        <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
           <div>
             <div className="flex items-center gap-2">
               <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
@@ -302,7 +256,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
             </div>
           </div>
-          {heroPick && <HeroPick pick={heroPick} />}
+          {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
         </div>
       </section>
 
