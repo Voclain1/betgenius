@@ -155,7 +155,7 @@ async function main() {
   check("Yesterday / Today / Tomorrow are the feed days", same(FEED_DAYS, ["yesterday", "today", "tomorrow"]));
   check("today is the bare path", feedDayHref("goals", "today") === "/predictions/goals");
   check("yesterday and tomorrow are query states", feedDayHref("goals", "yesterday") === "/predictions/goals?date=yesterday" && feedDayHref("goals", "tomorrow") === "/predictions/goals?date=tomorrow");
-  check("only yesterday carries result chips", dayShowsOutcomes(parseFeedDay("yesterday")) && !dayShowsOutcomes(parseFeedDay("today")) && !dayShowsOutcomes(parseFeedDay("tomorrow")));
+  check("yesterday and today carry result chips, tomorrow does not", dayShowsOutcomes(parseFeedDay("yesterday")) && dayShowsOutcomes(parseFeedDay("today")) && !dayShowsOutcomes(parseFeedDay("tomorrow")));
   const feeds = code("src/lib/categoryPredictions.ts");
   check("GOALS feed is scoped by the same Lagos-day kickoff bounds as every feed", /kickoff: \{ gte: today\.start, lt: today\.end \}/.test(feeds) && !/cat === "GOALS"[^}]*kickoff/.test(feeds));
   check("GOALS feed requires the tag, the market and no leg tag", /cat === "GOALS"\s*\?\s*\{ marketType: "OVER_UNDER", categories: \{ some: \{ category: "GOALS" \}, none: \{ category: "SAME_GAME_DOUBLE" \} \} \}/.test(feeds));

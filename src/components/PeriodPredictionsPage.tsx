@@ -93,10 +93,11 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
   const canViewBanker = canViewCategory("BANKER", viewer.tier, viewer.status, viewer.role);
   const needsRegistration = !canViewBanker && !session?.user;
 
-  // Outcomes only for days already over, as the feeds do for yesterday.
+  // Outcomes for any match already kicked off, today's included, as soon as
+  // it is settled (the feeds do the same for yesterday and today).
   const shape = (r: (typeof rows)[number], category: "TODAY" | "BANKER", locked: boolean) => {
-    const settledDay = !!r.kickoff && lagosDateKey(r.kickoff) < todayKey;
-    const base = { ...r, category, outcome: settledDay ? r.outcome : null };
+    const started = !!r.kickoff && r.kickoff.getTime() <= now.getTime();
+    const base = { ...r, category, outcome: started ? r.outcome : null };
     return locked
       ? {
           ...base,
