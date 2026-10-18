@@ -27,6 +27,7 @@ export const PAYMENT_CATEGORIES = [
   "FRAUD_BLOCK",
   "ISSUER_DECLINE",
   "INSUFFICIENT_FUNDS",
+  "TIMED_OUT",
   "GATEWAY_FAILURE",
   "PENDING",
   "VERIFICATION_FAILED",
@@ -53,6 +54,10 @@ export const CATEGORY_COPY: Record<PaymentCategory, { label: string; hint: strin
   INSUFFICIENT_FUNDS: {
     label: "Insufficient funds",
     hint: "The account did not have the amount available. The payer can retry themselves.",
+  },
+  TIMED_OUT: {
+    label: "Timed out",
+    hint: "The payer chose a method that needs approval in another app (usually OPay) and did not approve it in time, so the order expired. Nothing was charged; the payer can retry.",
   },
   GATEWAY_FAILURE: {
     label: "Gateway failure",
@@ -105,12 +110,16 @@ const ISSUER = [
   "limit exceeded",
 ];
 
+// An order that expired waiting for the payer: "The order was closed due to
+// timeout" when an OPay approval is not completed. Checked before GATEWAY,
+// which it used to fall into by its wording, so the admin view stopped
+// reporting a payer who walked away as a Paystack outage.
+const TIMED_OUT = ["closed due to timeout", "timeout", "timed out"];
+
 const GATEWAY = [
   "system malfunction",
   "processor",
   "gateway",
-  "timeout",
-  "timed out",
   "connection",
   "unable to process",
   "service unavailable",
@@ -149,6 +158,7 @@ export function classifyPaymentAttempt(input: {
   if (matches(response, FRAUD)) return "FRAUD_BLOCK";
   if (matches(response, INSUFFICIENT)) return "INSUFFICIENT_FUNDS";
   if (matches(response, ISSUER)) return "ISSUER_DECLINE";
+  if (matches(response, TIMED_OUT)) return "TIMED_OUT";
   if (matches(response, GATEWAY)) return "GATEWAY_FAILURE";
 
   return "UNKNOWN_FAILURE";

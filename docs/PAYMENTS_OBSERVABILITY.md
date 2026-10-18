@@ -21,6 +21,7 @@ internal record of it.
 | `FRAUD_BLOCK` | Paystack's fraud system refused it | **us**, with Paystack support |
 | `ISSUER_DECLINE` | The payer's bank or card issuer refused it | the payer, via their bank |
 | `INSUFFICIENT_FUNDS` | Not enough available on the account | the payer |
+| `TIMED_OUT` | The order expired before the payer approved it (OPay: "The order was closed due to timeout"). **Nothing was charged.** | the payer, by retrying |
 | `GATEWAY_FAILURE` | Paystack or the upstream processor failed | nobody; usually transient |
 | `PENDING` | A transfer or USSD confirmation not yet settled | wait |
 | `UNKNOWN_FAILURE` (shown as "Unclassified") | A failure with no mapping yet | add a mapping |

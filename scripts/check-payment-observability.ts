@@ -64,6 +64,17 @@ assert.equal(
   "a processor failure is nobody's fault and usually transient",
 );
 
+assert.equal(
+  classifyPaymentAttempt({ status: "failed", gatewayResponse: "The order was closed due to timeout" }),
+  "TIMED_OUT",
+  "an expired OPay order is the payer not approving in time, not a Paystack outage",
+);
+assert.equal(
+  classifyPaymentAttempt({ status: "failed", gatewayResponse: "Transaction timed out" }),
+  "TIMED_OUT",
+  "any timed-out order reads as timed out",
+);
+
 // Abandoned must win over its own misleading response text. Reading the text
 // first would file every abandonment as an unexplained failure and bury the
 // real declines — which is the entire point of the status-first ordering.

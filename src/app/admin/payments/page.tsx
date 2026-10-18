@@ -44,6 +44,7 @@ const TONE: Record<PaymentCategory, string> = {
   FRAUD_BLOCK: "bg-red-500/15 text-red-300 border-red-500/30",
   ISSUER_DECLINE: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   INSUFFICIENT_FUNDS: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  TIMED_OUT: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   GATEWAY_FAILURE: "bg-red-500/15 text-red-300 border-red-500/30",
   PENDING: "bg-sky-500/15 text-sky-300 border-sky-500/30",
   VERIFICATION_FAILED: "bg-red-500/15 text-red-300 border-red-500/30",
