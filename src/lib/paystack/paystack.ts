@@ -28,6 +28,18 @@ async function paystackFetch<T = any>(path: string, init: RequestInit = {}): Pro
   return json as T;
 }
 
+/**
+ * The payment options Paystack's checkout offers: card, bank transfer and
+ * USSD. "bank" (Pay with Bank, which is where OPay sits) is left out.
+ *
+ * Production, Aug-Oct 2026: of 43 checkouts, the one payment that went
+ * through was a bank transfer. Every attempt that reached OPay ended "The
+ * order was closed due to timeout" (the approval in the OPay app was never
+ * completed in time), and all three "Denied by Fraud System" blocks came
+ * through Pay with Bank. Neither route has ever taken a payment here.
+ */
+export const CHECKOUT_CHANNELS = ["card", "bank_transfer", "ussd"] as const;
+
 /** Initialize a checkout/transaction. Returns the authorization URL to redirect to. */
 export function initializeTransaction(input: {
   email: string;
@@ -36,6 +48,8 @@ export function initializeTransaction(input: {
   reference?: string;
   callback_url?: string;
   metadata?: Record<string, unknown>;
+  /** Restricts the options on Paystack's checkout page; all of them when omitted. */
+  channels?: readonly string[];
 }) {
   return paystackFetch<{
     status: boolean;
@@ -50,6 +64,7 @@ export function initializeTransaction(input: {
       reference: input.reference,
       callback_url: input.callback_url,
       metadata: input.metadata,
+      channels: input.channels,
     }),
   });
 }

@@ -64,6 +64,17 @@ assert.equal(
   "a processor failure is nobody's fault and usually transient",
 );
 
+assert.equal(
+  classifyPaymentAttempt({ status: "failed", gatewayResponse: "The order was closed due to timeout" }),
+  "TIMED_OUT",
+  "an expired OPay order is the payer not approving in time, not a Paystack outage",
+);
+assert.equal(
+  classifyPaymentAttempt({ status: "failed", gatewayResponse: "Transaction timed out" }),
+  "TIMED_OUT",
+  "any timed-out order reads as timed out",
+);
+
 // Abandoned must win over its own misleading response text. Reading the text
 // first would file every abandonment as an unexplained failure and bury the
 // real declines — which is the entire point of the status-first ordering.
@@ -308,6 +319,18 @@ assert.equal(attemptOutcome({ category: "SUCCESS", origin: "CHECKOUT", entitled:
 assert.equal(attemptOutcome({ category: "SUCCESS", origin: "CHECKOUT", entitled: false }), "ENTITLEMENT_MISSING");
 assert.equal(attemptOutcome({ category: "SUCCESS", origin: "EXTERNAL", entitled: false }), "EXTERNAL_PAYMENT");
 assert.equal(attemptOutcome({ category: "ABANDONED", origin: "CHECKOUT", entitled: false }), "ABANDONED");
+
+{
+  // Checkout offers card, bank transfer and USSD only: Pay with Bank (OPay)
+  // has never completed a payment here. Read from source: paystack.ts needs no env.
+  const { readFileSync } = require("node:fs") as typeof import("node:fs");
+  const { join } = require("node:path") as typeof import("node:path");
+  const lib = readFileSync(join(__dirname, "../src/lib/paystack/paystack.ts"), "utf8");
+  const route = readFileSync(join(__dirname, "../src/app/api/subscription/initialize/route.ts"), "utf8");
+  assert.ok(lib.includes('export const CHECKOUT_CHANNELS = ["card", "bank_transfer", "ussd"] as const;'), "checkout channels are card, bank transfer, USSD");
+  assert.ok(lib.includes("channels: input.channels,"), "initializeTransaction sends channels to Paystack");
+  assert.ok(route.includes("channels: CHECKOUT_CHANNELS,"), "subscription checkout passes the channel list");
+}
 
 console.log(
   "Payment observability checks passed: fraud block, bank decline, insufficient funds, abandoned, gateway " +
