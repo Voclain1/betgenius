@@ -4,6 +4,7 @@ import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
 import { GENERATION_TIERS, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
 import { tabOfStatus } from "@/lib/matchStatus";
 import { trimLiveRow } from "@/lib/liveSnapshot";
+import { isSelectiveLeague } from "@/lib/generation/selectiveLeagues";
 
 /**
  * The homepage's Recent results, from one shared copy.
@@ -52,7 +53,8 @@ export function parseRecentSnapshot(raw: string | null | undefined): RecentSnaps
 
 /** Men's top and mid-tier competitions: the leagues the site covers every day. */
 export const RESULTS_LEAGUE_IDS: ReadonlySet<number> = new Set(
-  [...GENERATION_TIERS.CORE, ...GENERATION_TIERS.SECONDARY].filter((id) => !isSeniorWomensCompetition(id)),
+  // Not the selective leagues (Cyprus, Latvia): only a few of their matches are tipped.
+  [...GENERATION_TIERS.CORE, ...GENERATION_TIERS.SECONDARY].filter((id) => !isSeniorWomensCompetition(id) && !isSelectiveLeague(id)),
 );
 
 /** What the homepage shows from a slate: finished, in scope, inside the window, best competitions first. Pure. */

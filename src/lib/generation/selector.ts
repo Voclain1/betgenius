@@ -14,6 +14,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { isSelectiveLeague, isWorthATip, loadSelectiveTables } from "@/lib/generation/selectiveLeagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { matchKey } from "@/lib/slug";
 import { LEAGUE_CATALOGUE, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
@@ -141,7 +142,11 @@ export async function candidatesFromFixtures(
     return lagosDateKey(k) === todayKey || k >= normalFrom;
   });
 
+  // Cyprus and Latvia: only matches with a top-three club (selectiveLeagues.ts).
+  // The table is read (and refreshed) only when such a fixture is in the slate.
+  const tables = inWindow.some((f) => isSelectiveLeague(f.league?.id)) ? await loadSelectiveTables(inWindow, now) : new Map();
   const keyed = inWindow
+    .filter((f) => isWorthATip(f, tables))
     .map((f) => {
       const key = matchKey({ homeTeamApiId: f.teams.home.id, awayTeamApiId: f.teams.away.id, kickoff: f.fixture.date });
       return key ? { key, f } : null;
