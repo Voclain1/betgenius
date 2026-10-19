@@ -5,7 +5,7 @@ import { orderForDisplay } from "@/lib/predictionOrdering";
 import type { FeedDay } from "@/lib/categoryPredictions";
 import type { Prisma } from "@prisma/client";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
-import { MARKET_HUB_EXCLUDED_CATEGORIES } from "@/lib/marketHubs";
+import { MARKET_HUB_EXCLUDED_CATEGORIES, onePerMatchAndPick } from "@/lib/marketHubs";
 
 const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow: 1 };
 
@@ -40,7 +40,7 @@ export const getOver25Predictions = cache(async (day: FeedDay = "today") => {
     },
     take: 60,
   });
-  return orderForDisplay(rows);
+  return orderForDisplay(onePerMatchAndPick(rows));
 });
 
 /** One bounded read for all Both Teams to Score selections, Yes and No. */
@@ -60,7 +60,7 @@ export const getBttsPredictions = cache(async (day: FeedDay = "today") => {
     },
     take: 60,
   });
-  return orderForDisplay(rows);
+  return orderForDisplay(onePerMatchAndPick(rows));
 });
 
 /** One bounded read for all three structured Double Chance selections. */
@@ -80,7 +80,7 @@ export const getDoubleChancePredictions = cache(async (day: FeedDay = "today") =
     },
     take: 60,
   });
-  return orderForDisplay(rows);
+  return orderForDisplay(onePerMatchAndPick(rows));
 });
 
 /** One bounded read for straight wins: a home or away win, never a draw. */
@@ -104,5 +104,5 @@ export const getStraightWinPredictions = cache(async (day: FeedDay = "today") =>
     },
     take: 60,
   });
-  return orderForDisplay(rows);
+  return orderForDisplay(onePerMatchAndPick(rows));
 });
