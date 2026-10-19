@@ -224,6 +224,9 @@ export const GENERATION_TIERS = {
     197, 199, // Greece
     179, 181, // Scotland
     71, // Brazil
+    // Only their matches with a top-three club (src/lib/generation/selectiveLeagues.ts).
+    318, // Cyprus: First Division
+    365, // Latvia: Virsliga
     // Senior women's: last in the tier, so every men's CORE and SECONDARY
     // league still outranks them for curation, Bet of the Day and highlights.
     44, // England: Women's Super League
@@ -235,7 +238,7 @@ export const GENERATION_TIERS = {
     13, 11, 12, 17, // continental club competitions outside Europe
     10, // international friendlies
     79, 141, 136, 62, 41, 42, 46, 89, 95, 180, 114, // European lower divisions
-    235, 286, 732, 210, 212, 333, 335, 172, 283, 285, 244, 271, 383, 357, 332, 318, // smaller European top flights
+    235, 286, 732, 210, 212, 333, 335, 172, 283, 285, 244, 271, 383, 357, 332, // smaller European top flights
     128, 72, 239, 262, 253, 98, 292, 233, 288, // South/North America, Asia, Africa
     // Senior women's with full data but thin or no pricing, or shallower books.
     //
@@ -251,7 +254,7 @@ export const GENERATION_TIERS = {
   DEEP_FALLBACK: [
     20, 30, 31, // CAF Confederation Cup, Asian and CONCACAF qualifiers
     80, 43, // German 3. Liga, English National League
-    110, 112, 116, 389, 329, 365, 362, 342, 419, 394, 315, // thinner European top flights
+    110, 112, 116, 389, 329, 362, 342, 419, 394, 315, // thinner European top flights
     359, 167, 321, 384, // smaller domestic cups
     242, 281, 265, 169, 186, 570, 99, 255, // further afield
     146, // Belgium: Super League Women
