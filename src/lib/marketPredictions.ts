@@ -6,17 +6,25 @@ import type { FeedDay } from "@/lib/categoryPredictions";
 import type { Prisma } from "@prisma/client";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { MARKET_HUB_EXCLUDED_CATEGORIES } from "@/lib/marketHubs";
+import { SAME_GAME_DOUBLE } from "@/lib/comboLegs";
 
 const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow: 1 };
 
 /**
  * Every market page lists free-tier tips only: no VIP or Premium tag, primary
  * or linked, and none of the dedicated paid-pass rows (src/lib/marketHubs.ts).
+ *
+ * Nor hidden Combo Bet legs (src/lib/comboLegs.ts): a leg is filed under
+ * SAME_GAME_DOUBLE alone and is never a pick in its own right. Without this,
+ * a match whose combo used "Over 2.5 Goals" as a leg, and which also had its
+ * own Over 2.5 pick from the Goals pass, appeared twice on the Over 2.5 page
+ * (14 matches in two weeks, Oct 2026); a leg "Team to win" did the same on
+ * Straight Wins.
  */
 const FREE_TIERS_ONLY: Prisma.PredictionWhereInput = {
   ...NOT_PAID_ONLY,
-  category: { notIn: [...MARKET_HUB_EXCLUDED_CATEGORIES] },
-  categories: { none: { category: { in: [...MARKET_HUB_EXCLUDED_CATEGORIES] } } },
+  category: { notIn: [...MARKET_HUB_EXCLUDED_CATEGORIES, SAME_GAME_DOUBLE] },
+  categories: { none: { category: { in: [...MARKET_HUB_EXCLUDED_CATEGORIES, SAME_GAME_DOUBLE] } } },
 };
 
 /** One bounded read for the exact Over 2.5 Goals selection shown by the hub. */
