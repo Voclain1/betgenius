@@ -670,6 +670,45 @@ model GenerationAttempt {
   @@index([fixtureApiId])
 }
 
+/// One failed prediction generation, from any path: the scheduled worker, the
+/// admin's single-match and bulk forms, the Goals, VIP/PREMIUM and other
+/// passes. Written by generateAndPersistPrediction itself (src/lib/ai/generate.ts),
+/// so no caller can fail without leaving a row, and listed for admins at
+/// /admin/failed-generations (src/lib/generationFailures.ts).
+///
+/// Its own table rather than AIJob rows with status FAILED: daily quotas and
+/// several pipelines count AIJob rows as attempts, and a failure log must not
+/// change what they count.
+///
+/// Open until a later generation for the same match succeeds (resolvedAt, set
+/// automatically) or an admin dismisses it (dismissedAt).
+model GenerationFailure {
+  id          String    @id @default(cuid())
+  /// matchKey when both team ids are known, else "home|away|day" from the names.
+  fixtureKey  String
+  /// Manual | Scheduled | Goals | VIP/Premium | Handicap | ... (generationSourceOf)
+  source      String
+  homeTeam    String
+  awayTeam    String
+  leagueName  String?
+  leagueApiId Int?
+  kickoff     DateTime?
+  /// Error class name, e.g. MarketSanityError.
+  errorName   String
+  /// What the admin reads: plain words, no provider names or raw model text.
+  reason      String
+  /// The raw error message, trimmed, for diagnosis.
+  detail      String?
+  /// The generation input, so the admin can run it again from the list.
+  input       Json
+  resolvedAt  DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([fixtureKey])
+  @@index([resolvedAt, dismissedAt, createdAt])
+}
+
 /// One execution of a scheduled job, kept so a run can be PROVEN to have
 /// happened after the fact.
 ///

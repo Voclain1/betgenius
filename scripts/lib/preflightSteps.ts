@@ -36,6 +36,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-bulk-generation-dedupe.ts",
   "tsx scripts/check-short-price-guard.ts",
   "tsx scripts/check-market-sanity.ts",
+  "tsx scripts/check-generation-failures.ts",
   "tsx scripts/check-results-pass.ts",
   "tsx scripts/check-hero-slides.ts",
   "tsx scripts/check-market-hub-dedupe.ts",

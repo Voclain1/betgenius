@@ -56,6 +56,7 @@
     "check:bulk-generation-dedupe": "tsx scripts/check-bulk-generation-dedupe.ts",
     "check:short-price-guard": "tsx scripts/check-short-price-guard.ts",
     "check:market-sanity": "tsx scripts/check-market-sanity.ts",
+    "check:generation-failures": "tsx scripts/check-generation-failures.ts",
     "check:results-pass": "tsx scripts/check-results-pass.ts",
     "check:hero-slides": "tsx scripts/check-hero-slides.ts",
     "check:market-hub-dedupe": "tsx scripts/check-market-hub-dedupe.ts",
