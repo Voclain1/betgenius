@@ -51,8 +51,35 @@ NOT return DOUBLE_CHANCE for it. Instead, weigh the evidence for an outright
 win: recent form (home or away as relevant), league position and goal
 difference, head-to-head, and team news. If that evidence genuinely supports a
 win, return MATCH_WINNER for that side with a confidence that reflects the
-evidence. If it does not, choose a different market with a real price (for
-example DRAW_NO_BET, OVER_UNDER or BTTS) rather than the Double Chance.
+evidence. If it does not, return the next strongest pick with a real price:
+DRAW_NO_BET on that side, WIN_EITHER_HALF, OVER_UNDER or BTTS, whichever the
+evidence supports with the highest confidence. Never the Double Chance.
+`;
+}
+
+/**
+ * The second ask, when every draft came back an unpayable Double Chance: name
+ * the prices that made them worthless and require the next strongest market.
+ */
+export function shortPriceRetryBlock(odds: FixtureOdds | null, drafts: readonly { selection: unknown }[], home: string, away: string): string {
+  const label = (v?: string) => (v === "HOME_OR_DRAW" ? `${home} or Draw` : v === "AWAY_OR_DRAW" ? `${away} or Draw` : `${home} or ${away}`);
+  const book = (v?: string) => (v === "HOME_OR_DRAW" ? "Home/Draw" : v === "AWAY_OR_DRAW" ? "Draw/Away" : "Home/Away");
+  const lines = [...new Set(drafts.map((d) => (d.selection as { value?: string } | null)?.value))].map((v) => {
+    const price = findSelection(odds, "Double Chance", book(v))?.median;
+    return `  - ${label(v)}: ${price != null ? price.toFixed(2) : "under " + SHORT_DC_MAX.toFixed(2)}`;
+  });
+  return `
+DOUBLE CHANCE IS NOT AVAILABLE FOR THIS MATCH — READ BEFORE CHOOSING.
+
+The bookmakers price these Double Chance selections so short they pay almost
+nothing (median across bookmakers):
+${lines.join("\n")}
+
+Do NOT return DOUBLE_CHANCE. Return the strongest pick with a real price, the
+one the evidence supports with the highest confidence: MATCH_WINNER for the
+favourite if form, table position and team news support a win; otherwise
+DRAW_NO_BET, WIN_EITHER_HALF, OVER_UNDER, BTTS or TEAM_TOTAL. Give it the
+confidence the evidence supports.
 `;
 }
 

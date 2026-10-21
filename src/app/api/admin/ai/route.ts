@@ -46,6 +46,8 @@ export async function POST(req: Request) {
       kickoff: input.kickoff,
       categories: [input.category],
       authorId: session!.user.id,
+      // The admin chose this match: no short-price rule (src/lib/shortPriceGuard.ts).
+      manual: true,
     });
     return NextResponse.json(result);
   } catch (err: any) {
