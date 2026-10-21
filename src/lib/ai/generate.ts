@@ -11,7 +11,7 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
 import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
-import { shortPriceSides, shortPriceBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
+import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
@@ -95,6 +95,11 @@ export type GenerateFixtureInput = {
    * quota has to count attempts, so the attempt has to be labelled.
    */
   intent?: string;
+  /**
+   * An admin's own generation (single match or bulk, /admin): the short-price
+   * rule does not apply. The admin chose the match and reviews the pick.
+   */
+  manual?: boolean;
   /**
    * The categories an assembled double is published under, besides
    * SAME_GAME_DOUBLE. Kept apart from `categories`, which still drives
@@ -214,21 +219,40 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // same-game double can be assembled from independently-reasoned rows.
   // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = goalsOnly ? "single" : marketBreadthForCategories(input.categories, input.intent);
-  // Short-price rule (src/lib/shortPriceGuard.ts): ordinary generation only.
-  // The Goals pass has one fixed market, a handicap job one fixed line, and the
-  // VIP/PREMIUM pass its own odds gate.
-  const guardsShortPrice = !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
+  // Short-price rule (src/lib/shortPriceGuard.ts): scheduled ordinary
+  // generation only. Not an admin's manual generation, nor the Goals pass (one
+  // fixed market), a handicap job (one fixed line) or the VIP/PREMIUM pass
+  // (its own odds gate).
+  const guardsShortPrice = !input.manual && !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const odds = guardsShortPrice ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
-  const { output, usage, model } = await generatePredictionForFixture({
-    digest,
-    tiers: riskRoute.promptTiers,
-    riskCalibration: riskRoute.calibration !== "legacy",
-    marketBreadth,
-    handicapLine: input.handicapLine,
-    shortPriceBlock: shortPriceBlock(shortPriceSides(odds, input.home, input.away)),
-    ...(goalsOnly ? { goalsOnly: true } : {}),
-    ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
-  });
+  const callModel = (block: string) =>
+    generatePredictionForFixture({
+      digest,
+      tiers: riskRoute.promptTiers,
+      riskCalibration: riskRoute.calibration !== "legacy",
+      marketBreadth,
+      handicapLine: input.handicapLine,
+      shortPriceBlock: block,
+      ...(goalsOnly ? { goalsOnly: true } : {}),
+      ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
+    });
+  let { output, usage, model } = await callModel(shortPriceBlock(shortPriceSides(odds, input.home, input.away)));
+  // Every draft an unpayable Double Chance: ask once more, for the strongest
+  // pick with a real price (Draw No Bet, Win Either Half, a straight win, a
+  // goals line...), instead of failing the match. Both calls are on the job.
+  const onlyUnpayableDc = (drafts: typeof output.predictions) =>
+    Array.isArray(drafts) && drafts.length > 0 && drafts.every((p) => isUnpayableDoubleChance(odds, p.marketType, p.selection));
+  if (odds && !goalsOnly && onlyUnpayableDc(output.predictions)) {
+    const retry = await callModel(shortPriceRetryBlock(odds, output.predictions, input.home, input.away));
+    output = retry.output;
+    model = retry.model;
+    const add = (x: number | null, y: number | null) => (x == null && y == null ? null : (x ?? 0) + (y ?? 0));
+    usage = {
+      promptTokens: add(usage.promptTokens, retry.usage.promptTokens),
+      outputTokens: add(usage.outputTokens, retry.usage.outputTokens),
+      totalTokens: add(usage.totalTokens, retry.usage.totalTokens),
+    };
+  }
   const durationMs = Date.now() - startedAt;
 
   // A league was specified (live context was expected) but nothing resolved —

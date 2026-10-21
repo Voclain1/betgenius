@@ -9,7 +9,7 @@ export {};
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { shortPriceSides, shortPriceBlock, isUnpayableDoubleChance } from "../src/lib/shortPriceGuard";
+import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "../src/lib/shortPriceGuard";
 import { bulkFailureReason } from "../src/lib/generation/bulkRun";
 import type { FixtureOdds } from "../src/lib/odds";
 
@@ -54,14 +54,24 @@ check("DC AWAY_OR_DRAW at 4.50 is kept", !isUnpayableDoubleChance(o, "DOUBLE_CHA
 check("MATCH_WINNER is never filtered", !isUnpayableDoubleChance(o, "MATCH_WINNER", { value: "HOME" }));
 check("no odds: nothing filtered", !isUnpayableDoubleChance(null, "DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }));
 
+// The second ask names the worthless prices and the alternatives.
+const retryBlock = shortPriceRetryBlock(o, [{ selection: { value: "HOME_OR_DRAW" } }], "Real Madrid", "RB Leipzig");
+check("retry ask names the Double Chance price", /Real Madrid or Draw: 1\.04/.test(retryBlock), retryBlock);
+check("retry ask forbids Double Chance and lists Draw No Bet, Win Either Half, Match Winner", /Do NOT return DOUBLE_CHANCE/.test(retryBlock) && /DRAW_NO_BET/.test(retryBlock) && /WIN_EITHER_HALF/.test(retryBlock) && /MATCH_WINNER/.test(retryBlock));
+check("first-ask block also offers Draw No Bet and Win Either Half", /DRAW_NO_BET/.test(block) && /WIN_EITHER_HALF/.test(block));
+
 // Bulk panel wording.
 check("bulk panel explains ShortPriceError", /Double Chance/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "ShortPriceError" }))));
 
 // Wiring.
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
-check("generate.ts passes shortPriceBlock to the model", /shortPriceBlock:\s*shortPriceBlock\(shortPriceSides\(odds/.test(gen));
+check("generate.ts passes shortPriceBlock to the model", /callModel\(shortPriceBlock\(shortPriceSides\(odds, input\.home, input\.away\)\)\)/.test(gen) && /shortPriceBlock: block,/.test(gen));
+check("only unpayable Double Chance drafted: one more ask for the next best pick, not a failure", /if \(odds && !goalsOnly && onlyUnpayableDc\(output\.predictions\)\)/.test(gen) && /callModel\(shortPriceRetryBlock\(/.test(gen));
 check("generate.ts drops unpayable Double Chance drafts", /isUnpayableDoubleChance\(odds, p\.marketType, p\.selection\)/.test(gen));
-check("generate.ts skips the rule for Goals, handicap and VIP/PREMIUM", /guardsShortPrice = !goalsOnly && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen));
+check("generate.ts skips the rule for manual runs, Goals, handicap and VIP/PREMIUM", /guardsShortPrice = !input\.manual && !goalsOnly && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen));
+for (const route of ["src/app/api/admin/ai/route.ts", "src/app/api/admin/ai/bulk/route.ts"]) {
+  check(`${route.split("/").slice(-2).join("/")}: admin generation is exempt (manual: true)`, /manual: true,/.test(readFileSync(join(__dirname, "..", route), "utf8")));
+}
 const analysis = readFileSync(join(__dirname, "../src/lib/ai/analysis.ts"), "utf8");
 check("analysis.ts puts the block in the prompt", /input\.shortPriceBlock/.test(analysis));
 

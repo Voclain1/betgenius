@@ -95,6 +95,8 @@ export async function POST(req: Request) {
         round: f.league.round ?? null,
         categories: [...categories],
         authorId: session!.user.id,
+        // The admin chose this match: no short-price rule (src/lib/shortPriceGuard.ts).
+        manual: true,
       });
       results.push({
         home: f.teams.home.name,
