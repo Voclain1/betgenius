@@ -12,6 +12,7 @@ import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type Market
 import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
+import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
@@ -219,12 +220,17 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   // same-game double can be assembled from independently-reasoned rows.
   // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = goalsOnly ? "single" : marketBreadthForCategories(input.categories, input.intent);
-  // Short-price rule (src/lib/shortPriceGuard.ts): scheduled ordinary
-  // generation only. Not an admin's manual generation, nor the Goals pass (one
-  // fixed market), a handicap job (one fixed line) or the VIP/PREMIUM pass
+  // Two checks against the bookmakers' prices. Neither runs for the Goals pass
+  // (one fixed market), a handicap job (one fixed line) or the VIP/PREMIUM pass
   // (its own odds gate).
+  // - Short-price rule (src/lib/shortPriceGuard.ts): scheduled ordinary
+  //   generation only, not an admin's manual generation.
+  // - Market sanity (src/lib/marketSanity.ts): manual runs too. A pick far
+  //   above the market's own view misread the match, whoever asked for it.
+  const checksMarket = !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const guardsShortPrice = !input.manual && !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
-  const odds = guardsShortPrice ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
+  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
+  const priceOdds = guardsShortPrice ? odds : null;
   const callModel = (block: string) =>
     generatePredictionForFixture({
       digest,
@@ -236,14 +242,24 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
       ...(goalsOnly ? { goalsOnly: true } : {}),
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
     });
-  let { output, usage, model } = await callModel(shortPriceBlock(shortPriceSides(odds, input.home, input.away)));
-  // Every draft an unpayable Double Chance: ask once more, for the strongest
-  // pick with a real price (Draw No Bet, Win Either Half, a straight win, a
-  // goals line...), instead of failing the match. Both calls are on the job.
-  const onlyUnpayableDc = (drafts: typeof output.predictions) =>
-    Array.isArray(drafts) && drafts.length > 0 && drafts.every((p) => isUnpayableDoubleChance(odds, p.marketType, p.selection));
-  if (odds && !goalsOnly && onlyUnpayableDc(output.predictions)) {
-    const retry = await callModel(shortPriceRetryBlock(odds, output.predictions, input.home, input.away));
+  const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
+  let { output, usage, model } = await callModel(firstBlock);
+  type Draft = (typeof output.predictions)[number];
+  const unpayable = (p: Draft) => isUnpayableDoubleChance(priceOdds, p.marketType, p.selection);
+  const offMarket = (p: Draft) => farAboveMarket(odds, p);
+  // Every draft rejected (an unpayable Double Chance, or far above the market):
+  // ask once more, naming the prices, instead of failing the match. For a short
+  // price that means the strongest pick with a real price (Draw No Bet, Win
+  // Either Half, a straight win, a goals line...); for a misread match, the
+  // market's view beside each pick. Both calls are on the job.
+  const first = Array.isArray(output.predictions) ? output.predictions : [];
+  if (odds && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+    const dc = first.filter(unpayable);
+    const off = first.filter((p) => !unpayable(p));
+    const retryBlock =
+      (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : firstBlock) +
+      (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "");
+    const retry = await callModel(retryBlock);
     output = retry.output;
     model = retry.model;
     const add = (x: number | null, y: number | null) => (x == null && y == null ? null : (x ?? 0) + (y ?? 0));
@@ -289,12 +305,17 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
   const goalsSelection = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []) : null;
   const goalsRejections: GoalsDraftRejection[] = goalsSelection?.rejected ?? [];
   const modelDrafts = goalsSelection ? (goalsSelection.pick ? [goalsSelection.pick] : []) : output.predictions;
-  // A Double Chance the market prices under 1.10 is dropped whatever the
-  // prompt said: it pays nothing. If that was all the model drafted, nothing
-  // is saved and the run says why.
-  const drafts = odds ? modelDrafts.filter((p) => !isUnpayableDoubleChance(odds, p.marketType, p.selection)) : modelDrafts;
-  if (modelDrafts.length > 0 && drafts.length === 0) {
+  // Dropped whatever the prompt said: a Double Chance the market prices under
+  // 1.10 (it pays nothing), and a pick far above the market's own view of the
+  // same selection (it misread the match). If that was every draft, nothing is
+  // saved and the run says why.
+  const payable = odds ? modelDrafts.filter((p) => !unpayable(p)) : modelDrafts;
+  const drafts = odds ? payable.filter((p) => !offMarket(p)) : payable;
+  if (modelDrafts.length > 0 && payable.length === 0) {
     throw new ShortPriceError(`${input.home} v ${input.away}`);
+  }
+  if (payable.length > 0 && drafts.length === 0) {
+    throw new MarketSanityError(`${input.home} v ${input.away}`, offMarket(payable[0])!);
   }
 
   // Deterministic certainty scan, BEFORE anything is persisted.
@@ -457,10 +478,10 @@ export async function generateAndPersistPrediction(rawInput: GenerateFixtureInpu
 }
 
 /**
- * The fixture's bookmaker prices for the short-price rule: the cached quote,
+ * The fixture's bookmaker prices for the odds checks: the cached quote,
  * or one api-football call to fetch it when the fixture has never been priced
  * (a failed attempt in the last 6 hours is not retried). Null when there is no
- * quote; generation then runs as it did before the rule.
+ * quote; generation then runs without the odds checks.
  */
 async function loadFixtureOdds(
   homeTeamApiId: number | null,
@@ -483,7 +504,7 @@ async function loadFixtureOdds(
     const fresh = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true } });
     return (fresh?.oddsJson as unknown as FixtureOdds | null) ?? null;
   } catch (err) {
-    console.warn("[generate] odds lookup failed; short-price rule skipped", err);
+    console.warn("[generate] odds lookup failed; odds checks skipped", err);
     return null;
   }
 }

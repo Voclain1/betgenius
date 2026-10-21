@@ -27,6 +27,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       author: { select: { name: true, email: true } },
       settledBy: { select: { name: true, email: true } },
       rewriteRequestedBy: { select: { name: true, email: true } },
+      aiJob: { select: { model: true } },
     },
   });
   if (!prediction) return NextResponse.json({ error: "Not found" }, { status: 404 });

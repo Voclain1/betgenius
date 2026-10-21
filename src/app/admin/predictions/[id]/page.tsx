@@ -10,6 +10,7 @@ import { RewriteRequest } from "@/components/RewriteRequest";
 import { EDITOR_PRESERVED_TAGS, isComboPrediction } from "@/lib/comboAdmin";
 import { GOALS } from "@/lib/goalsCategory";
 import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
+import { BACKUP_MODEL_WARNING, isBackupModel } from "@/lib/ai/backupModel";
 
 const CATS = ["FEATURED", "GENIUS", "TODAY", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -48,6 +49,7 @@ type Prediction = {
   awayTeam: string | null;
   kickoff: string | null;
   contextComplete: boolean;
+  aiJob?: { model: string | null } | null;
   manualSettlementOnly: boolean;
   outcome: string;
   finalHomeScore: number | null;
@@ -330,6 +332,17 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
             rate limit) before generating more like it.
           </div>
         </div>
+      )}
+
+      {isBackupModel(p.aiJob?.model) && (
+        <p className="flex items-start gap-2 text-sm text-amber-300">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" aria-hidden />
+          <span>
+            <b>{BACKUP_MODEL_WARNING}.</b> Written by the fallback model ({p.aiJob?.model}) while the main one was
+            unavailable. It reads the evidence less carefully: check the pick against both teams&apos; league form and
+            the odds before approving, or ask for a rewrite.
+          </span>
+        </p>
       )}
 
       {market.marketType === "OTHER" && (

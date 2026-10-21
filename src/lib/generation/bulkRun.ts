@@ -21,6 +21,9 @@ export function bulkFailureReason(err: unknown): string {
   if (name === "ShortPriceError") {
     return "Only a Double Chance priced under 1.10 was drafted, which is not worth tipping. Run it again or skip this match.";
   }
+  if (name === "MarketSanityError") {
+    return "Every pick was far above the bookmakers' view of the match, even after a second try. Skip this match or run it again.";
+  }
   if (name === "AllProvidersFailedError" || name === "ModelUnavailableError" || name === "AbortError") {
     return "The generation service did not respond. Try again shortly.";
   }
