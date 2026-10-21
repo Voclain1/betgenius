@@ -189,6 +189,8 @@ export function devigProbability(
     const pairs: Record<string, [string, string]> = {
       "home/draw": ["Home", "Draw"],
       "away/draw": ["Away", "Draw"],
+      // api-football's own label for the away side, as toBookmakerSelection writes it.
+      "draw/away": ["Draw", "Away"],
       "home/away": ["Home", "Away"],
     };
     const pair = pairs[wanted];

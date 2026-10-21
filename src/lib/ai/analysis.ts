@@ -99,10 +99,16 @@ Rules:
    zero-filled when a season has not started, so do not read a missing average as
    a team that cannot score.
 1f. When fixture.competitionType is "CUP", analyse it as a knockout cup tie.
-   Standings and league-position evidence do not apply and must never be mentioned.
-   Cup-specific team statistics may be based on a small, uneven sample against
-   opponents from different divisions, so treat them cautiously and prefer robust
-   recent all-competition form, availability and head-to-head evidence when present.
+   This competition's own standings and league positions do not decide the tie and
+   must never be mentioned. Cup-specific team statistics may be based on a small,
+   uneven sample against opponents from different divisions, so treat them
+   cautiously: two or three games say little about a side. When a team carries
+   "domestic" (its current place in its own domestic league), that is the
+   season-long measure of its level: weigh it above this competition's figures,
+   and you may cite it in plain words ("top of Serie A", "11th of 16 in Ukraine").
+   A side leading a major league that has lost twice in Europe is still the
+   stronger side at home. Also prefer robust recent all-competition form,
+   availability and head-to-head evidence when present.
    Use fixture.round when supplied, but do not invent aggregate scores, legs, replay
    rules or qualification scenarios that are absent from the evidence digest.
 2. Return CONFIDENCE as a probability estimate (0-100). Be conservative — do not exceed 90

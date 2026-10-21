@@ -85,6 +85,32 @@ export type TeamDigest = {
   availabilityAsOf: string | null;
   /** Top scorers/assisters from the league leaderboard, when the enrichment cache already holds them. Never fetched for this. */
   keyPlayers: KeyPlayer[];
+  /**
+   * Cup and European fixtures only: the team's place in its own domestic
+   * league, from the cached table. The competition's own figures may rest on
+   * two or three games; this is the season-long measure of the side.
+   */
+  domestic?: DomesticStanding | null;
+};
+
+export type DomesticStanding = {
+  league: string;
+  /** Names repeat across countries ("Premier League"), so the country rides along. */
+  country: string | null;
+  rank: number;
+  /** Teams in that table, so a rank reads as top, middle or bottom. */
+  of: number;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  points: number;
+  /** Most recent last. */
+  form: string | null;
+  /** When the table was fetched, so its age is visible. */
+  asOf: string;
 };
 
 /**

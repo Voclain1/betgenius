@@ -28,7 +28,11 @@ export async function GET(req: Request) {
     where: query.data.marketType ? { marketType: query.data.marketType } : undefined,
     orderBy: { createdAt: "desc" },
     take: 200,
-    include: { author: true, approvedBy: true, categories: true, fixture: { include: { homeTeam: true, awayTeam: true } } },
+    include: {
+      author: true, approvedBy: true, categories: true, fixture: { include: { homeTeam: true, awayTeam: true } },
+      // Which model wrote it, so the list can flag a fallback model's pick.
+      aiJob: { select: { model: true } },
+    },
   });
   return NextResponse.json({ items });
 }

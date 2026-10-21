@@ -65,10 +65,10 @@ check("bulk panel explains ShortPriceError", /Double Chance/.test(bulkFailureRea
 
 // Wiring.
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
-check("generate.ts passes shortPriceBlock to the model", /callModel\(shortPriceBlock\(shortPriceSides\(odds, input\.home, input\.away\)\)\)/.test(gen) && /shortPriceBlock: block,/.test(gen));
-check("only unpayable Double Chance drafted: one more ask for the next best pick, not a failure", /if \(odds && !goalsOnly && onlyUnpayableDc\(output\.predictions\)\)/.test(gen) && /callModel\(shortPriceRetryBlock\(/.test(gen));
-check("generate.ts drops unpayable Double Chance drafts", /isUnpayableDoubleChance\(odds, p\.marketType, p\.selection\)/.test(gen));
-check("generate.ts skips the rule for manual runs, Goals, handicap and VIP/PREMIUM", /guardsShortPrice = !input\.manual && !goalsOnly && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen));
+check("generate.ts passes shortPriceBlock to the model", /const firstBlock = shortPriceBlock\(shortPriceSides\(priceOdds, input\.home, input\.away\)\);/.test(gen) && /callModel\(firstBlock\)/.test(gen) && /shortPriceBlock: block,/.test(gen));
+check("only unpayable Double Chance drafted: one more ask for the next best pick, not a failure", /first\.every\(\(p\) => unpayable\(p\) \|\| offMarket\(p\)\)/.test(gen) && /shortPriceRetryBlock\(priceOdds, dc, input\.home, input\.away\)/.test(gen) && /await callModel\(retryBlock\)/.test(gen));
+check("generate.ts drops unpayable Double Chance drafts", /isUnpayableDoubleChance\(priceOdds, p\.marketType, p\.selection\)/.test(gen) && /modelDrafts\.filter\(\(p\) => !unpayable\(p\)\)/.test(gen));
+check("generate.ts skips the rule for manual runs, Goals, handicap and VIP/PREMIUM", /guardsShortPrice = !input\.manual && !goalsOnly && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen) && /const priceOdds = guardsShortPrice \? odds : null;/.test(gen));
 for (const route of ["src/app/api/admin/ai/route.ts", "src/app/api/admin/ai/bulk/route.ts"]) {
   check(`${route.split("/").slice(-2).join("/")}: admin generation is exempt (manual: true)`, /manual: true,/.test(readFileSync(join(__dirname, "..", route), "utf8")));
 }

@@ -31,6 +31,7 @@ import {
   assembleMatchDigest,
   buildStandingsContext,
   buildTeamDigest,
+  type DomesticStanding,
   type MatchDigest,
   type TeamDigest,
   type KeyPlayer,
@@ -39,6 +40,7 @@ import type { StandingsEntry } from "@/lib/football/api-football";
 import type { H2HMeeting } from "@/lib/h2h";
 import { h2hPairKey } from "@/lib/slug";
 import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
+import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 
 /**
  * How old a cached team digest may be before generation refreshes it.
@@ -152,6 +154,65 @@ async function loadTeamDigest(
   });
   sources[side] = refreshed?.teamDigestJson ? "fetched" : "missing";
   return (refreshed?.teamDigestJson as unknown as TeamDigest) ?? null;
+}
+
+/** A domestic table older than this is not shown: a month-old position is not current form. */
+export const DOMESTIC_STANDING_MAX_AGE_MS = 14 * 24 * 60 * 60_000;
+
+/**
+ * A team's place in its domestic league, for a cup or European fixture.
+ *
+ * Without it the model saw only the competition in front of it: Inter read as
+ * 29th of 36 with two Champions League defeats, their Serie A season never
+ * reached the prompt, and the pick went to Shakhtar. Read from the league tables the enrichment cron already
+ * keeps (any cached table that lists the team and is not itself a cup), so it
+ * costs no api-football call. The table with most games played wins when a
+ * team appears in more than one. Null when no recent table lists the team.
+ */
+export async function loadDomesticStanding(teamApiId: number | null, now: Date = new Date()): Promise<DomesticStanding | null> {
+  if (teamApiId == null) return null;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ leagueApiId: number; standingsJson: unknown; fetchedAt: Date }>>`
+      SELECT "leagueApiId", "standingsJson", "fetchedAt" FROM "LeagueEnrichmentCache"
+      WHERE "standingsJson" @> ${JSON.stringify([{ teamId: teamApiId }])}::jsonb
+        AND "fetchedAt" > ${new Date(now.getTime() - DOMESTIC_STANDING_MAX_AGE_MS)}`;
+    return pickDomesticStanding(teamApiId, rows);
+  } catch (err) {
+    console.warn(`[generation-context] no domestic table for team ${teamApiId}`, err);
+    return null;
+  }
+}
+
+/** The domestic standing from candidate cached tables. Pure: checked by scripts/check-market-sanity.ts. */
+export function pickDomesticStanding(
+  teamApiId: number,
+  tables: ReadonlyArray<{ leagueApiId: number; standingsJson: unknown; fetchedAt: Date }>,
+): DomesticStanding | null {
+  let best: DomesticStanding | null = null;
+  for (const t of tables) {
+    const catalogued = LEAGUE_CATALOGUE.find((l) => l.id === t.leagueApiId);
+    if (isCupCompetition(t.leagueApiId) || catalogued?.kind === "cup") continue;
+    const table = Array.isArray(t.standingsJson) ? (t.standingsJson as LeagueStandingRow[]) : [];
+    const row = table.find((r) => r.teamId === teamApiId);
+    if (!row || !(row.played > 0)) continue;
+    if (best && best.played >= row.played) continue;
+    best = {
+      league: catalogued?.name ?? `league ${t.leagueApiId}`,
+      country: catalogued?.country ?? null,
+      rank: row.rank,
+      of: table.length,
+      played: row.played,
+      won: row.win,
+      drawn: row.draw,
+      lost: row.loss,
+      goalsFor: row.goalsFor,
+      goalsAgainst: row.goalsAgainst,
+      points: row.points,
+      form: row.form ?? null,
+      asOf: t.fetchedAt.toISOString().slice(0, 10),
+    };
+  }
+  return best;
 }
 
 export type GenerationContextInput = {
@@ -272,6 +333,9 @@ export async function buildGenerationDigest(
 
   const home = withRank(homeDigest ?? emptyDigest(input.home, input.homeApiId), input.homeApiId);
   const away = withRank(awayDigest ?? emptyDigest(input.away, input.awayApiId), input.awayApiId);
+  if (cupFixture) {
+    [home.domestic, away.domestic] = await Promise.all([loadDomesticStanding(input.homeApiId), loadDomesticStanding(input.awayApiId)]);
+  }
 
   const digest = assembleMatchDigest({
     fixture: {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { ADMIN_COMBO_FILTER, COMBO_MARKET_TYPE, matchesAdminCategoryFilter } from "@/lib/comboAdmin";
+import { BACKUP_MODEL_WARNING, isBackupModel } from "@/lib/ai/backupModel";
 
 const CATEGORY_VALUES = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
 
@@ -29,6 +30,7 @@ type Row = {
   outcome: string;
   settlementNote: string | null;
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string } };
+  aiJob?: { model: string | null } | null;
 };
 
 const OUTCOME_STYLES: Record<string, string> = {
@@ -348,7 +350,15 @@ export default function AdminPredictions() {
                   </div>
                 </td>
                 <td className="px-3 py-2">{r.market}</td>
-                <td className="px-3 py-2 font-semibold text-brand">{r.pick}</td>
+                <td className="px-3 py-2">
+                  <div className="font-semibold text-brand">{r.pick}</div>
+                  {isBackupModel(r.aiJob?.model) && (
+                    <div className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-amber-400" title={r.aiJob?.model ?? undefined}>
+                      <AlertTriangle size={12} className="shrink-0" aria-hidden />
+                      {BACKUP_MODEL_WARNING}
+                    </div>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-400">{r.overUnder ?? "—"}</td>
                 <td className="px-3 py-2">{r.confidence}%</td>
                 <td className="px-3 py-2"><span className="chip bg-brand-border">{r.status}</span></td>
