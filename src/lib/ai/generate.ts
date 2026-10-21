@@ -13,6 +13,7 @@ import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
+import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
@@ -129,6 +130,21 @@ export type GenerateFixtureInput = {
  * src/lib/ai/analysis.ts for the fallback chain.
  */
 export async function generateAndPersistPrediction(rawInput: GenerateFixtureInput) {
+  // Every failure, from every path, lands in the failed-generation log the
+  // admin sees (src/lib/generationFailures.ts); a later success for the same
+  // match closes it.
+  try {
+    const result = await generateUnlogged(rawInput);
+    const first = result.predictions[0];
+    if (first) await resolveGenerationFailures(rawInput, { home: first.homeTeamApiId ?? null, away: first.awayTeamApiId ?? null });
+    return result;
+  } catch (err) {
+    await recordGenerationFailure(rawInput, err);
+    throw err;
+  }
+}
+
+async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const leagueName = normalizeLeagueName(rawInput.league);
   if (!leagueName) {
     throw new Error("Prediction generation requires a real league name; placeholders cannot be persisted");

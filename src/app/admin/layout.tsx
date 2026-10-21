@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { redirect } from "next/navigation";
+import { openFailureCount } from "@/lib/generationFailures";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -15,6 +16,7 @@ const items = [
   { href: "/admin/ai", label: "Generation panel" },
   { href: "/admin/predictions", label: "Predictions" },
   { href: "/admin/generation", label: "Generation" },
+  { href: "/admin/failed-generations", label: "Failed generations" },
   { href: "/admin/combos", label: "Combos" },
   { href: "/admin/bookmakers", label: "Bookmakers" },
   { href: "/admin/subscribers", label: "Subscribers" },
@@ -30,6 +32,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect("/login");
   if (!isAdmin(session.user.role)) redirect("/");
+  // Matches whose generation failed and still kick off ahead: shown beside the
+  // link on every admin page, so a failure is seen without going looking.
+  const failed = await openFailureCount();
 
   return (
     <div className="grid min-h-screen grid-cols-[240px_1fr]">
@@ -40,8 +45,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <nav className="space-y-1">
           {items.map((i) => (
             <Link key={i.href} href={i.href}
-              className="block rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-bg">
+              className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-bg">
               {i.label}
+              {i.href === "/admin/failed-generations" && failed > 0 && (
+                <span className="text-xs font-bold tabular-nums text-red-400" aria-label={`${failed} open`}>{failed}</span>
+              )}
             </Link>
           ))}
         </nav>
