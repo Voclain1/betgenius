@@ -1,0 +1,75 @@
+# Production stack on the VPS (docs/VPS_MIGRATION.md). Lives at /opt/betgenius
+# on the server; .github/workflows/deploy-vps.yml copies it there and runs
+#   docker compose --env-file deploy.env up -d
+# deploy.env holds the image tag and domain (written by the deploy);
+# app.env holds the app's own settings (the PROD_ENV_FILE secret).
+
+name: betgenius
+
+services:
+  app:
+    image: ${APP_IMAGE}:${APP_TAG}
+    restart: unless-stopped
+    env_file: app.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Loopback only: the deploy's health check and nothing else. The public
+    # way in is Caddy.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: betgenius
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: betgenius
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Loopback only, never the internet. GitHub Actions reaches it through an
+    # SSH tunnel (db-push, diagnose-generation, the deploy's schema check).
+    ports:
+      - "127.0.0.1:5432:5432"
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U betgenius -d betgenius"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  # Scheduled jobs (what vercel.json's crons did) and the nightly backup.
+  ops:
+    build: ./ops
+    restart: unless-stopped
+    env_file: ops.env
+    environment:
+      PGHOST: postgres
+      PGUSER: betgenius
+      PGDATABASE: betgenius
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

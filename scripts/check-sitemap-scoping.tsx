@@ -56,6 +56,7 @@ react.cache = (fn: unknown) => fn;
 // the local fallback so key assertions do not depend on the runner's env.
 delete process.env.VERCEL_DEPLOYMENT_ID;
 delete process.env.VERCEL_GIT_COMMIT_SHA;
+delete process.env.APP_BUILD_ID;
 
 const repoRoot = join(__dirname, "..");
 const read = (path: string) => readFileSync(join(repoRoot, path), "utf8");
@@ -393,7 +394,9 @@ async function main() {
     sitemapCacheDeployment({ VERCEL_DEPLOYMENT_ID: "dpl_abc", VERCEL_GIT_COMMIT_SHA: "0123abc" } as any) === "dpl_abc");
   check("cache: commit SHA is the fallback discriminator",
     sitemapCacheDeployment({ VERCEL_GIT_COMMIT_SHA: "0123abc" } as any) === "0123abc");
-  check("cache: outside Vercel the discriminator is the constant \"local\"",
+  check("cache: a self-hosted build is keyed by its APP_BUILD_ID",
+    sitemapCacheDeployment({ APP_BUILD_ID: "4567def" } as any) === "4567def");
+  check("cache: with no deployment or build id the discriminator is the constant \"local\"",
     sitemapCacheDeployment({} as any) === "local" && sitemapCacheDeployment({ VERCEL_DEPLOYMENT_ID: "", VERCEL_GIT_COMMIT_SHA: "" } as any) === "local");
 
   fake.reset();

@@ -45,11 +45,12 @@ const SITEMAP_CACHE_VERSION = "v1";
  * interval, or longer, since whether the key changed depended on the minified
  * function source. Both values are Vercel system environment variables (the
  * deployment id and the commit it was built from); neither is a secret or a
- * database identifier. Outside Vercel — local runs, CI, the checks — it is the
- * constant "local", so tests stay deterministic.
+ * database identifier. The self-hosted build sets APP_BUILD_ID to its commit
+ * SHA (see Dockerfile) for the same purpose. Anywhere else — local runs, CI,
+ * the checks — it is the constant "local", so tests stay deterministic.
  */
 export function sitemapCacheDeployment(env: NodeJS.ProcessEnv = process.env): string {
-  return env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || "local";
+  return env.VERCEL_DEPLOYMENT_ID || env.VERCEL_GIT_COMMIT_SHA || env.APP_BUILD_ID || "local";
 }
 
 /** One hour — the same freshness the route's CDN headers advertise. */
