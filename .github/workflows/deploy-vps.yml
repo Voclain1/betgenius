@@ -81,6 +81,8 @@ jobs:
           OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
+          SITE_ALIASES: ${{ vars.SITE_ALIASES }}
+          SITE_REDIRECT_FROM: ${{ vars.SITE_REDIRECT_FROM }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for v in OPS_ENV_FILE POSTGRES_PASSWORD SITE_DOMAIN; do
@@ -99,6 +101,8 @@ jobs:
             echo "APP_IMAGE=$IMAGE"
             echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
             echo "SITE_DOMAIN=$SITE_DOMAIN"
+            echo "SITE_ALIASES=$SITE_ALIASES"
+            echo "SITE_REDIRECT_FROM=$SITE_REDIRECT_FROM"
           } >> out/deploy.env
 
           tar -C deploy -cf - . | ssh vps 'tar -C /opt/betgenius -xf -'
