@@ -18,7 +18,10 @@ if ! docker network inspect edge >/dev/null 2>&1 || [ ! -f "$SCHOOL_KIT/lib.sh" 
   echo "::error::School Kit is not deployed on this server yet (no edge network or $SCHOOL_KIT/lib.sh). Run naija-class's deploy-vps first."
   exit 1
 fi
-SITE_DOMAIN=$(grep '^SITE_DOMAIN=' deploy.env | cut -d= -f2)
+setting() { grep "^$1=" deploy.env | cut -d= -f2- || true; }
+SITE_DOMAIN=$(setting SITE_DOMAIN)
+SITE_ALIASES=$(setting SITE_ALIASES)
+SITE_REDIRECT_FROM=$(setting SITE_REDIRECT_FROM)
 
 PREV_TAG=$(grep '^APP_TAG=' deploy.env 2>/dev/null | cut -d= -f2 || true)
 sed -i '/^APP_TAG=/d' deploy.env
@@ -30,20 +33,19 @@ compose up -d --build --remove-orphans
 for i in $(seq 1 40); do
   if curl -fsS -m 5 -o /dev/null http://127.0.0.1:3000/api/health; then
     echo "healthy on $NEW_TAG (was ${PREV_TAG:-none})"
-    # Point School Kit's Caddy at this app (www. redirects to the bare domain).
-    cat > "$SCHOOL_KIT/sites/betgenius.caddy" <<CADDY
-$SITE_DOMAIN {
-	encode zstd gzip
-	reverse_proxy betgenius-app:3000 {
-		header_up X-Real-IP {client_ip}
-		header_up X-Forwarded-For {client_ip}
-	}
-}
-
-www.$SITE_DOMAIN {
-	redir https://$SITE_DOMAIN{uri} permanent
-}
-CADDY
+    # Point School Kit's Caddy at this app. SITE_DOMAIN is the canonical
+    # host (www.betgenius.ng: Search Console and NEXTAUTH_URL use it).
+    # SITE_ALIASES are served by the same app (ads.betgenius.ng, the ad
+    # frame's own origin; src/middleware.ts gates it by Host). Each of
+    # SITE_REDIRECT_FROM (betgenius.ng) redirects permanently to SITE_DOMAIN.
+    {
+      echo "$SITE_DOMAIN${SITE_ALIASES:+, ${SITE_ALIASES// /, }} {"
+      printf '\tencode zstd gzip\n\treverse_proxy betgenius-app:3000 {\n'
+      printf '\t\theader_up X-Real-IP {client_ip}\n\t\theader_up X-Forwarded-For {client_ip}\n\t}\n}\n'
+      for host in $SITE_REDIRECT_FROM; do
+        printf '\n%s {\n\tredir https://%s{uri} permanent\n}\n' "$host" "$SITE_DOMAIN"
+      done
+    } > "$SCHOOL_KIT/sites/betgenius.caddy"
     (cd "$SCHOOL_KIT" && . ./lib.sh && reload_caddy)
     docker image prune -af --filter "until=336h" >/dev/null || true
     exit 0

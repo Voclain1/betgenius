@@ -76,7 +76,7 @@ Benefits for this move:
 | `deploy/docker-compose.yml` | `app`, `postgres` (17), `ops`, with memory limits. The app joins School Kit's `edge` network. Postgres (host port 5433) and the app listen on 127.0.0.1 only. |
 | `deploy/ops/` | Cron (the two `vercel.json` jobs, same times, with the `CRON_SECRET` bearer) and the nightly backup to object storage: 14 daily and 8 weekly copies, plus `restore-test.sh`. |
 | `deploy/server-setup.sh` | Docker, a `deploy` user, SSH keys only, firewall 22/80/443, unattended upgrades, fail2ban, swap. |
-| `deploy/deploy.sh` | Switches to a new image, waits for `/api/health`, rolls back to the previous image if it never turns 200. Once healthy, writes School Kit's Caddy site for `SITE_DOMAIN` (`www.` redirects to it) and reloads Caddy. |
+| `deploy/deploy.sh` | Switches to a new image, waits for `/api/health`, rolls back to the previous image if it never turns 200. Once healthy, writes School Kit's Caddy site (`SITE_DOMAIN` and `SITE_ALIASES` served, `SITE_REDIRECT_FROM` redirected to `SITE_DOMAIN`) and reloads Caddy. |
 | `.github/workflows/vps-setup.yml` | Runs `server-setup.sh` once, as root. |
 | `.github/workflows/deploy-vps.yml` | Build, push to GHCR, ship settings, switch. On every push to `master` once `VPS_DEPLOY_ENABLED=true`. |
 | `.github/workflows/vps-db-copy.yml` | Neon to VPS copy (type `REPLACE`), then compares row counts. |
@@ -99,7 +99,9 @@ stored in the image): Neon's before cutover, the tunnel after.
 | `POSTGRES_PASSWORD` | secret | `openssl rand -hex 24` (letters and digits only, it goes in a URL) |
 | `OPS_ENV_FILE` | secret | `CRON_SECRET=…` (same as in `PROD_ENV_FILE`), `BACKUP_BUCKET=<bucket>`, `RCLONE_CONFIG_BACKUP_TYPE=s3`, `RCLONE_CONFIG_BACKUP_PROVIDER=Other`, `RCLONE_CONFIG_BACKUP_ENDPOINT=<object storage URL>`, `RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=…`, `RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=…`, optionally `HEALTHCHECK_PING_URL=…` (healthchecks.io, alerts when a backup does not run) |
 | `NEON_DIRECT_URL` | secret | Neon's direct (non-pooler) URL, for `vps-db-copy` |
-| `SITE_DOMAIN` | variable | `vps.betgenius.ng` for the rehearsal, `betgenius.ng` at cutover |
+| `SITE_DOMAIN` | variable | The canonical host: `vps.betgenius.ng` for the rehearsal, **`www.betgenius.ng`** at cutover (Search Console, the sitemap and `NEXTAUTH_URL` all use www) |
+| `SITE_ALIASES` | variable | Unset for the rehearsal; `ads.betgenius.ng` at cutover (the ad frame's own origin, the same app; `src/middleware.ts` gates it by Host) |
+| `SITE_REDIRECT_FROM` | variable | Unset for the rehearsal; `betgenius.ng` at cutover (redirects permanently to www, path and query kept, as Vercel does today) |
 | `VPS_DEPLOY_ENABLED` | variable | `true` to deploy on every push to `master` |
 | `DB_ON_VPS` | variable | `true` at cutover, together with pointing the `DATABASE_URL` and `DATABASE_URL_UNPOOLED` secrets at `postgresql://betgenius:<POSTGRES_PASSWORD>@127.0.0.1:5432/betgenius` |
 
@@ -125,9 +127,14 @@ stored in the image): Neon's before cutover, the tunnel after.
 2. Put the Vercel site into maintenance (or just accept ~10 minutes of read-only
    risk at a quiet hour).
 3. Run `vps-db-copy` (type `REPLACE`); it compares the row counts.
-4. Set `SITE_DOMAIN=betgenius.ng`, `DB_ON_VPS=true`, the two `DATABASE_URL`
-   secrets (§4), `VPS_DEPLOY_ENABLED=true`; run `deploy-vps`.
-5. Change the Cloudflare A records (`@` and `www`) to the VPS IP.
+4. Set `SITE_DOMAIN=www.betgenius.ng`, `SITE_ALIASES=ads.betgenius.ng`,
+   `SITE_REDIRECT_FROM=betgenius.ng`, `DB_ON_VPS=true`, the two `DATABASE_URL`
+   secrets (§4), `VPS_DEPLOY_ENABLED=true`.
+5. In Cloudflare, replace the Vercel A records for `betgenius.ng`, `www` and
+   `*` (which carries `ads.`) with one A record each to the VPS IP, proxied.
+   Today's values, for rollback: `betgenius.ng` 216.150.1.65 and
+   216.150.16.129; `www` 216.150.16.193 and 216.150.16.1; `*` 216.150.1.193
+   and 216.150.16.1. Then run `deploy-vps`.
 6. Smoke test the live domain: homepage, login, a paid feed, the admin page,
    `/api/admin/jobs`, `/api/health`.
 7. Resume the cron-job.org jobs. Run `diagnose-generation` an hour later.
