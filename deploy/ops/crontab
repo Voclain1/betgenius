@@ -1,0 +1,6 @@
+# Times are UTC. The first two replace vercel.json's crons, same schedule.
+# cron-job.org keeps its own jobs; they call the public domain as before.
+0 6 * * * /ops/cron-call.sh /api/admin/settle
+30 10 * * * /ops/cron-call.sh /api/admin/curate-accumulators
+# Nightly backup at 02:30 UTC (03:30 Lagos), the quietest hour.
+30 2 * * * /ops/backup.sh

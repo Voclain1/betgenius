@@ -1,0 +1,31 @@
+name: VPS database tunnel
+description: >-
+  Once the database lives on the VPS (repository variable DB_ON_VPS=true),
+  opens an SSH tunnel so localhost:5432 on the runner reaches the server's
+  Postgres, which is never exposed to the internet. Point the DATABASE_URL and
+  DATABASE_URL_UNPOOLED secrets at 127.0.0.1:5432 at the same time. Does
+  nothing while DB_ON_VPS is unset, so the database jobs keep using Neon.
+inputs:
+  enabled:
+    description: vars.DB_ON_VPS
+    default: ""
+  host:
+    description: secrets.VPS_HOST
+    default: ""
+  key:
+    description: secrets.VPS_SSH_KEY
+    default: ""
+runs:
+  using: composite
+  steps:
+    - if: inputs.enabled == 'true'
+      uses: ./.github/actions/vps-ssh
+      with:
+        host: ${{ inputs.host }}
+        key: ${{ inputs.key }}
+    - if: inputs.enabled == 'true'
+      shell: bash
+      run: |
+        ssh -f -N -o ExitOnForwardFailure=yes -L 5432:127.0.0.1:5432 vps
+        for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null && exit 0; sleep 1; done
+        echo "::error::SSH tunnel to the VPS database did not come up"; exit 1

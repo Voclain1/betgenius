@@ -1,9 +1,11 @@
 # Moving to a Contabo VPS — the plan
 
-Status: **planned, not started.** Decided Oct 2026: move *everything* (app and
-database) to one Contabo VPS in Germany, mainly to cut cost. Do it once the
-current feature work settles. Nothing in this document has been built yet; the
-"Repo changes" section lists what has to be written first.
+Status: **repo side built (21 Oct 2026), nothing live yet.** Decided Oct 2026:
+move *everything* (app and database) to a Contabo VPS in Germany, mainly to cut
+cost, on a 9-day timeline alongside School Kit. The image, server files and
+workflows below exist and were tested locally (image build against Postgres 17,
+health, pages, image optimiser, backup and restore); they have not run against
+a real server. Vercel and Neon are untouched until the cutover in §6.
 
 Everything below is designed to be driven from GitHub Actions, so it can be run
 from a phone: no terminal on the owner's side.
@@ -13,7 +15,7 @@ from a phone: no terminal on the owner's side.
 | Today | On the VPS |
 |---|---|
 | Vercel: Next.js app, API routes, image optimisation | Next.js `standalone` build in Docker (Node 20), with `sharp` for images |
-| Neon: Postgres (pooled + direct URLs) | Postgres 16 in Docker on the same VPS, data on a named volume |
+| Neon: Postgres (pooled + direct URLs) | Postgres 17 in Docker on the same VPS, data on a named volume |
 | Vercel's HTTPS and CDN | Caddy (automatic Let's Encrypt), with Cloudflare in front (see §3) |
 | `vercel.json` crons: `/api/admin/settle` 06:00 UTC, `/api/admin/curate-accumulators` 10:30 UTC | A cron container (or host crontab) calling the same URLs with `Authorization: Bearer $CRON_SECRET` |
 | cron-job.org pokes (generation, VIP pass, discovery, insights, settle 3-hourly…) | **Unchanged.** They call the domain, which will point at the VPS |
@@ -55,44 +57,50 @@ Benefits for this move:
   would otherwise cost.
 - **DDoS protection,** which a single VPS has none of on its own.
 
-## 4. Repo changes to make first (one PR, nothing live)
+## 4. What is in the repo
 
-1. **`next.config.mjs`**: add `output: "standalone"`.
-2. **`sharp`**: add it as a dependency, for `next/image` optimisation off Vercel.
-3. **`src/lib/sitemapCache.ts`**: `sitemapCacheDeployment` must also read a
-   self-hosted build id (e.g. `APP_BUILD_ID`, set to the git SHA at build time).
-   Today it falls back to the constant `"local"` off Vercel, so a new deploy could
-   keep serving the previous deploy's sitemap.
-4. **`Dockerfile`**: a multi-stage build (deps, then `prisma generate` and
-   `next build`, then a slim runner).
-5. **`deploy/docker-compose.yml`**: `app`, `postgres`, `caddy`, `cron`. Postgres
-   is not exposed to the internet, only to the app on the internal network.
-6. **`deploy/Caddyfile`**: the domain, HTTPS, and `X-Forwarded-*` headers so the
-   app sees real client IPs.
-7. **`deploy/backup.sh`**: a nightly `pg_dump -Fc`, uploaded to object storage.
-   Keep 14 daily and 8 weekly copies.
-8. **GitHub Actions**, all over SSH using two repo secrets: `VPS_HOST` and
-   `VPS_SSH_KEY`.
-   - `vps-setup.yml` (run once): Docker, firewall (only 22/80/443; SSH key-only,
-     no root password), unattended security upgrades, fail2ban, backup timer.
-   - `deploy.yml` (on every merge to `master`): build the image, ship it,
-     `prisma migrate`/schema check, restart with a health check, keep the
-     previous image for a one-command rollback.
-   - `db-restore-test.yml` (monthly): restore the latest backup into a scratch
-     database and count rows. A backup that has never been restored is not a
-     backup.
-9. **Env file template**: the 30 variables in `.env.example`, stored as a GitHub
-   secret and written to the server by `deploy.yml`. `DATABASE_URL` and
-   `DATABASE_URL_UNPOOLED` both point at the local Postgres (no pooler needed).
-   `NEXTAUTH_URL` stays the public domain.
+| File | What it does |
+|---|---|
+| `Dockerfile` | Multi-stage build to a `standalone` Next.js server on Node 20, with `sharp` for `next/image`. `NEXT_PUBLIC_*` are build arguments. Sets `APP_ENV=production` (MetaPixel reads it where it used to read only Vercel's `VERCEL_ENV`) and `APP_BUILD_ID` (the sitemap cache key, `sitemapCache.ts`). |
+| `src/app/api/health/route.ts` | 200 when the app and the database answer. Used by the deploy and an uptime monitor. |
+| `deploy/docker-compose.yml` | `app`, `postgres` (17), `caddy`, `ops`. Postgres and the app listen on 127.0.0.1 only. |
+| `deploy/Caddyfile` | HTTPS for `SITE_DOMAIN`, `www.` redirects to it. |
+| `deploy/ops/` | Cron (the two `vercel.json` jobs, same times, with the `CRON_SECRET` bearer) and the nightly backup to object storage: 14 daily and 8 weekly copies, plus `restore-test.sh`. |
+| `deploy/server-setup.sh` | Docker, a `deploy` user, SSH keys only, firewall 22/80/443, unattended upgrades, fail2ban, swap. |
+| `deploy/deploy.sh` | Switches to a new image, waits for `/api/health`, rolls back to the previous image if it never turns 200. |
+| `.github/workflows/vps-setup.yml` | Runs `server-setup.sh` once, as root. |
+| `.github/workflows/deploy-vps.yml` | Build, push to GHCR, ship settings, switch. On every push to `master` once `VPS_DEPLOY_ENABLED=true`. |
+| `.github/workflows/vps-db-copy.yml` | Neon to VPS copy (type `REPLACE`), then compares row counts. |
+| `.github/workflows/db-restore-test.yml` | Monthly restore of the latest backup into a scratch database. |
+| `.github/actions/vps-db-tunnel` | When `DB_ON_VPS=true`, `db-push`, `preflight` and `diagnose-generation` reach the VPS database through SSH. |
+
+**The build needs the database**, exactly as on Vercel: six pages
+(`/fixtures`, `/track-record`, …) are rendered from data at build time, and
+`check-schema-sync` refuses a build whose schema the database lacks. The
+deploy passes `DATABASE_URL`/`DATABASE_URL_UNPOOLED` as build secrets (never
+stored in the image): Neon's before cutover, the tunnel after.
+
+### Settings to add on GitHub (Settings → Secrets and variables → Actions)
+
+| Name | Kind | Value |
+|---|---|---|
+| `VPS_HOST` | secret | The server's IP address |
+| `VPS_SSH_KEY` | secret | The private half of the key the server was ordered with |
+| `PROD_ENV_FILE` | secret | The production settings, one `NAME=value` per line, as on Vercel today (`vercel env pull` gives them). Any `DATABASE_URL` lines in it are ignored on the server |
+| `POSTGRES_PASSWORD` | secret | `openssl rand -hex 24` (letters and digits only, it goes in a URL) |
+| `OPS_ENV_FILE` | secret | `CRON_SECRET=…` (same as in `PROD_ENV_FILE`), `BACKUP_BUCKET=<bucket>`, `RCLONE_CONFIG_BACKUP_TYPE=s3`, `RCLONE_CONFIG_BACKUP_PROVIDER=Other`, `RCLONE_CONFIG_BACKUP_ENDPOINT=<object storage URL>`, `RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=…`, `RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=…`, optionally `HEALTHCHECK_PING_URL=…` (healthchecks.io, alerts when a backup does not run) |
+| `NEON_DIRECT_URL` | secret | Neon's direct (non-pooler) URL, for `vps-db-copy` |
+| `SITE_DOMAIN` | variable | `vps.betgenius.ng` for the rehearsal, `betgenius.ng` at cutover |
+| `VPS_DEPLOY_ENABLED` | variable | `true` to deploy on every push to `master` |
+| `DB_ON_VPS` | variable | `true` at cutover, together with pointing the `DATABASE_URL` and `DATABASE_URL_UNPOOLED` secrets at `postgresql://betgenius:<POSTGRES_PASSWORD>@127.0.0.1:5432/betgenius` |
 
 ## 5. Rehearsal (live site untouched)
 
-1. Run `vps-setup.yml`.
-2. Copy Neon to the VPS (`pg_dump` from Neon's direct URL, `pg_restore` into
-   the VPS), via a workflow.
-3. Deploy the app pointed at the VPS database, reachable on a temporary hostname
-   (e.g. `vps.betgenius.ng`).
+1. Add `vps.betgenius.ng` in Cloudflare pointing at the VPS IP, then run
+   `vps-setup`.
+2. Run `deploy-vps` by hand (first run: the app starts on an empty database).
+3. Run `vps-db-copy` (type `REPLACE`). The app on `vps.betgenius.ng` now
+   serves a copy of production.
 4. Check:
    - login and Google sign-in;
    - a test payment on Paystack test keys;
@@ -107,12 +115,15 @@ Benefits for this move:
 1. Pause the cron-job.org jobs and disable the Vercel crons.
 2. Put the Vercel site into maintenance (or just accept ~10 minutes of read-only
    risk at a quiet hour).
-3. Take a final `pg_dump` from Neon and restore it on the VPS. Compare row
-   counts for `Prediction`, `User`, `Subscription` and `PaymentAttempt`.
-4. Change the Cloudflare A record to the VPS IP.
-5. Smoke test the live domain: homepage, login, a paid feed, the admin page,
-   `/api/admin/jobs`.
-6. Resume the cron-job.org jobs. Run `diagnose-generation` an hour later.
+3. Run `vps-db-copy` (type `REPLACE`); it compares the row counts.
+4. Set `SITE_DOMAIN=betgenius.ng`, `DB_ON_VPS=true`, the two `DATABASE_URL`
+   secrets (§4), `VPS_DEPLOY_ENABLED=true`; run `deploy-vps`.
+5. Change the Cloudflare A records (`@` and `www`) to the VPS IP.
+6. Smoke test the live domain: homepage, login, a paid feed, the admin page,
+   `/api/admin/jobs`, `/api/health`.
+7. Resume the cron-job.org jobs. Run `diagnose-generation` an hour later.
+8. Disconnect the Vercel project from GitHub, so a push no longer deploys a
+   Vercel copy still wired to Neon.
 
 ## 7. Rollback
 

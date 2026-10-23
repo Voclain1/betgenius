@@ -14,7 +14,9 @@ import { CONSENT_STORAGE_KEY } from "@/lib/consent";
  * preview deployments and `next dev` sessions firing PageViews into the same
  * pixel as real visitors — that would pollute ad attribution and audiences.
  * VERCEL_ENV is set by Vercel itself to "production" only on the production
- * deployment, so everywhere else this renders nothing.
+ * deployment; the self-hosted build sets APP_ENV=production instead (see
+ * Dockerfile), and APP_ENV wins when present. Everywhere else, neither is
+ * "production" and this renders nothing.
  *
  * CONSENT. The pixel starts revoked — it sends nothing and sets no cookie —
  * unless the visitor has accepted in the cookie banner (lib/consent.ts). The
@@ -31,7 +33,7 @@ import { CONSENT_STORAGE_KEY } from "@/lib/consent";
 const META_PIXEL_ID = "4101746286793473";
 
 export function MetaPixel() {
-  if (process.env.VERCEL_ENV !== "production") return null;
+  if ((process.env.APP_ENV || process.env.VERCEL_ENV) !== "production") return null;
 
   return (
     <Script id="meta-pixel" strategy="afterInteractive">

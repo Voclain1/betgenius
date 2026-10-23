@@ -1,4 +1,7 @@
 const nextConfig = {
+  // Self-hosted (deploy/, docs/VPS_MIGRATION.md): `next build` emits a minimal
+  // server in .next/standalone that the Docker image runs. Vercel ignores it.
+  output: "standalone",
   images: {
     // The only remote images next/image renders are team crests, which come
     // from API-Football. Checked on production (8 Oct 2026): all 1,857 stored
