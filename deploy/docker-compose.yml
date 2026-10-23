@@ -3,6 +3,11 @@
 #   docker compose --env-file deploy.env up -d
 # deploy.env holds the image tag and domain (written by the deploy);
 # app.env holds the app's own settings (the PROD_ENV_FILE secret).
+#
+# It shares the School Kit server (docs/VPS_MIGRATION.md §2): School Kit's
+# Caddy serves HTTPS for both, reaching this app over the `edge` network,
+# which School Kit's compose creates. Memory limits keep betgenius (match-day
+# spikes, generation runs) from ever squeezing the schools.
 
 name: betgenius
 
@@ -15,9 +20,15 @@ services:
       postgres:
         condition: service_healthy
     # Loopback only: the deploy's health check and nothing else. The public
-    # way in is Caddy.
+    # way in is School Kit's Caddy, over `edge`, under the name betgenius-app.
     ports:
       - "127.0.0.1:3000:3000"
+    networks:
+      default:
+      edge:
+        aliases: [betgenius-app]
+    mem_limit: 1g
+    cpus: 2
 
   postgres:
     image: postgres:17-alpine
@@ -26,34 +37,21 @@ services:
       POSTGRES_USER: betgenius
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: betgenius
+    command: ["postgres", "-c", "shared_buffers=192MB", "-c", "effective_cache_size=512MB"]
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Loopback only, never the internet. GitHub Actions reaches it through an
     # SSH tunnel (db-push, diagnose-generation, the deploy's schema check).
+    # 5433 on the host: School Kit's Postgres has 5432.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     shm_size: 256mb
+    mem_limit: 768m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U betgenius -d betgenius"]
       interval: 5s
       timeout: 5s
       retries: 20
-
-  caddy:
-    image: caddy:2.8-alpine
-    restart: unless-stopped
-    environment:
-      SITE_DOMAIN: ${SITE_DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - app
 
   # Scheduled jobs (what vercel.json's crons did) and the nightly backup.
   ops:
@@ -68,8 +66,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    mem_limit: 256m
+
+networks:
+  default:
+  edge:
+    external: true
+    name: edge
 
 volumes:
   pgdata:
-  caddy_data:
-  caddy_config:

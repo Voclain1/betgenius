@@ -16,7 +16,7 @@ from a phone: no terminal on the owner's side.
 |---|---|
 | Vercel: Next.js app, API routes, image optimisation | Next.js `standalone` build in Docker (Node 20), with `sharp` for images |
 | Neon: Postgres (pooled + direct URLs) | Postgres 17 in Docker on the same VPS, data on a named volume |
-| Vercel's HTTPS and CDN | Caddy (automatic Let's Encrypt), with Cloudflare in front (see §3) |
+| Vercel's HTTPS and CDN | School Kit's Caddy on the same server (automatic Let's Encrypt), with Cloudflare in front (see §3) |
 | `vercel.json` crons: `/api/admin/settle` 06:00 UTC, `/api/admin/curate-accumulators` 10:30 UTC | A cron container (or host crontab) calling the same URLs with `Authorization: Bearer $CRON_SECRET` |
 | cron-job.org pokes (generation, VIP pass, discovery, insights, settle 3-hourly…) | **Unchanged.** They call the domain, which will point at the VPS |
 | GitHub Actions: preflight, diagnose-generation | Unchanged; `diagnose-generation` points at the new `DATABASE_URL` secret |
@@ -28,12 +28,22 @@ origins use the domain, so they keep working after the DNS switch.
 
 ## 2. The server
 
-- **Contabo Cloud VPS, Germany**, at least **6 vCPU / 12 GB RAM / NVMe**.
-  Postgres, the Next.js server and a build are comfortable there, with headroom
-  for a background generation worker later. Check Contabo's current price list
-  when ordering; prices are not recorded here because they change.
-- Ubuntu 24.04 LTS. Order with an **SSH key**, not a password.
-- Add **Contabo Object Storage** (or Backblaze B2) for off-server backups.
+- **One server shared with School Kit** (decided 23 Oct 2026): a Contabo
+  **Cloud VPS 6** (6 vCPU, 12 GB RAM, 100 GB NVMe), EU region, Ubuntu 24.04.
+  Upgrade to Cloud VPS 8 (24 GB) if memory regularly passes about 80%.
+- **School Kit's Caddy serves betgenius's HTTPS.** School Kit's compose
+  creates a Docker network called `edge` that only its Caddy and other
+  projects' public apps join. betgenius's app joins it as `betgenius-app`, so
+  it can reach Caddy and nothing of School Kit's (its Postgres and Redis are
+  not on `edge`). `deploy.sh` writes `/opt/school-kit/sites/betgenius.caddy`
+  and reloads Caddy. **So School Kit must be deployed on the server first.**
+- **Memory limits** keep betgenius from squeezing the schools: app 1 GB
+  (2 CPUs), Postgres 768 MB (`shared_buffers` 192 MB), ops 256 MB.
+- **betgenius's Postgres listens on 127.0.0.1:5433** (School Kit's has 5432).
+  The SSH tunnels map it to 5432 on the runner, so the `DATABASE_URL` secrets
+  still say `127.0.0.1:5432`.
+- Backups: the object storage bucket School Kit uses (Backblaze B2 suggested),
+  under a different `BACKUP_BUCKET` path.
 
 ## 3. DNS: move it to Cloudflare first
 
@@ -63,11 +73,10 @@ Benefits for this move:
 |---|---|
 | `Dockerfile` | Multi-stage build to a `standalone` Next.js server on Node 20, with `sharp` for `next/image`. `NEXT_PUBLIC_*` are build arguments. Sets `APP_ENV=production` (MetaPixel reads it where it used to read only Vercel's `VERCEL_ENV`) and `APP_BUILD_ID` (the sitemap cache key, `sitemapCache.ts`). |
 | `src/app/api/health/route.ts` | 200 when the app and the database answer. Used by the deploy and an uptime monitor. |
-| `deploy/docker-compose.yml` | `app`, `postgres` (17), `caddy`, `ops`. Postgres and the app listen on 127.0.0.1 only. |
-| `deploy/Caddyfile` | HTTPS for `SITE_DOMAIN`, `www.` redirects to it. |
+| `deploy/docker-compose.yml` | `app`, `postgres` (17), `ops`, with memory limits. The app joins School Kit's `edge` network. Postgres (host port 5433) and the app listen on 127.0.0.1 only. |
 | `deploy/ops/` | Cron (the two `vercel.json` jobs, same times, with the `CRON_SECRET` bearer) and the nightly backup to object storage: 14 daily and 8 weekly copies, plus `restore-test.sh`. |
 | `deploy/server-setup.sh` | Docker, a `deploy` user, SSH keys only, firewall 22/80/443, unattended upgrades, fail2ban, swap. |
-| `deploy/deploy.sh` | Switches to a new image, waits for `/api/health`, rolls back to the previous image if it never turns 200. |
+| `deploy/deploy.sh` | Switches to a new image, waits for `/api/health`, rolls back to the previous image if it never turns 200. Once healthy, writes School Kit's Caddy site for `SITE_DOMAIN` (`www.` redirects to it) and reloads Caddy. |
 | `.github/workflows/vps-setup.yml` | Runs `server-setup.sh` once, as root. |
 | `.github/workflows/deploy-vps.yml` | Build, push to GHCR, ship settings, switch. On every push to `master` once `VPS_DEPLOY_ENABLED=true`. |
 | `.github/workflows/vps-db-copy.yml` | Neon to VPS copy (type `REPLACE`), then compares row counts. |
