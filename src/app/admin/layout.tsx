@@ -19,6 +19,7 @@ const items = [
   { href: "/admin/failed-generations", label: "Failed generations" },
   { href: "/admin/combos", label: "Combos" },
   { href: "/admin/bookmakers", label: "Bookmakers" },
+  { href: "/admin/banners", label: "Banners" },
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/manual-payments", label: "Bank & USDT" },

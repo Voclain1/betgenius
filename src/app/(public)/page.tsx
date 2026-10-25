@@ -8,6 +8,7 @@ import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { TopBanner } from "@/components/ads/TopBanner";
 import { MarketChips } from "@/components/MarketChips";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
@@ -218,6 +219,10 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   return (
     <div className="space-y-12">
       <JsonLd data={websiteJsonLd()} />
+      {/* The top banner, above the hero: a house banner from /admin/banners,
+          else the network leaderboard. A labelled band with its own fold tab,
+          so it reads as chrome rather than as part of the hero pick below. */}
+      <TopBanner />
       {/* Two columns once there's a pick to show: the claim on the left, a
           real published pick as its evidence on the right. Collapses to the
           original single column when nothing public is available, so the hero

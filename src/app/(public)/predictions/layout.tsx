@@ -1,6 +1,7 @@
 import { TopTrendsPanel } from "@/components/TopTrendsPanel";
 import { RAIL_SLOT_ID } from "@/components/ads/railSlot";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { TopBanner } from "@/components/ads/TopBanner";
 
 /**
  * Puts the Top trends panel beside every prediction page.
@@ -12,14 +13,20 @@ import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
  */
 export default function PredictionsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-6">
-      <div className="min-w-0">{children}</div>
-      <aside className="mt-10 xl:mt-0">
-        <TopTrendsPanel />
-        {/* A page's rail ad (WithAdRail) is placed here, under the panel. */}
-        <div id={RAIL_SLOT_ID} className="mt-4" />
-      </aside>
-      <AdStickyMobile />
-    </div>
+    <>
+      {/* The top banner, across the full width above the page and its panel. */}
+      <div className="mb-6">
+        <TopBanner />
+      </div>
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-6">
+        <div className="min-w-0">{children}</div>
+        <aside className="mt-10 xl:mt-0">
+          <TopTrendsPanel />
+          {/* A page's rail ad (WithAdRail) is placed here, under the panel. */}
+          <div id={RAIL_SLOT_ID} className="mt-4" />
+        </aside>
+        <AdStickyMobile />
+      </div>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { TopBanner } from "@/components/ads/TopBanner";
 
 export const metadata: Metadata = {
   // No keyword targeted here on purpose — the realistic difficulty on the raw
@@ -18,6 +19,10 @@ export const metadata: Metadata = {
 export default function FixturesLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      {/* The top banner: house banners from /admin/banners, else the network leaderboard. */}
+      <div className="mb-6">
+        <TopBanner />
+      </div>
       {children}
       {/* At the foot of the page, in the layout rather than the page body,
           because the page body here is a client component that owns its own
