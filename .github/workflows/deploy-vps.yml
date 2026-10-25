@@ -1,0 +1,112 @@
+# Builds the image, checks the database schema, and switches the VPS to the
+# new build with automatic rollback (deploy/deploy.sh). Runs on every push to
+# master once the repository variable VPS_DEPLOY_ENABLED is "true"; until then
+# only by hand. See docs/VPS_MIGRATION.md for the secrets it needs.
+name: deploy-vps
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/voclain1/betgenius
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.VPS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The browser bundle's NEXT_PUBLIC_* values come from the same secret as
+      # the server's settings, so there is one place to change them.
+      - name: Public build settings
+        id: public
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          [ -n "$PROD_ENV_FILE" ] || { echo "::error::PROD_ENV_FILE secret is not set"; exit 1; }
+          {
+            echo "args<<ARGS"
+            printf '%s\n' "$PROD_ENV_FILE" | grep -E '^NEXT_PUBLIC_[A-Z_]+=' || true
+            echo "APP_BUILD_ID=${GITHUB_SHA}"
+            echo "ARGS"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+
+      # The build reads the database, as it does on Vercel: data-backed pages
+      # are rendered from it, and check-schema-sync refuses to build code whose
+      # schema the database does not have yet (run db-push first). Before
+      # cutover the URLs are Neon's; after it they are 127.0.0.1:5432, reached
+      # through this tunnel to the VPS.
+      - name: Tunnel to the VPS database
+        if: vars.DB_ON_VPS == 'true'
+        run: |
+          ssh -f -N -o ExitOnForwardFailure=yes -L 5432:127.0.0.1:5433 vps
+          for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/5432) 2>/dev/null && exit 0; sleep 1; done
+          echo "::error::SSH tunnel to the VPS database did not come up"; exit 1
+
+      - name: Build and push
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          BUILD_ARGS: ${{ steps.public.outputs.args }}
+        run: |
+          args=()
+          while IFS= read -r line; do [ -n "$line" ] && args+=(--build-arg "$line"); done <<< "$BUILD_ARGS"
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          DOCKER_BUILDKIT=1 docker build --network host \
+            --secret id=database_url,env=DATABASE_URL \
+            --secret id=database_url_unpooled,env=DATABASE_URL_UNPOOLED \
+            "${args[@]}" -t "$IMAGE:$GITHUB_SHA" .
+          docker push "$IMAGE:$GITHUB_SHA"
+
+      - name: Ship settings and switch
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
+          SITE_ALIASES: ${{ vars.SITE_ALIASES }}
+          SITE_REDIRECT_FROM: ${{ vars.SITE_REDIRECT_FROM }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for v in OPS_ENV_FILE POSTGRES_PASSWORD SITE_DOMAIN; do
+            [ -n "${!v}" ] || { echo "::error::$v is not set"; exit 1; }
+          done
+          umask 077
+          mkdir -p out
+          # The app always talks to the Postgres beside it; any DATABASE_URL in
+          # PROD_ENV_FILE (Neon's) is replaced, never used.
+          printf '%s\n' "$PROD_ENV_FILE" | grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED)=' > out/app.env
+          echo "DATABASE_URL=postgresql://betgenius:${POSTGRES_PASSWORD}@postgres:5432/betgenius" >> out/app.env
+          echo "DATABASE_URL_UNPOOLED=postgresql://betgenius:${POSTGRES_PASSWORD}@postgres:5432/betgenius" >> out/app.env
+          printf '%s\n' "$OPS_ENV_FILE" > out/ops.env
+          ssh vps "test -f /opt/betgenius/deploy.env && grep '^APP_TAG=' /opt/betgenius/deploy.env || true" > out/deploy.env
+          {
+            echo "APP_IMAGE=$IMAGE"
+            echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
+            echo "SITE_DOMAIN=$SITE_DOMAIN"
+            echo "SITE_ALIASES=$SITE_ALIASES"
+            echo "SITE_REDIRECT_FROM=$SITE_REDIRECT_FROM"
+          } >> out/deploy.env
+
+          tar -C deploy -cf - . | ssh vps 'tar -C /opt/betgenius -xf -'
+          tar -C out -cf - app.env ops.env deploy.env | ssh vps 'umask 077; tar -C /opt/betgenius -xf -'
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
+          ssh vps "/opt/betgenius/deploy.sh ${GITHUB_SHA}"
+          ssh vps 'docker logout ghcr.io'
