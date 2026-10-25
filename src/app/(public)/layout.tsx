@@ -8,6 +8,7 @@ import { GoogleOneTap } from "@/components/GoogleOneTap";
 import { AppTabBar } from "@/components/AppTabBar";
 import { Preloader } from "@/components/Preloader";
 import { LiveScoresProvider } from "@/components/LiveScores";
+import { TOP_BANNER_SLOT_ID } from "@/lib/topBanner";
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -17,6 +18,10 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
       <Preloader />
       <PreviewDataBanner />
       <Nav />
+      {/* The top banner's place: flush under the header, full width. Empty and
+          zero height unless the page carries ads and mounts the top banner,
+          which fills it (src/lib/topBanner.ts). */}
+      <div id={TOP_BANNER_SLOT_ID} className="top-banner-slot" />
       {/* Top-left of the content column rather than in the nav bar: the back
           button belongs to the page you are on, not to the site chrome, and
           it reads that way sitting directly above the page heading. It shares

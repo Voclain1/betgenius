@@ -10,6 +10,7 @@ import { SITE_NAME, SITE_URL, JsonLd, organizationJsonLd } from "@/lib/seo";
 import { SOCIAL_CARD_IMAGE } from "@/lib/brandAssets";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { APP_SHELL_INIT_SCRIPT } from "@/lib/appShell";
+import { TOP_BANNER_INIT_SCRIPT } from "@/lib/topBanner";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -108,6 +109,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             not restated here — the script embeds the tested functions from
             src/lib/installPrompt.ts. See APP_SHELL_INIT_SCRIPT. */}
         <script dangerouslySetInnerHTML={{ __html: APP_SHELL_INIT_SCRIPT }} />
+        {/* A top banner the reader closed earlier in the visit takes no space
+            on this page either, from the first paint. See src/lib/topBanner.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: TOP_BANNER_INIT_SCRIPT }} />
       </head>
       <body>
         {/* Emitted once site-wide so BetGenius is understood as an entity

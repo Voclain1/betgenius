@@ -117,7 +117,7 @@ export default function AdminBanners() {
             <span className="text-gray-300">Phone image (optional)</span>
             <input name="mobileImage" type="file" accept="image/png,image/jpeg,image/webp,image/gif" className={input} />
             <span className="block text-xs text-gray-500">
-              {BANNER_MOBILE_SIZE.width} x {BANNER_MOBILE_SIZE.height} px (shown at 320 x 100). Without it, phones crop the desktop image.
+              {BANNER_MOBILE_SIZE.width} x {BANNER_MOBILE_SIZE.height} px (full phone width, 4:1). Without it, phones crop the desktop image.
             </span>
           </label>
           <label className="space-y-1 text-sm">

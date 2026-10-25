@@ -1020,7 +1020,7 @@ model HouseBanner {
   /// Desktop creative, shown in a 728x90 box (upload 1456x180).
   image           Bytes
   imageType       String
-  /// Phone creative, shown in a 320x100 box (upload 640x200). Optional: without
+  /// Phone creative, shown full width at 4:1 (upload 640x160). Optional: without
   /// it phones show the desktop image.
   mobileImage     Bytes?
   mobileImageType String?

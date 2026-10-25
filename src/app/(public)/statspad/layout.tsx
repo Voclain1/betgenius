@@ -14,10 +14,8 @@ export const metadata: Metadata = {
 export default function StatsPadLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* The top banner: house banners from /admin/banners, else the network leaderboard. */}
-      <div className="mb-6">
-        <TopBanner />
-      </div>
+      {/* Draws flush under the header, not here (src/lib/topBanner.ts). */}
+      <TopBanner />
       {children}
       {/* At the foot of the page, in the layout rather than the page body,
           because the page body here is a client component that owns its own

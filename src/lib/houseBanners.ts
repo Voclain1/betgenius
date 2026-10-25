@@ -5,12 +5,11 @@ import type { Prisma } from "@prisma/client";
  * schema.prisma), managed at /admin/banners and shown by
  * src/components/ads/TopBanner.tsx on every page that carries ads.
  *
- * THE SLOT IS ONE FIXED SIZE, whatever fills it: 728x90 from md up, and a
- * full-width 16:5 box (320x100 at its narrowest) on a phone. A house banner
- * fills it; with none live, the Adsterra 728x90 / 320x50 sits centred in the
- * same box. Because the box never changes size, deciding what fills it after
- * the page has painted costs no layout shift, so pages keep whatever static
- * or cached rendering they already have.
+ * THE SLOT IS ONE FIXED SIZE, whatever fills it: a 90px strip from md up
+ * (the banner at 728x90), and the full phone width at 4:1 below that. A house
+ * banner fills it; with none live, the Adsterra 728x90 / 320x50 sits centred
+ * in the same space. The space is reserved before first paint
+ * (src/lib/topBanner.ts), so deciding what fills it afterwards moves nothing.
  *
  * Pure helpers here, so the rules are checked without a database
  * (scripts/check-house-banners.ts).
@@ -21,7 +20,7 @@ export const BANNER_MAX_BYTES = 1_000_000;
 
 /** Upload guidance shown in the admin form: twice the slot size, for sharp phones. */
 export const BANNER_DESKTOP_SIZE = { width: 1456, height: 180 } as const;
-export const BANNER_MOBILE_SIZE = { width: 640, height: 200 } as const;
+export const BANNER_MOBILE_SIZE = { width: 640, height: 160 } as const;
 
 export type BannerImageType = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
