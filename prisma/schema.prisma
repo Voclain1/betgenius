@@ -1003,6 +1003,41 @@ model Bookmaker {
   updatedAt    DateTime @updatedAt
 }
 
+// A banner the site sells or runs itself, shown in the top banner slot
+// (src/components/ads/TopBanner.tsx) on every page that carries ads. Managed
+// at /admin/banners. Images are stored here rather than on a file host: there
+// is none, a banner is a few hundred KB, and the image route serves them with
+// a year-long cache keyed by updatedAt, so the database is read once per
+// banner version, not per view.
+//
+// With no active banner the slot shows an Adsterra unit instead.
+model HouseBanner {
+  id              String    @id @default(cuid())
+  /// Internal name, also the image's alt text.
+  title           String
+  /// Where a click goes. Clicks pass through /api/banners/[id]/click to be counted.
+  linkUrl         String
+  /// Desktop creative, shown in a 728x90 box (upload 1456x180).
+  image           Bytes
+  imageType       String
+  /// Phone creative, shown in a 320x100 box (upload 640x200). Optional: without
+  /// it phones show the desktop image.
+  mobileImage     Bytes?
+  mobileImageType String?
+  /// A paid or third-party banner carries the "Ad" tag; our own promotion does not.
+  sponsored       Boolean   @default(true)
+  active          Boolean   @default(true)
+  /// Optional run dates. Outside them the banner is not shown.
+  startsAt        DateTime?
+  endsAt          DateTime?
+  views           Int       @default(0)
+  clicks          Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([active])
+}
+
 // Editorially curated accumulator (like WinDrawWin's daily combos) — gated as
 // a whole by `category` (reuses PredictionCategory), not per leg. Feeds into
 // Bet Builder's existing slip state via /bet-builder?combo=<id>.
