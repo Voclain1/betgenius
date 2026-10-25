@@ -14,10 +14,8 @@ import { TopBanner } from "@/components/ads/TopBanner";
 export default function PredictionsLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* The top banner, across the full width above the page and its panel. */}
-      <div className="mb-6">
-        <TopBanner />
-      </div>
+      {/* Draws flush under the header, not here (src/lib/topBanner.ts). */}
+      <TopBanner />
       <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-6">
         <div className="min-w-0">{children}</div>
         <aside className="mt-10 xl:mt-0">

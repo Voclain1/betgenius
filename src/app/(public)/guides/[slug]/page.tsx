@@ -18,6 +18,6 @@ export default function GuidePage({ params }: { params: { slug: string } }) {
   const guide = guideBySlug(params.slug);
   if (!guide) notFound();
   const path = `/guides/${guide.slug}`;
-  return <><JsonLd data={[breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }, { name: guide.title, path }]), articleJsonLd({ headline: guide.title, description: guide.description, path, datePublished: guide.publishedAt, dateModified: guide.reviewedAt })]} /><div className="mb-6"><TopBanner /></div><GuideArticle guide={guide} /><AdStickyMobile /></>;
+  return <><JsonLd data={[breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }, { name: guide.title, path }]), articleJsonLd({ headline: guide.title, description: guide.description, path, datePublished: guide.publishedAt, dateModified: guide.reviewedAt })]} /><TopBanner /><GuideArticle guide={guide} /><AdStickyMobile /></>;
 }
 

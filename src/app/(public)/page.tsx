@@ -219,9 +219,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   return (
     <div className="space-y-12">
       <JsonLd data={websiteJsonLd()} />
-      {/* The top banner, above the hero: a house banner from /admin/banners,
-          else the network leaderboard. A labelled band with its own fold tab,
-          so it reads as chrome rather than as part of the hero pick below. */}
+      {/* The top banner draws flush under the header, not here: this only
+          reserves its place (src/lib/topBanner.ts). */}
       <TopBanner />
       {/* Two columns once there's a pick to show: the claim on the left, a
           real published pick as its evidence on the right. Collapses to the

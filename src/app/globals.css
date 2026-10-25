@@ -495,3 +495,21 @@ html[data-standalone="true"] .ad-sticky {
   .bg-preloader-mark { animation: none; }
   .bg-preloader { transition: none; }
 }
+
+/* The top banner's slot under the header (src/lib/topBanner.ts). Zero height
+   unless the page carries the banner's marker and the reader has not closed it
+   this visit; both are known before first paint, so the banner never pushes
+   the page after it loads. Phone: full width at 4:1, capped; md up: a 90px
+   strip for the 728x90. */
+.top-banner-slot {
+  position: relative;
+  height: 0;
+}
+html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
+  height: min(25vw, 140px);
+}
+@media (min-width: 768px) {
+  html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
+    height: 90px;
+  }
+}

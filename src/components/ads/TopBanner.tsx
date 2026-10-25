@@ -1,39 +1,43 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronUp } from "lucide-react";
 import { AdFrame } from "@/components/ads/AdUnit";
-import { AdLabel } from "@/components/ads/AdPlacements";
 import { bannerImageSrc, pickBanner, type PublicBanner } from "@/lib/houseBanners";
+import { TOP_BANNER_CLOSED_ATTR, TOP_BANNER_CLOSED_KEY, TOP_BANNER_SLOT_ID } from "@/lib/topBanner";
 
 /**
- * The top banner: the first thing under the menu on every page that carries
- * ads, with a tab to fold it away.
+ * The top banner: flush under the header, full width, no frame, with a small
+ * tab hanging below it to close it. Closed, the page is exactly what it is
+ * without a banner, for the rest of the visit.
+ *
+ * WHERE IT DRAWS. Not here: into the slot the public layout keeps right after
+ * the header (src/lib/topBanner.ts). What this renders in the page is a hidden
+ * marker, which is what gives the slot its height (globals.css) from the
+ * server HTML onward, so the banner arriving after hydration moves nothing.
  *
  * WHAT FILLS IT. A house banner from /admin/banners when one is live (several
- * share the slot, one per page view); otherwise the Adsterra leaderboard,
- * 728x90 on desktop and 320x50 on a phone. See src/lib/houseBanners.ts.
+ * take turns, one per page view); otherwise the Adsterra leaderboard, 728x90
+ * from md up and 320x50 on a phone, centred in the same space.
  *
- * ONE BOX, WHATEVER FILLS IT: 728x90 from md up, a full-width 16:5 box (max
- * 400px wide) on a phone. The box is painted at its final size before the
- * banner list arrives, so choosing the banner after hydration shifts nothing,
- * and pages keep their static or cached rendering: the list comes from
- * /api/banners, cached at the edge for a minute.
- *
- * FOLDING is for this page view only. Remembering it across pages would mean
- * reading storage after the first paint and collapsing the box then, which is
- * exactly the layout shift the fixed box exists to avoid.
- *
- * Mounted only where ads already are (the same files that mount
- * AdStickyMobile), so the ad-free routes stay ad-free; it lives in
- * components/ads so scripts/check-ad-placement.ts walks it like every other slot.
+ * Mounted only where ads already are (the files that mount AdStickyMobile),
+ * so the ad-free routes stay ad-free; it lives in components/ads so
+ * scripts/check-ad-placement.ts walks it like every other slot.
  */
 export function TopBanner() {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [closed, setClosed] = useState(false);
   const [banners, setBanners] = useState<PublicBanner[] | null>(null);
   const [banner, setBanner] = useState<PublicBanner | null>(null);
-  const [folded, setFolded] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setClosed(document.documentElement.hasAttribute(TOP_BANNER_CLOSED_ATTR));
+    setSlot(document.getElementById(TOP_BANNER_SLOT_ID));
+  }, []);
+
+  useEffect(() => {
+    if (closed) return;
     let cancelled = false;
     fetch("/api/banners")
       .then((r) => (r.ok ? r.json() : { banners: [] }))
@@ -47,7 +51,7 @@ export function TopBanner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [closed]);
 
   // One view per page view, counted once at least half the banner is on screen.
   useEffect(() => {
@@ -67,56 +71,72 @@ export function TopBanner() {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [banner]);
+  }, [banner, slot]);
 
-  const labelled = banner ? banner.sponsored : banners !== null;
+  const close = () => {
+    // The attribute is what collapses the slot (globals.css); storage keeps it
+    // closed on the next page, read before paint by TOP_BANNER_INIT_SCRIPT.
+    document.documentElement.setAttribute(TOP_BANNER_CLOSED_ATTR, "");
+    try {
+      window.sessionStorage.setItem(TOP_BANNER_CLOSED_KEY, "1");
+    } catch {
+      // Closed for this page only.
+    }
+    setClosed(true);
+  };
 
-  return (
-    <aside aria-label={banner && !banner.sponsored ? "Promotion" : "Advertisement"}>
-      {!folded && (
-        <div className="relative flex justify-center border-y border-brand-border bg-brand-card/25 pb-3 pt-5">
-          {labelled && <AdLabel />}
-          <div
-            ref={box}
-            data-top-banner
-            className="relative flex aspect-[16/5] w-full max-w-[400px] items-center justify-center overflow-hidden md:aspect-auto md:h-[90px] md:w-[728px] md:max-w-none"
+  // A paid banner, and every network ad, is marked as an ad; our own promotion is not.
+  const isAd = banner ? banner.sponsored : banners !== null;
+
+  const content = (
+    <aside aria-label={banner && !banner.sponsored ? "Promotion" : "Advertisement"} className="absolute inset-0">
+      <div ref={box} data-top-banner className="flex h-full w-full items-center justify-center overflow-hidden bg-brand-card">
+        {banner ? (
+          <a
+            href={`/api/banners/${banner.id}/click`}
+            target="_blank"
+            rel={banner.sponsored ? "sponsored noopener" : "noopener"}
+            className="block h-full w-full md:w-[728px]"
           >
-            {banner ? (
-              <a
-                href={`/api/banners/${banner.id}/click`}
-                target="_blank"
-                rel={banner.sponsored ? "sponsored noopener" : "noopener"}
-                className="block h-full w-full"
-              >
-                <picture>
-                  {banner.hasMobile && <source media="(max-width: 767px)" srcSet={bannerImageSrc(banner, "mobile")} />}
-                  {/* eslint-disable-next-line @next/next/no-img-element -- served by our own route with its own cache headers */}
-                  <img src={bannerImageSrc(banner, "desktop")} alt={banner.title} className="h-full w-full object-cover" />
-                </picture>
-              </a>
-            ) : banners !== null ? (
-              <>
-                <div className="hidden md:block">
-                  <AdFrame id="leaderboard" />
-                </div>
-                <div className="md:hidden">
-                  <AdFrame id="mobileBanner" />
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-      )}
-      {/* The fold tab, in the flow under the band so it never covers the page. */}
+            <picture>
+              {banner.hasMobile && <source media="(max-width: 767px)" srcSet={bannerImageSrc(banner, "mobile")} />}
+              {/* eslint-disable-next-line @next/next/no-img-element -- served by our own route with its own cache headers */}
+              <img src={bannerImageSrc(banner, "desktop")} alt={banner.title} className="h-full w-full object-cover" />
+            </picture>
+          </a>
+        ) : banners !== null ? (
+          <>
+            <div className="hidden md:block">
+              <AdFrame id="leaderboard" />
+            </div>
+            <div className="md:hidden">
+              <AdFrame id="mobileBanner" />
+            </div>
+          </>
+        ) : null}
+      </div>
+      {/* The close tab hangs below the banner, over the page's own top
+          padding, so it takes no space of its own. It also carries the
+          "Ad" disclosure, keeping the creative itself clear. */}
       <button
         type="button"
-        onClick={() => setFolded((f) => !f)}
-        aria-label={folded ? "Show banner" : "Hide banner"}
-        aria-expanded={!folded}
-        className="inline-flex h-7 items-center rounded-b-md border border-t-0 border-brand-border bg-brand-card/60 px-3 text-gray-400 hover:text-gray-100"
+        onClick={close}
+        aria-label="Close banner"
+        className="absolute left-4 top-full z-30 inline-flex h-6 items-center gap-1 rounded-b-md bg-brand-card px-2.5 text-[11px] font-medium text-gray-400 shadow-sm hover:text-gray-100"
       >
-        {folded ? <ChevronDown aria-hidden className="h-4 w-4" /> : <ChevronUp aria-hidden className="h-4 w-4" />}
+        {isAd && <span>Ad</span>}
+        <ChevronUp aria-hidden className="h-3.5 w-3.5" />
       </button>
     </aside>
+  );
+
+  return (
+    <>
+      {/* The marker that reserves the slot's height. `hidden`: it takes no
+          space in the page and is skipped by space-y stacks. Gone once
+          closed, which collapses the slot. */}
+      {!closed && <span hidden data-top-banner-page />}
+      {!closed && slot ? createPortal(content, slot) : null}
+    </>
   );
 }

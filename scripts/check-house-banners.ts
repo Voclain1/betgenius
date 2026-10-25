@@ -43,12 +43,16 @@ check("one banner per view, from the live ones", pickBanner(["a", "b", "c"], () 
 
 console.log("\n3. The slot");
 const slot = read("src/components/ads/TopBanner.tsx");
-check("one fixed box whatever fills it (16:5 phone, 728x90 desktop)", /aspect-\[16\/5\] w-full max-w-\[400px\]/.test(slot) && /md:h-\[90px\] md:w-\[728px\]/.test(slot));
+check("draws into the slot under the header, not in the page", /createPortal\(content, slot\)/.test(slot) && /<span hidden data-top-banner-page \/>/.test(slot));
+const css = read("src/app/globals.css");
+check("the slot's height is reserved before paint, and zero once closed", /html:not\(\[data-top-banner-closed\]\) body:has\(\[data-top-banner-page\]\) \.top-banner-slot \{\s*height: min\(25vw, 140px\);/.test(css) && /\.top-banner-slot \{\s*position: relative;\s*height: 0;/.test(css) && /height: 90px;/.test(css));
+const root = read("src/app/layout.tsx");
+check("a banner closed earlier in the visit is collapsed before first paint", /__html: TOP_BANNER_INIT_SCRIPT/.test(root));
 check("falls back to the network leaderboard pair", /<AdFrame id="leaderboard" \/>/.test(slot) && /<AdFrame id="mobileBanner" \/>/.test(slot));
-check("paid banners carry the Ad tag and rel=sponsored", /labelled && <AdLabel \/>/.test(slot) && /"sponsored noopener"/.test(slot));
+check("paid banners and network ads carry the Ad tag; paid links are rel=sponsored", /\{isAd && <span>Ad<\/span>\}/.test(slot) && /"sponsored noopener"/.test(slot));
 check("clicks pass through the counting route", /href=\{`\/api\/banners\/\$\{banner\.id\}\/click`\}/.test(slot));
 check("a view is counted once, when half on screen", /threshold: 0\.5/.test(slot) && /sendBeacon/.test(slot));
-check("the fold tab sits in the flow, not over the page", !/absolute -bottom/.test(slot) && /aria-expanded=\{!folded\}/.test(slot));
+check("closing hangs below the banner and removes it for the visit", /absolute left-4 top-full/.test(slot) && /sessionStorage\.setItem\(TOP_BANNER_CLOSED_KEY/.test(slot) && /setAttribute\(TOP_BANNER_CLOSED_ATTR/.test(slot));
 
 console.log("\n4. Placement");
 const mounts = [
@@ -61,7 +65,8 @@ const mounts = [
   "src/app/(public)/guides/[slug]/page.tsx",
 ];
 for (const m of mounts) check(`${m} shows the top banner`, /<TopBanner \/>/.test(read(m)));
-check("never in the public layout (ad-free pages share it)", !/TopBanner/.test(read("src/app/(public)/layout.tsx")));
+const publicLayout = read("src/app/(public)/layout.tsx");
+check("the public layout holds only the empty slot, never the banner", !/TopBanner/.test(publicLayout) && /<div id=\{TOP_BANNER_SLOT_ID\} className="top-banner-slot" \/>/.test(publicLayout));
 check("ad-free routes still listed", AD_FREE_ROUTES.length > 10);
 
 console.log("\n5. Routes");
