@@ -8,4 +8,10 @@ The existing sitemap index may be a stale build/cache artifact; the HTTP respons
 
 The previous results change is confirmed in the initial HTML of the sampled Premier League page: it renders the no-recent-results message rather than the loading placeholder. This is an empty-state verification, not verification of a populated result list.
 
-Validation: 197 SEO checks, 280 sitemap scoping/parity checks, advertising checks, TypeScript and diff checks passed. Sitemap tests intentionally inject build failures to verify error handling; their final result was 280 passed, 0 failed.
+Validation: 197 SEO checks, 280 sitemap checks, advertising checks, TypeScript and diff checks passed.
+
+## Follow-up production sample
+
+All seven child XML files returned HTTP 200 and parsed successfully: static 30, categories 15, leagues 76, cups 31, teams 2,158, matches 3,627, H2H 2,557; total 8,494 URLs. All child entries use the canonical www hostname; no within-file or cross-file duplicate URL entries were found. This does not validate every listed landing page.
+
+Six landing pages were sampled: homepage, predictions directory, first league, Champions League cup, first team and first match. All returned HTTP 200, exactly one H1 and no robots/googlebot meta noindex. The directory declared https://betgenius-iota.vercel.app/predictions as its canonical. The other five samples declared the expected www URL (homepage without terminal slash). This expands the originally confirmed defect beyond the sitemap index to a priority static landing page. The shared origin fix addresses future builds; served static output/cache must still be verified after deployment. No claim about Google-selected canonicals is made.
