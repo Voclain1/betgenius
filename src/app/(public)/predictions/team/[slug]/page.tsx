@@ -12,7 +12,8 @@ import { TeamSquad } from "@/components/TeamSquad";
 import { getPublishedByTeamSlug, getOpponentsForTeamSlug, getTeamEnrichment, getFixtureEventContext } from "@/lib/predictionScope";
 import type { SquadPlayer } from "@/lib/enrichment";
 import { teamSlug, matchKey } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fitMetaDescription } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
+import { teamSearchMetadata } from "@/lib/teamSearchMetadata";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
@@ -56,9 +57,11 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   }
 
   const name = resolveTeamName(rows, params.slug);
+  // The body shares this React-cached profile read. Never advertise fixtures
+  // when the visible profile has none.
+  const profile = await getTeamProfile(resolveTeamApiId(rows, params.slug));
   return {
-    title: name,
-    description: fitMetaDescription(`${rows.length} published ${name} football predictions with match analysis, confidence ratings and settled results.`),
+    ...teamSearchMetadata(name, rows.length, profile?.upcoming.length ?? 0, rows.filter((row) => row.outcome !== "PENDING").length),
     alternates: { canonical: `/predictions/team/${params.slug}` },
   };
 }
