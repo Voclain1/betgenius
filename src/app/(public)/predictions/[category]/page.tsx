@@ -19,7 +19,7 @@ import {
 } from "@/lib/categoryPredictions";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
-import { getCategoryTrackRecord } from "@/lib/trackRecord";
+import { getCategoryTrackRecord, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
@@ -168,7 +168,7 @@ export default async function CategoryPage(
     { label: competitions === 1 ? "Competition" : "Competitions", value: String(competitions) },
   ];
   if (topConfidence > 0) stats.push({ label: "Top confidence", value: `${topConfidence}%` });
-  if (record?.rate != null) stats.push({ label: "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
+  if (record?.rate != null && (cat !== "BANKER" || record.decided >= MIN_SETTLED_SAMPLE_SIZE)) stats.push({ label: cat === "BANKER" ? "All-time win rate" : "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
@@ -302,7 +302,7 @@ export default async function CategoryPage(
         )
       )}
 
-      {cat === "BANKER" && <BankerPredictionsEvidence />}
+      {cat === "BANKER" && <BankerPredictionsEvidence record={record} />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}
 
       {/* The feed's own track record, last on the page: a list of past days,
