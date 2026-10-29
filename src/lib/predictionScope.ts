@@ -1074,3 +1074,9 @@ async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
 
   return substantive;
 }
+
+/** Original model evidence for this match only; never shipped to a client component. */
+export const getMatchEditorialEvidence = cache(async (slug: string) => prisma.prediction.findMany({
+  where: { status: "PUBLISHED", matchSlugKey: slug },
+  select: { id: true, aiJob: { select: { context: true, createdAt: true } } },
+}));
