@@ -1,3 +1,4 @@
+import { kickoffTime, footballDay, footballDayKey } from "@/lib/footballTime";
 import Link from "next/link";
 import type { FixtureRow } from "@/lib/football/api-football";
 import { classifyStatus, isIrregular, statusLabel, type MatchStatusGroup } from "@/lib/matchStatus";
@@ -56,7 +57,7 @@ function MatchStatusCell({ fixture }: { fixture: FixtureRow }) {
     // without this React treats the difference as a failed hydration and
     // replaces the whole document.
     <span className="text-xs font-bold tabular-nums text-gray-300" suppressHydrationWarning>
-      {new Date(fixture.fixture.date).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+      {kickoffTime(fixture.fixture.date)}
     </span>
   );
 }
@@ -180,7 +181,7 @@ export function groupByDate(rows: FixtureRow[]): { date: string; label: string; 
   const byDate = new Map<string, FixtureRow[]>();
   for (const r of rows) {
     const d = new Date(r.fixture.date);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const key = footballDayKey(d);
     if (!byDate.has(key)) {
       byDate.set(key, []);
       order.push(key);
@@ -189,7 +190,7 @@ export function groupByDate(rows: FixtureRow[]): { date: string; label: string; 
   }
   return order.map((key) => ({
     date: key,
-    label: new Date(byDate.get(key)![0].fixture.date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
+    label: footballDay(byDate.get(key)![0].fixture.date),
     rows: byDate.get(key)!,
   }));
 }
