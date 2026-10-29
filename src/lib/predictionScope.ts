@@ -1080,3 +1080,6 @@ export const getMatchEditorialEvidence = cache(async (slug: string) => prisma.pr
   where: { status: "PUBLISHED", matchSlugKey: slug },
   select: { id: true, aiJob: { select: { context: true, createdAt: true } } },
 }));
+
+/** Cached prices only. Reading a match page never refreshes bookmaker quotes. */
+export const getMatchOdds = cache(async (key: string | null) => key ? prisma.fixtureOddsCache.findUnique({where:{matchKey:key},select:{fixtureApiId:true,oddsJson:true,fetchedAt:true}}) : null);
