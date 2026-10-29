@@ -111,6 +111,8 @@ export type OddsSelection = {
   bookmakers: number;
   /** Which book is offering `best`, so the figure is attributable. */
   bestBookmaker: string;
+  /** Up to five named quotes, retained for comparison; absent on older caches. */
+  quotes?: Array<{ bookmaker: string; odd: number }>;
 };
 
 export type OddsMarket = { market: TrimmedMarket; selections: OddsSelection[] };
@@ -171,6 +173,7 @@ export function trimOdds(response: OddsResponse | null | undefined): FixtureOdds
         median: Number(median(quotes.map((q) => q.odd)).toFixed(2)),
         bookmakers: quotes.length,
         bestBookmaker: top.bookmaker,
+        quotes: [...quotes].sort((a,b) => b.odd-a.odd || a.bookmaker.localeCompare(b.bookmaker)).slice(0,5).map(q => ({ bookmaker: q.bookmaker, odd: Number(q.odd.toFixed(2)) })),
       });
     }
 
