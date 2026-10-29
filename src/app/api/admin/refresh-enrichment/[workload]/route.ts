@@ -43,8 +43,8 @@ export async function GET(req: Request, { params }: { params: { workload: string
   // BOUNDED BY DEFAULT. cron-job.org aborts while READING a body it considers
   // too large and records "Failed (output too large)" — the request succeeded,
   // the work was done, and the scheduler disabled the job anyway after 27 of
-  // them. fixture-details is the one workload where `limit` counts days rather
-  // than fixtures, so 50 units of work can mean thousands of result rows.
+  // them. fixture-details batches a day into one unit and also processes bounded
+  // imminent-lineup units, so 50 units can still mean thousands of result rows.
   //
   // Serialization only: `report` above is unchanged, so the same targets were
   // processed and the same upstream calls were made. See src/lib/enrichmentReport.ts.
