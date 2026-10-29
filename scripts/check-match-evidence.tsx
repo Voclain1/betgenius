@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { buildTeamDigest, assembleMatchDigest } from '../src/lib/ai/digest';
+import { evidenceClaimIssues, assertEvidenceClaims } from '../src/lib/ai/evidenceClaims';
+import { MatchRecentResults } from '../src/components/MatchRecentResults';
+import { MatchStatsComparison } from '../src/components/MatchStatsComparison';
+import { MatchSectionNav } from '../src/components/MatchSectionNav';
+const home=buildTeamDigest({name:'FC Midtjylland',apiId:1}), away=buildTeamDigest({name:'Odense',apiId:2});
+const meetings=Array.from({length:10},(_,i)=>({fixtureApiId:i,date:`2026-09-${String(20-i).padStart(2,'0')}`,leagueName:'Test',leagueApiId:3,homeTeamApiId:1,homeTeam:'FC Midtjylland',awayTeamApiId:2,awayTeam:'Odense',homeGoals:i<7?3:i<9?1:0,awayGoals:1}));
+const d=assembleMatchDigest({fixture:{home:'FC Midtjylland',away:'Odense',league:'Cup',kickoff:'2026-10-29',competitionType:'CUP',round:'Round of 16'},homeTeam:home,awayTeam:away,homeApiId:1,awayApiId:2,meetings,standings:null});
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won eight of the last ten meetings.')[0]?.code,'h2h-wins');
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have secured eight wins from their last ten encounters against Odense.')[0]?.code,'h2h-wins');
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won seven of the last ten meetings.').length,0);
+assert.equal(evidenceClaimIssues(d,'Odense have won one of the last ten meetings.').length,0);
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won two of the last two meetings.').length,0);
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won eight of the last twelve meetings.').length,0); // insufficient exact sample
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won eight of their last ten league games.').length,0);
+assert.equal(evidenceClaimIssues(d,'FC Midtjylland have won eight of the last ten matches.').length,0); // not H2H
+assert.equal(evidenceClaimIssues(d,'The last ten head-to-head fixtures have averaged 4.7 goals per game, with all ten featuring over 2.5 goals.').length,2);
+assert.throws(()=>assertEvidenceClaims(d,{predictions:[{reasoning:'FC Midtjylland have won eight of the last ten meetings.'}]}));
+home.last5=[{opponent:'Rivals',venue:'away',result:'D',goalsFor:1,goalsAgainst:1,date:'2026-09-19',competition:'Superliga'}];
+const html=renderToStaticMarkup(<MatchRecentResults home={home} away={away} homeTeam={home.name} awayTeam={away.name}/>);
+for(const text of ['2026-09-19','Rivals','1–1','Superliga','Recent results unavailable','1 matches']) assert.ok(html.includes(text),text);
+assert.ok(!renderToStaticMarkup(<MatchRecentResults home={away} away={away} homeTeam="A" awayTeam="B"/>));
+const nav=renderToStaticMarkup(<MatchSectionNav sections={[{id:'form',label:'Recent results'},{id:'markets',label:'Picks'}]}/>);
+assert.ok(nav.includes('href="#form"')); assert.ok(!nav.includes('#team-news'));
+home.home={played:1,win:1,draw:0,loss:0,goalsFor:7,goalsAgainst:0};
+const stats=renderToStaticMarkup(<MatchStatsComparison homeTeam="A" awayTeam="B" homeDigest={home} awayDigest={away}/>);
+assert.ok(stats.includes('competition not recorded'));assert.ok(stats.includes('averages need 3 matches'));assert.ok(!stats.includes('7 goals per game'));
+console.log('Match evidence: claim grounding, exact samples, recent results, missing coverage and conditional navigation passed');
