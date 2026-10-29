@@ -9,7 +9,9 @@ import { schemaEventStatus } from "@/lib/matchStatus";
 import { matchSlug, teamSlug } from "@/lib/slug";
 
 export const SITE_NAME = "BetGenius";
-export const SITE_URL = (process.env.NEXTAUTH_URL || "https://betgenius-iota.vercel.app").replace(/\/$/, "");
+// Public search identity is independent of the authentication callback origin.
+// NEXTAUTH_URL may be local, a preview or absent while static sitemaps build.
+export const SITE_URL = "https://www.betgenius.ng";
 
 export function absoluteUrl(path: string): string {
   return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
