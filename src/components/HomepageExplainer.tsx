@@ -121,7 +121,7 @@ export function HomepageExplainer() {
           </GuideSection>
           <GuideSection id="home-method-guide" title="How BetGenius builds football predictions from match evidence">
             <p>
-              Structured football data feeds an AI-assisted analysis process. Depending on the fixture’s coverage, the available evidence can include
+              Structured football data supports our match analysis process. Depending on the fixture’s coverage, the available evidence can include
               recent results, season records, home and away splits, scoring and conceding trends, standings, previous meetings and reported player
               availability. These inputs help support a market selection and readable reasoning. Missing statistics or team news should be treated
               as a limitation, not interpreted as a clean bill of health or a complete picture of the match.
