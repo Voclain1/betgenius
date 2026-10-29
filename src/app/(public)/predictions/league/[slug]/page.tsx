@@ -35,6 +35,7 @@ import type { PredictionCategory } from "@/lib/enums";
 import { competitionHubContent } from "@/lib/competitionHubContent";
 import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
 import { CompetitionHubIntro } from "@/components/CompetitionHubIntro";
+import { getRecentResults, RESULTS_LEAGUE_IDS } from "@/lib/recentResultsSnapshot";
 
 // LeagueResults shows the last 36h of finished fixtures; a match link resolves
 // through matchKey, which is keyed on the kickoff's UTC day. A prediction for a
@@ -87,9 +88,14 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   const leagueApiId = rows[0].leagueApiId;
   const hubContent = competitionHubContent(leagueApiId);
 
-  const [enrichment, session] = await Promise.all([
+  const [enrichment, session, recentResults] = await Promise.all([
     getLeagueEnrichment(leagueApiId),
     getServerSession(authOptions),
+    // Reuse the homepage's quota-capped snapshot only where it has coverage.
+    // Other competitions retain their existing client feed.
+    leagueApiId != null && RESULTS_LEAGUE_IDS.has(leagueApiId)
+      ? getRecentResults().then((rows) => rows.filter((row) => row.league.id === leagueApiId))
+      : Promise.resolve(undefined),
   ]);
   const viewer = await getViewerEntitlement();
   const standings = (enrichment?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
@@ -244,7 +250,7 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
 
       <section aria-labelledby="results">
         <SectionHead kicker="Results" title="Recent results" id="results" />
-        <LeagueResults leagueApiId={leagueApiId} linkIndex={matchIndex} />
+        <LeagueResults key={leagueApiId} leagueApiId={leagueApiId} linkIndex={matchIndex} initialRows={recentResults} />
       </section>
 
       {/* Between two reference sections — settled results above, player
