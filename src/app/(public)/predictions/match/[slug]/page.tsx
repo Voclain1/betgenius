@@ -1,3 +1,7 @@
+import { MatchLineups } from "@/components/MatchLineups";
+import { MatchOddsPanel } from "@/components/MatchOddsPanel";
+import type { FixtureOdds } from "@/lib/odds";
+import { cupSupports } from "@/lib/cupConfig";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
@@ -26,7 +30,7 @@ import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { marketPathways } from "@/lib/contextualLinks";
-import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment } from "@/lib/predictionScope";
+import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
@@ -194,13 +198,15 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     ...(hasNews ? [{ id: "team-news", label: "Team news" }] : []),
     ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
     ...(evidenceMeetings.length && match.homeTeamApiId != null && match.awayTeamApiId != null ? [{ id: "h2h", label: "H2H" }] : []),
+    { id: "lineups", label: "Lineups" },
+    { id: "odds", label: "Odds" },
     { id: "markets", label: "Published picks" },
   ];
 
   // Venue for the structured data, from the same cached row the masthead
   // renders, so the markup can't describe a different ground than the page.
-  const fixtureDetail = await getFixtureDetail(match.matchKey);
-  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null; round?: string | null; referee?: string | null } | null) ?? null;
+  const [fixtureDetail, oddsCache] = await Promise.all([getFixtureDetail(match.matchKey), getMatchOdds(match.matchKey)]);
+  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null; round?: string | null; referee?: string | null; lineups?: unknown } | null) ?? null;
 
   // Crests, competition badge and ingested fixture status for the structured
   // data. Venue is NOT taken from here — `detail` above is already the correct,
@@ -375,6 +381,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayTeamApiId={match.awayTeamApiId}
         h2hLink={h2hLink}
       />
+
+      <MatchLineups raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />
+      <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
 
       <MatchTrackRecord leagueApiId={match.leagueApiId} leagueName={match.leagueName} />
 
