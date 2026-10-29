@@ -1,3 +1,4 @@
+import { kickoffLabel, footballDay } from "@/lib/footballTime";
 import Link from "next/link";
 import { ChevronRight, Lock } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
@@ -99,7 +100,7 @@ export function PredictionCard({
         </div>
         {kickoff && !hideMatchHeader && (
           <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-400">
-            {new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}
+            {kickoffLabel(kickoff)}
           </span>
         )}
       </div>
