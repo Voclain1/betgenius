@@ -57,6 +57,7 @@ export type TeamDigest = {
   /** League position, when standings resolved. */
   rank: number | null;
   points: number | null;
+  statisticsScope?: { leagueApiId: number | null; leagueName: string | null; season: number | null };
   /** Season record — overall plus the home/away splits, which the raw payload has but the old prompt buried. */
   overall: RecordSplit | null;
   home: RecordSplit | null;
@@ -78,7 +79,7 @@ export type TeamDigest = {
   cards: { yellow: number; red: number } | null;
   penalties: { scored: number; missed: number } | null;
   /** Last 5 matches, all competitions. */
-  last5: Array<{ opponent: string; venue: "home" | "away"; result: string; goalsFor: number | null; goalsAgainst: number | null; date: string }>;
+  last5: Array<{ opponent: string; venue: "home" | "away"; result: string; goalsFor: number | null; goalsAgainst: number | null; date: string; competition?: string | null }>;
   /** Deduped unavailable players for the NEXT match — see selectCurrentAvailability. */
   availability: AvailabilityEntry[];
   /** Matchday the availability list was read from, so staleness is visible rather than implied. */
@@ -269,6 +270,7 @@ function trimLast5(teamApiId: number | null, fixtures: FixtureRow[] | null | und
       goalsFor: own ?? null,
       goalsAgainst: opp ?? null,
       date: f.fixture.date.slice(0, 10),
+      competition: f.league.name,
     };
   });
 }
@@ -350,6 +352,7 @@ export function buildTeamDigest(input: TeamDigestInput): TeamDigest {
       : [],
     cards: hasSeasonStats && st?.cards ? { yellow: cardTotal(st.cards.yellow), red: cardTotal(st.cards.red) } : null,
     penalties: hasSeasonStats && st?.penalty ? { scored: num(st.penalty.scored?.total) ?? 0, missed: num(st.penalty.missed?.total) ?? 0 } : null,
+    statisticsScope: st?.league ? { leagueApiId: st.league.id ?? null, leagueName: st.league.name ?? null, season: st.league.season ?? null } : undefined,
     last5: trimLast5(input.apiId, input.lastFixtures),
     availability: availability.entries,
     availabilityAsOf: availability.asOf,

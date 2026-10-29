@@ -51,6 +51,13 @@ export function MatchStatsComparison({
 
   return (
     <PremiumPanel kicker="Numbers" title="Statistical comparison" id="stats">
+      <p className="mb-3 text-xs text-gray-400">
+        Venue records: {homeTeam}: {homeDigest?.statisticsScope?.leagueName ?? "competition not recorded"}
+        {homeDigest?.statisticsScope?.season ? ` (${homeDigest.statisticsScope.season})` : ""}; {awayTeam}: {awayDigest?.statisticsScope?.leagueName ?? "competition not recorded"}
+        {awayDigest?.statisticsScope?.season ? ` (${awayDigest.statisticsScope.season})` : ""}.
+        Recent goal rates use all competitions, separately from the venue records.
+      </p>
+      <p className="mb-3 text-xs text-gray-500">A dash means unavailable or too few matches: averages need 3 matches; percentages need {MIN_RATE_SAMPLE}. Missing is never zero.</p>
       <div className="mb-1 grid grid-cols-[1fr_auto_1fr] gap-2 border-b border-brand-border pb-3 text-xs font-bold text-gray-300">
         <span className="break-words text-right leading-snug">{homeTeam} at home</span>
         <span className="w-28" />
@@ -90,16 +97,16 @@ export function MatchStatsComparison({
           away={val(away?.failedToScorePct, "%")}
         />
         <Row
-          label="BTTS (last 5)"
+          label="BTTS (recent)"
           hint="Both teams scored, across the team's last matches"
-          home={val(homeRecent.btts?.pct, "%")}
-          away={val(awayRecent.btts?.pct, "%")}
+          home={homeRecent.btts ? `${homeRecent.btts.pct}% (${homeRecent.btts.sample} games)` : val(null)}
+          away={awayRecent.btts ? `${awayRecent.btts.pct}% (${awayRecent.btts.sample} games)` : val(null)}
         />
         <Row
-          label="Over 2.5 (last 5)"
+          label="Over 2.5 (recent)"
           hint="Matches with 3+ total goals, across the team's last matches"
-          home={val(homeRecent.over25?.pct, "%")}
-          away={val(awayRecent.over25?.pct, "%")}
+          home={homeRecent.over25 ? `${homeRecent.over25.pct}% (${homeRecent.over25.sample} games)` : val(null)}
+          away={awayRecent.over25 ? `${awayRecent.over25.pct}% (${awayRecent.over25.sample} games)` : val(null)}
         />
       </div>
 
