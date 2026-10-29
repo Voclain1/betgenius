@@ -85,6 +85,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   }
 
   const { evidence, publicTopPick } = await loadMatch(params.slug);
+  const settled = rows.find((row) => row.finalHomeScore != null && row.finalAwayScore != null);
 
   return {
     title: matchTitle(match),
@@ -95,6 +96,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       kickoff: match.kickoff,
       topPick: publicTopPick,
       marketCount: rows.length,
+      finalScore: settled ? { home: settled.finalHomeScore!, away: settled.finalAwayScore! } : null,
     }),
     alternates: { canonical: `/predictions/match/${params.slug}` },
     // Evidence-gated indexing. A page below the bar still renders in full and
@@ -255,6 +257,18 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           own full-width block between two panels; nothing here sits inside a
           prediction card. */}
       <AdRectangle />
+
+      {finalScore && (
+        <section aria-labelledby="completed-match-context" className="card space-y-2">
+          <h2 id="completed-match-context" className="text-lg font-semibold">Completed match: published prediction record</h2>
+          <p className="text-sm leading-6 text-gray-300">
+            This match has finished. The predictions and reasoning below are the published analysis for this fixture,
+            rather than a new recommendation. Form, team news and table context may refresh after the match;
+            they should not be read as a frozen snapshot of the information available when the prediction was published.
+          </p>
+          <Link href="/predictions/today" className="inline-block text-sm font-semibold text-brand hover:underline">See today&apos;s football predictions</Link>
+        </section>
+      )}
 
       <MatchFormComparison
         homeTeamApiId={match.homeTeamApiId}
