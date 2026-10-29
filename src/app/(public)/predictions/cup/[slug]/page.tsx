@@ -23,12 +23,20 @@ import { SectionHead, TeamAbout } from "@/components/TeamProfile";
 import { competitionStats, featuredMatches, seasonParagraph } from "@/lib/competitionProfile";
 import { competitionInSentence } from "@/lib/teamProfile";
 import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
+import { tabOfStatus } from "@/lib/matchStatus";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const cup = cupBySlug(params.slug);
   if (!cup) return { title: "Cup competition", robots: { index: false, follow: false } };
+  if (cup.slug === "danish-cup") {
+    return {
+      title: "Danish Cup Games, Fixtures & Results",
+      description: "Browse Danish Cup games by round, with scheduled fixtures, available scores and participating teams. Open a match prediction where one has been published.",
+      alternates: { canonical: `/predictions/cup/${cup.slug}` },
+    };
+  }
   const hubContent = competitionHubContent(cup.id);
   if (hubContent?.metadataTitle && hubContent.metadataDescription) {
     return {
@@ -51,6 +59,9 @@ export default async function CupPage({ params, searchParams }: { params: { slug
   const [data, matchIndex] = await Promise.all([getCupPageData(params.slug, requestedSeason), getPublishedMatchIndex()]);
   if (!data) notFound();
   const hubContent = competitionHubContent(data.cup.id);
+  const danishCup = data.cup.slug === "danish-cup";
+  const finishedCount = danishCup ? data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "finished").length : 0;
+  const upcomingCount = danishCup ? data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "upcoming" && new Date(fixture.fixture.date).getTime() > Date.now()).length : 0;
   // Only targeted top-tier competition hubs add prediction/proof data. Other
   // cup pages retain their previous query profile.
   const [scoped, viewer] = hubContent
@@ -90,7 +101,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         { name: data.cup.name, path: `/predictions/cup/${data.cup.slug}` },
       ])} />
       <CompetitionMasthead
-        name={hubContent?.heading ?? data.cup.name}
+        name={danishCup ? "Danish Cup fixtures and results" : hubContent?.heading ?? data.cup.name}
         leagueApiId={data.cup.id}
         country={data.cup.country}
         flagCode={null}
@@ -101,6 +112,21 @@ export default async function CupPage({ params, searchParams }: { params: { slug
       </CompetitionMasthead>
 
       {hubContent && <CompetitionHubIntro heading={hubContent.heading} intro={hubContent.intro} />}
+
+      {danishCup && (
+        <section aria-labelledby="danish-cup-games" className="max-w-3xl space-y-3">
+          <h2 id="danish-cup-games" className="text-lg font-semibold">Danish Cup games this season</h2>
+          <p className="text-sm leading-7 text-gray-300">
+            The available {data.season}/{String(data.season + 1).slice(-2)} match list contains {finishedCount} finished {finishedCount === 1 ? "match" : "matches"} and {upcomingCount} upcoming {upcomingCount === 1 ? "fixture" : "fixtures"}.
+            {" "}Choose a round below to review its games and scores. These counts reflect the data currently available here; postponed games and fixtures awaiting a result are not counted as finished.
+          </p>
+          <p className="text-sm leading-7 text-gray-300">
+            FT marks a finished game. FT (AET) means it finished after extra time, and FT (Pens) means a penalty shootout was played.
+            {" "}Match links open a BetGenius prediction where one has been published; the fixture list also includes games without a prediction.
+          </p>
+          <a href="#rounds" className="inline-block text-sm font-semibold text-brand hover:underline">Browse Danish Cup fixtures and results</a>
+        </section>
+      )}
 
       {featured.length > 0 && (
         <section aria-labelledby="featured">
