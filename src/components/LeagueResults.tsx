@@ -21,21 +21,35 @@ function isoDaysAgo(days: number) {
  * Rows carry real team ids, so match-page links go through the id-keyed
  * linkIndex, unlike the upcoming list above which only has names.
  */
-export function LeagueResults({ leagueApiId, linkIndex }: { leagueApiId: number | null; linkIndex?: MatchLinkIndex }) {
-  const [rows, setRows] = useState<FixtureRow[]>([]);
-  const [loading, setLoading] = useState(true);
+export function LeagueResults({ leagueApiId, linkIndex, initialRows }: { leagueApiId: number | null; linkIndex?: MatchLinkIndex; initialRows?: FixtureRow[] }) {
+  // A supplied array (including []) is the shared server snapshot. Undefined
+  // means this competition is outside its coverage and needs the legacy feed.
+  const [rows, setRows] = useState<FixtureRow[]>(initialRows ?? []);
+  const [loading, setLoading] = useState(initialRows === undefined);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    if (initialRows !== undefined) {
+      setRows(initialRows);
+      setLoading(false);
+      setFailed(false);
+      return;
+    }
+    setRows([]);
+    setFailed(false);
     if (leagueApiId == null) {
       setLoading(false);
       return;
     }
+    setLoading(true);
     let alive = true;
     (async () => {
       try {
         const slates = await Promise.all(
-          [isoDaysAgo(0), isoDaysAgo(1)].map((date) => fetch(`/api/fixtures?date=${date}`).then((r) => r.json())),
+          [isoDaysAgo(0), isoDaysAgo(1)].map((date) => fetch(`/api/fixtures?date=${date}`).then((r) => {
+            if (!r.ok) throw new Error("Fixture feed unavailable");
+            return r.json();
+          })),
         );
         if (!alive) return;
         const byId = new Map<number, FixtureRow>();
@@ -50,7 +64,7 @@ export function LeagueResults({ leagueApiId, linkIndex }: { leagueApiId: number 
     return () => {
       alive = false;
     };
-  }, [leagueApiId]);
+  }, [leagueApiId, initialRows]);
 
   const finished = useMemo(() => {
     const cutoff = Date.now() - WINDOW_HOURS * 3_600_000;
