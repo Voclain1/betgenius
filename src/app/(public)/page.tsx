@@ -1,3 +1,4 @@
+import { HomepageExplainer } from "@/components/HomepageExplainer";
 import Link from "next/link";
 import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
 import type { Metadata } from "next";
@@ -440,6 +441,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           <LinkTile href="/statspad" kicker="Stats" title="StatsPad" desc="Attack, defence, form and goal difference leaders by league." />
         </div>
       </PremiumPanel>
+
+      <HomepageExplainer />
 
       {/* Last thing on the page, below every pick, every league list and the
           product cards. The Native Banner is the one unit whose whole design
