@@ -25,6 +25,7 @@ import { lagosDayLabel } from "../src/lib/lagosDate";
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { teamSearchMetadata } from "../src/lib/teamSearchMetadata";
 
 let passed = 0;
 const failures: string[] = [];
@@ -34,6 +35,16 @@ const check = (l: string, c: boolean, got?: unknown) => {
 };
 
 const eq = (l: string, a: unknown, b: unknown) => check(l, JSON.stringify(a) === JSON.stringify(b), a);
+
+const teamWithFixtures = teamSearchMetadata("Arsenal", 12, 3, 10);
+eq("team metadata: describes available fixtures", teamWithFixtures.title, "Arsenal Predictions & Fixtures");
+check("team metadata: fixture count describes the profile inventory", teamWithFixtures.description.includes("3 upcoming fixtures"));
+const teamWithoutFixtures = teamSearchMetadata("Arsenal", 12, 0, 10);
+check("team metadata: does not advertise missing fixtures", !/fixtures/i.test(teamWithoutFixtures.title + teamWithoutFixtures.description));
+eq("team metadata: results title needs settled rows", teamWithoutFixtures.title, "Arsenal Predictions & Results");
+const pendingTeam = teamSearchMetadata("Arsenal", 1, 0, 0);
+check("team metadata: no settled-result claim for pending-only inventory", !/results/i.test(pendingTeam.title + pendingTeam.description));
+check("team metadata: singular pick is readable", pendingTeam.description.includes("1 published pick."));
 
 eq("public SEO origin is the canonical domain, independent of auth configuration", SITE_URL, "https://www.betgenius.ng");
 eq("child sitemap URLs use the canonical domain", absoluteUrl("/sitemaps/static.xml"), "https://www.betgenius.ng/sitemaps/static.xml");
