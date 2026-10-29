@@ -1,3 +1,7 @@
+import { MatchLineups } from "@/components/MatchLineups";
+import { MatchOddsPanel } from "@/components/MatchOddsPanel";
+import type { FixtureOdds } from "@/lib/odds";
+import { cupSupports } from "@/lib/cupConfig";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
@@ -8,7 +12,13 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
 import { MatchMasthead } from "@/components/MatchMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
-import { MatchFormComparison } from "@/components/MatchFormComparison";
+import { MatchRecentResults } from "@/components/MatchRecentResults";
+import { MatchSectionNav } from "@/components/MatchSectionNav";
+import { parseStoredContext } from "@/lib/ai/context";
+import { evidenceClaimIssues } from "@/lib/ai/evidenceClaims";
+import { assertCompetitionStage } from "@/lib/ai/competitionStage";
+import { parseAnalysis } from "@/lib/predictionAnalysis";
+import { buildMatchFacts, isMatchFactsEmpty, teamNewsState } from "@/lib/matchFacts";
 import { MatchVerdict } from "@/components/MatchVerdict";
 import { KeyFactors } from "@/components/KeyFactors";
 import { TeamNewsPanel } from "@/components/TeamNewsPanel";
@@ -20,7 +30,7 @@ import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { marketPathways } from "@/lib/contextualLinks";
-import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext } from "@/lib/predictionScope";
+import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
@@ -130,11 +140,23 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // pages do — a VIP market on an otherwise-free match stays visible as a
   // locked row rather than disappearing, so the reader can see the market
   // exists and what it would cost to read it.
+  const editorialRows = await getMatchEditorialEvidence(params.slug);
+  const editorialById = new Map(editorialRows.map(r => [r.id, r.aiJob]));
+  const reviewIds = new Set<string>();
   const shaped = rows.map((row) => {
     const r = { ...row, category: presentedCategory(row.category, row.categories) };
     const canView = canViewCategory(r.category, viewer.tier, viewer.status, viewer.role);
+    const digest = parseStoredContext(editorialById.get(r.id)?.context);
+    // Compare prose against its stored generation evidence, never a newer cache.
+    let invalid = false;
+    if (digest && canView) {
+      const text = [r.matchPreview, r.reasoning, ...(parseAnalysis(r.analysisJson)?.keyFactors ?? [])].filter(Boolean).join("\n");
+      invalid = evidenceClaimIssues(digest, text).length > 0;
+      try { if (digest.fixture.round) assertCompetitionStage(digest.fixture, { matchPreview: r.matchPreview ?? undefined, keyFactors: parseAnalysis(r.analysisJson)?.keyFactors, predictions: [{ reasoning: r.reasoning }] }); } catch { invalid = true; }
+    }
+    if (invalid) reviewIds.add(r.id);
     return canView
-      ? r
+      ? invalid ? { ...r, matchPreview: null, analysisJson: null, reasoning: "The original analysis contains an evidence conflict and is withheld for review. The published pick and settlement are preserved." } : r
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
   });
 
@@ -157,12 +179,36 @@ export default async function MatchPage({ params }: { params: { slug: string } }
 
   // Read from the cron-filled enrichment caches by loadMatch above — no
   // api-football call happens on this page.
-  const { home: homeDigest, away: awayDigest, standings } = digests!;
+  const { home: currentHomeDigest, away: currentAwayDigest, standings } = digests!;
+  const highlightedJob = topRow ? editorialById.get(topRow.id) : null;
+  const original = parseStoredContext(highlightedJob?.context);
+  const homeDigest = original?.teams.home ?? currentHomeDigest;
+  const awayDigest = original?.teams.away ?? currentAwayDigest;
+  const evidenceMeetings = original ? original.h2h?.meetings ?? [] : h2hMeetings;
+  const hasForm = !!(homeDigest?.last5.length || awayDigest?.last5.length);
+  const hasNews = teamNewsState(currentHomeDigest).kind !== "unavailable" || teamNewsState(currentAwayDigest).kind !== "unavailable";
+  const hasStats = !isMatchFactsEmpty(buildMatchFacts(homeDigest, awayDigest));
+  const [homeCache, awayCache, leagueCache] = await Promise.all([
+    getTeamMatchEnrichment(match.homeTeamApiId), getTeamMatchEnrichment(match.awayTeamApiId), getLeagueEnrichment(match.leagueApiId),
+  ]);
+  const stamp = (date: Date | null | undefined) => date ? date.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "not available";
+  const sections = [
+    ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
+    ...(hasForm ? [{ id: "form", label: "Recent results" }] : []),
+    ...(preview ? [{ id: "preview", label: "Preview" }] : []),
+    ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
+    ...(hasNews ? [{ id: "team-news", label: "Team news" }] : []),
+    ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
+    ...(evidenceMeetings.length && match.homeTeamApiId != null && match.awayTeamApiId != null ? [{ id: "h2h", label: "H2H" }] : []),
+    { id: "lineups", label: "Lineups" },
+    { id: "odds", label: "Odds" },
+    { id: "markets", label: "Published picks" },
+  ];
 
   // Venue for the structured data, from the same cached row the masthead
   // renders, so the markup can't describe a different ground than the page.
-  const fixtureDetail = await getFixtureDetail(match.matchKey);
-  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null; round?: string | null; referee?: string | null } | null) ?? null;
+  const [fixtureDetail, oddsCache] = await Promise.all([getFixtureDetail(match.matchKey), getMatchOdds(match.matchKey)]);
+  const detail = (fixtureDetail?.detailJson as { venue?: string | null; city?: string | null; round?: string | null; referee?: string | null; lineups?: unknown } | null) ?? null;
 
   // Crests, competition badge and ingested fixture status for the structured
   // data. Venue is NOT taken from here — `detail` above is already the correct,
@@ -174,9 +220,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     ])
   ).get(match.matchKey ?? "");
 
-  // Page-level freshness only. Per-section cache stamps were deliberately
-  // removed from this app; this is the editorial published/updated line, which
-  // is a different thing and is what dateModified below reports.
+  // Publication time is distinct from the original evidence and cache-fetch
+  // timestamps above. A refreshed cache does not create an editorial update.
   const publishedAt = rows.reduce<Date | null>((a, r) => (r.publishedAt && (!a || r.publishedAt > a) ? r.publishedAt : a), null);
 
   return (
@@ -258,21 +303,17 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           prediction card. */}
       <AdRectangle />
 
-      {finalScore && (
-        <section aria-labelledby="completed-match-context" className="card space-y-2">
-          <h2 id="completed-match-context" className="text-lg font-semibold">Completed match: published prediction record</h2>
-          <p className="text-sm leading-6 text-gray-300">
-            This match has finished. The predictions and reasoning below are the published analysis for this fixture,
-            rather than a new recommendation. Form, team news and table context may refresh after the match;
-            they should not be read as a frozen snapshot of the information available when the prediction was published.
-          </p>
-          <Link href="/predictions/today" className="inline-block text-sm font-semibold text-brand hover:underline">See today&apos;s football predictions</Link>
-        </section>
-      )}
-
-      <MatchFormComparison
-        homeTeamApiId={match.homeTeamApiId}
-        awayTeamApiId={match.awayTeamApiId}
+      <MatchSectionNav sections={sections} />
+      <div className="rounded-2xl border border-brand-border p-4 text-xs leading-relaxed text-gray-400">
+        {original && highlightedJob ? <>Highlighted prediction evidence recorded {highlightedJob.createdAt.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT. Recent results, statistics and H2H below use that original evidence.</> : <>Original prediction evidence is unavailable. Recent results, statistics and H2H below describe the latest cached context, which may differ from what was known before kickoff.</>}
+        {" "}Team news, player totals, standings and performance records may refresh separately. Published analysis is not automatically rewritten when those figures change.
+        <p className="mt-2">Team context last fetched: {match.homeTeam}: {stamp(homeCache?.fetchedAt)}; {match.awayTeam}: {stamp(awayCache?.fetchedAt)}. Table cache last fetched: {stamp(leagueCache?.fetchedAt)}. A fetch time does not confirm that every underlying item changed.</p>
+        {finalScore && <section aria-labelledby="completed-match-context" className="mt-3 space-y-2"><h2 id="completed-match-context" className="text-sm font-bold text-gray-300">Completed match: published prediction record</h2><p>This match has finished. The published call is retained for review; <Link href="/predictions/today" className="text-brand underline">see today’s predictions</Link>.</p></section>}
+      </div>
+      {reviewIds.size > 0 && <div role="note" className="rounded-2xl border border-orange-500/40 p-4 text-sm text-orange-200">An evidence conflict was detected in the original analysis. Affected prose is withheld for review; published picks and outcomes are retained. This is not a revised prediction.</div>}
+      <MatchRecentResults
+        home={homeDigest}
+        away={awayDigest}
         homeTeam={match.homeTeam}
         awayTeam={match.awayTeam}
       />
@@ -297,8 +338,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       <TeamNewsPanel
         homeTeam={match.homeTeam}
         awayTeam={match.awayTeam}
-        homeDigest={homeDigest}
-        awayDigest={awayDigest}
+        homeDigest={currentHomeDigest}
+        awayDigest={currentAwayDigest}
       />
 
       <MatchStatsComparison
@@ -334,13 +375,16 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       />
 
       <MatchH2HSummary
-        meetings={h2hMeetings}
+        meetings={evidenceMeetings}
         homeTeam={match.homeTeam}
         awayTeam={match.awayTeam}
         homeTeamApiId={match.homeTeamApiId}
         awayTeamApiId={match.awayTeamApiId}
         h2hLink={h2hLink}
       />
+
+      <MatchLineups raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />
+      <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
 
       <MatchTrackRecord leagueApiId={match.leagueApiId} leagueName={match.leagueName} />
 
@@ -377,12 +421,11 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         pathways={marketPathways(rows.filter((r) => canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined)))}
       />
 
-      {/* Page-level freshness, once, at the foot — the editorial published date,
-          not the per-section cache stamps this app deliberately removed. */}
+      {/* Editorial publication remains separate from evidence/cache times. */}
       {publishedAt && (
         <p className="text-[11px] text-gray-500">
           Published {publishedAt.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.
-          Form, team news and table context refresh automatically.
+          The original prediction is retained; supporting context is labelled separately above.
         </p>
       )}
 
