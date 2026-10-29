@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 import { MARKET_HUBS } from "@/lib/marketHubs";
+import { cupById } from "@/lib/cupConfig";
 
 export const metadata: Metadata = {
   title: "Football Predictions & Betting Tips",
@@ -39,6 +40,16 @@ const evidenceLinks = [
 // feed chips always name the same market pages.
 const marketHubs = MARKET_HUBS.map((m) => ({ href: m.href, name: `${m.label} predictions`, desc: m.desc }));
 
+// Use the cup routing catalogue, rather than league aliases, for cup hubs.
+// These destinations remain available even between rounds.
+const competitionLinks = [
+  { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore English Premier League picks, standings, upcoming fixtures and season statistics." },
+  ...[2, 3, 45].flatMap((id) => {
+    const cup = cupById(id);
+    return cup ? [{ href: `/predictions/cup/${cup.slug}`, name: `${cup.name} predictions`, desc: `Browse ${cup.name} fixtures, results and published match predictions.` }] : [];
+  }),
+];
+
 export default function PredictionsIndex() {
   return (
     <div className="space-y-10">
@@ -69,6 +80,14 @@ export default function PredictionsIndex() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {marketHubs.map((market) => (
             <LinkTile key={market.href} href={market.href} title={market.name} desc={market.desc} />
+          ))}
+        </div>
+      </PremiumPanel>
+
+      <PremiumPanel kicker="Competitions" title="Football predictions by competition" id="prediction-competitions" bare>
+        <div className="grid gap-4 md:grid-cols-2">
+          {competitionLinks.map((competition) => (
+            <LinkTile key={competition.href} href={competition.href} title={competition.name} desc={competition.desc} />
           ))}
         </div>
       </PremiumPanel>
