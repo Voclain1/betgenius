@@ -1,3 +1,4 @@
+import { kickoffLabel, footballDay } from "@/lib/footballTime";
 import { Fragment } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -117,7 +118,7 @@ export function PredictionsTable({
             const slug = home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
             const matchHref = slug ? `/predictions/match/${slug}` : null;
             const visual = getLeagueVisual(p.leagueApiId);
-            const when = kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : null;
+            const when = kickoff ? kickoffLabel(kickoff) : null;
             return (
               <Fragment key={p.id}>
               <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2.5 rounded-2xl bg-brand-card px-4 py-4 ring-1 ring-brand-border transition active:ring-brand/60 sm:static sm:table-row sm:rounded-none sm:bg-transparent sm:p-0 sm:ring-0 sm:hover:bg-brand-bg/40">
@@ -196,7 +197,7 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
                 <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
-                  {kickoff ? new Date(kickoff).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  {kickoff ? kickoffLabel(kickoff) : "—"}
                 </td>
                 {/* Phone, without the arrow column: a chevron that says the row opens. */}
                 {!linkRows && matchHref && (

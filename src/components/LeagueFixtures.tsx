@@ -1,4 +1,6 @@
 "use client";
+import { footballDay, footballDayKey } from "@/lib/footballTime";
+
 // Client component because MatchRow's crest <img> carries an onError fallback,
 // which a server component can't hand to it — the same constraint that makes
 // LeagueNav and LeagueClubGrid client components.
@@ -58,10 +60,10 @@ export function LeagueFixtures({
     .reduce<{ date: string; label: string; rows: FixtureRow[] }[]>((acc, f) => {
       const row = toFixtureRow(f, league);
       const d = new Date(f.date);
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const key = footballDayKey(d);
       const existing = acc.find((g) => g.date === key);
       if (existing) existing.rows.push(row);
-      else acc.push({ date: key, label: d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }), rows: [row] });
+      else acc.push({ date: key, label: footballDay(d), rows: [row] });
       return acc;
     }, []);
 

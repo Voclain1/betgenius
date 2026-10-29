@@ -1,4 +1,6 @@
 "use client";
+import { kickoffLabel, footballDay } from "@/lib/footballTime";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TeamCrest } from "@/components/TeamCrest";
@@ -106,7 +108,7 @@ function Slide({ slide: s, index, total }: { slide: HeroSlideData; index: number
       <div className="flex items-center justify-between gap-3 text-[11px] font-bold uppercase tracking-[0.18em]">
         <span className="text-brand">Top pick {total > 1 ? `${index + 1}/${total}` : "today"}</span>
         <span className="tabular-nums tracking-[0.08em] text-gray-400" suppressHydrationWarning>
-          {kickoff ? kickoff.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" }) : ""}
+          {kickoff ? kickoffLabel(kickoff) : ""}
         </span>
       </div>
 

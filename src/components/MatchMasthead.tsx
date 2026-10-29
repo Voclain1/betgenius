@@ -1,3 +1,4 @@
+import { kickoffTime, footballDay } from "@/lib/footballTime";
 import Link from "next/link";
 import { TeamCrest } from "@/components/TeamCrest";
 import { MatchScoreClock } from "@/components/MatchScoreClock";
@@ -5,8 +6,6 @@ import { LeagueBadge } from "@/components/LeagueBadge";
 import { teamCrestUrl } from "@/lib/leagues";
 import { leagueSlug, teamSlug } from "@/lib/slug";
 
-const DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", weekday: "short", day: "numeric", month: "short" });
-const TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4" };
 
@@ -102,8 +101,8 @@ export function MatchMasthead({
             homeTeamApiId={homeTeamApiId}
             awayTeamApiId={awayTeamApiId}
             kickoff={kickoff.toISOString()}
-            timeLabel={TIME.format(kickoff)}
-            dayLabel={DAY.format(kickoff).replace(",", "")}
+            timeLabel={kickoffTime(kickoff)}
+            dayLabel={footballDay(kickoff)}
             finalScore={finalScore}
           />
           <Side name={awayTeam} teamApiId={awayTeamApiId} />
