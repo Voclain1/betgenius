@@ -31,6 +31,8 @@ export type PredictionRow = {
   reasoning: string;
   matchPreview?: string | null;
   locked?: boolean;
+  /** Chosen by the server's access decision; missing keeps the paid default. */
+  unlockHref?: "/register" | "/pricing";
   /** The match's final score, stored when the tip settles. */
   finalHomeScore?: number | null;
   finalAwayScore?: number | null;
@@ -191,8 +193,8 @@ export function PredictionCard({
         </Link>
       )}
       {p.locked && (
-        <Link href="/pricing" className="flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-black text-on-brand transition hover:bg-brand-dark">
-          Upgrade to unlock
+        <Link href={p.unlockHref ?? "/pricing"} className="flex items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-black text-on-brand transition hover:bg-brand-dark">
+          {p.unlockHref === "/register" ? "Sign up free to unlock" : "Upgrade to unlock"}
         </Link>
       )}
     </article>

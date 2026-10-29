@@ -28,6 +28,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import "./lib/reactCacheShim";
 import { CategoryPredictionsList } from "../src/components/CategoryPredictionsList";
 import { PredictionViewSwitch } from "../src/components/PredictionViewSwitch";
+import { BankerPredictionsEvidence } from "../src/components/BankerPredictionsGuide";
 import {
   PREDICTION_VIEW_KEY,
   parsePredictionView,
@@ -355,6 +356,23 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
     check("other picks pass through", standalonePickText("Over 1.5 Goals", "OVER_UNDER") === "Over 1.5 Goals" && standalonePickText("No", "OTHER") === "No");
     check("the tip table uses it", readFileSync(join(__dirname, "../src/components/PredictionsTable.tsx"), "utf8").includes("standalonePickText(p.pick, p.marketType, p.market)"));
   }
+}
+
+{
+  const registration = html(<CategoryPredictionsList category="BANKER" rows={rows(1, { locked: true, pick: "LOCKED", reasoning: "Sign up free", confidence: null, unlockHref: "/register" }) as any} />);
+  check("registration-locked Banker card links to free signup", registration.includes('href="/register"') && registration.includes("Sign up free to unlock"));
+  check("registration-locked Banker card does not offer a paid upgrade", !registration.includes("Upgrade to unlock"));
+  const paid = html(<CategoryPredictionsList category="VIP" rows={rows(1, { locked: true, pick: "LOCKED", reasoning: "Subscribe", confidence: null }) as any} />);
+  check("paid locked card preserves pricing destination", paid.includes('href="/pricing"') && paid.includes("Upgrade to unlock"));
+}
+
+{
+  const evidence = html(<BankerPredictionsEvidence record={{ won: 15, lost: 5, void: 2, total: 22, decided: 20, rate: 0.75 }} />);
+  check("Banker evidence gives the actual all-time rate and denominator", evidence.includes("75%") && evidence.includes("20 decided picks"));
+  check("Banker evidence distinguishes all-time and calendar-month records", evidence.includes("all published Banker results") && evidence.includes("current calendar month"));
+  const thin = html(<BankerPredictionsEvidence record={{ won: 1, lost: 0, void: 20, total: 21, decided: 1, rate: 1 }} />);
+  check("void-heavy samples do not publish a misleading Banker percentage", !thin.includes("100%") && thin.includes("at least 20"));
+  check("Banker evidence explains profit and accumulator limitations", evidence.includes("does not measure profit") && evidence.includes("not an instruction to combine all seven"));
 }
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

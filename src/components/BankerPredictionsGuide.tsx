@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { WinRateStat } from "@/lib/trackRecord";
 
 /**
  * Closed by default, like the Today guide: the picks come first and the
@@ -28,7 +29,7 @@ export function BankerPredictionsIntro() {
   );
 }
 
-export function BankerPredictionsEvidence() {
+export function BankerPredictionsEvidence({ record }: { record?: WinRateStat | null }) {
   return (
     <section className="card" aria-labelledby="banker-method-heading">
       <h2 id="banker-method-heading" className="text-lg font-semibold">
@@ -41,8 +42,34 @@ export function BankerPredictionsEvidence() {
         the strength of the available evidence; it is not a guaranteed probability of winning.
       </p>
       <p className="mt-3 text-sm leading-6 text-gray-300">
-        Every Banker result is listed day by day at the foot of this page, and the public track record shows the
-        category&apos;s win rate for the current month; a percentage stays hidden until there are at least 20 decided results.
+        Every Banker result is listed day by day at the foot of this page. The rate in this page&apos;s heading
+        covers all published Banker results, while the public track record reports the current calendar month.
+        Compare the same reporting period when reviewing performance.
+      </p>
+      <h3 className="mt-5 text-base font-semibold">What the Banker win rate measures</h3>
+      <p className="mt-3 text-sm leading-6 text-gray-300">
+        {record && record.rate != null && record.decided >= 20
+          ? `The all-time Banker win rate is ${Math.round(record.rate * 100)}%, based on ${record.decided} decided picks.`
+          : "An all-time percentage is shown only after at least 20 Banker picks have a win or loss recorded."}
+        {" "}The calculation is wins divided by wins plus losses. Void picks do not enter that denominator,
+        and pending picks are excluded until they settle. Both winning and losing results remain in the record.
+      </p>
+      <p className="mt-3 text-sm leading-6 text-gray-300">
+        A win rate does not measure profit: returns also depend on odds and stakes. The confidence rating
+        ranks the available evidence; it is not a calibrated win probability, and past results do not predict
+        the next outcome.
+      </p>
+      <h3 className="mt-5 text-base font-semibold">Using today&apos;s Banker picks</h3>
+      <p className="mt-3 text-sm leading-6 text-gray-300">
+        After free registration, check each selection&apos;s market and reasoning against its match page.
+        A double-chance selection and an outright win have different conditions, even when both appear in
+        this list. Recheck line-ups and match status before kickoff; the evidence available when a pick was
+        published may change.
+      </p>
+      <p className="mt-3 text-sm leading-6 text-gray-300">
+        The list ranks individual picks. It is not an instruction to combine all seven into an accumulator:
+        a multi-bet requires every leg to meet its settlement conditions. Neither the Banker label nor a
+        shared confidence threshold guarantees the combined outcome.
       </p>
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record#category-banker" className="text-brand hover:underline">

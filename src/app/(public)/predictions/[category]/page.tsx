@@ -19,7 +19,7 @@ import {
 } from "@/lib/categoryPredictions";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
-import { getCategoryTrackRecord } from "@/lib/trackRecord";
+import { getCategoryTrackRecord, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
@@ -51,7 +51,7 @@ export async function generateMetadata(
   // plain product names rather than being bent around a keyword nobody types.
   const seoTitle = cat === "TODAY" ? "Football Predictions Today"
     : cat === "VIP" ? "VIP Predictions"
-    : cat === "BANKER" ? "Banker Predictions"
+    : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : "Banker Predictions Today")
     // Grounded in the term readers actually search, same approach as the
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
@@ -91,7 +91,9 @@ export async function generateMetadata(
 
   return {
     title: seoTitle,
-    description: `${rows.length} ${day === "yesterday" ? "settled " : day === "tomorrow" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+    description: cat === "BANKER"
+      ? `${rows.length} banker ${rows.length === 1 ? "prediction" : "predictions"} for ${day}. Sign up free to see the picks and reasoning. Review the selection method and past results.`
+      : `${rows.length} ${day === "yesterday" ? "settled " : day === "tomorrow" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     // Relative query states change meaning every day: yesterday's URL becomes a
     // different slate after midnight. Keep them available for users and links,
     // but do not let search engines retain them as unstable landing pages.
@@ -145,6 +147,7 @@ export default async function CategoryPage(
           odds: null,
           overUnder: null,
           locked: true,
+          unlockHref: needsRegistration ? "/register" : "/pricing",
         },
   );
 
@@ -165,7 +168,7 @@ export default async function CategoryPage(
     { label: competitions === 1 ? "Competition" : "Competitions", value: String(competitions) },
   ];
   if (topConfidence > 0) stats.push({ label: "Top confidence", value: `${topConfidence}%` });
-  if (record?.rate != null) stats.push({ label: "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
+  if (record?.rate != null && (cat !== "BANKER" || record.decided >= MIN_SETTLED_SAMPLE_SIZE)) stats.push({ label: cat === "BANKER" ? "All-time win rate" : "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
@@ -223,7 +226,7 @@ export default async function CategoryPage(
       />
       <CategoryMasthead
         kicker="Predictions"
-        title={cat === "TODAY" ? "Football predictions today" : NAMES[cat]}
+        title={cat === "TODAY" ? "Football predictions today" : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's banker predictions" : day === "tomorrow" ? "Banker predictions tomorrow" : "Banker predictions today") : NAMES[cat]}
         blurb={blurb}
         dateLabel={`${dateLabel} · West Africa Time`}
         stats={stats}
@@ -299,7 +302,7 @@ export default async function CategoryPage(
         )
       )}
 
-      {cat === "BANKER" && <BankerPredictionsEvidence />}
+      {cat === "BANKER" && <BankerPredictionsEvidence record={record} />}
       {cat === "TODAY" && <TodayPredictionsEvidence />}
 
       {/* The feed's own track record, last on the page: a list of past days,
