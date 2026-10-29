@@ -27,6 +27,7 @@ export function MatchScoreClock({
   awayTeamApiId,
   kickoff,
   timeLabel,
+  timeZoneLabel,
   dayLabel,
   finalScore,
 }: {
@@ -35,6 +36,7 @@ export function MatchScoreClock({
   kickoff: string;
   /** "12:30", formatted on the server in Lagos time. */
   timeLabel: string;
+  timeZoneLabel?: string;
   /** "SAT 10 OCT", formatted on the server in Lagos time. */
   dayLabel: string;
   finalScore?: { home: number; away: number } | null;
@@ -107,6 +109,7 @@ export function MatchScoreClock({
       <div className="text-center">
         <div className="text-4xl font-black tabular-nums tracking-tight text-gray-100 sm:text-5xl">{timeLabel}</div>
         <div className={`mt-1.5 text-gray-400 ${small}`}>{dayLabel}</div>
+        {timeZoneLabel && <div className={`mt-1 text-gray-500 ${small}`}>{timeZoneLabel}</div>}
         {irregular && code && <div className={`mt-1 text-amber-400 ${small}`}>{statusLabel(code)}</div>}
       </div>
     );
@@ -121,7 +124,8 @@ export function MatchScoreClock({
         {score.away ?? "-"}
       </div>
       <div className={`mt-1.5 text-gray-400 ${small}`}>
-        {dayLabel} · {timeLabel}
+        <span className="block">{dayLabel}</span>
+        <span className="mt-1 block">{timeLabel}{timeZoneLabel ? ` ${timeZoneLabel}` : ""}</span>
       </div>
     </div>
   );
