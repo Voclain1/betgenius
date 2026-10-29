@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { trimConfirmedLineups, lineupRefreshDue, readLineupSnapshot, type ProviderLineup } from '../src/lib/lineups';
+import { matchOddsState } from '../src/lib/matchOdds';
+import { MatchLineups } from '../src/components/MatchLineups';
+import { MatchOddsPanel } from '../src/components/MatchOddsPanel';
+import { trimOdds } from '../src/lib/odds';
+const now=new Date('2026-10-29T18:00:00Z'),kickoff=new Date('2026-10-29T19:00:00Z');
+const team=(id:number):ProviderLineup=>({team:{id,name:`Team ${id}`},formation:'4-3-3',startXI:Array.from({length:11},(_,i)=>({player:{id:id*100+i,name:`Player ${id}-${i}`,number:i+1,pos:i?'D':'G'}})),substitutes:[{player:{id:id*100+20,name:'Substitute'}}]});
+const raw=[team(1),team(2)],teams=trimConfirmedLineups(raw,1,2)!;
+assert.equal(teams.length,2);assert.equal(teams[0].starters.length,11);
+assert.equal(trimConfirmedLineups([team(1)],1,2),null);
+assert.equal(trimConfirmedLineups([team(1),{...team(2),startXI:team(2).startXI!.slice(0,10)}],1,2),null);
+assert.equal(trimConfirmedLineups([team(1),team(1)],1,2),null);
+const duplicate=team(2);duplicate.startXI![1]=duplicate.startXI![0];assert.equal(trimConfirmedLineups([team(1),duplicate],1,2),null);
+assert.ok(lineupRefreshDue(kickoff,null,now));assert.ok(!lineupRefreshDue(new Date('2026-10-30'),null,now));assert.ok(!lineupRefreshDue(new Date('2026-10-29T17:00:00Z'),null,now));
+const snapshot={fixtureApiId:123,attemptedAt:now.toISOString(),fetchedAt:now.toISOString(),teams,status:'confirmed' as const};
+assert.ok(!lineupRefreshDue(kickoff,snapshot,new Date(now.getTime()+10*60_000)));assert.ok(lineupRefreshDue(kickoff,snapshot,new Date(now.getTime()+16*60_000)));
+assert.ok(readLineupSnapshot(snapshot));assert.equal(readLineupSnapshot({...snapshot,teams:[teams[0],teams[0]]}),null);
+const html=renderToStaticMarkup(<MatchLineups raw={snapshot} fixtureApiId={123} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);
+for (const value of ['Player 1-0','Player 2-10','Substitute','4-3-3','WAT']) assert.ok(html.includes(value),value);
+const wrongFixture=renderToStaticMarkup(<MatchLineups raw={snapshot} fixtureApiId={999} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);assert.ok(!wrongFixture.includes('Player 1-0'));
+assert.ok(renderToStaticMarkup(<MatchLineups raw={null} fixtureApiId={null} homeId={1} awayId={2} kickoff={kickoff} now={now}/>).includes('have not been received'));
+assert.ok(renderToStaticMarkup(<MatchLineups raw={null} fixtureApiId={null} homeId={1} awayId={2} kickoff={now} now={now}/>).includes('were captured'));
+const odds=trimOdds({update:'2026-10-29T17:30:00Z',bookmakers:[{id:1,name:'Book A',bets:[{id:1,name:'Match Winner',values:[{value:'Home',odd:'2.20'}]}]},{id:2,name:'Book B',bets:[{id:1,name:'Match Winner',values:[{value:'Home',odd:'2.10'}]}]}]} as any)!;
+assert.equal(odds.markets[0].selections[0].quotes?.length,2);
+assert.equal(matchOddsState({odds,fetchedAt:now,kickoff,now}).state,'current');
+assert.equal(matchOddsState({odds:{...odds,update:'2026-10-29T13:00:00Z'},fetchedAt:now,kickoff,now}).state,'stale'); // recent fetch does not rejuvenate quote
+assert.equal(matchOddsState({odds:{...odds,update:'invalid'},fetchedAt:now,kickoff,now}).state,'unavailable');
+assert.equal(matchOddsState({odds,fetchedAt:now,kickoff:new Date('2026-10-29T17:00:00Z'),now}).state,'unavailable'); // after-kickoff quote is not a prematch archive
+assert.equal(matchOddsState({odds,fetchedAt:now,kickoff:new Date('2026-10-29T17:45:00Z'),now}).state,'archived');
+const prices=renderToStaticMarkup(<MatchOddsPanel odds={odds} fetchedAt={now} kickoff={kickoff} now={now}/>);
+for(const value of ['Book A','Book B','2.20','2.10','2.15 / 2','WAT'])assert.ok(prices.includes(value),value);
+const stale=renderToStaticMarkup(<MatchOddsPanel odds={{...odds,update:'2026-10-29T13:00:00Z'}} fetchedAt={now} kickoff={kickoff} now={now}/>);assert.ok(!stale.includes('2.20'));assert.ok(stale.includes('withheld'));
+const workload=fs.readFileSync('src/lib/enrichmentWorkloads.ts','utf8');assert.ok(workload.includes('lineups.slice(0,8)'));assert.ok(workload.includes('refreshLineupCache(unit.target)'));
+const cache=fs.readFileSync('src/lib/lineupCache.ts','utf8');assert.ok(cache.includes('jsonb_set'));assert.ok(cache.includes('getFixtureLineups(target.fixtureApiId)'));
+console.log('Lineups and odds: complete XIs, identity, retry windows, stale/error states, quote age, named comparisons and cron wiring passed');
