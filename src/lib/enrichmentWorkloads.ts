@@ -1,3 +1,4 @@
+import { getLineupTargets, refreshLineupCache } from "@/lib/lineupCache";
 import {
   getScopedTeamTargets,
   getScopedLeagueTargets,
@@ -88,12 +89,24 @@ export async function runEnrichmentWorkload(
   } else if (workload === "fixture-details") {
     const targets = await getScopedFixtureTargets();
     const queue = await orderFixtureDaysByStaleness(targets);
-    scoped = targets.length;
-    eligible = queue.length;
-    report = await runBudgeted(queue, options.limit, startedAt, budgetMs, async (batch) => {
-      const rows = await refreshFixtureDetailsForDay(batch.day, batch.targets);
+    const lineups = await getLineupTargets();
+    // Existing fixture-details cron also collects imminent XIs. At most eight
+    // lineup calls per run; all calls retain the client's daily quota gate.
+    // Keep a date batch first so lineup demand cannot starve fixture identity.
+    type Unit = { kind: "day"; batch: typeof queue[number] } | { kind: "lineup"; target: typeof lineups[number] };
+    const work: Unit[] = [
+      ...queue.slice(0,1).map(batch => ({ kind: "day" as const, batch })),
+      ...lineups.slice(0,8).map(target => ({ kind: "lineup" as const, target })),
+      ...queue.slice(1).map(batch => ({ kind: "day" as const, batch })),
+    ];
+    scoped = targets.length + lineups.length;
+    eligible = queue.length + lineups.length;
+    report = await runBudgeted(work, options.limit, startedAt, budgetMs, async (unit) => {
+      if (unit.kind === "lineup") return refreshLineupCache(unit.target);
+      const rows = await refreshFixtureDetailsForDay(unit.batch.day, unit.batch.targets);
       return rows.map((r) => ({ id: r.matchKey, result: r.result, detail: r.detail }));
     });
+    report.remaining += Math.max(0, lineups.length - 8);
   } else if (workload === "h2h") {
     const targets = await getScopedH2HTargets();
     const queue = await selectStaleH2HTargets(targets);
