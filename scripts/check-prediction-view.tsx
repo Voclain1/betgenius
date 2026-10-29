@@ -357,6 +357,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   }
 }
 
+{
+  const registration = html(<CategoryPredictionsList category="BANKER" rows={rows(1, { locked: true, pick: "LOCKED", reasoning: "Sign up free", confidence: null, unlockHref: "/register" }) as any} />);
+  check("registration-locked Banker card links to free signup", registration.includes('href="/register"') && registration.includes("Sign up free to unlock"));
+  check("registration-locked Banker card does not offer a paid upgrade", !registration.includes("Upgrade to unlock"));
+  const paid = html(<CategoryPredictionsList category="VIP" rows={rows(1, { locked: true, pick: "LOCKED", reasoning: "Subscribe", confidence: null }) as any} />);
+  check("paid locked card preserves pricing destination", paid.includes('href="/pricing"') && paid.includes("Upgrade to unlock"));
+}
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);
 process.exit(failures.length ? 1 : 0);
