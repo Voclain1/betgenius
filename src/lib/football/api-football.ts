@@ -34,7 +34,7 @@ function throttle(): Promise<void> {
   return next;
 }
 
-async function apiFetch<T = any>(path: string, params: Record<string, string | number> = {}): Promise<T | null> {
+async function apiFetch<T = any>(path: string, params: Record<string, string | number> = {}, timeoutMs?: number): Promise<T | null> {
   if (!KEY) {
     console.warn("[api-football] Missing API_FOOTBALL_KEY — returning null");
     return null;
@@ -67,6 +67,7 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
   // against the daily budget above whether or not it is cached, so the cache
   // saved nothing the budget relies on.
   const res = await fetch(url.toString(), {
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     headers: { "x-apisports-key": KEY },
     cache: "no-store",
   });
@@ -559,4 +560,9 @@ export type OddsResponse = {
 
 export function getOdds(fixtureId: number) {
   return apiFetch<OddsResponse[]>("/odds", { fixture: fixtureId });
+}
+
+/** Cron-only consumer; match pages read the resulting fixture cache. */
+export function getFixtureLineups(fixture: number) {
+  return apiFetch<import('@/lib/lineups').ProviderLineup[]>('/fixtures/lineups', { fixture }, 3500);
 }

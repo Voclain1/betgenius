@@ -1074,3 +1074,12 @@ async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
 
   return substantive;
 }
+
+/** Original model evidence for this match only; never shipped to a client component. */
+export const getMatchEditorialEvidence = cache(async (slug: string) => prisma.prediction.findMany({
+  where: { status: "PUBLISHED", matchSlugKey: slug },
+  select: { id: true, aiJob: { select: { context: true, createdAt: true } } },
+}));
+
+/** Cached prices only. Reading a match page never refreshes bookmaker quotes. */
+export const getMatchOdds = cache(async (key: string | null) => key ? prisma.fixtureOddsCache.findUnique({where:{matchKey:key},select:{fixtureApiId:true,oddsJson:true,fetchedAt:true}}) : null);

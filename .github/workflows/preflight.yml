@@ -57,6 +57,12 @@ jobs:
       - name: Competition-stage content grounding
         run: node --import tsx scripts/check-competition-stage.ts
 
+      - name: Match evidence and section rendering
+        run: TSX_TSCONFIG_PATH=scripts/tsconfig.render.json node --import tsx scripts/check-match-evidence.tsx
+
+      - name: Match lineup and odds coverage
+        run: TSX_TSCONFIG_PATH=scripts/tsconfig.render.json node --import tsx scripts/check-match-lineups-odds.tsx
+
       - name: Build
         run: npx next build
         env:

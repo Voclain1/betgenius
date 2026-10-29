@@ -604,11 +604,15 @@ export async function refreshFixtureDetailsForDay(
       referee: found.fixture.referee ?? null,
       round: found.league.round ?? null,
     };
-    await prisma.fixtureDetailCache.upsert({
-      where: { matchKey: t.matchKey },
-      create: { ...base, fixtureApiId: found.fixture.id, detailJson: detail, fetchedAt: now, lastAttemptAt: now, lastError: null },
-      update: { fixtureApiId: found.fixture.id, detailJson: detail, fetchedAt: now, lastAttemptAt: now, lastError: null },
-    });
+    await prisma.$transaction([
+      prisma.fixtureDetailCache.upsert({
+        where: { matchKey: t.matchKey },
+        create: { ...base, fixtureApiId: found.fixture.id, detailJson: detail, fetchedAt: now, lastAttemptAt: now, lastError: null },
+        update: { fixtureApiId: found.fixture.id, fetchedAt: now, lastAttemptAt: now, lastError: null },
+      }),
+      // Merge only the detail fields; preserve independently cached lineups.
+      prisma.$executeRaw`UPDATE "FixtureDetailCache" SET "detailJson"=COALESCE("detailJson",'{}'::jsonb) || ${JSON.stringify(detail)}::jsonb WHERE "matchKey"=${t.matchKey}`,
+    ]);
     results.push({ matchKey: t.matchKey, result: "ok" });
   }
 

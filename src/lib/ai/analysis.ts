@@ -12,6 +12,7 @@
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
 import { internalTerminologyProhibitionBlock } from "@/lib/houseVoice";
+import { assertEvidenceClaims } from "@/lib/ai/evidenceClaims";
 import { assertCompetitionStage } from "@/lib/ai/competitionStage";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
@@ -779,6 +780,7 @@ ${marketInstruction}`;
   // Shared by first-pass generation and draft rewrites, regardless of provider.
   // Reject rather than silently rewriting a contradictory football argument.
   assertCompetitionStage(d.fixture, result.output);
+  assertEvidenceClaims(d, result.output);
   return result;
 }
 

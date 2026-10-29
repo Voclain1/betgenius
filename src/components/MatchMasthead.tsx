@@ -1,4 +1,4 @@
-import { kickoffTime, footballDay } from "@/lib/footballTime";
+import { kickoffTime, footballDate } from "@/lib/footballTime";
 import Link from "next/link";
 import { TeamCrest } from "@/components/TeamCrest";
 import { MatchScoreClock } from "@/components/MatchScoreClock";
@@ -101,8 +101,9 @@ export function MatchMasthead({
             homeTeamApiId={homeTeamApiId}
             awayTeamApiId={awayTeamApiId}
             kickoff={kickoff.toISOString()}
-            timeLabel={kickoffTime(kickoff)}
-            dayLabel={footballDay(kickoff)}
+            timeLabel={kickoffTime(kickoff).replace(" WAT", "")}
+            timeZoneLabel="WAT"
+            dayLabel={footballDate(kickoff, { weekday: "short", day: "numeric", month: "short" }).replace(",", "")}
             finalScore={finalScore}
           />
           <Side name={awayTeam} teamApiId={awayTeamApiId} />
