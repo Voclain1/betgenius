@@ -131,10 +131,16 @@ export function matchDescription(input: {
   /** The highest-confidence pick the public may see, or null when every row is gated. */
   topPick?: { market: string; pick: string; confidence: number } | null;
   marketCount: number;
+  /** Public score already used by the match masthead, never a gated pick. */
+  finalScore?: { home: number; away: number } | null;
 }): string {
   const fixture = `${input.homeTeam} vs ${input.awayTeam}`;
   const date = titleDate(input.kickoff);
   const where = [input.leagueName, date].filter(Boolean).join(", ");
+
+  if (input.finalScore && [input.finalScore.home, input.finalScore.away].every((score) => Number.isInteger(score) && score >= 0)) {
+    return fitMetaDescription(`${fixture}: recorded result ${input.finalScore.home}-${input.finalScore.away}${where ? ` (${where})` : ""}. Review the published predictions and recorded outcomes for this completed match.`);
+  }
 
   if (input.topPick) {
     const { market, pick, confidence } = input.topPick;

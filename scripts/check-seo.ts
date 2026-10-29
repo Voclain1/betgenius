@@ -413,6 +413,12 @@ eq("titleDate: uses UTC, not local time", titleDate("2026-08-17T23:30:00Z"), "17
 eq("titleDate: rejects a bad date", titleDate("nonsense"), null);
 
 // --- Descriptions ---------------------------------------------------------
+const completedDescription = matchDescription({ homeTeam: "Juventus", awayTeam: "Rennes", kickoff: "2026-10-22T16:45:00Z", topPick: { market: "Double Chance", pick: "Juventus or Draw", confidence: 78 }, marketCount: 2, finalScore: { home: 2, away: 2 } });
+check("completed description: public recorded score replaces a current recommendation", completedDescription.includes("recorded result 2-2") && !completedDescription.includes("we back"));
+check("completed description: keeps dated fixture identity", completedDescription.includes("22 Oct 2026") && completedDescription.length <= 155);
+const scorelessDescription = matchDescription({ homeTeam: "A", awayTeam: "B", kickoff: null, topPick: null, marketCount: 1, finalScore: { home: 0, away: 0 } });
+check("completed description: zero goals are a valid result, without a gated selection", scorelessDescription.includes("result 0-0") && !scorelessDescription.includes("we back"));
+check("completed description: invalid scores never become a recorded result", !matchDescription({ homeTeam: "A", awayTeam: "B", kickoff: null, marketCount: 1, finalScore: { home: -1, away: 2 } }).includes("recorded result"));
 const d = matchDescription({
   homeTeam: "Casa Pia", awayTeam: "Benfica", leagueName: "Primeira Liga", kickoff: "2026-08-17T16:15:00Z",
   topPick: { market: "Match Winner", pick: "Benfica to win", confidence: 72 }, marketCount: 3,
