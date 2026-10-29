@@ -54,6 +54,9 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
 
+      - name: Competition-stage content grounding
+        run: node --import tsx scripts/check-competition-stage.ts
+
       - name: Build
         run: npx next build
         env:

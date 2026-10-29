@@ -12,6 +12,7 @@
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
 import { internalTerminologyProhibitionBlock } from "@/lib/houseVoice";
+import { assertCompetitionStage } from "@/lib/ai/competitionStage";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
@@ -98,9 +99,14 @@ Rules:
 1e. A null field means "not available", never zero. Fields are omitted rather than
    zero-filled when a season has not started, so do not read a missing average as
    a team that cannot score.
-1f. When fixture.competitionType is "CUP", analyse it as a knockout cup tie.
-   This competition's own standings and league positions do not decide the tie and
-   must never be mentioned. Cup-specific team statistics may be based on a small,
+1f. Competition type is NOT the fixture stage. A CUP can include a league/group
+   phase. Use fixture.round as the stage evidence: League Stage, League Phase,
+   Group Stage and Group Phase are not knockout ties. In those phases, supplied
+   competition standings may be relevant. Describe knockout stakes only when the
+   supplied round establishes them. If round is missing or ambiguous, omit stage
+   and qualification claims; never infer knockout format just from CUP.
+   In an actual knockout tie, competition standings do not decide the tie.
+   Cup-specific team statistics may be based on a small,
    uneven sample against opponents from different divisions, so treat them
    cautiously: two or three games say little about a side. When a team carries
    "domestic" (its current place in its own domestic league), that is the
@@ -769,7 +775,11 @@ ${marketInstruction}`;
     ...(isRewrite ? { temperature: 1.0 } : {}),
   };
 
-  return completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+  // Shared by first-pass generation and draft rewrites, regardless of provider.
+  // Reject rather than silently rewriting a contradictory football argument.
+  assertCompetitionStage(d.fixture, result.output);
+  return result;
 }
 
 /**
