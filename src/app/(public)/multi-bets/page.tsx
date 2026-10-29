@@ -11,6 +11,7 @@ import { AffiliateDisclosure } from "@/components/AffiliateDisclosure";
 import Link from "next/link";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
+import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 
 export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);
@@ -110,10 +111,11 @@ export default async function MultiBetsPage() {
 
   return (
     <div className="space-y-10">
+      <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Multi bet predictions", path: "/multi-bets" }])} />
       <CategoryMasthead
         kicker="Accumulators"
         title="Multi bet predictions"
-        blurb="Browse football accumulators assembled from individual predictions already published on BetGenius. Each available leg shows its match, market and selection so you can inspect the component picks before considering the combined bet."
+        blurb="Multi bets, also called accumulators or multiples, combine selections from several football fixtures. Browse combinations built from published BetGenius predictions, compare their combined odds and review the individual markets. Some selections require a subscription; locked cards show the membership needed."
         stats={
           combos.length > 0
             ? [
@@ -169,9 +171,15 @@ export default async function MultiBetsPage() {
 
       <PremiumPanel kicker="Before you bet" title="How to assess a multi bet" id="assess-multi">
         <div className="space-y-3">
-          <p className="text-sm leading-7 text-gray-300">An accumulator succeeds only when every included leg wins. Adding selections can increase the combined return, but it also creates more ways for the ticket to lose. A higher displayed odds target should therefore be treated as higher risk, not as stronger evidence.</p>
+          <p className="text-sm leading-7 text-gray-300">An accumulator normally requires every included leg to win. A void or cancelled leg may change the settled odds under the bookmaker&apos;s rules. Adding selections increases the conditions the ticket must meet; a higher displayed odds target is not stronger evidence.</p>
+          <p className="text-sm leading-7 text-gray-300">Decimal odds multiply: three selections priced at 1.50, 1.60 and 1.80 combine to 4.32. That figure describes the potential gross return as a multiple of the stake, not the profit or a guarantee. An odds-tier label is a target; inspect the actual combined quote and confirm the available price with your bookmaker.</p>
           <p className="text-sm leading-7 text-gray-300">Open the underlying match predictions, compare their reasoning and check that team news or kickoff status has not changed. Our <Link href="/methodology" className="font-semibold text-brand hover:underline">prediction methodology</Link> explains confidence and evidence limits, while the <Link href="/track-record" className="font-semibold text-brand hover:underline">track record</Link> retains settled results.</p>
           <p className="text-xs leading-5 text-gray-500">Odds may move or become unavailable. BetGenius does not guarantee a return, and no accumulator should be treated as certain.</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <Link href="/guides/how-accumulators-work" className="font-semibold text-brand hover:underline">How accumulators work</Link>
+            <Link href="/odds-calculator" className="font-semibold text-brand hover:underline">Understand odds and implied probability</Link>
+            <Link href="/predictions/today" className="font-semibold text-brand hover:underline">Browse individual football predictions</Link>
+          </div>
         </div>
       </PremiumPanel>
     </div>
