@@ -14,7 +14,7 @@
  * Run: npx tsx scripts/check-seo.ts
  */
 import { assessMatchEvidence, EVIDENCE_THRESHOLD, MAX_EVIDENCE_SCORE } from "../src/lib/matchEvidence";
-import { matchTitle, matchDescription, titleDate, fitMetadataTitleWithSuffix, fitMetaDescription, sportsEventJsonLd, sportsEventsForFixtures, organizationJsonLd, websiteJsonLd, breadcrumbJsonLd } from "../src/lib/seo";
+import { SITE_URL, absoluteUrl, matchTitle, matchDescription, titleDate, fitMetadataTitleWithSuffix, fitMetaDescription, sportsEventJsonLd, sportsEventsForFixtures, organizationJsonLd, websiteJsonLd, breadcrumbJsonLd } from "../src/lib/seo";
 import { toParagraphs, stripInlineMarkers } from "../src/components/Prose";
 import { buildAnalysis } from "../src/lib/predictionAnalysis";
 import type { TeamDigest } from "../src/lib/ai/digest";
@@ -34,6 +34,9 @@ const check = (l: string, c: boolean, got?: unknown) => {
 };
 
 const eq = (l: string, a: unknown, b: unknown) => check(l, JSON.stringify(a) === JSON.stringify(b), a);
+
+eq("public SEO origin is the canonical domain, independent of auth configuration", SITE_URL, "https://www.betgenius.ng");
+eq("child sitemap URLs use the canonical domain", absoluteUrl("/sitemaps/static.xml"), "https://www.betgenius.ng/sitemaps/static.xml");
 
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
@@ -465,7 +468,7 @@ for (const [template, path] of [
   ["h2h", "/predictions/h2h/arsenal-vs-chelsea"],
 ] as const) {
   const crumb: any = breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: template, path }]);
-  eq(`jsonld ${template}: breadcrumb identifies canonical page`, crumb.itemListElement[1].item, `https://betgenius-iota.vercel.app${path}`);
+  eq(`jsonld ${template}: breadcrumb identifies canonical page`, crumb.itemListElement[1].item, `https://www.betgenius.ng${path}`);
 }
 
 // --- Prose ----------------------------------------------------------------
