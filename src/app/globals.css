@@ -499,17 +499,30 @@ html[data-standalone="true"] .ad-sticky {
 /* The top banner's slot under the header (src/lib/topBanner.ts). Zero height
    unless the page carries the banner's marker and the reader has not closed it
    this visit; both are known before first paint, so the banner never pushes
-   the page after it loads. Phone: full width at 4:1, capped; md up: a 90px
-   strip for the 728x90. */
+   the page after it loads. Phone: the 320x50 strip, or 4:1 for a house
+   banner; md up: a 90px strip for the 728x90. */
 .top-banner-slot {
   position: relative;
   height: 0;
 }
+/* Phones: the network's 320x50 plus a hairline, not a 4:1 box it would sit
+   in the middle of. A house banner (4:1 artwork) gets its full-width ratio;
+   html[data-top-banner-house] is set before paint from the last page's pick
+   (TOP_BANNER_INIT_SCRIPT) and live by TopBanner. */
 html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
+  height: 54px;
+}
+html[data-top-banner-house]:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
   height: min(25vw, 140px);
 }
+/* With a banner showing, the page starts right under it: the close tab and
+   the back button can sit in the little room that is left. */
+html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot ~ main {
+  padding-top: 0.5rem;
+}
 @media (min-width: 768px) {
-  html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
+  html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot,
+  html[data-top-banner-house]:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-slot {
     height: 90px;
   }
 }

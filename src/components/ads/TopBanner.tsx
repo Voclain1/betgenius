@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { ChevronUp } from "lucide-react";
 import { AdFrame } from "@/components/ads/AdUnit";
 import { bannerImageSrc, pickBanner, type PublicBanner } from "@/lib/houseBanners";
-import { TOP_BANNER_CLOSED_ATTR, TOP_BANNER_CLOSED_KEY, TOP_BANNER_SLOT_ID } from "@/lib/topBanner";
+import { TOP_BANNER_CLOSED_ATTR, TOP_BANNER_CLOSED_KEY, TOP_BANNER_HOUSE_ATTR, TOP_BANNER_HOUSE_KEY, TOP_BANNER_SLOT_ID } from "@/lib/topBanner";
 
 /**
  * The top banner: flush under the header, full width, no frame, with a small
@@ -45,7 +45,19 @@ export function TopBanner() {
         if (cancelled) return;
         const list = Array.isArray(j.banners) ? j.banners : [];
         setBanners(list);
-        setBanner(pickBanner(list));
+        const picked = pickBanner(list);
+        setBanner(picked);
+        // A house banner needs the taller phone box; remembered so the next
+        // page reserves the right height before paint.
+        const root = document.documentElement;
+        try {
+          if (picked) window.sessionStorage.setItem(TOP_BANNER_HOUSE_KEY, "1");
+          else window.sessionStorage.removeItem(TOP_BANNER_HOUSE_KEY);
+        } catch {
+          // Height is then decided per page only.
+        }
+        if (picked) root.setAttribute(TOP_BANNER_HOUSE_ATTR, "");
+        else root.removeAttribute(TOP_BANNER_HOUSE_ATTR);
       })
       .catch(() => !cancelled && setBanners([]));
     return () => {
@@ -117,12 +129,13 @@ export function TopBanner() {
       </div>
       {/* The close tab hangs below the banner, over the page's own top
           padding, so it takes no space of its own. It also carries the
-          "Ad" disclosure, keeping the creative itself clear. */}
+          "Ad" disclosure, keeping the creative itself clear. Right-hand side,
+          clear of the back button at the top left of the page. */}
       <button
         type="button"
         onClick={close}
         aria-label="Close banner"
-        className="absolute left-4 top-full z-30 inline-flex h-6 items-center gap-1 rounded-b-md bg-brand-card px-2.5 text-[11px] font-medium text-gray-400 shadow-sm hover:text-gray-100"
+        className="absolute right-4 top-full z-30 inline-flex h-6 items-center gap-1 rounded-b-md bg-brand-card px-2.5 text-[11px] font-medium text-gray-400 shadow-sm hover:text-gray-100"
       >
         {isAd && <span>Ad</span>}
         <ChevronUp aria-hidden className="h-3.5 w-3.5" />
