@@ -110,7 +110,7 @@ function AdBand({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The leaderboard pair: 728x90 on desktop, 320x50 on a phone.
+ * The leaderboard pair: 728x90 on desktop, the native card on a phone.
  *
  * Both are rendered into the page and one is hidden by CSS at every width.
  * Only the visible one ever loads a single byte — a `display:none` element has
@@ -125,8 +125,10 @@ export function AdLeaderboard() {
       <div className="hidden md:block">
         <AdFrame id="leaderboard" />
       </div>
-      <div className="md:hidden">
-        <AdFrame id="mobileBanner" />
+      {/* Phones get the native card (image + headline, full width) rather
+          than a 320x50 strip, which read as too small between sections. */}
+      <div className="w-full md:hidden">
+        <AdFrame id="native" />
       </div>
     </AdBand>
   );
