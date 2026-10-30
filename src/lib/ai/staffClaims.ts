@@ -71,7 +71,14 @@ export function unsupportedStaffSentences(text: string, ctx: StaffContext): stri
  * still sourced from the evidence, and one dropped sentence is the honest fix.
  */
 export function stripUnsupportedStaff(text: string, ctx: StaffContext): string {
-  const bad = new Set(unsupportedStaffSentences(text, ctx));
+  return removeSentences(text, new Set(unsupportedStaffSentences(text, ctx)));
+}
+
+/**
+ * `text` without the given sentences, split the same way the checks split it.
+ * Paragraph breaks survive; a paragraph left empty is dropped.
+ */
+export function removeSentences(text: string, bad: Set<string>): string {
   if (!bad.size) return text;
   return text
     .split(/\n/)

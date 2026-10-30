@@ -13,6 +13,9 @@ export class CompetitionStageError extends Error {
   }
 }
 
+/** Knockout-tie wording; unsupported unless the fixture's round is a knockout. */
+export const KNOCKOUT_TIE = /\bknock[ -]?out\s+(?:cup\s+)?(?:tie|clash|encounter|match|game)\b/i;
+
 /** Conservative known contradiction, not a claim to validate every football fact. */
 export function assertCompetitionStage(
   fixture: { competitionType?: string; round?: string | null },
@@ -20,7 +23,7 @@ export function assertCompetitionStage(
 ): void {
   if (competitionStage(fixture) === "knockout") return;
   const texts = [output.matchPreview, ...(output.keyFactors ?? []), ...(output.predictions ?? []).map((p) => p.reasoning)];
-  if (texts.some((text) => typeof text === "string" && /\bknock[ -]?out\s+(?:cup\s+)?(?:tie|clash|encounter|match|game)\b/i.test(text))) {
+  if (texts.some((text) => typeof text === "string" && KNOCKOUT_TIE.test(text))) {
     throw new CompetitionStageError();
   }
 }

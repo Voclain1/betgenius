@@ -18,9 +18,9 @@ import { MatchRecentResults } from "@/components/MatchRecentResults";
 import { MatchSectionNav } from "@/components/MatchSectionNav";
 import { parseStoredContext } from "@/lib/ai/context";
 import { evidenceClaimIssues } from "@/lib/ai/evidenceClaims";
-import { stripUnsupportedStaff, type StaffContext } from "@/lib/ai/staffClaims";
+import { removeSentences, unsupportedStaffSentences, type StaffContext } from "@/lib/ai/staffClaims";
 import type { TeamCoach } from "@/lib/enrichment";
-import { assertCompetitionStage } from "@/lib/ai/competitionStage";
+import { competitionStage, KNOCKOUT_TIE } from "@/lib/ai/competitionStage";
 import { parseAnalysis } from "@/lib/predictionAnalysis";
 import { buildMatchFacts, isMatchFactsEmpty, teamNewsState } from "@/lib/matchFacts";
 import { MatchVerdict } from "@/components/MatchVerdict";
@@ -154,29 +154,32 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     teams: [match.homeTeam, match.awayTeam, ...[stored?.teams.home, stored?.teams.away, digests?.home, digests?.away].flatMap((t) => (t?.last5 ?? []).map((f) => f.opponent))],
   });
   const editorialById = new Map(editorialRows.map(r => [r.id, r.aiJob]));
-  const reviewIds = new Set<string>();
   const shaped = rows.map((row) => {
     const r = { ...row, category: presentedCategory(row.category, row.categories) };
     const canView = canViewCategory(r.category, viewer.tier, viewer.status, viewer.role);
     const digest = parseStoredContext(editorialById.get(r.id)?.context);
-    // Compare prose against its stored generation evidence, never a newer cache.
-    let invalid = false;
-    if (digest && canView) {
-      const text = [r.matchPreview, r.reasoning, ...(parseAnalysis(r.analysisJson)?.keyFactors ?? [])].filter(Boolean).join("\n");
-      invalid = evidenceClaimIssues(digest, text).length > 0;
-      try { if (digest.fixture.round) assertCompetitionStage(digest.fixture, { matchPreview: r.matchPreview ?? undefined, keyFactors: parseAnalysis(r.analysisJson)?.keyFactors, predictions: [{ reasoning: r.reasoning }] }); } catch { invalid = true; }
-    }
-    if (invalid) reviewIds.add(r.id);
+    // A sentence that contradicts the evidence is dropped and the rest of the
+    // prose kept: a stale manager name (checked against the current coaches),
+    // an H2H count that disagrees with the stored generation evidence (never a
+    // newer cache), or knockout-tie wording for a fixture that is not one.
+    // Nothing is announced to the reader; the published pick is untouched.
     const ctx = staffCtx(digest);
-    const factors = parseAnalysis(r.analysisJson)?.keyFactors.map((f) => stripUnsupportedStaff(f, ctx)).filter(Boolean);
+    const nonKnockout = !!digest?.fixture.round && competitionStage(digest.fixture) !== "knockout";
+    const clean = (text: string) => {
+      const bad = new Set(unsupportedStaffSentences(text, ctx));
+      if (digest) for (const issue of evidenceClaimIssues(digest, text)) bad.add(issue.claim);
+      if (nonKnockout) for (const s of text.split(/(?<=[.!?])\s+|\n+/)) if (KNOCKOUT_TIE.test(s)) bad.add(s);
+      return removeSentences(text, bad);
+    };
+    const factors = parseAnalysis(r.analysisJson)?.keyFactors.map(clean).filter(Boolean);
     const cleaned = {
       ...r,
-      reasoning: stripUnsupportedStaff(r.reasoning, ctx),
-      matchPreview: r.matchPreview && stripUnsupportedStaff(r.matchPreview, ctx),
+      reasoning: clean(r.reasoning),
+      matchPreview: r.matchPreview && clean(r.matchPreview),
       analysisJson: factors?.length ? { v: 1, keyFactors: factors } : null,
     };
     return canView
-      ? invalid ? { ...r, matchPreview: null, analysisJson: null, reasoning: "The original analysis contains an evidence conflict and is withheld for review. The published pick and settlement are preserved." } : cleaned
+      ? cleaned
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
   });
 
@@ -321,7 +324,6 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       </MatchMasthead>
 
       <MatchSectionNav sections={sections} />
-      {reviewIds.size > 0 && <div role="note" className="rounded-2xl border border-orange-500/40 p-4 text-sm text-orange-200">An evidence conflict was detected in the original analysis. Affected prose is withheld for review; published picks and outcomes are retained. This is not a revised prediction.</div>}
 
       {topRow && (
         <MatchVerdict
