@@ -26,5 +26,7 @@ for (const p of [...AD_FREE_ROUTES, "/admin/predictions", "/dashboard", "/checko
   assert.ok(doc.includes(`src="${SOCIAL_BAR_SRC}"`), "Social Bar script in the frame");
   assert.ok(doc.includes(invokeUrl(AD_UNITS.rectangle.key)), "300x250 fallback in the frame");
   assert.equal(GET(new Request("https://ads.betgenius.ng/ads/frame?unit=nope")).status, 404, "unknown ids still 404");
+  const native = await GET(new Request("https://ads.betgenius.ng/ads/frame?unit=native")).text();
+  assert.ok(native.includes("betgeniusAdHeight") && native.includes(AD_UNITS.native.containerId), "native frame reports its filled height");
   console.log("Ad interstitial: frequency cap, landing-page grace, time gap, external/same-page links and ad-free destinations and the full-screen frame document passed");
 })();

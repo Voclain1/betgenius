@@ -38,6 +38,9 @@ function isAdUnitId(value: string | null): value is AdUnitId {
   return value !== null && Object.prototype.hasOwnProperty.call(AD_UNITS, value);
 }
 
+/** A native container shorter than this has not filled; its height is not reported. */
+const NATIVE_REPORT_MIN = 60;
+
 function html(body: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">${body}</html>`;
 }
@@ -97,7 +100,13 @@ export function GET(request: Request) {
         // Loader to leave the script alone.
         `<style>html,body{margin:0;padding:0;background:transparent}</style></head><body>` +
         `<script async data-cfasync="false" src="${unit.src}"></script>` +
-        `<div id="${unit.containerId}"></div></body>`;
+        `<div id="${unit.containerId}"></div>` +
+        // Reports the filled card's height to the embedding page (AdFrame),
+        // which sizes the slot to it: no clipped card, no dead space under a
+        // short one. Nothing is reported until something has filled.
+        `<script>(function(){var c=document.getElementById(${JSON.stringify(unit.containerId)});var last=0;` +
+        `function send(){var h=Math.ceil(c.getBoundingClientRect().height);if(h>=${NATIVE_REPORT_MIN}&&h!==last){last=h;parent.postMessage({betgeniusAdHeight:h},"*");}}` +
+        `if(window.ResizeObserver)new ResizeObserver(send).observe(c);window.addEventListener("load",send);setTimeout(send,1500);})();</script></body>`;
 
   return new NextResponse(html(body), { headers: HEADERS });
 }

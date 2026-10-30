@@ -375,8 +375,13 @@ check(
 );
 
 // Every unit that exists should be on the site somewhere — an unplaced unit is
-// inventory that was configured and then forgotten.
-const placements = code(join(ADS_DIR, "AdPlacements.tsx"));
+// inventory that was configured and then forgotten. Every ad component counts
+// as a placement (TopBanner and AdStickyMobile carry the 320x50 themselves),
+// except AdUnit.tsx, which defines the slot rather than placing a unit.
+const placements = sources(ADS_DIR)
+  .filter((f) => !f.endsWith("AdUnit.tsx"))
+  .map(code)
+  .join("\n");
 for (const unit of units) {
   const placed =
     placements.includes(`AD_UNITS.${unit.id}`) ||

@@ -54,6 +54,9 @@ import { AD_UNITS, adFrameSrc, adsAreCrossOrigin, type AdUnitId } from "@/lib/ad
  *    into the page and still only ever fetch the one the reader can see.
  */
 
+/** Heights a native frame may report for itself; anything else is ignored. */
+export const NATIVE_HEIGHT_RANGE = [60, 720] as const;
+
 /** Mounts when the element is within `rootMargin` of the viewport, once. */
 function useNearViewport<T extends HTMLElement>(rootMargin = "300px") {
   const ref = useRef<T>(null);
@@ -102,12 +105,30 @@ export const sandboxFor = (crossOrigin: boolean) =>
 export function AdFrame({ id }: { id: AdUnitId }) {
   const unit = AD_UNITS[id];
   const { ref, near } = useNearViewport<HTMLDivElement>();
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [reported, setReported] = useState<number | null>(null);
 
-  // A banner is exactly its creative's size. The Native Banner's height is
-  // chosen by the network at fill time, so it gets the measured reserve from
-  // AD_UNITS and the full width of its container.
+  // The Native Banner's height is chosen by the network at fill time. Its
+  // frame document measures the filled card and posts the height here
+  // (src/app/ads/frame/route.ts), and the slot takes it. Only a message from
+  // THIS frame's window is read, and only a number within NATIVE_HEIGHT_RANGE,
+  // so the worst a creative can do with it is size its own slot.
+  useEffect(() => {
+    if (unit.kind !== "native") return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.current?.contentWindow) return;
+      const h = (e.data as { betgeniusAdHeight?: unknown } | null)?.betgeniusAdHeight;
+      if (typeof h === "number" && h >= NATIVE_HEIGHT_RANGE[0] && h <= NATIVE_HEIGHT_RANGE[1]) setReported(Math.ceil(h));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [unit.kind]);
+
+  // A banner is exactly its creative's size. The Native Banner reserves
+  // AD_UNITS' estimate until its frame reports the real height, and takes the
+  // full width of its container.
   const width = unit.kind === "iframe" ? unit.width : undefined;
-  const height = unit.kind === "iframe" ? unit.height : unit.reservedHeight;
+  const height = unit.kind === "iframe" ? unit.height : reported ?? unit.reservedHeight;
 
   return (
     <div
@@ -121,6 +142,7 @@ export function AdFrame({ id }: { id: AdUnitId }) {
     >
       {near && (
         <iframe
+          ref={frame}
           title="Advertisement"
           src={adFrameSrc(unit.id)}
           width={width}
