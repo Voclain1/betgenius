@@ -33,6 +33,8 @@ export function FollowButton({
   subject,
   compact = false,
   initiallyFollowing,
+  icon,
+  short,
 }: {
   targetType: FollowTargetType;
   targetKey: string;
@@ -42,6 +44,14 @@ export function FollowButton({
   compact?: boolean;
   /** Known server-side (e.g. on /following); skips the lookup. */
   initiallyFollowing?: boolean;
+  /** Shown before the text, e.g. a team crest. */
+  icon?: React.ReactNode;
+  /**
+   * Visible text after "Follow" in place of `subject`, for a row of small
+   * buttons that must sit on one line ("" for just "Follow" beside a crest).
+   * `subject` still names the target for screen readers and the tooltip.
+   */
+  short?: string;
 }) {
   const { status } = useSession();
   const path = usePathname();
@@ -60,10 +70,15 @@ export function FollowButton({
     };
   }, [status, targetType, targetKey, initiallyFollowing]);
 
+  const shown = short !== undefined ? (short ? ` ${short}` : "") : subject ? ` ${subject}` : "";
+  const cls = `btn btn-ghost text-xs${short !== undefined ? " whitespace-nowrap rounded-full px-3 py-1.5" : ""}`;
+  const named = short !== undefined && subject ? { "aria-label": `Follow ${subject}` } : {};
+
   if (status !== "authenticated") {
     return (
-      <Link className="btn btn-ghost text-xs" href={`/login?callbackUrl=${encodeURIComponent(path)}`}>
-        Follow{subject ? ` ${subject}` : compact ? "" : " this"}
+      <Link className={cls} href={`/login?callbackUrl=${encodeURIComponent(path)}`} title={subject ? `Follow ${subject}` : undefined} {...named}>
+        {icon}
+        Follow{short !== undefined ? shown : subject ? ` ${subject}` : compact ? "" : " this"}
       </Link>
     );
   }
@@ -91,14 +106,15 @@ export function FollowButton({
   };
 
   return (
-    <button type="button" className="btn btn-ghost text-xs" disabled={pending} aria-pressed={following} title={error || undefined} onClick={toggle}>
+    <button type="button" className={cls} disabled={pending} aria-pressed={following} title={error || (subject ? `Follow ${subject}` : undefined)} onClick={toggle} {...named}>
+      {icon}
       {pending
         ? "Saving…"
         : error
           ? "Retry"
           : following
-            ? `Following${subject ? ` ${subject}` : ""} ✓`
-            : `Follow${subject ? ` ${subject}` : ""}`}
+            ? `Following${shown} ✓`
+            : `Follow${shown}`}
     </button>
   );
 }

@@ -12,6 +12,7 @@ import { PremiumPanel } from "@/components/PremiumPanel";
 import { AdRectangle } from "@/components/ads/AdPlacements";
 import { LinkTile } from "@/components/LinkTile";
 import { Prose } from "@/components/Prose";
+import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
 
 const BLURB = "One pick a day — the strongest call we have at a price worth taking, not the shortest-priced favourite.";
 
@@ -154,7 +155,7 @@ export default async function BetOfTheDayPage() {
 
       {row.matchPreview && (
         <PremiumPanel kicker="Context" title="Match preview" id="botd-preview">
-          <Prose text={row.matchPreview} />
+          <Prose text={stripUnsupportedStaff(row.matchPreview, { coaches: [], teams: [row.homeTeam, row.awayTeam] })} />
         </PremiumPanel>
       )}
 

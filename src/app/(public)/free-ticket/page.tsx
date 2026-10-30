@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { Prose } from "@/components/Prose";
+import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
 import type { Metadata } from "next";
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
@@ -190,7 +191,7 @@ export default async function FreeTicketPage() {
 
       {row.matchPreview && (
         <PremiumPanel kicker="Context" title="Match preview" id="free-preview">
-          <Prose text={row.matchPreview} />
+          <Prose text={stripUnsupportedStaff(row.matchPreview, { coaches: [], teams: [row.homeTeam, row.awayTeam] })} />
         </PremiumPanel>
       )}
 

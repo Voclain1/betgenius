@@ -1,3 +1,4 @@
+import type { InsightFixture } from "@/lib/insights";
 import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -856,9 +857,24 @@ export const getTeamMatchEnrichment = cache(async (teamApiId: number | null) => 
   if (teamApiId == null) return null;
   const row = await prisma.teamEnrichmentCache.findUnique({
     where: { teamApiId },
-    select: { teamApiId: true, fetchedAt: true, teamDigestJson: true, lastFixtures: true },
+    select: { teamApiId: true, fetchedAt: true, teamDigestJson: true, lastFixtures: true, coachJson: true, squadFetchedAt: true },
   });
   return row?.fetchedAt ? row : null;
+});
+
+/**
+ * The Match Insights fixture history for the given teams, keyed by team id.
+ * Unlike the trimmed last-five, these rows keep opponent and competition ids,
+ * which is what lets the form panel show crests and competition badges for
+ * results whose stored evidence predates those fields.
+ */
+export const getTeamFixtureHistories = cache(async (teamApiIds: Array<number | null>) => {
+  const ids = teamApiIds.filter((id): id is number => id != null);
+  const out = new Map<number, InsightFixture[]>();
+  if (!ids.length) return out;
+  const rows = await prisma.teamFixtureHistory.findMany({ where: { teamApiId: { in: ids } }, select: { teamApiId: true, fixtures: true } });
+  for (const r of rows) out.set(r.teamApiId, Array.isArray(r.fixtures) ? (r.fixtures as unknown as InsightFixture[]) : []);
+  return out;
 });
 
 /** Cached standings/upcoming fixtures for a league, or null if no successful refresh has landed yet. */

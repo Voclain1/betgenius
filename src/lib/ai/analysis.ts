@@ -118,6 +118,12 @@ Rules:
    availability and head-to-head evidence when present.
    Use fixture.round when supplied, but do not invent aggregate scores, legs, replay
    rules or qualification scenarios that are absent from the evidence digest.
+1g. PEOPLE: your memory of who manages or plays for a club is OUT OF DATE. Managers
+   are sacked and players transfer every window. Name a manager or head coach ONLY
+   as given in that team's "coach" field; when "coach" is missing or null, do not
+   name or describe any manager at all ("under X", "X's side", "the X era"). Name a
+   player ONLY when that name appears in the team's "keyPlayers" or "availability" lists.
+   Never name a club's former manager or a player not in the digest.
 2. Return CONFIDENCE as a probability estimate (0-100). Be conservative — do not exceed 90
    unless the data is overwhelming.
 3. Never claim a prediction is guaranteed. Frame outputs as probabilities.

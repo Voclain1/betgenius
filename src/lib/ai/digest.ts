@@ -79,7 +79,7 @@ export type TeamDigest = {
   cards: { yellow: number; red: number } | null;
   penalties: { scored: number; missed: number } | null;
   /** Last 5 matches, all competitions. */
-  last5: Array<{ opponent: string; venue: "home" | "away"; result: string; goalsFor: number | null; goalsAgainst: number | null; date: string; competition?: string | null }>;
+  last5: Array<{ opponent: string; venue: "home" | "away"; result: string; goalsFor: number | null; goalsAgainst: number | null; date: string; competition?: string | null; opponentApiId?: number | null; competitionApiId?: number | null }>;
   /** Deduped unavailable players for the NEXT match — see selectCurrentAvailability. */
   availability: AvailabilityEntry[];
   /** Matchday the availability list was read from, so staleness is visible rather than implied. */
@@ -92,6 +92,12 @@ export type TeamDigest = {
    * two or three games; this is the season-long measure of the side.
    */
   domestic?: DomesticStanding | null;
+  /**
+   * The current head coach from the squad/coach cache, when that cache is
+   * fresh. Supplied so the model never falls back on a manager it remembers
+   * from training data: a name absent here must not be written at all.
+   */
+  coach?: { name: string } | null;
 };
 
 export type DomesticStanding = {
@@ -271,6 +277,8 @@ function trimLast5(teamApiId: number | null, fixtures: FixtureRow[] | null | und
       goalsAgainst: opp ?? null,
       date: f.fixture.date.slice(0, 10),
       competition: f.league.name,
+      opponentApiId: (isHome ? f.teams.away.id : f.teams.home.id) ?? null,
+      competitionApiId: f.league.id ?? null,
     };
   });
 }

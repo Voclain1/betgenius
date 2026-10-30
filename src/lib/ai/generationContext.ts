@@ -26,6 +26,7 @@ import {
   refreshH2HCache,
   type LeagueStandingRow,
   type LeaguePlayerStat,
+  type TeamCoach,
 } from "@/lib/enrichment";
 import {
   assembleMatchDigest,
@@ -154,6 +155,22 @@ async function loadTeamDigest(
   });
   sources[side] = refreshed?.teamDigestJson ? "fetched" : "missing";
   return (refreshed?.teamDigestJson as unknown as TeamDigest) ?? null;
+}
+
+/** A coach record older than this is not supplied: managers change mid-season. */
+export const COACH_MAX_AGE_MS = 14 * 24 * 60 * 60_000;
+
+/**
+ * The team's current head coach, from the squad/coach cache the team pages
+ * already read. Null when unknown or stale, and the prompt then forbids naming
+ * a manager at all rather than letting the model use one it remembers.
+ */
+async function loadCurrentCoach(teamApiId: number | null): Promise<{ name: string } | null> {
+  if (teamApiId == null) return null;
+  const row = await prisma.teamEnrichmentCache.findUnique({ where: { teamApiId }, select: { coachJson: true, squadFetchedAt: true } });
+  const coach = row?.coachJson as unknown as TeamCoach | null;
+  if (!coach?.name || !row?.squadFetchedAt || Date.now() - row.squadFetchedAt.getTime() > COACH_MAX_AGE_MS) return null;
+  return { name: coach.name };
 }
 
 /** A domestic table older than this is not shown: a month-old position is not current form. */
@@ -333,6 +350,7 @@ export async function buildGenerationDigest(
 
   const home = withRank(homeDigest ?? emptyDigest(input.home, input.homeApiId), input.homeApiId);
   const away = withRank(awayDigest ?? emptyDigest(input.away, input.awayApiId), input.awayApiId);
+  [home.coach, away.coach] = await Promise.all([loadCurrentCoach(input.homeApiId), loadCurrentCoach(input.awayApiId)]);
   if (cupFixture) {
     [home.domestic, away.domestic] = await Promise.all([loadDomesticStanding(input.homeApiId), loadDomesticStanding(input.awayApiId)]);
   }

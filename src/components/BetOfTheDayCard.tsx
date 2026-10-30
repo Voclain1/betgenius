@@ -6,6 +6,7 @@ import { quoteAge } from "@/lib/odds";
 import type { BetOfTheDayView } from "@/lib/betOfTheDay";
 import { betOfTheDayState, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { Prose } from "@/components/Prose";
+import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
 
 /**
  * The Bet of the Day pick, with its bookmaker price.
@@ -180,7 +181,7 @@ export function BetOfTheDayCard({
         )}
       </div>
 
-      {variant === "page" && <Prose text={row.reasoning} />}
+      {variant === "page" && <Prose text={stripUnsupportedStaff(row.reasoning, { coaches: [], teams: [row.homeTeam, row.awayTeam] })} />}
     </div>
   );
 

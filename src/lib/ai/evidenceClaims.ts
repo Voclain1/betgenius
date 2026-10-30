@@ -1,5 +1,6 @@
 import type { MatchDigest } from "@/lib/ai/digest";
 import { computeH2HStats } from "@/lib/h2h";
+import { unsupportedStaffSentences, type StaffContext } from "@/lib/ai/staffClaims";
 
 const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 const count = (s: string) => /^\d+$/.test(s) ? Number(s) : words.indexOf(s.toLowerCase());
@@ -40,5 +41,16 @@ export function evidenceClaimIssues(d: MatchDigest, text: string): ClaimIssue[] 
 export function assertEvidenceClaims(d: MatchDigest, output: { matchPreview?: string; keyFactors?: string[]; predictions?: { reasoning?: string }[] }) {
   const text = [output.matchPreview, ...(output.keyFactors ?? []), ...(output.predictions ?? []).map(p => p.reasoning)].filter(Boolean).join("\n");
   const issues = evidenceClaimIssues(d, text);
-  if (issues.length) throw Object.assign(new Error(`Unsupported H2H claim: ${issues.map(i => i.evidence).join(" ")}`), { name: "EvidenceClaimError" });
+  for (const claim of unsupportedStaffSentences(text, staffContext(d)))
+    issues.push({ code: "unsupported-manager", claim, evidence: "Named manager is not the coach supplied in the digest." });
+  if (issues.length) throw Object.assign(new Error(`Unsupported claim: ${issues.map(i => i.evidence).join(" ")}`), { name: "EvidenceClaimError" });
+}
+
+/** Coaches and every club name the digest carries, for the manager check. */
+export function staffContext(d: MatchDigest, extraCoaches: Array<string | null | undefined> = []): StaffContext {
+  const t = d.teams;
+  return {
+    coaches: [t.home.coach?.name, t.away.coach?.name, ...extraCoaches],
+    teams: [d.fixture.home, d.fixture.away, t.home.name, t.away.name, ...(t.home.last5 ?? []).map((f) => f.opponent), ...(t.away.last5 ?? []).map((f) => f.opponent)],
+  };
 }

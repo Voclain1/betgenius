@@ -8,6 +8,7 @@ import { leagueSlug, matchSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { MarketConfirmedBadge, type MarketConfirmation } from "@/components/MarketConfirmedBadge";
 import { Prose } from "@/components/Prose";
+import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
 import { ReasoningExcerpt } from "@/components/ReasoningExcerpt";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
@@ -184,7 +185,9 @@ export function PredictionCard({
         already-stored rows too, so no backfill is needed. Nothing in this
         app renders markdown by design - see src/components/Prose.tsx.
       */}
-      {reasoningExcerpt ? <ReasoningExcerpt text={p.reasoning} /> : <Prose text={p.reasoning} />}
+      {/* No coach is on hand here, so any sentence naming a manager is dropped
+          rather than risk a stale one (src/lib/ai/staffClaims.ts). */}
+      {reasoningExcerpt ? <ReasoningExcerpt text={stripUnsupportedStaff(p.reasoning, { coaches: [], teams: [p.homeTeam, p.awayTeam] })} /> : <Prose text={stripUnsupportedStaff(p.reasoning, { coaches: [], teams: [p.homeTeam, p.awayTeam] })} />}
       {matchSlugValue && !p.locked && (
         <Link
           href={`/predictions/match/${matchSlugValue}`}

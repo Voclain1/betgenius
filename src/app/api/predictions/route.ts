@@ -7,6 +7,7 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
+import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -47,8 +48,9 @@ export async function GET(req: Request) {
     // visible if it's unlocked under ANY of its assigned categories.
     const gateCategory = category ?? r.categories.find((c) => canViewCategory(c.category as PredictionCategory, tier, status, role))?.category ?? presentedCategory(r.category, r.categories);
     const canView = canViewCategory(gateCategory as PredictionCategory, tier, status, role);
+    const teams = { coaches: [], teams: [r.homeTeam, r.awayTeam] };
     return canView
-      ? r
+      ? { ...r, reasoning: stripUnsupportedStaff(r.reasoning, teams), matchPreview: r.matchPreview && stripUnsupportedStaff(r.matchPreview, teams) }
       : {
           ...r,
           pick: "LOCKED",
