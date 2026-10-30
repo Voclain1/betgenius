@@ -9,6 +9,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getUsageSnapshot, type UsageSnapshot } from "@/lib/football/usage";
+import { generationSourceOf } from "@/lib/generationFailures";
 
 /**
  * Per-million-token prices, in USD, keyed by MODEL rather than provider.
@@ -93,6 +94,9 @@ export type WindowSummary = {
   promptTokens: number;
   outputTokens: number;
   costUsd: number;
+  /** Jobs that were paid for and then rejected (no pick kept), and what they cost. */
+  rejectedJobs: number;
+  rejectedCostUsd: number;
   byProvider: Record<string, number>;
   /** Share of completed jobs answered by a non-primary provider, 0-100. Null when nothing ran. */
   fallbackPct: number | null;
@@ -111,7 +115,56 @@ export type GenerationStats = {
   pendingReview: number;
   predictionsCreatedToday: number;
   usage: UsageSnapshot;
+  /** Last 7 days, one row per Lagos day and generation pass: where the spend goes. */
+  spendByPass: PassSpend[];
 };
+
+export type PassSpend = { day: string; pass: string; jobs: number; rejected: number; promptTokens: number; outputTokens: number; costUsd: number };
+
+/**
+ * Which pass a job came from, read from the input stored on AIJob.prompt.
+ * Same admin words as the failed-generations list (generationSourceOf), plus
+ * rewrites and the category-only passes that carry no intent. Pure.
+ */
+export function passOf(prompt: string): string {
+  let input: any;
+  try {
+    input = JSON.parse(prompt);
+  } catch {
+    return "Other";
+  }
+  if (!input || typeof input !== "object") return "Other";
+  if (input.rewriteOf) return "Rewrite";
+  const source = generationSourceOf(input);
+  if (source !== "Scheduled") return source;
+  const cats: string[] = Array.isArray(input.categories) ? input.categories : [];
+  if (cats.includes("SAME_GAME_DOUBLE")) return "Same-game double";
+  if (cats.includes("BET_OF_THE_DAY")) return "Bet of the Day";
+  return "Scheduled";
+}
+
+const lagosDay = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" });
+
+/** Groups jobs by day and pass, newest day first, costliest pass first within a day. Pure. */
+export function spendByPass(jobs: Array<{ prompt: string; model: string; status: string; promptTokens: number | null; outputTokens: number | null; createdAt: Date }>): PassSpend[] {
+  const rows = new Map<string, PassSpend>();
+  for (const j of jobs) {
+    if (j.status === "FAILED") continue;
+    const day = lagosDay(j.createdAt);
+    const pass = passOf(j.prompt);
+    const key = `${day}|${pass}`;
+    const r = rows.get(key) ?? { day, pass, jobs: 0, rejected: 0, promptTokens: 0, outputTokens: 0, costUsd: 0 };
+    const pt = j.promptTokens ?? 0;
+    const ot = j.outputTokens ?? 0;
+    r.jobs++;
+    if (j.status === "REJECTED") r.rejected++;
+    r.promptTokens += pt;
+    r.outputTokens += ot;
+    r.costUsd += estimateCostUsd(j.model, pt, ot);
+    rows.set(key, r);
+  }
+  return [...rows.values()].sort((a, b) => b.day.localeCompare(a.day) || b.costUsd - a.costUsd);
+}
 
 function summarise(jobs: Array<{ model: string; status: string; promptTokens: number | null; outputTokens: number | null; durationMs: number | null }>): WindowSummary {
   const byProvider: Record<string, number> = {};
@@ -119,6 +172,8 @@ function summarise(jobs: Array<{ model: string; status: string; promptTokens: nu
   let outputTokens = 0;
   let costUsd = 0;
   let failedJobs = 0;
+  let rejectedJobs = 0;
+  let rejectedCostUsd = 0;
   const latencies: number[] = [];
 
   for (const j of jobs) {
@@ -134,7 +189,12 @@ function summarise(jobs: Array<{ model: string; status: string; promptTokens: nu
     const ot = j.outputTokens ?? 0;
     promptTokens += pt;
     outputTokens += ot;
-    costUsd += estimateCostUsd(j.model, pt, ot);
+    const cost = estimateCostUsd(j.model, pt, ot);
+    costUsd += cost;
+    if (j.status === "REJECTED") {
+      rejectedJobs++;
+      rejectedCostUsd += cost;
+    }
     if (j.durationMs != null) latencies.push(j.durationMs);
   }
 
@@ -147,6 +207,8 @@ function summarise(jobs: Array<{ model: string; status: string; promptTokens: nu
     promptTokens,
     outputTokens,
     costUsd,
+    rejectedJobs,
+    rejectedCostUsd,
     byProvider,
     fallbackPct: completed > 0 ? Number(((fallbacks / completed) * 100).toFixed(1)) : null,
     latencyP50: percentile(latencies, 50),
@@ -158,7 +220,7 @@ export async function getGenerationStats(now: Date = new Date()): Promise<Genera
   const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
 
-  const jobSelect = { model: true, status: true, promptTokens: true, outputTokens: true, durationMs: true, createdAt: true } as const;
+  const jobSelect = { model: true, status: true, promptTokens: true, outputTokens: true, durationMs: true, createdAt: true, prompt: true } as const;
 
   const [jobs7d, attemptGroups, deadLetters, retrying, enrichmentFailures, pendingReview, predictionsToday, usage, succeededToday] =
     await Promise.all([
@@ -193,6 +255,7 @@ export async function getGenerationStats(now: Date = new Date()): Promise<Genera
   return {
     today: summarise(jobs7d.filter((j) => j.createdAt >= startOfToday)),
     last7d: summarise(jobs7d),
+    spendByPass: spendByPass(jobs7d),
     attempts: {
       pending: byStatus.PENDING ?? 0,
       failed: byStatus.FAILED ?? 0,

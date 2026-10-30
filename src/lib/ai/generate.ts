@@ -259,7 +259,35 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
     });
   const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
-  let { output, usage, model } = await callModel(firstBlock);
+  // A call that was paid for and then rejected inside generatePredictionForFixture
+  // carries its usage on the error; it is recorded as a REJECTED job so the
+  // generation panel's spend includes it.
+  const recordRejectedCall = async (err: unknown) => {
+    const e = err as { usage?: { promptTokens: number | null; outputTokens: number | null }; model?: string; name?: string; message?: string };
+    if (!e?.usage || !e.model) return;
+    await prisma.aIJob
+      .create({
+        data: {
+          userId: input.authorId,
+          prompt: JSON.stringify(input),
+          model: e.model,
+          rawOutput: `${e.name ?? "Error"}: ${(e.message ?? "").slice(0, 500)}`,
+          status: "REJECTED",
+          promptTokens: e.usage.promptTokens,
+          outputTokens: e.usage.outputTokens,
+          durationMs: Date.now() - startedAt,
+        },
+      })
+      .catch(() => {});
+  };
+  let firstCall: Awaited<ReturnType<typeof callModel>>;
+  try {
+    firstCall = await callModel(firstBlock);
+  } catch (err) {
+    await recordRejectedCall(err);
+    throw err;
+  }
+  let { output, usage, model } = firstCall;
   type Draft = (typeof output.predictions)[number];
   const unpayable = (p: Draft) => isUnpayableDoubleChance(priceOdds, p.marketType, p.selection);
   const offMarket = (p: Draft) => farAboveMarket(odds, p);
@@ -275,7 +303,13 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     const retryBlock =
       (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : firstBlock) +
       (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "");
-    const retry = await callModel(retryBlock);
+    let retry: Awaited<ReturnType<typeof callModel>>;
+    try {
+      retry = await callModel(retryBlock);
+    } catch (err) {
+      await recordRejectedCall(err);
+      throw err;
+    }
     output = retry.output;
     model = retry.model;
     const add = (x: number | null, y: number | null) => (x == null && y == null ? null : (x ?? 0) + (y ?? 0));
@@ -327,11 +361,18 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // saved and the run says why.
   const payable = odds ? modelDrafts.filter((p) => !unpayable(p)) : modelDrafts;
   const drafts = odds ? payable.filter((p) => !offMarket(p)) : payable;
+  // From here a rejection throws away a job that was paid for and already
+  // recorded; it is marked REJECTED so the panel shows that spend apart from
+  // the jobs that produced picks.
+  const rejected = async (err: Error) => {
+    await prisma.aIJob.update({ where: { id: job.id }, data: { status: "REJECTED" } }).catch(() => {});
+    return err;
+  };
   if (modelDrafts.length > 0 && payable.length === 0) {
-    throw new ShortPriceError(`${input.home} v ${input.away}`);
+    throw await rejected(new ShortPriceError(`${input.home} v ${input.away}`));
   }
   if (payable.length > 0 && drafts.length === 0) {
-    throw new MarketSanityError(`${input.home} v ${input.away}`, offMarket(payable[0])!);
+    throw await rejected(new MarketSanityError(`${input.home} v ${input.away}`, offMarket(payable[0])!));
   }
 
   // Deterministic certainty scan, BEFORE anything is persisted.
@@ -346,7 +387,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (certaintyViolations.length > 0) {
-    throw new CertaintyLanguageError(certaintyViolations);
+    throw await rejected(new CertaintyLanguageError(certaintyViolations));
   }
 
   // Same gate, different failure: reasoning that explains our pipeline instead
@@ -359,7 +400,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (voiceViolations.length > 0) {
-    throw new HouseVoiceError(voiceViolations);
+    throw await rejected(new HouseVoiceError(voiceViolations));
   }
 
   // Handicap picks the value gate turned away. Surfaced rather than silently

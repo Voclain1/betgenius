@@ -12,8 +12,7 @@
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
 import { internalTerminologyProhibitionBlock } from "@/lib/houseVoice";
-import { assertEvidenceClaims } from "@/lib/ai/evidenceClaims";
-import { assertCompetitionStage } from "@/lib/ai/competitionStage";
+import { stripUnsupportedClaims } from "@/lib/ai/evidenceClaims";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
@@ -784,10 +783,22 @@ ${marketInstruction}`;
 
   const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
   // Shared by first-pass generation and draft rewrites, regardless of provider.
-  // Reject rather than silently rewriting a contradictory football argument.
-  assertCompetitionStage(d.fixture, result.output);
-  assertEvidenceClaims(d, result.output);
-  return result;
+  // The unsupported SENTENCE is removed (a contradicted H2H figure, an
+  // unnamed manager, knockout wording off-stage) rather than the draft
+  // rejected: the call is already paid for, and a rejection used to be
+  // retried — and paid — up to three more times for the same fixture.
+  // A pick whose whole argument was unsupported is still rejected.
+  const cleaned = stripUnsupportedClaims(d, result.output);
+  if (cleaned.emptied) {
+    // usage/model ride on the error so the caller can still record the spend.
+    throw Object.assign(new Error(`Unsupported claim left a pick without reasoning: ${cleaned.removed.join(" | ").slice(0, 300)}`), {
+      name: "EvidenceClaimError",
+      usage: result.usage,
+      model: result.model,
+    });
+  }
+  if (cleaned.removed.length) console.warn(`[ai] ${label}: removed ${cleaned.removed.length} unsupported sentence(s)`);
+  return { ...result, output: cleaned.output };
 }
 
 /**

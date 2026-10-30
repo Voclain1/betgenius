@@ -1,6 +1,7 @@
 import type { MatchDigest } from "@/lib/ai/digest";
 import { computeH2HStats } from "@/lib/h2h";
-import { unsupportedStaffSentences, type StaffContext } from "@/lib/ai/staffClaims";
+import { removeSentences, unsupportedStaffSentences, type StaffContext } from "@/lib/ai/staffClaims";
+import { competitionStage, KNOCKOUT_TIE } from "@/lib/ai/competitionStage";
 
 const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 const count = (s: string) => /^\d+$/.test(s) ? Number(s) : words.indexOf(s.toLowerCase());
@@ -14,7 +15,7 @@ export type ClaimIssue = { code: string; claim: string; evidence: string };
 export function evidenceClaimIssues(d: MatchDigest, text: string): ClaimIssue[] {
   const issues: ClaimIssue[] = [];
   const meetings = d.h2h?.meetings;
-  const homeId = d.teams.home.apiId, awayId = d.teams.away.apiId;
+  const homeId = d.teams?.home?.apiId, awayId = d.teams?.away?.apiId;
   if (!meetings?.length || homeId == null || awayId == null) return issues;
   const sentences = text.split(/(?<=[.!?])\s+|\n+/);
   for (const sentence of sentences) {
@@ -48,9 +49,50 @@ export function assertEvidenceClaims(d: MatchDigest, output: { matchPreview?: st
 
 /** Coaches and every club name the digest carries, for the manager check. */
 export function staffContext(d: MatchDigest, extraCoaches: Array<string | null | undefined> = []): StaffContext {
-  const t = d.teams;
+  // Optional chaining throughout: stored contexts and test stubs can carry a
+  // fixture with no team digests, and the check must not crash generation.
+  const home = d.teams?.home;
+  const away = d.teams?.away;
   return {
-    coaches: [t.home.coach?.name, t.away.coach?.name, ...extraCoaches],
-    teams: [d.fixture.home, d.fixture.away, t.home.name, t.away.name, ...(t.home.last5 ?? []).map((f) => f.opponent), ...(t.away.last5 ?? []).map((f) => f.opponent)],
+    coaches: [home?.coach?.name, away?.coach?.name, ...extraCoaches],
+    teams: [d.fixture?.home, d.fixture?.away, home?.name, away?.name, ...(home?.last5 ?? []).map((f) => f.opponent), ...(away?.last5 ?? []).map((f) => f.opponent)],
   };
+}
+
+type DraftProse = { matchPreview?: string; keyFactors?: string[]; predictions?: Array<{ reasoning?: string }> };
+
+/**
+ * The draft with every unsupported sentence removed: an H2H figure the stored
+ * meetings contradict, a manager the digest does not name, knockout-tie
+ * wording for a fixture that is not a knockout. Used at generation in place of
+ * rejecting the whole draft. A rejection threw away a model call that had
+ * already been paid for, and the fixture was then retried (paid again) up to
+ * three times; the sentence is the error, not the pick. The match page applies
+ * the same removal to rows published before this, so the two never disagree.
+ *
+ * Returns the cleaned copy and what was removed. A prediction whose reasoning
+ * is removed entirely keeps no argument at all, so that one case is reported
+ * back for the caller to reject.
+ */
+export function stripUnsupportedClaims<T extends DraftProse>(d: MatchDigest, output: T): { output: T; removed: string[]; emptied: boolean } {
+  const ctx = staffContext(d);
+  const nonKnockout = competitionStage(d.fixture) !== "knockout";
+  const removed: string[] = [];
+  const clean = (text: string | undefined): string | undefined => {
+    if (typeof text !== "string" || !text) return text;
+    const bad = new Set<string>(unsupportedStaffSentences(text, ctx));
+    for (const issue of evidenceClaimIssues(d, text)) bad.add(issue.claim);
+    if (nonKnockout) for (const s of text.split(/(?<=[.!?])\s+|\n+/)) if (KNOCKOUT_TIE.test(s)) bad.add(s);
+    removed.push(...bad);
+    return removeSentences(text, bad);
+  };
+  const predictions = output.predictions?.map((p) => ({ ...p, reasoning: clean(p.reasoning) }));
+  const cleaned = {
+    ...output,
+    ...(output.matchPreview !== undefined ? { matchPreview: clean(output.matchPreview) } : {}),
+    ...(output.keyFactors ? { keyFactors: output.keyFactors.map((f) => clean(f) ?? "").filter((f) => f.trim()) } : {}),
+    ...(predictions ? { predictions } : {}),
+  } as T;
+  const emptied = !!output.predictions?.some((p, i) => !!p.reasoning?.trim() && !predictions![i].reasoning?.trim());
+  return { output: cleaned, removed, emptied };
 }
