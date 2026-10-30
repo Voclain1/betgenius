@@ -30,7 +30,7 @@ import { FollowButton } from "@/components/FollowButton";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, leagueSeo, researchedLeagueSeo, leagueIdFromSlug, fitMetadataTitle, fitMetaDescription } from "@/lib/seo";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { leagueSummary } from "@/lib/answerSummary";
-import { AdLeaderboard, WithAdRail } from "@/components/ads/AdPlacements";
+import { AdLeaderboard, AdNativeCard, WithAdRail } from "@/components/ads/AdPlacements";
 import type { PredictionCategory } from "@/lib/enums";
 import { competitionHubContent } from "@/lib/competitionHubContent";
 import { CompetitionHubLinks } from "@/components/CompetitionHubLinks";
@@ -231,6 +231,9 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           </div>
         </section>
       )}
+
+      {/* Between the table and the season's facts: reference data both sides. */}
+      <AdNativeCard />
 
       {stats && (
         <section aria-labelledby="facts">

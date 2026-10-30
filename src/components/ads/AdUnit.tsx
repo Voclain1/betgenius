@@ -54,6 +54,43 @@ import { AD_UNITS, adFrameSrc, adsAreCrossOrigin, type AdUnitId } from "@/lib/ad
  *    into the page and still only ever fetch the one the reader can see.
  */
 
+/**
+ * A fixed-size banner scaled up to the width it sits in, capped at
+ * FIT_MAX_SCALE: the 320x50 on a ~360px phone column becomes ~358x56 instead
+ * of a small strip with gutters. Scaling is a CSS transform of the frame, so
+ * the creative and its clicks are untouched; the box takes the scaled height
+ * so nothing overlaps. Never scales down below the creative's own size.
+ */
+export const FIT_MAX_SCALE = 1.25;
+
+export function FitWidth({ id }: { id: AdUnitId }) {
+  const unit = AD_UNITS[id];
+  const box = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const w = unit.kind === "iframe" ? unit.width : 0;
+  const h = unit.kind === "iframe" ? unit.height : 0;
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !w) return;
+    const fit = () => setScale(Math.min(FIT_MAX_SCALE, Math.max(1, el.clientWidth / w)));
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [w]);
+
+  if (unit.kind !== "iframe") return <AdFrame id={id} />;
+  return (
+    <div ref={box} className="flex w-full justify-center" style={{ height: Math.round(h * scale) }}>
+      <div style={{ width: w, height: h, transform: `scale(${scale})`, transformOrigin: "top center" }}>
+        <AdFrame id={id} />
+      </div>
+    </div>
+  );
+}
+
 /** Heights a native frame may report for itself; anything else is ignored. */
 export const NATIVE_HEIGHT_RANGE = [60, 720] as const;
 
