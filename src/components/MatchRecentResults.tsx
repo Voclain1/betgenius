@@ -2,6 +2,11 @@ import type { TeamDigest } from "@/lib/ai/digest";
 import { computeFormRating, FORM_BAND_STYLES } from "@/lib/form";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { textTone } from "@/lib/tone";
+import { TeamCrest } from "@/components/TeamCrest";
+import { CompetitionBadge } from "@/components/CompetitionBadge";
+import type { InsightFixture } from "@/lib/insights";
+import { normalizeLeagueName } from "@/lib/leagues";
+import { normalizeName } from "@/lib/slug";
 
 type Fixture = TeamDigest["last5"][number];
 
@@ -12,8 +17,8 @@ const day = (iso: string) =>
   new Date(iso).toLocaleDateString("en-GB", { timeZone: "Africa/Lagos", day: "numeric", month: "short" });
 
 /** The result letter on the tile's own neutral surface — colour on the letter, never a tinted pill behind it. */
-function ResultTile({ result, size = "sm" }: { result: string; size?: "sm" | "lg" }) {
-  const box = size === "lg" ? "h-10 w-10 rounded-xl text-base" : "h-9 w-9 rounded-lg text-sm";
+function ResultTile({ result }: { result: string }) {
+  const box = "h-10 w-10 rounded-xl text-base";
   return (
     <span
       title={RESULT_WORD[result]}
@@ -24,9 +29,43 @@ function ResultTile({ result, size = "sm" }: { result: string; size?: "sm" | "lg
   );
 }
 
-function TeamForm({ name, digest, side }: { name: string; digest: TeamDigest | null; side: "Home" | "Away" }) {
+/**
+ * Fills opponent and competition ids (and a missing competition name) from the
+ * team's fuller fixture history, matched on date and opponent. Evidence stored
+ * before those fields existed still gets crests and badges; a row with no
+ * match keeps what it had, and the competition is then simply not shown.
+ */
+function withIds(f: Fixture, history: InsightFixture[]): Fixture {
+  if (f.opponentApiId != null && f.competitionApiId != null && f.competition) return f;
+  const opp = normalizeName(f.opponent);
+  const hit = history.find((h) => h.date.slice(0, 10) === f.date.slice(0, 10) && (normalizeName(h.homeName) === opp || normalizeName(h.awayName) === opp));
+  if (!hit) return f;
+  const oppIsHome = normalizeName(hit.homeName) === opp;
+  return {
+    ...f,
+    opponentApiId: f.opponentApiId ?? (oppIsHome ? hit.homeId : hit.awayId),
+    competitionApiId: f.competitionApiId ?? hit.leagueId,
+    competition: f.competition || hit.leagueName,
+  };
+}
+
+/** Score with the result letter sitting on it, the letter coloured and the box neutral. */
+function ScoreResult({ f }: { f: Fixture }) {
+  const known = f.goalsFor != null && f.goalsAgainst != null;
+  return (
+    <div className="flex shrink-0 items-stretch overflow-hidden rounded-xl border border-brand-border bg-brand-bg" title={RESULT_WORD[f.result]}>
+      <span className={`grid w-8 place-items-center text-xs font-black ${RESULT_TONE[f.result] ?? "text-gray-400"}`}>{f.result}</span>
+      <span className="grid min-w-[3.25rem] place-items-center border-l border-brand-border px-2.5 py-1.5 text-base font-black tabular-nums tracking-tight text-gray-100">
+        {known ? `${f.goalsFor}–${f.goalsAgainst}` : <span className="text-[10px] font-semibold text-gray-500">n/a</span>}
+      </span>
+    </div>
+  );
+}
+
+function TeamForm({ name, digest, side, history }: { name: string; digest: TeamDigest | null; side: "Home" | "Away"; history: InsightFixture[] }) {
   const rows: Fixture[] = [...(digest?.last5 ?? [])]
     .filter((f) => /^[WDL]$/.test(f.result))
+    .map((f) => withIds(f, history))
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
   const rating = computeFormRating(rows);
@@ -69,26 +108,31 @@ function TeamForm({ name, digest, side }: { name: string; digest: TeamDigest | n
         <>
           {/* Oldest to newest, left to right — the way a run reads. */}
           <div className="flex items-center gap-2 px-5 sm:px-6" aria-label={`${name} last ${rows.length} results, oldest first`}>
-            {[...rows].reverse().map((f, i) => <ResultTile key={`${f.date}-${i}`} result={f.result} size="lg" />)}
+            {[...rows].reverse().map((f, i) => <ResultTile key={`${f.date}-${i}`} result={f.result} />)}
             <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Latest →</span>
           </div>
 
           <ul className="mt-5 divide-y divide-brand-border border-t border-brand-border">
             {rows.map((f, i) => (
               <li key={`${f.date}-${i}`} className="flex items-center gap-3 px-5 py-3.5 sm:px-6">
-                <ResultTile result={f.result} />
+                <TeamCrest teamApiId={f.opponentApiId} name={f.opponent} size={36} className="rounded-full" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-bold text-gray-100">
                     <span className="mr-1.5 text-xs font-semibold text-gray-500">{f.venue === "home" ? "vs" : "at"}</span>
                     {f.opponent}
                   </div>
-                  <div className="mt-0.5 truncate text-xs text-gray-500">
-                    <time dateTime={f.date}>{day(f.date)}</time> · {f.competition ?? "Competition not recorded"}
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-gray-500">
+                    <time dateTime={f.date} className="shrink-0">{day(f.date)}</time>
+                    {f.competition && (
+                      <>
+                        <span aria-hidden>·</span>
+                        <CompetitionBadge leagueApiId={f.competitionApiId} />
+                        <span className="truncate">{normalizeLeagueName(f.competition) ?? f.competition}</span>
+                      </>
+                    )}
                   </div>
                 </div>
-                <strong className="shrink-0 text-lg font-black tabular-nums tracking-tight text-gray-100">
-                  {f.goalsFor == null || f.goalsAgainst == null ? <span className="text-xs font-semibold text-gray-500">Score n/a</span> : `${f.goalsFor}–${f.goalsAgainst}`}
-                </strong>
+                <ScoreResult f={f} />
               </li>
             ))}
           </ul>
@@ -98,13 +142,13 @@ function TeamForm({ name, digest, side }: { name: string; digest: TeamDigest | n
   );
 }
 
-export function MatchRecentResults({ home, away, homeTeam, awayTeam }: { home: TeamDigest | null; away: TeamDigest | null; homeTeam: string; awayTeam: string }) {
+export function MatchRecentResults({ home, away, homeTeam, awayTeam, homeHistory = [], awayHistory = [] }: { home: TeamDigest | null; away: TeamDigest | null; homeTeam: string; awayTeam: string; homeHistory?: InsightFixture[]; awayHistory?: InsightFixture[] }) {
   if (!home?.last5.length && !away?.last5.length) return null;
   return (
     <PremiumPanel bare kicker="Form" title="Recent form and results" id="form">
       <div className="grid gap-4 md:grid-cols-2">
-        <TeamForm name={homeTeam} digest={home} side="Home" />
-        <TeamForm name={awayTeam} digest={away} side="Away" />
+        <TeamForm name={homeTeam} digest={home} side="Home" history={homeHistory} />
+        <TeamForm name={awayTeam} digest={away} side="Away" history={awayHistory} />
       </div>
       <p className="mt-3 text-xs leading-relaxed text-gray-500">
         Last five completed matches across all competitions. Scores are from the named team’s perspective; “vs” is a home match, “at” an away one. The form rating (0–100) weights recent results more heavily and does not account for opponent strength.

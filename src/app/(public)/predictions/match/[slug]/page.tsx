@@ -7,6 +7,8 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { FollowButton } from "@/components/FollowButton";
+import { TeamCrest } from "@/components/TeamCrest";
+import { Bell } from "lucide-react";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionCard } from "@/components/PredictionCard";
@@ -16,6 +18,8 @@ import { MatchRecentResults } from "@/components/MatchRecentResults";
 import { MatchSectionNav } from "@/components/MatchSectionNav";
 import { parseStoredContext } from "@/lib/ai/context";
 import { evidenceClaimIssues } from "@/lib/ai/evidenceClaims";
+import { stripUnsupportedStaff, type StaffContext } from "@/lib/ai/staffClaims";
+import type { TeamCoach } from "@/lib/enrichment";
 import { assertCompetitionStage } from "@/lib/ai/competitionStage";
 import { parseAnalysis } from "@/lib/predictionAnalysis";
 import { buildMatchFacts, isMatchFactsEmpty, teamNewsState } from "@/lib/matchFacts";
@@ -30,12 +34,12 @@ import { Prose } from "@/components/Prose";
 import { MatchPageFooterLinks } from "@/components/MatchPageFooterLinks";
 import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { marketPathways } from "@/lib/contextualLinks";
-import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds } from "@/lib/predictionScope";
+import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds, getTeamFixtureHistories } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
-import { AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
+import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
 import { EditorialAttribution } from "@/components/EditorialAttribution";
 
 /**
@@ -141,6 +145,14 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // locked row rather than disappearing, so the reader can see the market
   // exists and what it would cost to read it.
   const editorialRows = await getMatchEditorialEvidence(params.slug);
+  // Current coaches from the squad/coach cache. Prose naming any other manager
+  // is a stale model memory, and that sentence is dropped before display.
+  const [homeTeamCache, awayTeamCache] = await Promise.all([getTeamMatchEnrichment(match.homeTeamApiId), getTeamMatchEnrichment(match.awayTeamApiId)]);
+  const coachOf = (row: typeof homeTeamCache) => (row?.coachJson as unknown as TeamCoach | null)?.name ?? null;
+  const staffCtx = (stored: ReturnType<typeof parseStoredContext>): StaffContext => ({
+    coaches: [coachOf(homeTeamCache), coachOf(awayTeamCache), stored?.teams.home.coach?.name, stored?.teams.away.coach?.name],
+    teams: [match.homeTeam, match.awayTeam, ...[stored?.teams.home, stored?.teams.away, digests?.home, digests?.away].flatMap((t) => (t?.last5 ?? []).map((f) => f.opponent))],
+  });
   const editorialById = new Map(editorialRows.map(r => [r.id, r.aiJob]));
   const reviewIds = new Set<string>();
   const shaped = rows.map((row) => {
@@ -155,8 +167,16 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       try { if (digest.fixture.round) assertCompetitionStage(digest.fixture, { matchPreview: r.matchPreview ?? undefined, keyFactors: parseAnalysis(r.analysisJson)?.keyFactors, predictions: [{ reasoning: r.reasoning }] }); } catch { invalid = true; }
     }
     if (invalid) reviewIds.add(r.id);
+    const ctx = staffCtx(digest);
+    const factors = parseAnalysis(r.analysisJson)?.keyFactors.map((f) => stripUnsupportedStaff(f, ctx)).filter(Boolean);
+    const cleaned = {
+      ...r,
+      reasoning: stripUnsupportedStaff(r.reasoning, ctx),
+      matchPreview: r.matchPreview && stripUnsupportedStaff(r.matchPreview, ctx),
+      analysisJson: factors?.length ? { v: 1, keyFactors: factors } : null,
+    };
     return canView
-      ? invalid ? { ...r, matchPreview: null, analysisJson: null, reasoning: "The original analysis contains an evidence conflict and is withheld for review. The published pick and settlement are preserved." } : r
+      ? invalid ? { ...r, matchPreview: null, analysisJson: null, reasoning: "The original analysis contains an evidence conflict and is withheld for review. The published pick and settlement are preserved." } : cleaned
       : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
   });
 
@@ -188,8 +208,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const hasForm = !!(homeDigest?.last5.length || awayDigest?.last5.length);
   const hasNews = teamNewsState(currentHomeDigest).kind !== "unavailable" || teamNewsState(currentAwayDigest).kind !== "unavailable";
   const hasStats = !isMatchFactsEmpty(buildMatchFacts(homeDigest, awayDigest));
-  const [homeCache, awayCache, leagueCache] = await Promise.all([
+  const [homeCache, awayCache, leagueCache, histories] = await Promise.all([
     getTeamMatchEnrichment(match.homeTeamApiId), getTeamMatchEnrichment(match.awayTeamApiId), getLeagueEnrichment(match.leagueApiId),
+    getTeamFixtureHistories([match.homeTeamApiId, match.awayTeamApiId]),
   ]);
   const stamp = (date: Date | null | undefined) => date ? date.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "not available";
   const sections = [
@@ -286,9 +307,11 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         finalScore={finalScore}
         follow={
           <>
-            {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} />}
-            {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} />}
-            {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" />}
+            {/* One compact row: crest + "Follow" per team, then the match.
+                The full names are in each button's label and tooltip. */}
+            {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} short="" icon={<TeamCrest teamApiId={match.homeTeamApiId} name={match.homeTeam} size={16} />} />}
+            {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} short="" icon={<TeamCrest teamApiId={match.awayTeamApiId} name={match.awayTeam} size={16} />} />}
+            {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" short="match" icon={<Bell aria-hidden className="h-3.5 w-3.5" />} />}
           </>
         }
       >
@@ -328,6 +351,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         away={awayDigest}
         homeTeam={match.homeTeam}
         awayTeam={match.awayTeam}
+        homeHistory={match.homeTeamApiId != null ? histories.get(match.homeTeamApiId) : undefined}
+        awayHistory={match.awayTeamApiId != null ? histories.get(match.awayTeamApiId) : undefined}
       />
 
       <TeamNewsPanel
@@ -336,6 +361,10 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         homeDigest={currentHomeDigest}
         awayDigest={currentAwayDigest}
       />
+
+      {/* Between the team news and the statistics: two reference panels,
+          neither of them a call of ours. 320x50 on a phone, 728x90 above. */}
+      <AdLeaderboard />
 
       <MatchStatsComparison
         homeTeam={match.homeTeam}
@@ -377,6 +406,10 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayTeamApiId={match.awayTeamApiId}
         h2hLink={h2hLink}
       />
+
+      {/* After the head-to-head, before lineups and odds: reference data on
+          both sides, and well away from the published-picks grid. */}
+      <AdHalfBanner />
 
       <MatchLineups raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />
       <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
