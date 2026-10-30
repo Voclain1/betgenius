@@ -142,28 +142,34 @@ export function AdInterstitial() {
   if (!target) return null;
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Advertisement" className="fixed inset-0 z-[60] flex flex-col bg-brand-bg">
-      <div className="flex h-10 shrink-0 items-center justify-center border-b border-brand-border text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
-        Advertisement
-      </div>
-      {/* The whole screen below the label: the Social Bar interstitial draws
-          inside this frame, with the 300x250 underneath as its fallback
+    <div role="dialog" aria-modal="true" aria-label="Advertisement" className="fixed inset-0 z-[60] bg-brand-bg">
+      {/* The frame takes the WHOLE screen, edge to edge: the Social Bar
+          interstitial sizes itself to the frame, so every pixel given to our
+          own chrome is a pixel taken from the creative. The label and the
+          Continue control float over it instead of taking rows of their own.
+          The 300x250 fallback sits centred underneath
           (src/app/ads/frame/route.ts). Sandboxed like every other unit. */}
       <iframe
         title="Advertisement"
         src={adFrameSrc(INTERSTITIAL_FRAME_ID)}
         sandbox={sandboxFor(adsAreCrossOrigin())}
         referrerPolicy="strict-origin"
-        className="block w-full flex-1 border-0"
+        className="absolute inset-0 block h-full w-full border-0"
         style={{ colorScheme: "normal" }}
       />
-      <div className="flex h-20 shrink-0 items-center justify-center border-t border-brand-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div
+        className="pointer-events-none absolute left-3 rounded-md bg-brand-bg px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400"
+        style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+      >
+        Ad
+      </div>
+      <div className="absolute inset-x-0 flex justify-center" style={{ bottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
         {left > 0 ? (
-          <p className="text-sm font-semibold tabular-nums text-gray-400" aria-live="polite">
+          <p className="rounded-full bg-brand-bg px-4 py-2 text-sm font-semibold tabular-nums text-gray-300 shadow-lg" aria-live="polite">
             Continue in {left}s
           </p>
         ) : (
-          <button ref={continueRef} type="button" onClick={proceed} className="btn btn-primary rounded-full px-6 py-3 text-sm font-bold">
+          <button ref={continueRef} type="button" onClick={proceed} className="btn btn-primary rounded-full px-6 py-3 text-sm font-bold shadow-lg">
             Continue to page →
           </button>
         )}
