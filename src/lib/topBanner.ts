@@ -25,6 +25,9 @@
 export const TOP_BANNER_SLOT_ID = "top-banner-slot";
 export const TOP_BANNER_CLOSED_KEY = "betgenius:top-banner-closed";
 export const TOP_BANNER_CLOSED_ATTR = "data-top-banner-closed";
+/** Set while a house banner (4:1 artwork) fills the slot, which then needs the taller phone box. */
+export const TOP_BANNER_HOUSE_KEY = "betgenius:top-banner-house";
+export const TOP_BANNER_HOUSE_ATTR = "data-top-banner-house";
 
 /** Runs in <head> before first paint, so a banner closed earlier in the visit never takes space. */
-export const TOP_BANNER_INIT_SCRIPT = `(function(){try{if(sessionStorage.getItem(${JSON.stringify(TOP_BANNER_CLOSED_KEY)}))document.documentElement.setAttribute(${JSON.stringify(TOP_BANNER_CLOSED_ATTR)},"");}catch(e){}})();`;
+export const TOP_BANNER_INIT_SCRIPT = `(function(){try{var h=document.documentElement;if(sessionStorage.getItem(${JSON.stringify(TOP_BANNER_CLOSED_KEY)}))h.setAttribute(${JSON.stringify(TOP_BANNER_CLOSED_ATTR)},"");if(sessionStorage.getItem(${JSON.stringify(TOP_BANNER_HOUSE_KEY)}))h.setAttribute(${JSON.stringify(TOP_BANNER_HOUSE_ATTR)},"");}catch(e){}})();`;

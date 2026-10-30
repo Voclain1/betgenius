@@ -70,8 +70,11 @@ export function JsonLd({ data }: { data: object | object[] }) {
   return (
     <>
       {items.map((item, i) => (
+        // `hidden` keeps the tag out of Tailwind's space-y stacks, which
+        // otherwise count it as a sibling and push the first section down.
+        // Crawlers read JSON-LD from the script regardless.
         // eslint-disable-next-line react/no-danger
-        <script key={i} type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(item) }} />
+        <script key={i} hidden type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(item) }} />
       ))}
     </>
   );
