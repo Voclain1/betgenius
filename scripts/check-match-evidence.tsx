@@ -20,7 +20,7 @@ assert.equal(evidenceClaimIssues(d,'The last ten head-to-head fixtures have aver
 assert.throws(()=>assertEvidenceClaims(d,{predictions:[{reasoning:'FC Midtjylland have won eight of the last ten meetings.'}]}));
 home.last5=[{opponent:'Rivals',venue:'away',result:'D',goalsFor:1,goalsAgainst:1,date:'2026-09-19',competition:'Superliga'}];
 const html=renderToStaticMarkup(<MatchRecentResults home={home} away={away} homeTeam={home.name} awayTeam={away.name}/>);
-for(const text of ['2026-09-19','Rivals','1–1','Superliga','Recent results unavailable','1 matches']) assert.ok(html.includes(text),text);
+for(const text of ['2026-09-19','Rivals','1–1','Superliga','Recent results unavailable','1 match,']) assert.ok(html.includes(text),text);
 assert.ok(!renderToStaticMarkup(<MatchRecentResults home={away} away={away} homeTeam="A" awayTeam="B"/>));
 const nav=renderToStaticMarkup(<MatchSectionNav sections={[{id:'form',label:'Recent results'},{id:'markets',label:'Picks'}]}/>);
 assert.ok(nav.includes('href="#form"')); assert.ok(!nav.includes('#team-news'));
