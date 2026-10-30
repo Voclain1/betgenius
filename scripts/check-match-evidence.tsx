@@ -5,7 +5,7 @@ import { evidenceClaimIssues, assertEvidenceClaims } from '../src/lib/ai/evidenc
 import { MatchRecentResults } from '../src/components/MatchRecentResults';
 import { MatchStatsComparison } from '../src/components/MatchStatsComparison';
 import { MatchSectionNav } from '../src/components/MatchSectionNav';
-import { unsupportedStaffSentences, stripUnsupportedStaff } from '../src/lib/ai/staffClaims';
+import { unsupportedStaffSentences, stripUnsupportedStaff, removeSentences } from '../src/lib/ai/staffClaims';
 const home=buildTeamDigest({name:'FC Midtjylland',apiId:1}), away=buildTeamDigest({name:'Odense',apiId:2});
 const meetings=Array.from({length:10},(_,i)=>({fixtureApiId:i,date:`2026-09-${String(20-i).padStart(2,'0')}`,leagueName:'Test',leagueApiId:3,homeTeamApiId:1,homeTeam:'FC Midtjylland',awayTeamApiId:2,awayTeam:'Odense',homeGoals:i<7?3:i<9?1:0,awayGoals:1}));
 const d=assembleMatchDigest({fixture:{home:'FC Midtjylland',away:'Odense',league:'Cup',kickoff:'2026-10-29',competitionType:'CUP',round:'Round of 16'},homeTeam:home,awayTeam:away,homeApiId:1,awayApiId:2,meetings,standings:null});
@@ -28,6 +28,8 @@ assert.ok(nav.includes('href="#form"')); assert.ok(!nav.includes('#team-news'));
 home.home={played:1,win:1,draw:0,loss:0,goalsFor:7,goalsAgainst:0};
 const stats=renderToStaticMarkup(<MatchStatsComparison homeTeam="A" awayTeam="B" homeDigest={home} awayDigest={away}/>);
 assert.ok(stats.includes('competition not recorded'));assert.ok(stats.includes('averages need 3 matches'));assert.ok(!stats.includes('7 goals per game'));
+{ const t='Odense have conceded in five straight. FC Midtjylland have won eight of the last ten meetings. Back goals.';
+  assert.equal(removeSentences(t,new Set(evidenceClaimIssues(d,t).map(i=>i.claim))),'Odense have conceded in five straight. Back goals.'); }
 const staff={coaches:['Xabi Alonso','Ruben Amorim'],teams:['Chelsea','Manchester United','Arsenal']};
 assert.equal(unsupportedStaffSentences('Under Enzo Maresca, Chelsea have kept three clean sheets.',staff).length,1);
 assert.equal(unsupportedStaffSentences('Manager Enzo Maresca has rotated heavily.',staff).length,1);
