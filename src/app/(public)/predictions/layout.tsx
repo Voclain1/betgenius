@@ -1,6 +1,7 @@
 import { TopTrendsPanel } from "@/components/TopTrendsPanel";
 import { RAIL_SLOT_ID } from "@/components/ads/railSlot";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
 
 /**
@@ -24,6 +25,7 @@ export default function PredictionsLayout({ children }: { children: React.ReactN
           <div id={RAIL_SLOT_ID} className="mt-4" />
         </aside>
         <AdStickyMobile />
+        <AdInterstitial />
       </div>
     </>
   );
