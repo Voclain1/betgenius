@@ -9,6 +9,7 @@ import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
 import { MarketChips } from "@/components/MarketChips";
 import { LeagueNav } from "@/components/LeagueNav";
@@ -450,6 +451,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           position where the content around it is the footer. */}
       <AdNativeBand />
       <AdStickyMobile />
+      <AdInterstitial />
     </div>
   );
 }

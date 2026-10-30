@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GuideArticle } from "@/components/GuideArticle";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
 import { GUIDES, guideBySlug } from "@/content/guides";
 import { JsonLd, articleJsonLd, breadcrumbJsonLd } from "@/lib/seo";
@@ -18,6 +19,7 @@ export default function GuidePage({ params }: { params: { slug: string } }) {
   const guide = guideBySlug(params.slug);
   if (!guide) notFound();
   const path = `/guides/${guide.slug}`;
-  return <><JsonLd data={[breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }, { name: guide.title, path }]), articleJsonLd({ headline: guide.title, description: guide.description, path, datePublished: guide.publishedAt, dateModified: guide.reviewedAt })]} /><TopBanner /><GuideArticle guide={guide} /><AdStickyMobile /></>;
+  return <><JsonLd data={[breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }, { name: guide.title, path }]), articleJsonLd({ headline: guide.title, description: guide.description, path, datePublished: guide.publishedAt, dateModified: guide.reviewedAt })]} /><TopBanner /><GuideArticle guide={guide} /><AdStickyMobile />
+<AdInterstitial /></>;
 }
 

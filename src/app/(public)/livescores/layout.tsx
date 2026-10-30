@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AdHalfBanner } from "@/components/ads/AdPlacements";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function LivescoresLayout({ children }: { children: React.ReactNo
         <AdHalfBanner />
       </div>
       <AdStickyMobile />
+      <AdInterstitial />
     </>
   );
 }

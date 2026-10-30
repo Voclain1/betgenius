@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AdLeaderboard } from "@/components/ads/AdPlacements";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
+import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default function StandingsLayout({ children }: { children: React.ReactNod
         <AdLeaderboard />
       </div>
       <AdStickyMobile />
+      <AdInterstitial />
     </>
   );
 }
