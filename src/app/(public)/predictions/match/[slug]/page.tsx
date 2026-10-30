@@ -194,9 +194,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const stamp = (date: Date | null | undefined) => date ? date.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "not available";
   const sections = [
     ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
-    ...(hasForm ? [{ id: "form", label: "Recent results" }] : []),
     ...(preview ? [{ id: "preview", label: "Preview" }] : []),
     ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
+    ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
     ...(hasNews ? [{ id: "team-news", label: "Team news" }] : []),
     ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
     ...(evidenceMeetings.length && match.homeTeamApiId != null && match.awayTeamApiId != null ? [{ id: "h2h", label: "H2H" }] : []),
@@ -228,7 +228,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     // The one page on the site deep enough to carry a rail. See AdRail for the
     // width arithmetic and for why it only exists at xl and above.
     <WithAdRail unit="skyscraper">
-    <div className="space-y-8">
+    <div className="space-y-8 [&_[id]]:scroll-mt-36">
       <JsonLd
         data={[
           breadcrumbJsonLd([
@@ -297,26 +297,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         </div>
       </MatchMasthead>
 
-      {/* Directly after the first main content section — the masthead with
-          the fixture facts — rather than two thirds of the way down the page. It is its
-          own full-width block between two panels; nothing here sits inside a
-          prediction card. */}
-      <AdRectangle />
-
       <MatchSectionNav sections={sections} />
-      <div className="rounded-2xl border border-brand-border p-4 text-xs leading-relaxed text-gray-400">
-        {original && highlightedJob ? <>Highlighted prediction evidence recorded {highlightedJob.createdAt.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT. Recent results, statistics and H2H below use that original evidence.</> : <>Original prediction evidence is unavailable. Recent results, statistics and H2H below describe the latest cached context, which may differ from what was known before kickoff.</>}
-        {" "}Team news, player totals, standings and performance records may refresh separately. Published analysis is not automatically rewritten when those figures change.
-        <p className="mt-2">Team context last fetched: {match.homeTeam}: {stamp(homeCache?.fetchedAt)}; {match.awayTeam}: {stamp(awayCache?.fetchedAt)}. Table cache last fetched: {stamp(leagueCache?.fetchedAt)}. A fetch time does not confirm that every underlying item changed.</p>
-        {finalScore && <section aria-labelledby="completed-match-context" className="mt-3 space-y-2"><h2 id="completed-match-context" className="text-sm font-bold text-gray-300">Completed match: published prediction record</h2><p>This match has finished. The published call is retained for review; <Link href="/predictions/today" className="text-brand underline">see today’s predictions</Link>.</p></section>}
-      </div>
       {reviewIds.size > 0 && <div role="note" className="rounded-2xl border border-orange-500/40 p-4 text-sm text-orange-200">An evidence conflict was detected in the original analysis. Affected prose is withheld for review; published picks and outcomes are retained. This is not a revised prediction.</div>}
-      <MatchRecentResults
-        home={homeDigest}
-        away={awayDigest}
-        homeTeam={match.homeTeam}
-        awayTeam={match.awayTeam}
-      />
 
       {topRow && (
         <MatchVerdict
@@ -333,7 +315,20 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         </PremiumPanel>
       )}
 
+      {/* After the verdict and preview rather than straight under the
+          masthead: the call is what the reader came for, so it sits as close
+          to the top as the page allows, and the ad is its own full-width
+          block between two panels, never inside a prediction card. */}
+      <AdRectangle />
+
       {topRow && <KeyFactors analysisJson={topRow.analysisJson} />}
+
+      <MatchRecentResults
+        home={homeDigest}
+        away={awayDigest}
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+      />
 
       <TeamNewsPanel
         homeTeam={match.homeTeam}
@@ -350,7 +345,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       />
 
       {/* Mid-content, and deliberately here rather than a section earlier or
-          later. The verdict and the key factors are three sections up, the
+          later. The verdict and the key factors are well above, the
           published-markets grid is at the foot, and both of this band's
           neighbours — the stats comparison above, key players below — are
           reference data rather than a call of ours. */}
@@ -421,7 +416,17 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         pathways={marketPathways(rows.filter((r) => canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined)))}
       />
 
-      {/* Editorial publication remains separate from evidence/cache times. */}
+      {/* Evidence and cache timestamps, then publication time, at the foot:
+          reference for anyone checking the page, not something to read before
+          the verdict. Editorial publication remains separate from both. */}
+      <section aria-labelledby="data-sources" className="space-y-2 border-t border-brand-border pt-6 text-xs leading-relaxed text-gray-500">
+        <h2 id="data-sources" className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">About this data</h2>
+        <p>
+        {original && highlightedJob ? <>Highlighted prediction evidence recorded {highlightedJob.createdAt.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT. Recent form, statistics and H2H above use that original evidence.</> : <>Original prediction evidence is unavailable. Recent form, statistics and H2H above describe the latest cached context, which may differ from what was known before kickoff.</>}
+        {" "}Team news, player totals, standings and performance records may refresh separately. Published analysis is not automatically rewritten when those figures change.</p>
+        <p>Team context last fetched: {match.homeTeam}: {stamp(homeCache?.fetchedAt)}; {match.awayTeam}: {stamp(awayCache?.fetchedAt)}. Table cache last fetched: {stamp(leagueCache?.fetchedAt)}. A fetch time does not confirm that every underlying item changed.</p>
+        {finalScore && <section aria-labelledby="completed-match-context" className="space-y-2 pt-2"><h2 id="completed-match-context" className="text-sm font-bold text-gray-300">Completed match: published prediction record</h2><p>This match has finished. The published call is retained for review; <Link href="/predictions/today" className="text-brand underline">see today’s predictions</Link>.</p></section>}
+      </section>
       {publishedAt && (
         <p className="text-[11px] text-gray-500">
           Published {publishedAt.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.
