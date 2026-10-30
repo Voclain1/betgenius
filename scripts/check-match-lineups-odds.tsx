@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { trimConfirmedLineups, lineupRefreshDue, readLineupSnapshot, type ProviderLineup } from '../src/lib/lineups';
+import { trimConfirmedLineups, lineupRefreshDue, readLineupSnapshot, formationRows, shirtName, type ProviderLineup } from '../src/lib/lineups';
 import { matchOddsState } from '../src/lib/matchOdds';
 import { MatchLineups } from '../src/components/MatchLineups';
 import { MatchOddsPanel } from '../src/components/MatchOddsPanel';
@@ -18,6 +18,13 @@ assert.ok(lineupRefreshDue(kickoff,null,now));assert.ok(!lineupRefreshDue(new Da
 const snapshot={fixtureApiId:123,attemptedAt:now.toISOString(),fetchedAt:now.toISOString(),teams,status:'confirmed' as const};
 assert.ok(!lineupRefreshDue(kickoff,snapshot,new Date(now.getTime()+10*60_000)));assert.ok(lineupRefreshDue(kickoff,snapshot,new Date(now.getTime()+16*60_000)));
 assert.ok(readLineupSnapshot(snapshot));assert.equal(readLineupSnapshot({...snapshot,teams:[teams[0],teams[0]]}),null);
+{ const t={...teams[0],formation:'4-2-3-1'};
+  assert.deepEqual(formationRows(t)!.map(r=>r.length),[1,4,2,3,1]);
+  assert.equal(formationRows({...t,formation:'4-4-1'}),null); // lines must sum to ten
+  assert.equal(formationRows({...t,formation:null}),null);
+  const gridded={...t,formation:null,starters:t.starters.map((p,i)=>({...p,grid:i===0?'1:1':`${i<5?2:i<8?3:4}:${i<5?i:i<8?i-4:i-7}`}))};
+  assert.deepEqual(formationRows(gridded)!.map(r=>r.length),[1,4,3,3]); // provider slots win over the formation string
+  assert.equal(shirtName('D. Léon'),'Léon'); assert.equal(shirtName('Mohammed Al Dossary'),'Al Dossary'); assert.equal(shirtName('Danilo Pereira'),'Pereira'); assert.equal(shirtName('Neymar'),'Neymar'); }
 const html=renderToStaticMarkup(<MatchLineups raw={snapshot} fixtureApiId={123} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);
 for (const value of ['Player 1-0','Player 2-10','Substitute','4-3-3','WAT']) assert.ok(html.includes(value),value);
 const staleLineup=renderToStaticMarkup(<MatchLineups raw={{...snapshot,fetchedAt:'2026-10-29T12:00:00Z'}} fixtureApiId={123} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);assert.ok(staleLineup.includes('withheld'));assert.ok(!staleLineup.includes('Player 1-0'));
