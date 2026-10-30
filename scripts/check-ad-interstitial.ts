@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { shouldInterrupt, INTERSTITIAL_EVERY_VIEWS, INTERSTITIAL_MIN_GAP_MS } from "../src/components/ads/AdInterstitial";
 import { AD_FREE_ROUTES, AD_UNITS, INTERSTITIAL_FRAME_ID, SOCIAL_BAR_SRC, invokeUrl } from "../src/lib/ads";
 import { GET } from "../src/app/ads/frame/route";
+import { lockScroll } from "../src/lib/scrollLock";
 
 const here = new URL("https://betgenius.ng/predictions/today");
 const to = (path: string) => new URL(path, here);
@@ -28,5 +29,20 @@ for (const p of [...AD_FREE_ROUTES, "/admin/predictions", "/dashboard", "/checko
   assert.equal(GET(new Request("https://ads.betgenius.ng/ads/frame?unit=nope")).status, 404, "unknown ids still 404");
   const native = await GET(new Request("https://ads.betgenius.ng/ads/frame?unit=native")).text();
   assert.ok(native.includes("betgeniusAdHeight") && native.includes(AD_UNITS.native.containerId), "native frame reports its filled height");
-  console.log("Ad interstitial: frequency cap, landing-page grace, time gap, external/same-page links and ad-free destinations and the full-screen frame document passed");
+  {
+  // The stuck-page bug: menu locks, ad locks, menu closes FIRST, then the ad.
+  const body = { style: { overflow: "" } };
+  (globalThis as any).document = { body };
+  const menu = lockScroll();
+  const ad = lockScroll();
+  menu();
+  assert.equal(body.style.overflow, "hidden", "still locked while the ad is open");
+  ad();
+  assert.equal(body.style.overflow, "", "unlocked once the last overlay closes, whatever the order");
+  ad(); menu(); // double release is harmless
+  const again = lockScroll(); again();
+  assert.equal(body.style.overflow, "");
+  delete (globalThis as any).document;
+}
+console.log("Ad interstitial: frequency cap, landing-page grace, time gap, external/same-page links and ad-free destinations and the full-screen frame document and the shared scroll lock passed");
 })();

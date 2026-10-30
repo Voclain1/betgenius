@@ -14,6 +14,7 @@ import { BRAND_ICON_DARK, BRAND_ICON_LIGHT, BRAND_ICON_SIZE } from "@/lib/brandA
 import { NotificationBell } from "@/components/NotificationBell";
 import { LogoutButton } from "@/components/LogoutButton";
 import { MARKET_HUBS } from "@/lib/marketHubs";
+import { lockScroll } from "@/lib/scrollLock";
 
 type NavLink = { href: string; label: string; pill?: string };
 
@@ -234,11 +235,10 @@ export function Nav() {
       if (e.key === "Escape") setOpen(false);
     };
     document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      unlock();
     };
   }, [open]);
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Menu, X, Lock } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LogoutButton } from "@/components/LogoutButton";
+import { lockScroll } from "@/lib/scrollLock";
 
 export type DashboardNavItem = {
   key: string;
@@ -46,11 +47,10 @@ export function DashboardShell({
       if (e.key === "Escape") setMobileOpen(false);
     };
     document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      unlock();
     };
   }, [mobileOpen]);
 
