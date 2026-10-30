@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sandboxFor } from "@/components/ads/AdUnit";
 import { AD_FREE_ROUTES, INTERSTITIAL_FRAME_ID, adFrameSrc, adsAreCrossOrigin } from "@/lib/ads";
+import { lockScroll } from "@/lib/scrollLock";
 
 const STATE_KEY = "betgenius:interstitial";
 
@@ -131,12 +132,12 @@ export function AdInterstitial() {
     router.push(target);
   }, [target, router]);
 
-  // Lock the page behind the panel while it is open.
+  // Lock the page behind the panel while it is open. The shared, counted lock
+  // (src/lib/scrollLock.ts): the panel usually opens from a link in the menu
+  // drawer, which holds its own lock and closes first.
   useEffect(() => {
     if (!target) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
+    return lockScroll();
   }, [target]);
 
   if (!target) return null;
