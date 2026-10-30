@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { AdFrame } from "@/components/ads/AdUnit";
-import { AD_FREE_ROUTES } from "@/lib/ads";
+import { sandboxFor } from "@/components/ads/AdUnit";
+import { AD_FREE_ROUTES, INTERSTITIAL_FRAME_ID, adFrameSrc, adsAreCrossOrigin } from "@/lib/ads";
 
 const STATE_KEY = "betgenius:interstitial";
 
@@ -52,8 +52,10 @@ export function shouldInterrupt(state: State, now: number, here: URL, href: URL)
 
 /**
  * The between-pages ad: a reader taps a link to another page on the site, a
- * full-screen panel shows one 300x250 in its usual sandboxed frame, and after
- * a short countdown "Continue" takes them where they were going.
+ * full-screen panel shows Adsterra's Social Bar interstitial in a sandboxed
+ * frame covering the screen (with a 300x250 underneath when the network has
+ * nothing to show), and after a short countdown "Continue" takes them where
+ * they were going.
  *
  * Frequency is capped twice — every INTERSTITIAL_EVERY_VIEWS page views and no
  * sooner than INTERSTITIAL_MIN_GAP_MS apart — and the count starts on the page
@@ -140,18 +142,22 @@ export function AdInterstitial() {
   if (!target) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Advertisement"
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-brand-bg/95 px-4 backdrop-blur"
-    >
-      <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Advertisement</div>
-      {/* Outlined so an unfilled slot (no fill, an ad blocker) reads as a reserved box, not a broken page. */}
-      <div className="rounded-2xl border border-brand-border bg-brand-card p-2">
-        <AdFrame id="rectangle" />
+    <div role="dialog" aria-modal="true" aria-label="Advertisement" className="fixed inset-0 z-[60] flex flex-col bg-brand-bg">
+      <div className="flex h-10 shrink-0 items-center justify-center border-b border-brand-border text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+        Advertisement
       </div>
-      <div className="flex h-12 items-center">
+      {/* The whole screen below the label: the Social Bar interstitial draws
+          inside this frame, with the 300x250 underneath as its fallback
+          (src/app/ads/frame/route.ts). Sandboxed like every other unit. */}
+      <iframe
+        title="Advertisement"
+        src={adFrameSrc(INTERSTITIAL_FRAME_ID)}
+        sandbox={sandboxFor(adsAreCrossOrigin())}
+        referrerPolicy="strict-origin"
+        className="block w-full flex-1 border-0"
+        style={{ colorScheme: "normal" }}
+      />
+      <div className="flex h-20 shrink-0 items-center justify-center border-t border-brand-border" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         {left > 0 ? (
           <p className="text-sm font-semibold tabular-nums text-gray-400" aria-live="polite">
             Continue in {left}s
