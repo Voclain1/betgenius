@@ -97,7 +97,14 @@ function PlainList({ t }: { t: ConfirmedTeamLineup }) {
   );
 }
 
-export function MatchLineups({raw,fixtureApiId,homeId,awayId,kickoff,supported=true,now=new Date()}: {raw:unknown;fixtureApiId:number|null;homeId:number|null;awayId:number|null;kickoff:Date;supported?:boolean;now?:Date}) {
+type LineupsProps = {raw:unknown;fixtureApiId:number|null;homeId:number|null;awayId:number|null;kickoff:Date;supported?:boolean;now?:Date};
+
+export function MatchLineups(props: LineupsProps) {
+  return <PremiumPanel bare kicker="Teams" title="Starting lineups" id="lineups"><MatchLineupsBody {...props} /></PremiumPanel>;
+}
+
+/** The pitch (or its fallbacks) without a section heading, for a panel that carries its own. */
+export function MatchLineupsBody({raw,fixtureApiId,homeId,awayId,kickoff,supported=true,now=new Date()}: LineupsProps) {
   const snapshot=readLineupSnapshot(raw);
   const stale=kickoff>now && !!snapshot?.fetchedAt && now.getTime()-Date.parse(snapshot.fetchedAt)>2*60*60_000;
   const confirmed=!stale && snapshot?.status==='confirmed' && snapshot.fixtureApiId===fixtureApiId && snapshot.teams?.some(t=>t.teamId===homeId) && snapshot.teams.some(t=>t.teamId===awayId) ? snapshot : null;
@@ -105,7 +112,7 @@ export function MatchLineups({raw,fixtureApiId,homeId,awayId,kickoff,supported=t
   const away=confirmed?.teams!.find(t=>t.teamId===awayId);
   const homeRows=home?formationRows(home):null;
   const awayRows=away?formationRows(away):null;
-  return <PremiumPanel bare kicker="Teams" title="Starting lineups" id="lineups">
+  return <>
     {confirmed && home && away ? <>
       {homeRows && awayRows ? <>
         <Pitch home={home} away={away} homeRows={homeRows} awayRows={awayRows} />
@@ -123,5 +130,5 @@ export function MatchLineups({raw,fixtureApiId,homeId,awayId,kickoff,supported=t
 
       <p className="mt-3 text-xs leading-relaxed text-gray-500">Starting XIs reported by API-Football, fetched {new Date(confirmed.fetchedAt!).toLocaleString('en-GB',{timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'})} WAT. These are reported lineups, not predicted selections. Late changes may follow.</p>
     </> : <div className="rounded-3xl border border-brand-border bg-brand-card p-5"><p className="text-sm text-gray-400">{stale?'Previously reported lineups are more than two hours old and are withheld until refreshed.':!supported?'Starting-lineup coverage is unavailable for this competition.':kickoff<=now?'No complete starting XIs were captured for this match.':snapshot?.status==='unavailable'?'Lineup data is temporarily unavailable. No predicted XI is substituted.':'Complete starting XIs have not been received for this match. Check again nearer kickoff.'}</p></div>}
-  </PremiumPanel>;
+  </>;
 }

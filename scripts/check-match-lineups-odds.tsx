@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { trimConfirmedLineups, lineupRefreshDue, readLineupSnapshot, formationRows, shirtName, type ProviderLineup } from '../src/lib/lineups';
 import { matchOddsState } from '../src/lib/matchOdds';
 import { MatchLineups } from '../src/components/MatchLineups';
+import { LineupsNewsTabs } from '../src/components/LineupsNewsTabs';
 import { MatchOddsPanel } from '../src/components/MatchOddsPanel';
 import { trimOdds } from '../src/lib/odds';
 const now=new Date('2026-10-29T18:00:00Z'),kickoff=new Date('2026-10-29T19:00:00Z');
@@ -27,6 +28,12 @@ assert.ok(readLineupSnapshot(snapshot));assert.equal(readLineupSnapshot({...snap
   assert.equal(shirtName('D. Léon'),'Léon'); assert.equal(shirtName('Mohammed Al Dossary'),'Al Dossary'); assert.equal(shirtName('Danilo Pereira'),'Pereira'); assert.equal(shirtName('Neymar'),'Neymar'); }
 const html=renderToStaticMarkup(<MatchLineups raw={snapshot} fixtureApiId={123} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);
 for (const value of ['Player 1-0','Player 2-10','Substitute','4-3-3','WAT']) assert.ok(html.includes(value),value);
+{ const tabs=renderToStaticMarkup(<LineupsNewsTabs lineups={<p>PITCH</p>} news={<p>NEWS</p>}/>);
+  assert.ok(tabs.indexOf('Lineups')<tabs.indexOf('Team news'),'lineups tab first');
+  assert.ok(/aria-selected="true"[^>]*>Lineups</.test(tabs),'lineups selected by default');
+  assert.ok(tabs.includes('PITCH')&&tabs.includes('NEWS'),'both bodies server-rendered');
+  assert.ok(/hidden=""[^>]*><div[^>]*><p>NEWS/.test(tabs),'team news hidden until chosen');
+  assert.ok(tabs.includes('id="team-news"'),'old #team-news links still land'); }
 const staleLineup=renderToStaticMarkup(<MatchLineups raw={{...snapshot,fetchedAt:'2026-10-29T12:00:00Z'}} fixtureApiId={123} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);assert.ok(staleLineup.includes('withheld'));assert.ok(!staleLineup.includes('Player 1-0'));
 const wrongFixture=renderToStaticMarkup(<MatchLineups raw={snapshot} fixtureApiId={999} homeId={1} awayId={2} kickoff={kickoff} now={now}/>);assert.ok(!wrongFixture.includes('Player 1-0'));
 assert.ok(renderToStaticMarkup(<MatchLineups raw={null} fixtureApiId={null} homeId={1} awayId={2} kickoff={kickoff} now={now}/>).includes('have not been received'));

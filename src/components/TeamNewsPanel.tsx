@@ -97,17 +97,19 @@ function TeamColumn({ name, state }: { name: string; state: TeamNewsState }) {
   );
 }
 
-export function TeamNewsPanel({
-  homeTeam,
-  awayTeam,
-  homeDigest,
-  awayDigest,
-}: {
+type TeamNewsProps = {
   homeTeam: string;
   awayTeam: string;
   homeDigest: TeamDigest | null;
   awayDigest: TeamDigest | null;
-}) {
+};
+
+/**
+ * The two team columns without a section heading, for a panel that carries
+ * its own (the match page's lineups / team news switch). Null when neither
+ * feed resolved.
+ */
+export function TeamNewsBody({ homeTeam, awayTeam, homeDigest, awayDigest }: TeamNewsProps) {
   const home = teamNewsState(homeDigest);
   const away = teamNewsState(awayDigest);
 
@@ -117,11 +119,19 @@ export function TeamNewsPanel({
   if (home.kind === "unavailable" && away.kind === "unavailable") return null;
 
   return (
+    <div className="grid gap-6 sm:grid-cols-2">
+      <TeamColumn name={homeTeam} state={home} />
+      <TeamColumn name={awayTeam} state={away} />
+    </div>
+  );
+}
+
+export function TeamNewsPanel(props: TeamNewsProps) {
+  const body = TeamNewsBody(props);
+  if (!body) return null;
+  return (
     <PremiumPanel kicker="Availability" title="Team news" id="team-news">
-      <div className="grid gap-6 sm:grid-cols-2">
-        <TeamColumn name={homeTeam} state={home} />
-        <TeamColumn name={awayTeam} state={away} />
-      </div>
+      {body}
     </PremiumPanel>
   );
 }

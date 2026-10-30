@@ -1,4 +1,5 @@
-import { MatchLineups } from "@/components/MatchLineups";
+import { MatchLineupsBody } from "@/components/MatchLineups";
+import { LineupsNewsTabs } from "@/components/LineupsNewsTabs";
 import { MatchOddsPanel } from "@/components/MatchOddsPanel";
 import type { FixtureOdds } from "@/lib/odds";
 import { cupSupports } from "@/lib/cupConfig";
@@ -25,7 +26,7 @@ import { parseAnalysis } from "@/lib/predictionAnalysis";
 import { buildMatchFacts, isMatchFactsEmpty, teamNewsState } from "@/lib/matchFacts";
 import { MatchVerdict } from "@/components/MatchVerdict";
 import { KeyFactors } from "@/components/KeyFactors";
-import { TeamNewsPanel } from "@/components/TeamNewsPanel";
+import { TeamNewsBody } from "@/components/TeamNewsPanel";
 import { MatchStatsComparison } from "@/components/MatchStatsComparison";
 import { MatchStandingsContext } from "@/components/MatchStandingsContext";
 import { MatchH2HSummary } from "@/components/MatchH2HSummary";
@@ -221,10 +222,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     ...(preview ? [{ id: "preview", label: "Preview" }] : []),
     ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
     ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
-    ...(hasNews ? [{ id: "team-news", label: "Team news" }] : []),
+    { id: "lineups", label: hasNews ? "Lineups & news" : "Lineups" },
     ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
     ...(evidenceMeetings.length && match.homeTeamApiId != null && match.awayTeamApiId != null ? [{ id: "h2h", label: "H2H" }] : []),
-    { id: "lineups", label: "Lineups" },
     { id: "odds", label: "Odds" },
     { id: "markets", label: "Published picks" },
   ];
@@ -243,6 +243,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       { homeTeamApiId: match.homeTeamApiId, awayTeamApiId: match.awayTeamApiId, kickoff: match.kickoff, leagueApiId: match.leagueApiId },
     ])
   ).get(match.matchKey ?? "");
+
+  const lineupsBody = <MatchLineupsBody raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />;
 
   // Publication time is distinct from the original evidence and cache-fetch
   // timestamps above. A refreshed cache does not create an editorial update.
@@ -357,14 +359,19 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayHistory={match.awayTeamApiId != null ? histories.get(match.awayTeamApiId) : undefined}
       />
 
-      <TeamNewsPanel
-        homeTeam={match.homeTeam}
-        awayTeam={match.awayTeam}
-        homeDigest={currentHomeDigest}
-        awayDigest={currentAwayDigest}
-      />
+      {/* Who is playing, right under the form: the starting lineups first,
+          team news on the switch beside them. Without any team news the
+          lineups stand alone. */}
+      <PremiumPanel bare kicker="Teams" title={hasNews ? "Lineups & team news" : "Starting lineups"} id="lineups">
+        {hasNews ? (
+          <LineupsNewsTabs
+            lineups={lineupsBody}
+            news={<TeamNewsBody homeTeam={match.homeTeam} awayTeam={match.awayTeam} homeDigest={currentHomeDigest} awayDigest={currentAwayDigest} />}
+          />
+        ) : lineupsBody}
+      </PremiumPanel>
 
-      {/* Between the team news and the statistics: two reference panels,
+      {/* Between the lineups and the statistics: two reference panels,
           neither of them a call of ours. 320x50 on a phone, 728x90 above. */}
       <AdLeaderboard />
 
@@ -409,11 +416,10 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         h2hLink={h2hLink}
       />
 
-      {/* After the head-to-head, before lineups and odds: reference data on
-          both sides, and well away from the published-picks grid. */}
+      {/* After the head-to-head, before the odds: reference data on both
+          sides, and well away from the published-picks grid. */}
       <AdHalfBanner />
 
-      <MatchLineups raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />
       <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
 
       <MatchTrackRecord leagueApiId={match.leagueApiId} leagueName={match.leagueName} />
