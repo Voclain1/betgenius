@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AD_UNITS, invokeUrl, type AdUnitId } from "@/lib/ads";
+import { AD_UNITS, INTERSTITIAL_FRAME_ID, SOCIAL_BAR_SRC, invokeUrl, type AdUnitId } from "@/lib/ads";
 
 /**
  * The document that goes inside an ad frame.
@@ -42,8 +42,37 @@ function html(body: string) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">${body}</html>`;
 }
 
+/**
+ * The full-screen between-pages document: the Social Bar interstitial, with
+ * the 300x250 centred underneath for a load where the network shows nothing.
+ * The two can share one document because only the rectangle uses atOptions.
+ */
+function interstitialBody() {
+  const r = AD_UNITS.rectangle;
+  return (
+    `<style>html,body{margin:0;padding:0;height:100%;overflow:hidden;background:transparent}` +
+    `body{display:flex;align-items:center;justify-content:center}</style></head><body>` +
+    `<div style="width:${r.width}px;height:${r.height}px">` +
+    `<script>window.atOptions=${JSON.stringify({ key: r.key, format: "iframe", height: r.height, width: r.width, params: {} })}</script>` +
+    `<script src="${invokeUrl(r.key)}"></script></div>` +
+    `<script data-cfasync="false" src="${SOCIAL_BAR_SRC}"></script></body>`
+  );
+}
+
+const HEADERS = {
+  "content-type": "text/html; charset=utf-8",
+  // The document is a pure function of the unit id, so it caches happily.
+  // What must not be cached is the ad the script fetches, and that request
+  // is made fresh by the browser on every load regardless of this.
+  "cache-control": "public, max-age=3600, s-maxage=3600",
+  // Not a page. It has no content of its own and must never be indexed or
+  // appear as a search result in place of the page that embeds it.
+  "x-robots-tag": "noindex, nofollow",
+};
+
 export function GET(request: Request) {
   const id = new URL(request.url).searchParams.get("unit");
+  if (id === INTERSTITIAL_FRAME_ID) return new NextResponse(html(interstitialBody()), { headers: HEADERS });
   if (!isAdUnitId(id)) return new NextResponse("Unknown ad unit", { status: 404 });
   const unit = AD_UNITS[id];
 
@@ -70,16 +99,5 @@ export function GET(request: Request) {
         `<script async data-cfasync="false" src="${unit.src}"></script>` +
         `<div id="${unit.containerId}"></div></body>`;
 
-  return new NextResponse(html(body), {
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      // The document is a pure function of the unit id, so it caches happily.
-      // What must not be cached is the ad the script fetches, and that request
-      // is made fresh by the browser on every load regardless of this.
-      "cache-control": "public, max-age=3600, s-maxage=3600",
-      // Not a page. It has no content of its own and must never be indexed or
-      // appear as a search result in place of the page that embeds it.
-      "x-robots-tag": "noindex, nofollow",
-    },
-  });
+  return new NextResponse(html(body), { headers: HEADERS });
 }

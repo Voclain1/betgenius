@@ -90,7 +90,7 @@ function useNearViewport<T extends HTMLElement>(rootMargin = "300px") {
  * site, so the two must never be decoupled.
  */
 const BASE_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
-const sandboxFor = (crossOrigin: boolean) =>
+export const sandboxFor = (crossOrigin: boolean) =>
   crossOrigin ? `${BASE_SANDBOX} allow-same-origin` : BASE_SANDBOX;
 
 /**

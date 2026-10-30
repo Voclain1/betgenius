@@ -167,6 +167,21 @@ export const AD_UNITS = {
 export type AdUnitId = keyof typeof AD_UNITS;
 
 /**
+ * The between-pages slot (src/components/ads/AdInterstitial.tsx): Adsterra's
+ * Social Bar, configured in the dashboard as an Interstitial, in a frame that
+ * covers the whole screen. Not in AD_UNITS because it has no declared size —
+ * it takes the viewport — so AdFrame's reserved box does not apply.
+ *
+ * Isolated like every banner: served by /ads/frame inside the sandbox, so the
+ * script's full-screen takeover is confined to that frame and it cannot reach
+ * the page, redirect the tab or read our cookies. The frame also carries the
+ * 300x250 rectangle centred underneath as a fallback, for a load where the
+ * network has no interstitial to show (fill rate, its own frequency cap).
+ */
+export const INTERSTITIAL_FRAME_ID = "interstitial";
+export const SOCIAL_BAR_SRC = "https://czernik.org/14/e1c34a7f4224470e523be7929555b2ee";
+
+/**
  * Where an in-feed ad goes in a list of picks.
  *
  * THE NUMBERS ARE CHOSEN FROM THE REAL FEEDS, not from a round figure. Counting
