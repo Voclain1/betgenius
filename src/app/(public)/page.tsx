@@ -38,7 +38,7 @@ import {
   isComboRow,
   HOMEPAGE_FEATURED_LIMIT,
 } from "@/lib/homepageFeatured";
-import { AdLeaderboard, AdNativeBand } from "@/components/ads/AdPlacements";
+import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdNativeCard, AdRectangle } from "@/components/ads/AdPlacements";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
@@ -398,7 +398,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         />
       </PremiumPanel>
 
-      {/* The homepage's one in-content ad, and it is here rather than under
+      {/* The first in-content ad, and it is here rather than under
           the hero on purpose. Everything above this point is a pick or an
           argument for one — the hero pick, Genius, Bet of the Day, Featured —
           and a leaderboard among those would sit close enough to our own calls
@@ -425,6 +425,10 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         </PremiumPanel>
       )}
 
+      {/* Below the picks, every slot sits between navigation, results or
+          product sections, never beside a call of ours. */}
+      <AdNativeCard />
+
       <PremiumPanel
         kicker="Every competition"
         title="Browse by league"
@@ -435,6 +439,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         <LeagueNav leagues={leagues} empty="No leagues yet. Once tips are published, the leagues they cover appear here." />
       </PremiumPanel>
 
+      <AdRectangle />
+
       <PremiumPanel kicker="Tools" title="More from BetGenius" id="home-tools" bare>
         <div className="grid gap-4 md:grid-cols-3">
           <LinkTile href="/livescores" kicker="Live" title="Livescores" desc="In-play scores across every major league." />
@@ -442,6 +448,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           <LinkTile href="/statspad" kicker="Stats" title="StatsPad" desc="Attack, defence, form and goal difference leaders by league." />
         </div>
       </PremiumPanel>
+
+      <AdHalfBanner />
 
       <HomepageExplainer />
 

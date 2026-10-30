@@ -1,4 +1,4 @@
-import { AdFrame } from "@/components/ads/AdUnit";
+import { AdFrame, FitWidth } from "@/components/ads/AdUnit";
 import { RailPortal } from "@/components/ads/RailPortal";
 
 /**
@@ -110,7 +110,7 @@ function AdBand({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The leaderboard pair: 728x90 on desktop, the native card on a phone.
+ * The leaderboard pair: 728x90 on desktop, a width-fitted 320x50 on a phone.
  *
  * Both are rendered into the page and one is hidden by CSS at every width.
  * Only the visible one ever loads a single byte — a `display:none` element has
@@ -125,10 +125,10 @@ export function AdLeaderboard() {
       <div className="hidden md:block">
         <AdFrame id="leaderboard" />
       </div>
-      {/* Phones get the native card (image + headline, full width) rather
-          than a 320x50 strip, which read as too small between sections. */}
+      {/* Phones: the 320x50 scaled up to the column's width (FitWidth), so
+          it reads as a band rather than a small strip with gutters. */}
       <div className="w-full md:hidden">
-        <AdFrame id="native" />
+        <FitWidth id="mobileBanner" />
       </div>
     </AdBand>
   );
@@ -170,6 +170,25 @@ export function AdRectangle() {
 }
 
 /**
+ * The native card in the body of a page: an image-and-headline ad at the
+ * column's full width, the format news sites run between sections. Asked for
+ * by the owner in addition to the banners.
+ *
+ * Because native is the unit most easily mistaken for editorial content, it
+ * keeps every guard the foot band has — the same labelled "Ad" band — and is
+ * only placed between sections that are navigation, results or reference
+ * data, never beside a pick. The frame reports its filled height, so the
+ * band fits the card (AdFrame, NATIVE_HEIGHT_RANGE).
+ */
+export function AdNativeCard() {
+  return (
+    <AdBand>
+      <AdFrame id="native" />
+    </AdBand>
+  );
+}
+
+/**
  * The Native Banner band. Placed at the foot of a page, below everything the
  * reader came for.
  *
@@ -201,8 +220,11 @@ export function AdNativeBand() {
  * inventory and the half banner has no phone-width counterpart of its own.
  * Two instances of one unit on a long feed is a smaller compromise than three,
  * and it only happens on feeds long enough to earn a third insertion.
+ *
+ * The native card is second: a feed of picks gets one image-and-headline ad
+ * between two groups, labelled like every other band.
  */
-const IN_FEED_ROTATION = [AdLeaderboard, AdRectangle, AdHalfBanner] as const;
+const IN_FEED_ROTATION = [AdLeaderboard, AdNativeCard, AdRectangle, AdHalfBanner] as const;
 
 /**
  * One in-feed band. `index` is the insertion's ordinal in the feed (0, 1, 2),

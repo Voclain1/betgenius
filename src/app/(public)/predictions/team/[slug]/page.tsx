@@ -15,7 +15,7 @@ import { teamSlug, matchKey } from "@/lib/slug";
 import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures } from "@/lib/seo";
 import { teamSearchMetadata } from "@/lib/teamSearchMetadata";
 import { AnswerSummary } from "@/components/AnswerSummary";
-import { AdLeaderboard } from "@/components/ads/AdPlacements";
+import { AdLeaderboard, AdNativeCard } from "@/components/ads/AdPlacements";
 import { teamSummary } from "@/lib/answerSummary";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton } from "@/components/FollowButton";
@@ -218,6 +218,9 @@ export default async function TeamPage({ params }: { params: { slug: string } })
           <TeamTabs tabs={tabs} />
         </section>
       )}
+
+      {/* Between the reference tabs and the competitions list: no pick on either side. */}
+      <AdNativeCard />
 
       {profile && profile.competitions.length > 0 && (
         <section aria-labelledby="competitions">
