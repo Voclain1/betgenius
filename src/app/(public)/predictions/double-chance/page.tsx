@@ -25,10 +25,10 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: row.awayTeam ?? row.fixture?.awayTeam?.name,
   })));
   return {
-    title: "Double Chance Predictions Today",
+    title: `Double Chance Predictions ${day[0].toUpperCase()}${day.slice(1)}`,
     description: rows.length
-      ? `${rows.length} Double Chance predictions${sample ? `, including ${sample}` : ""}. Home-or-Draw, Away-or-Draw and Home-or-Away picks with match evidence.`
-      : "No Double Chance predictions are published yet — check back for the latest football picks.",
+      ? `${rows.length} Double Chance predictions for ${day}${sample ? `, including ${sample}` : ""}. Home-or-Draw, Away-or-Draw and Home-or-Away picks with match evidence.`
+      : `No Double Chance predictions are published for ${day}. Browse another day or explore the other prediction markets.`,
     robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
     alternates: { canonical: feedDayHref("double-chance", day) },
   };
@@ -101,7 +101,7 @@ export default async function DoubleChancePage({ searchParams }: { searchParams?
       ]} />
       <CategoryMasthead
         kicker="Market guide"
-        title="Double Chance predictions today"
+        title={`Double Chance predictions ${day}`}
         blurb={<>{rows.length} Double Chance {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
         dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
         stats={[
