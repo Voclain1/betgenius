@@ -41,6 +41,9 @@ export const MODEL_PRICES: Array<{ match: string; input: number; output: number;
   { match: "gemini:gemini-flash-latest", input: 0.75, output: 3.75, note: "legacy alias — resolved to 3.7 Flash" },
   { match: "gemini", input: 0.75, output: 3.75 },
   { match: "groq", input: 0, output: 0 },
+  // Anthropic list price; used by scripts/compare-models.ts and, if adopted,
+  // by the panel. Prompts over 100K tokens price higher, which this app never sends.
+  { match: "anthropic:claude-haiku-5-5", input: 0.1, output: 0.5 },
 ];
 
 /** Used when no price is known, so an unrecognised model reports zero rather than crashing the panel. */

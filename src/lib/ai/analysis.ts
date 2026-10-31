@@ -617,7 +617,7 @@ a reason to inflate it, and if nothing is genuinely likely, return fewer entries
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
 
-export async function generatePredictionForFixture(input: {
+export type PredictionRequestInput = {
   /** The trimmed football evidence — see src/lib/ai/digest.ts for what it keeps and why. */
   digest: MatchDigest;
   /** Free-text admin direction for a rewrite, e.g. "the confidence feels too high given the h2h". */
@@ -671,7 +671,24 @@ export async function generatePredictionForFixture(input: {
    * evidence supports it. Empty or absent, the prompt is unchanged.
    */
   shortPriceBlock?: string;
-}): Promise<AIPredictionResult> {
+};
+
+/**
+ * The model call and its checks. The prompt itself is built by
+ * buildPredictionRequest, so a harness can send the exact production prompt
+ * to another model (scripts/compare-models.ts).
+ */
+export async function generatePredictionForFixture(input: PredictionRequestInput): Promise<AIPredictionResult> {
+  const d = input.digest;
+  const request = buildPredictionRequest(input);
+  const label = request.label;
+
+  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+  return checkPredictionOutput(d, label, result);
+}
+
+/** The system + user prompt production generation sends for one fixture. Pure. */
+export function buildPredictionRequest(input: PredictionRequestInput): CompletionRequest {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
   // the whole point of the fallback: a missing or revoked Gemini key threw
@@ -771,7 +788,7 @@ ${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock 
 ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
-  const request = {
+  return {
     system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin", input.marketBreadth ?? "single"),
     user: userPrompt,
     label,
@@ -780,8 +797,10 @@ ${marketInstruction}`;
     // request for a different take, so the extra variance is the point.
     ...(isRewrite ? { temperature: 1.0 } : {}),
   };
+}
 
-  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+/** The post-call checks every draft goes through, whichever model wrote it. */
+export function checkPredictionOutput(d: MatchDigest, label: string, result: AIPredictionResult): AIPredictionResult {
   // Shared by first-pass generation and draft rewrites, regardless of provider.
   // The unsupported SENTENCE is removed (a contradicted H2H figure, an
   // unnamed manager, knockout wording off-stage) rather than the draft
@@ -806,7 +825,7 @@ ${marketInstruction}`;
  * being asked for JSON natively, so this stays in the shared path rather than
  * per provider.
  */
-function parsePredictionOutput(text: string): AIPredictionOutput {
+export function parsePredictionOutput(text: string): AIPredictionOutput {
   const cleaned = text.replace(/^```json\s*|^```\s*|```$/gim, "").trim();
   return JSON.parse(cleaned) as AIPredictionOutput;
 }
