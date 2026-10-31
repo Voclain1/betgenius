@@ -445,13 +445,13 @@ html[data-standalone="true"] .ad-sticky {
   }
 }
 
-/* The nav's menu button is md:hidden in a browser tab, because the desktop
+/* The nav's menu button is lg:hidden in a browser tab, because the desktop
    link row covers the same destinations there. In the installed app that row
    is hidden at every width, so the drawer becomes the ONLY route to Standings,
    StatsPad, Multi Bets, pricing and the legal pages — this puts the button
    back at desktop widths, which an installed app genuinely reaches on a tablet
-   or a desktop PWA window. Tailwind's md: breakpoint is 768px. */
-@media (min-width: 768px) {
+   or a desktop PWA window. Tailwind's lg: breakpoint is 1024px. */
+@media (min-width: 1024px) {
   html[data-standalone="true"] .app-shell-menu {
     display: inline-flex !important;
   }

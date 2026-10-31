@@ -63,6 +63,17 @@ jobs:
       - name: Match lineup and odds coverage
         run: TSX_TSCONFIG_PATH=scripts/tsconfig.render.json node --import tsx scripts/check-match-lineups-odds.tsx
 
+      # The header measured in a real browser, signed out, signed in and as
+      # admin (scripts/check-nav-fit.tsx). The runner's own Chrome, driven by
+      # playwright-core installed for this step only (not a project dependency).
+      - name: Header fits the screen
+        run: |
+          npm install --no-save playwright-core@1.55.0
+          TSX_TSCONFIG_PATH=scripts/tsconfig.render.json node --import tsx scripts/check-nav-fit.tsx
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+          REQUIRE_BROWSER: "1"
+
       - name: Build
         run: npx next build
         env:

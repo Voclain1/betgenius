@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronDown, Menu, Smartphone, X } from "lucide-react";
+import { ChevronDown, CircleUser, Menu, Search, Smartphone, X } from "lucide-react";
 // Imported for its side effect too: it starts listening for the browser's
 // one-time install offer on every public page, so /app can use it later.
 import "@/lib/installStore";
@@ -16,7 +16,8 @@ import { LogoutButton } from "@/components/LogoutButton";
 import { MARKET_HUBS } from "@/lib/marketHubs";
 import { lockScroll } from "@/lib/scrollLock";
 
-type NavLink = { href: string; label: string; pill?: string };
+/** `wideOnly`: in the bar's row from xl only; below that it is under More. */
+type NavLink = { href: string; label: string; pill?: string; wideOnly?: boolean };
 
 /**
  * Three groups, in priority order, replacing what was a flat row of 13 links.
@@ -52,7 +53,7 @@ const PRIMARY_LINKS: NavLink[] = [
   { href: "/match-insights", label: "Insights" },
   { href: "/bet-builder", label: "Bet Builder" },
   { href: "/multi-bets", label: "Multi Bets" },
-  { href: "/track-record", label: "Track Record" },
+  { href: "/track-record", label: "Track Record", wideOnly: true },
 ];
 
 const SECONDARY_LINKS: NavLink[] = [
@@ -75,7 +76,7 @@ const SECONDARY_LINKS: NavLink[] = [
  * Height, not width, is what is fixed — `h-7 w-auto` with the intrinsic
  * dimensions passed through. The mark is very nearly square (520x530), so the
  * rendered width lands at 27px and the whole lockup at 137px, against 111px for
- * the wordmark alone. See scripts/check-nav-width.ts for the measurement.
+ * the wordmark alone. scripts/check-nav-fit.tsx measures the whole bar.
  *
  * `priority` because this is in the sticky header on every route: the mark is
  * inside the LCP viewport, and a lazily-loaded nav logo pops in after paint.
@@ -116,21 +117,16 @@ function NavPill({ pill }: { pill?: string }) {
   return null;
 }
 
-/**
- * Desktop dropdown. Click to open rather than hover: hover menus have no
- * touch equivalent, and this same bar is what a tablet at md gets.
- */
-function NavDropdown({ label, items, section }: { label: string; items: NavLink[]; section?: { heading: string; items: NavLink[] } }) {
-  const [open, setOpen] = useState(false);
+/** Closes a popover on a click outside `ref` or on Escape, while it is open. */
+function useDismiss(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") close();
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -138,7 +134,17 @@ function NavDropdown({ label, items, section }: { label: string; items: NavLink[
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
+  }, [open, close]);
+  return ref;
+}
+
+/**
+ * Desktop dropdown. Click to open rather than hover: hover menus have no
+ * touch equivalent, and this same bar is what a tablet at md gets.
+ */
+function NavDropdown({ label, items, section }: { label: string; items: NavLink[]; section?: { heading: string; items: NavLink[] } }) {
+  const [open, setOpen] = useState(false);
+  const ref = useDismiss(open, () => setOpen(false));
 
   return (
     <div className="relative" ref={ref}>
@@ -160,7 +166,7 @@ function NavDropdown({ label, items, section }: { label: string; items: NavLink[
               href={l.href}
               prefetch={false}
               onClick={() => setOpen(false)}
-              className="flex items-center rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card"
+              className={`${l.wideOnly ? "xl:hidden" : ""} flex items-center rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-card`}
             >
               {l.label}
               <NavPill pill={l.pill} />
@@ -189,8 +195,8 @@ function NavDropdown({ label, items, section }: { label: string; items: NavLink[
   );
 }
 
-// Shared between the desktop top-bar and the mobile drawer so the two never
-// drift out of sync. `onNavigate` closes the drawer on click; undefined on desktop.
+// The drawer's auth block. The desktop bar has its own, condensed into
+// AccountMenu when signed in. `onNavigate` closes the drawer on click.
 function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmin: boolean; user: unknown; onNavigate?: () => void; className: string } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={className} {...rest}>
@@ -211,6 +217,69 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
           <Link href="/login" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Log in</Link>
           <Link href="/register" prefetch={false} onClick={onNavigate} className="btn btn-primary text-sm">Join</Link>
         </>
+      )}
+    </div>
+  );
+}
+
+const MENU_ITEM = "flex w-full items-center rounded-md px-3 py-2 text-left text-sm text-gray-300 hover:bg-brand-card";
+
+/**
+ * Signed in, the desktop bar carries ONE account control instead of the
+ * drawer's four buttons (Admin, Account, Following, Log out): side by side
+ * they were ~380px, enough on their own to push the bar past the screen at
+ * every width. Right-aligned, since it sits at the bar's right edge.
+ */
+function AccountMenu({ isAdmin }: { isAdmin: boolean }) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="btn btn-ghost gap-1.5 px-3 text-sm">
+        <CircleUser size={18} aria-hidden="true" />
+        Account
+        <ChevronDown size={14} className={`transition ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] rounded-lg border border-brand-border bg-brand-bg p-1 shadow-xl">
+          {isAdmin && (
+            <Link href="/admin" prefetch={false} onClick={close} className={MENU_ITEM}>Admin</Link>
+          )}
+          <Link href="/dashboard" prefetch={false} onClick={close} className={MENU_ITEM}>Dashboard</Link>
+          <Link href="/following" prefetch={false} onClick={close} className={MENU_ITEM}>Following</Link>
+          <div className="mx-3 my-1 border-t border-brand-border" />
+          <LogoutButton className={MENU_ITEM} onBeforeLogout={close} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Search between lg and xl: an icon that opens the box in a panel under the
+ * bar. The inline box needs ~200px the bar does not have at 1024px; from xl it
+ * is inline again (see the bar below).
+ */
+function SearchToggle() {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss(open, close);
+  return (
+    <div className="relative hidden lg:block xl:hidden" ref={ref}>
+      <button
+        type="button"
+        aria-label={open ? "Close search" : "Search"}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-brand-border text-gray-300 hover:bg-brand-card"
+      >
+        {open ? <X size={16} /> : <Search size={16} />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border border-brand-border bg-brand-bg p-2 shadow-xl">
+          <SearchBox autoFocus onNavigate={close} />
+        </div>
       )}
     </div>
   );
@@ -245,39 +314,37 @@ export function Nav() {
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2.5 px-4 py-3">
           <Link href="/" aria-label="BetGenius home" prefetch={false} className="flex shrink-0 items-center gap-2">
             <BrandLockup className="text-xl font-bold tracking-tight" />
           </Link>
-          {/* No overflow-x-auto any more: four items fit, and a scroll
-              container would clip the absolutely-positioned dropdowns. */}
+          {/* No overflow-x-auto: a scroll container would clip the
+              absolutely-positioned dropdowns. The row has to fit instead, which
+              is why it starts at lg (tablets get the drawer) and why
+              scripts/check-nav-fit.tsx measures it in a browser. */}
           {/* The desktop link row. Hidden in the installed app: the bottom tab
               bar is the primary navigation there, and a second full set of
               links above it would be the same destinations twice. Everything
               this row reaches that the tab bar does not (Standings, StatsPad,
               Multi Bets, the VIP/Premium tiers) stays reachable through the
               drawer, which is why the drawer is NOT marked web-only. */}
-          <nav data-web-only className="hidden items-center gap-1 md:flex">
+          <nav data-web-only className="hidden items-center gap-1 lg:flex">
             <NavDropdown label="Tips" items={TIP_LINKS} section={{ heading: "By market", items: MARKET_LINKS }} />
             {PRIMARY_LINKS.map((l) => (
-              <Link key={l.href} href={l.href} prefetch={false} className="whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card">
+              <Link key={l.href} href={l.href} prefetch={false} className={`${l.wideOnly ? "hidden xl:block" : ""} whitespace-nowrap rounded-md px-3 py-1.5 text-sm text-gray-300 hover:bg-brand-card`}>
                 {l.label}
               </Link>
             ))}
-            <NavDropdown label="More" items={SECONDARY_LINKS} />
+            <NavDropdown label="More" items={[...PRIMARY_LINKS.filter((l) => l.wideOnly), ...SECONDARY_LINKS]} />
           </nav>
 
-          {/* Auth actions live in the top bar on desktop only — on mobile they
-              were overflowing the viewport with no hamburger to fall back on
-              (the bug this component fixes), so below md they move into the
-              drawer instead, alongside the nav links. */}
-          {/* Desktop search sits between the links and the auth actions. The
-              link row already scrolls horizontally (overflow-x-auto), so the
-              search box is given a fixed basis instead of flexing, keeping the
-              bar from growing past the viewport. */}
-          <div className="hidden md:block">
+          {/* Desktop search sits between the links and the auth actions, at a
+              fixed width rather than flexing: inline from xl, an icon with a
+              panel from lg (SearchToggle), in the drawer below that. */}
+          <div className="hidden w-48 xl:block">
             <SearchBox />
           </div>
+          <SearchToggle />
 
           {/* Always visible, both breakpoints. Unlike the auth actions it is a
               single icon-width control, so it costs nothing in the mobile bar
@@ -291,18 +358,28 @@ export function Nav() {
             data-web-only
             aria-label="Get the app"
             title="Get the app"
-            className="btn btn-ghost gap-1.5 p-2 text-sm lg:px-3"
+            className="btn btn-ghost h-9 w-9 justify-center p-0"
           >
+            {/* Icon only: the label cost ~75px the bar does not have even at
+                its full 1280px. The drawer's entry keeps the words. */}
             <Smartphone size={18} aria-hidden="true" />
-            <span className="hidden lg:inline">Get the app</span>
           </Link>
           <ThemeToggle />
           <NotificationBell />
 
-          {/* The Account tab owns sign-in/out and the dashboard in the app, so
-              the inline pair would be a duplicate control in the one place a
-              phone has least room for one. Still present in the drawer. */}
-          <AuthActions isAdmin={isAdmin} user={user} data-web-only className="hidden items-center gap-2 md:flex" />
+          {/* Auth lives in the top bar from lg only; below that it is in the
+              drawer. Signed in it is one menu (AccountMenu). Web-only: the
+              Account tab owns sign-in/out and the dashboard in the app. */}
+          <div data-web-only className="hidden items-center gap-2 lg:flex">
+            {user ? (
+              <AccountMenu isAdmin={isAdmin} />
+            ) : (
+              <>
+                <Link href="/login" prefetch={false} className="btn btn-ghost whitespace-nowrap text-sm">Log in</Link>
+                <Link href="/register" prefetch={false} className="btn btn-primary text-sm">Join</Link>
+              </>
+            )}
+          </div>
 
           <button
             type="button"
@@ -310,12 +387,12 @@ export function Nav() {
             aria-expanded={open}
             aria-controls="mobile-nav-drawer"
             onClick={() => setOpen((v) => !v)}
-            // md:hidden in a browser tab, where the desktop link row above
+            // lg:hidden in a browser tab, where the desktop link row above
             // covers the same ground. In the installed app that row is gone at
             // every width, so the drawer is the only way to reach Standings,
             // StatsPad, Multi Bets, pricing and the legal pages — hence the
             // app-shell override, which re-shows it above md.
-            className="btn btn-ghost p-2 md:hidden app-shell-menu"
+            className="btn btn-ghost p-2 lg:hidden app-shell-menu"
           >
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -328,7 +405,7 @@ export function Nav() {
           inside <header>, this overlay was being sized/positioned relative
           to the ~62px header bar instead of the viewport. */}
       {open && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} aria-hidden="true" />
           <div id="mobile-nav-drawer" className="absolute right-0 top-0 flex h-full w-72 max-w-[85vw] flex-col overflow-y-auto border-l border-brand-border bg-brand-bg p-4 shadow-xl">
             <div className="mb-4 flex items-center justify-between">

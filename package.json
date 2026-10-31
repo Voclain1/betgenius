@@ -25,7 +25,7 @@
     "check:confidence": "tsx scripts/check-confidence-consistency.ts",
     "check:feed-days": "tsx scripts/check-feed-days.ts",
     "check:brand-assets": "tsx scripts/check-brand-assets.ts",
-    "check:nav-width": "tsx scripts/check-nav-width.ts",
+    "check:nav-fit": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-nav-fit.tsx",
     "check:preview-banner": "tsx scripts/check-preview-banner.ts",
     "check:kickoff-assert": "tsx scripts/check-kickoff-assert.ts",
     "check:european-handicap": "tsx scripts/check-european-handicap.ts",
