@@ -10,6 +10,7 @@ import { categoryFeedWhere } from "@/lib/categoryPredictions";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { lagosDateKey } from "@/lib/lagosDate";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+import { WeekendPredictionsGuide } from "@/components/WeekendPredictionsGuide";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SectionHead } from "@/components/TeamProfile";
@@ -187,6 +188,7 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
           </section>
         );
       })}
+      {kind === "weekend" && <WeekendPredictionsGuide />}
     </div>
   );
 }
