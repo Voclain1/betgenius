@@ -35,6 +35,14 @@ import { estimateCostUsd } from "../src/lib/generation/stats";
 const N = Math.max(1, Number(process.env.COMPARE_N) || 30);
 
 /**
+ * GEMINI_BASELINE=published: Gemini's column is the pick production actually
+ * published for the fixture (made before kickoff, now settled), and Gemini is
+ * not called at all. Costs nothing on the Gemini side and is the real baseline;
+ * its token and cost columns read zero. Default: call Gemini afresh.
+ */
+const PUBLISHED_BASELINE = process.env.GEMINI_BASELINE === "published";
+
+/**
  * Appended to the production system prompt for the "tuned" Claude arm only.
  * Every arm gets the identical production prompt and evidence; this adds, and
  * removes nothing. The rules above it were written while watching Gemini, and
@@ -168,17 +176,25 @@ async function main() {
     if (ro?.transaction_read_only !== "on") throw new Error(`refusing: session is not read-only (transaction_read_only = ${ro?.transaction_read_only})`);
     console.log("session verified read-only (transaction_read_only = on)");
   }
-  for (const p of [geminiProvider, ARMS[0].provider]) if (!p.isConfigured()) throw new Error(`${p.name} is not configured (missing API key)`);
+  for (const p of [...(PUBLISHED_BASELINE ? [] : [geminiProvider]), ARMS[0].provider]) if (!p.isConfigured()) throw new Error(`${p.name} is not configured (missing API key)`);
 
   // Settled single-market picks from ordinary scheduled generation, newest first.
   const rows = await prisma.prediction.findMany({
     where: { outcome: { in: ["WON", "LOST"] }, finalHomeScore: { not: null }, finalAwayScore: { not: null }, aiJobId: { not: null } },
     orderBy: { kickoff: "desc" },
     take: N * 6,
-    select: { aiJobId: true, homeTeam: true, awayTeam: true, finalHomeScore: true, finalAwayScore: true, outcome: true, aiJob: { select: { prompt: true, context: true, model: true } } },
+    select: { aiJobId: true, homeTeam: true, awayTeam: true, finalHomeScore: true, finalAwayScore: true, outcome: true, marketType: true, selection: true, confidence: true, aiJob: { select: { prompt: true, context: true, model: true } } },
   });
   const seen = new Set<string>();
-  const samples: Array<{ label: string; request: CompletionRequest; digest: any; final: { home: number; away: number }; publishedOutcome: string }> = [];
+  const samples: Array<{ label: string; request: CompletionRequest; digest: any; final: { home: number; away: number }; publishedOutcome: string; published: Score }> = [];
+  // The published pick per job is its highest-confidence row, the same rule
+  // the harness uses to choose each model's top pick.
+  const best = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (!r.aiJobId) continue;
+    const cur = best.get(r.aiJobId);
+    if (!cur || (r.confidence ?? 0) > (cur.confidence ?? 0)) best.set(r.aiJobId, r);
+  }
   for (const r of rows) {
     if (samples.length >= N) break;
     if (!r.aiJobId || seen.has(r.aiJobId) || !r.aiJob) continue;
@@ -198,7 +214,15 @@ async function main() {
       riskCalibration: route.calibration !== "legacy",
       marketBreadth: marketBreadthForCategories(categories),
     });
-    samples.push({ label: `${r.homeTeam} v ${r.awayTeam}`, request, digest, final: { home: r.finalHomeScore!, away: r.finalAwayScore! }, publishedOutcome: r.outcome });
+    const top = best.get(r.aiJobId)!;
+    const published: Score = {
+      ok: true, validPicks: 1, totalPicks: 1, removedSentences: 0, wouldReject: null,
+      topPick: `${top.marketType} ${JSON.stringify(top.selection)}`,
+      topConfidence: top.confidence ?? null,
+      outcome: top.outcome as Score["outcome"],
+      promptTokens: 0, outputTokens: 0, costUsd: 0, ms: 0,
+    };
+    samples.push({ label: `${r.homeTeam} v ${r.awayTeam}`, request, digest, final: { home: r.finalHomeScore!, away: r.finalAwayScore! }, publishedOutcome: r.outcome, published });
   }
   console.log(`${samples.length} settled fixtures (asked for ${N}); model calls: ${samples.length * 2}`);
   if (!samples.length) throw new Error("no settled ordinary-generation fixtures with stored evidence");
@@ -209,7 +233,7 @@ async function main() {
   for (const [i, s] of samples.entries()) {
     const tunedRequest = { ...s.request, system: s.request.system + CLAUDE_TUNING };
     const [g, ...cs] = await Promise.all([
-      run(geminiProvider, s.request, s.digest, s.final),
+      PUBLISHED_BASELINE ? Promise.resolve(s.published) : run(geminiProvider, s.request, s.digest, s.final),
       ...ARMS.map((a) => run(a.provider, a.tuned ? tunedRequest : s.request, s.digest, s.final)),
     ]);
     gemini.push(g);
@@ -220,7 +244,7 @@ async function main() {
   }
 
   const rows2 = [
-    summary(`Gemini (${process.env.GEMINI_MODEL || "gemini-3.7-flash"})`, gemini),
+    summary(PUBLISHED_BASELINE ? "Gemini, as published (no new calls)" : `Gemini (${process.env.GEMINI_MODEL || "gemini-3.7-flash"})`, gemini),
     ...ARMS.map((a, k) => summary(a.label, claude[k])),
   ];
   const md = [
