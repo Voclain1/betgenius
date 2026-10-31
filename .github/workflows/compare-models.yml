@@ -11,8 +11,8 @@
 # PROD_ENV_FILE secret, so the comparison runs on the same key and model as
 # production. ANTHROPIC_API_KEY must be added as a repository secret.
 #
-# Trigger from the Actions tab ("Run workflow"), or by pushing a change to the
-# script or this file on a claude/* branch. Results: the run's summary page,
+# Trigger from the Actions tab ("Run workflow") only: every run spends real
+# model credit, so it never starts on a push. Results: the run's summary page,
 # and the "model-comparison" artifact with every output for side-by-side reading.
 
 name: compare-models
@@ -26,12 +26,6 @@ on:
       arms:
         description: "Claude setups, comma-separated: default|low|medium|high, each optionally +tuned"
         default: "default,high,high+tuned"
-  push:
-    branches: ["claude/**"]
-    paths:
-      - scripts/compare-models.ts
-      - src/lib/ai/providers/anthropic.ts
-      - .github/workflows/compare-models.yml
 
 permissions:
   contents: read

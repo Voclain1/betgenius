@@ -17,6 +17,7 @@ import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
 import { groqProvider } from "@/lib/ai/providers/groq";
+import { makeAnthropicProvider } from "@/lib/ai/providers/anthropic";
 import { AllProvidersFailedError, type AIProvider, type AIUsage, type CompletionRequest } from "@/lib/ai/providers/types";
 
 export type { AIUsage } from "@/lib/ai/providers/types";
@@ -26,7 +27,19 @@ export type { AIUsage } from "@/lib/ai/providers/types";
  * Gemini is the model the published track record was built on; Groq exists so
  * an outage or an exhausted quota degrades the service instead of stopping it.
  */
-const PROVIDER_CHAIN: AIProvider[] = [geminiProvider, groqProvider];
+/**
+ * Claude Haiku 5.5 first, at high effort; Gemini, then Groq, behind it.
+ *
+ * Measured, not assumed (scripts/compare-models.ts, 60 settled fixtures, the
+ * identical production prompt and evidence): Haiku 5.5 at high effort won
+ * 44/58 top picks against 45/60 for Gemini's published picks, at about $0.0033
+ * a call against $0.0143. Default effort fell to 69%, so high effort is part
+ * of the choice, not a tuning detail. An unconfigured provider (no
+ * ANTHROPIC_API_KEY) is skipped, so production keeps answering on Gemini
+ * until the key is set. AIJob.model records which provider answered, so the
+ * track record can be split by model.
+ */
+const PROVIDER_CHAIN: AIProvider[] = [makeAnthropicProvider({ effort: "high" }), geminiProvider, groqProvider];
 
 /**
  * Should the next provider be tried, or is this request simply wrong?
@@ -44,12 +57,18 @@ const PROVIDER_CHAIN: AIProvider[] = [geminiProvider, groqProvider];
  */
 export function shouldFailOver(err: unknown): boolean {
   if (isModelUnavailable(err) || isQuotaExhausted(err)) return true;
-  const e = err as { name?: unknown; message?: unknown; cause?: unknown };
+  const e = err as { name?: unknown; message?: unknown; cause?: unknown; status?: unknown };
+  // Anthropic: 529 overloaded and other 5xx arrive as a numeric status.
+  if (typeof e?.status === "number" && e.status >= 500) return true;
+  // Out of prepaid credit is this provider's billing, not a bad request: the
+  // next provider can still answer. A refusal is this model's judgement call.
+  if (e?.name === "ModelRefusalError") return true;
   // NonJsonOutputError: the request was fine, this provider just wrote prose.
   // Worth asking the other one rather than failing the generation.
   if (e?.name === "ModelUnavailableError" || e?.name === "AbortError" || e?.name === "NonJsonOutputError") return true;
   const msg = typeof e?.message === "string" ? e.message : "";
-  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket disconnected|network/i.test(msg)) return true;
+  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket disconnected|network|timed out/i.test(msg)) return true;
+  if (/credit balance is too low|billing/i.test(msg)) return true;
   // A 5xx from any provider is worth trying elsewhere; a 4xx is not.
   return /\b5\d\d\b/.test(msg);
 }

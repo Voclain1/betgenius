@@ -47,6 +47,11 @@ check("fails over: retries exhausted on 503", shouldFailOver(new ModelUnavailabl
 check("fails over: quota exhausted", shouldFailOver({ status: 429 }));
 check("fails over: transport failure", shouldFailOver(new TypeError("fetch failed")));
 check("fails over: TLS reset (the SNI-block shape)", shouldFailOver({ message: "Client network socket disconnected before secure TLS connection was established" }));
+check("fails over: Anthropic overloaded (529 status)", shouldFailOver({ status: 529, message: "529 overloaded_error" }));
+check("fails over: Anthropic out of credit", shouldFailOver({ status: 400, message: "400 Your credit balance is too low to access the Anthropic API." }));
+check("fails over: model refusal", shouldFailOver(Object.assign(new Error("anthropic refused (cyber)"), { name: "ModelRefusalError" })));
+check("fails over: request timed out", shouldFailOver(Object.assign(new Error("Request timed out."), { name: "APIConnectionTimeoutError" })));
+check("does not fail over: an ordinary 400", !shouldFailOver({ status: 400, message: "400 invalid_request_error: messages: field required" }));
 check("fails over: request timeout abort", shouldFailOver(Object.assign(new Error("aborted"), { name: "AbortError" })));
 check("fails over: provider 500", shouldFailOver(new Error("Groq 500: internal error")));
 check("fails over: unparseable model output", shouldFailOver(new Error("gemini 503 returned non-JSON output")));

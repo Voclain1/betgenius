@@ -1,5 +1,6 @@
 /**
- * Gemini provider — the primary.
+ * Gemini provider — the first fallback, behind Claude (PROVIDER_CHAIN in
+ * src/lib/ai/analysis.ts).
  *
  * Keeps the 503 retry policy from src/lib/ai/retry.ts wrapped around ONLY the
  * model request, for the same reason it always was: the prompt it retries was

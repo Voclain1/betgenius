@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/ai/providers/gemini";
+import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/ai/providers/anthropic";
 import { z } from "zod";
 
 // One fixture: ~11 throttled api-football calls plus a Gemini call that can
@@ -56,9 +57,11 @@ export async function POST(req: Request) {
       data: {
         userId: session!.user.id,
         prompt: JSON.stringify(input),
-        // Same resolution the provider chain uses, so a failed job records the
-        // model that was actually attempted rather than a stale alias.
-        model: `gemini:${process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}`,
+        // The chain's first configured provider, resolved the way the chain
+        // resolves it, so a failed job records the model actually attempted.
+        model: process.env.ANTHROPIC_API_KEY
+          ? `anthropic:${process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL}`
+          : `gemini:${process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL}`,
         rawOutput: String(err?.message ?? err),
         status: "FAILED",
       },

@@ -66,7 +66,7 @@ export function estimateCostUsd(model: string, promptTokens: number, outputToken
 }
 
 /** The primary provider, for fallback-rate purposes. Everything else counts as a fallback. */
-const PRIMARY_PROVIDER = "gemini";
+const PRIMARY_PROVIDER = "anthropic";
 
 /**
  * "gemini:gemini-2.5-flash" -> "gemini".
@@ -80,7 +80,8 @@ const PRIMARY_PROVIDER = "gemini";
  */
 export function providerOf(model: string): string {
   const i = model.indexOf(":");
-  return i === -1 ? PRIMARY_PROVIDER : model.slice(0, i);
+  // Legacy rows are Gemini's: it was the primary when they were written.
+  return i === -1 ? "gemini" : model.slice(0, i);
 }
 
 /** Percentile over a sorted-in-place copy. Null for an empty sample rather than 0, which would read as "instant". */

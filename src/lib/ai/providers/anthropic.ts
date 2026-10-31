@@ -1,11 +1,7 @@
 /**
- * Anthropic provider — Claude Haiku 5.5 by default.
- *
- * NOT in the production chain (src/lib/ai/analysis.ts PROVIDER_CHAIN). It is
- * here so the model comparison (scripts/compare-models.ts) sends the exact
- * production prompt through the same provider contract Gemini and Groq use,
- * and so that switching, if the comparison supports it, is a one-line change
- * to the chain rather than new code written under pressure.
+ * Anthropic provider — Claude Haiku 5.5, the primary (see PROVIDER_CHAIN in
+ * src/lib/ai/analysis.ts for why, and at what effort). The model comparison
+ * (scripts/compare-models.ts) goes through the same provider.
  *
  * Plain prompt-for-JSON, like the other providers: parsing and every check stay
  * in analysis.ts, so a comparison measures the models, not two pipelines.
@@ -34,7 +30,9 @@ export const anthropicProvider: AIProvider = makeAnthropicProvider();
 
 async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | undefined): Promise<CompletionResult> {
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
-  const client = new Anthropic();
+  // 90s per attempt: a high-effort call measured ~21s at p50, and the route's
+  // maxDuration has to leave room for the fallback after a hung request.
+  const client = new Anthropic({ timeout: 90_000, maxRetries: 1 });
 
   const res = await client.messages.create({
     model,
