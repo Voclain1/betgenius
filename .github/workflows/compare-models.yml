@@ -2,8 +2,9 @@
 #
 # Read-only against production, like diagnose-generation: the session is made
 # read-only and the script refuses to run unless it can confirm that. Each run
-# makes 2 model calls per fixture — about $0.50 for the default 30 fixtures,
-# mostly the Gemini side.
+# makes one Gemini call and one call per Claude setup for every fixture —
+# about $1.25 for the default 60 fixtures and three Claude setups, mostly the
+# Gemini side.
 #
 # Keys: GEMINI_API_KEY (and GEMINI_MODEL, if set) are read from the existing
 # PROD_ENV_FILE secret, so the comparison runs on the same key and model as
@@ -19,11 +20,11 @@ on:
   workflow_dispatch:
     inputs:
       fixtures:
-        description: "Settled fixtures to compare (2 model calls each)"
-        default: "30"
-      effort:
-        description: "Claude effort: low | medium | high (blank = model default)"
-        default: ""
+        description: "Settled fixtures to compare"
+        default: "60"
+      arms:
+        description: "Claude setups, comma-separated: default|low|medium|high, each optionally +tuned"
+        default: "default,high,high+tuned"
   push:
     branches: ["claude/**"]
     paths:
@@ -37,7 +38,7 @@ permissions:
 jobs:
   compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -79,8 +80,8 @@ jobs:
       - name: Compare
         env:
           REQUIRE_READ_ONLY: "1"
-          COMPARE_N: ${{ github.event.inputs.fixtures || '30' }}
-          ANTHROPIC_EFFORT: ${{ github.event.inputs.effort || '' }}
+          COMPARE_N: ${{ github.event.inputs.fixtures || '60' }}
+          CLAUDE_ARMS: ${{ github.event.inputs.arms || 'default,high,high+tuned' }}
         run: npx tsx scripts/compare-models.ts
 
       - uses: actions/upload-artifact@v4

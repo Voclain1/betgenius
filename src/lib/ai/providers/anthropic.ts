@@ -15,53 +15,56 @@ import type { AIProvider, CompletionRequest, CompletionResult } from "@/lib/ai/p
 
 export const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-5-5";
 
+export type AnthropicEffort = "low" | "medium" | "high";
+
 /**
- * Effort for the model's adaptive thinking ("low" | "medium" | "high"). Haiku
- * 5.5 defaults to medium; ANTHROPIC_EFFORT lets the comparison measure whether
- * a lower setting holds quality for less output.
+ * A provider at a given effort for the model's adaptive thinking. Haiku 5.5
+ * defaults to medium; the comparison runs more than one setting side by side.
+ * Without an explicit effort, ANTHROPIC_EFFORT applies, else the model default.
  */
-const effort = () => process.env.ANTHROPIC_EFFORT as "low" | "medium" | "high" | undefined;
+export function makeAnthropicProvider(opts: { effort?: AnthropicEffort } = {}): AIProvider {
+  return {
+    name: "anthropic",
+    isConfigured: () => !!process.env.ANTHROPIC_API_KEY,
+    complete: (req) => completeAnthropic(req, opts.effort ?? (process.env.ANTHROPIC_EFFORT as AnthropicEffort | undefined)),
+  };
+}
 
-export const anthropicProvider: AIProvider = {
-  name: "anthropic",
+export const anthropicProvider: AIProvider = makeAnthropicProvider();
 
-  isConfigured: () => !!process.env.ANTHROPIC_API_KEY,
+async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | undefined): Promise<CompletionResult> {
+  const model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+  const client = new Anthropic();
 
-  async complete(req: CompletionRequest): Promise<CompletionResult> {
-    const model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
-    const client = new Anthropic();
-    const e = effort();
+  const res = await client.messages.create({
+    model,
+    max_tokens: 16000,
+    system: req.system,
+    messages: [{ role: "user", content: req.user }],
+    ...(e ? { output_config: { effort: e } } : {}),
+  });
 
-    const res = await client.messages.create({
-      model,
-      max_tokens: 16000,
-      system: req.system,
-      messages: [{ role: "user", content: req.user }],
-      ...(e ? { output_config: { effort: e } } : {}),
-    });
+  if (res.stop_reason === "refusal") {
+    throw Object.assign(new Error(`anthropic refused (${res.stop_details?.category ?? "no category"})`), { name: "ModelRefusalError" });
+  }
+  if (res.stop_reason === "max_tokens") {
+    throw Object.assign(new Error("anthropic output hit max_tokens"), { name: "NonJsonOutputError" });
+  }
 
-    if (res.stop_reason === "refusal") {
-      throw Object.assign(new Error(`anthropic refused (${res.stop_details?.category ?? "no category"})`), { name: "ModelRefusalError" });
-    }
-    if (res.stop_reason === "max_tokens") {
-      throw Object.assign(new Error("anthropic output hit max_tokens"), { name: "NonJsonOutputError" });
-    }
+  const text = res.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
 
-    const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("")
-      .trim();
-
-    return {
-      text,
-      usage: {
-        promptTokens: res.usage.input_tokens ?? null,
-        // Thinking is billed as output and already included in output_tokens.
-        outputTokens: res.usage.output_tokens ?? null,
-        totalTokens: (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0) || null,
-      },
-      model: `anthropic:${model}`,
-    };
-  },
-};
+  return {
+    text,
+    usage: {
+      promptTokens: res.usage.input_tokens ?? null,
+      // Thinking is billed as output and already included in output_tokens.
+      outputTokens: res.usage.output_tokens ?? null,
+      totalTokens: (res.usage.input_tokens ?? 0) + (res.usage.output_tokens ?? 0) || null,
+    },
+    model: `anthropic:${model}`,
+  };
+}

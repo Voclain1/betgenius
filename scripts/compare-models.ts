@@ -25,7 +25,7 @@ import { stripUnsupportedClaims } from "../src/lib/ai/evidenceClaims";
 import { resolveGenerationRisk } from "../src/lib/ai/generationRisk";
 import { marketBreadthForCategories } from "../src/lib/doublesTargeting";
 import { geminiProvider } from "../src/lib/ai/providers/gemini";
-import { anthropicProvider } from "../src/lib/ai/providers/anthropic";
+import { makeAnthropicProvider, type AnthropicEffort } from "../src/lib/ai/providers/anthropic";
 import type { AIProvider, CompletionRequest } from "../src/lib/ai/providers/types";
 import { isValidSelection, resolveMarket, type MarketType } from "../src/lib/markets";
 import { scanDraftForCertainty } from "../src/lib/certaintyLanguage";
@@ -33,6 +33,39 @@ import { scanDraftForInternalTerminology } from "../src/lib/houseVoice";
 import { estimateCostUsd } from "../src/lib/generation/stats";
 
 const N = Math.max(1, Number(process.env.COMPARE_N) || 30);
+
+/**
+ * Appended to the production system prompt for the "tuned" Claude arm only.
+ * Every arm gets the identical production prompt and evidence; this adds, and
+ * removes nothing. The rules above it were written while watching Gemini, and
+ * Haiku read rule 8's caution as "default to DOUBLE_CHANCE" (29 of 30 in the
+ * first comparison) although rule 8 says DOUBLE_CHANCE is not the default.
+ */
+const CLAUDE_TUNING = `
+
+9. HOW TO APPLY RULE 8. Work through rule 8 literally, in order, before choosing:
+   (a) Place the fixture in ONE band and name the signals that put it there.
+   (b) EXTREME MISMATCH means MATCH_WINNER. Do not hedge it.
+   (c) Otherwise name the primary way the pick would LOSE — a draw, an opponent
+       win, the side failing to control ninety minutes, or a result the evidence
+       cannot call — and take the market rule 8 maps that failure mode to.
+       DOUBLE_CHANCE is correct only when the named risk is an opponent win.
+   (d) When the scoring evidence (goals for and against, clean sheets, both
+       teams scoring) is clearer than the result evidence, prefer the goals
+       market it supports over any side hedge.
+   Caution is expressed through the band and the confidence you report, not by
+   reaching for the same market on every fixture.`;
+
+/** Claude setups compared against Gemini, from CLAUDE_ARMS (comma-separated: default, low, medium, high, each optionally +tuned). */
+const ARMS = (process.env.CLAUDE_ARMS || "default").split(",").map((raw) => {
+  const [effort, tuned] = raw.trim().split("+");
+  return {
+    key: raw.trim(),
+    label: `Claude ${effort === "default" ? "default effort" : `${effort} effort`}${tuned ? " + tuned wording" : ""}`,
+    provider: makeAnthropicProvider(effort === "default" ? {} : { effort: effort as AnthropicEffort }),
+    tuned: tuned === "tuned",
+  };
+});
 const OUT = process.env.COMPARE_OUT ?? "./_compare";
 
 type Score = {
@@ -107,6 +140,10 @@ export function summary(name: string, scores: Score[]) {
   const sum = (f: (s: Score) => number) => scores.reduce((a, s) => a + f(s), 0);
   const avg = (f: (s: Score) => number) => (scores.length ? sum(f) / scores.length : 0);
   const conf = usable.filter((s) => s.topConfidence != null);
+  const marketCounts = usable.reduce<Record<string, number>>((m, s) => {
+    const k = s.topPick?.split(" ")[0] ?? "-";
+    return { ...m, [k]: (m[k] ?? 0) + 1 };
+  }, {});
   return {
     name,
     calls: scores.length,
@@ -114,6 +151,7 @@ export function summary(name: string, scores: Score[]) {
     usable: usable.length,
     rejectedBy: Object.entries(ok.reduce<Record<string, number>>((m, s) => (s.wouldReject ? { ...m, [s.wouldReject]: (m[s.wouldReject] ?? 0) + 1 } : m), {})),
     sentencesRemoved: sum((s) => s.removedSentences),
+    markets: Object.entries(marketCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k.replace(/_/g, " ").toLowerCase()} ${v}`).join(", "),
     winRate: settled.length ? `${won}/${settled.length} (${Math.round((won / settled.length) * 100)}%)` : "—",
     avgConfidence: conf.length ? Math.round(conf.reduce((a, s) => a + (s.topConfidence ?? 0), 0) / conf.length) : null,
     avgIn: Math.round(avg((s) => s.promptTokens)),
@@ -130,7 +168,7 @@ async function main() {
     if (ro?.transaction_read_only !== "on") throw new Error(`refusing: session is not read-only (transaction_read_only = ${ro?.transaction_read_only})`);
     console.log("session verified read-only (transaction_read_only = on)");
   }
-  for (const p of [geminiProvider, anthropicProvider]) if (!p.isConfigured()) throw new Error(`${p.name} is not configured (missing API key)`);
+  for (const p of [geminiProvider, ARMS[0].provider]) if (!p.isConfigured()) throw new Error(`${p.name} is not configured (missing API key)`);
 
   // Settled single-market picks from ordinary scheduled generation, newest first.
   const rows = await prisma.prediction.findMany({
@@ -166,18 +204,25 @@ async function main() {
   if (!samples.length) throw new Error("no settled ordinary-generation fixtures with stored evidence");
 
   const gemini: Score[] = [];
-  const claude: Score[] = [];
+  const claude: Score[][] = ARMS.map(() => []);
   const perFixture: unknown[] = [];
   for (const [i, s] of samples.entries()) {
-    const [g, c] = await Promise.all([run(geminiProvider, s.request, s.digest, s.final), run(anthropicProvider, s.request, s.digest, s.final)]);
+    const tunedRequest = { ...s.request, system: s.request.system + CLAUDE_TUNING };
+    const [g, ...cs] = await Promise.all([
+      run(geminiProvider, s.request, s.digest, s.final),
+      ...ARMS.map((a) => run(a.provider, a.tuned ? tunedRequest : s.request, s.digest, s.final)),
+    ]);
     gemini.push(g);
-    claude.push(c);
+    cs.forEach((c, k) => claude[k].push(c));
     const line = (x: Score) => (x.ok ? `${x.topPick ?? "-"} @${x.topConfidence ?? "?"}% ${x.wouldReject ? `[REJECT: ${x.wouldReject}]` : x.outcome ?? ""}` : `ERROR ${x.error}`);
-    console.log(`${String(i + 1).padStart(2)}. ${s.label} ${s.final.home}-${s.final.away}\n    gemini: ${line(g)}\n    claude: ${line(c)}`);
-    perFixture.push({ fixture: s.label, final: s.final, publishedOutcome: s.publishedOutcome, gemini: g, claude: c });
+    console.log(`${String(i + 1).padStart(2)}. ${s.label} ${s.final.home}-${s.final.away}\n    gemini: ${line(g)}${ARMS.map((a, k) => `\n    ${a.key}: ${line(cs[k])}`).join("")}`);
+    perFixture.push({ fixture: s.label, final: s.final, publishedOutcome: s.publishedOutcome, gemini: g, ...Object.fromEntries(ARMS.map((a, k) => [`claude_${a.key}`, cs[k]])) });
   }
 
-  const rows2 = [summary(`Gemini (${process.env.GEMINI_MODEL || "gemini-3.7-flash"})`, gemini), summary(`Claude (${process.env.ANTHROPIC_MODEL || "claude-haiku-5-5"}${process.env.ANTHROPIC_EFFORT ? `, effort ${process.env.ANTHROPIC_EFFORT}` : ""})`, claude)];
+  const rows2 = [
+    summary(`Gemini (${process.env.GEMINI_MODEL || "gemini-3.7-flash"})`, gemini),
+    ...ARMS.map((a, k) => summary(a.label, claude[k])),
+  ];
   const md = [
     `## Model comparison — ${samples.length} settled fixtures`,
     "",
@@ -189,6 +234,7 @@ async function main() {
       ["Would be rejected by", (r: any) => (r.rejectedBy.length ? r.rejectedBy.map(([k, v]: any) => `${k} ×${v}`).join(", ") : "—")],
       ["Sentences the evidence checks remove", (r: any) => String(r.sentencesRemoved)],
       ["Top pick won", (r: any) => r.winRate],
+      ["Top-pick markets", (r: any) => r.markets],
       ["Avg top-pick confidence", (r: any) => (r.avgConfidence == null ? "—" : `${r.avgConfidence}%`)],
       ["Avg input / output tokens", (r: any) => `${r.avgIn.toLocaleString()} / ${r.avgOut.toLocaleString()}`],
       ["Est. cost per call", (r: any) => `$${r.costPerCall.toFixed(4)}`],
