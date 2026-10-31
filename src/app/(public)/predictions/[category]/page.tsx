@@ -273,7 +273,7 @@ export default async function CategoryPage(
       {cat === "TODAY" ? (
         <>
           <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
-          <TodayPredictionsGuide dateLabel={dateLabel} />
+          <TodayPredictionsGuide dateLabel={dateLabel} day={day} />
           <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
         </>
       ) : (
@@ -303,7 +303,7 @@ export default async function CategoryPage(
       )}
 
       {cat === "BANKER" && <BankerPredictionsEvidence record={record} />}
-      {cat === "TODAY" && <TodayPredictionsEvidence />}
+      {cat === "TODAY" && <TodayPredictionsEvidence day={day} />}
 
       {/* The feed's own track record, last on the page: a list of past days,
           each read only when a reader opens it (src/lib/feedResults.ts). */}
