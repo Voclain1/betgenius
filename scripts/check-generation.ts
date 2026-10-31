@@ -14,6 +14,7 @@
  *
  * Run: npx tsx scripts/check-generation.ts
  */
+import { passOf, spendByPass } from "../src/lib/generation/stats";
 import { nextAttemptAt, RETRY_BACKOFF_MINUTES, MAX_GENERATION_ATTEMPTS, GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "../src/lib/generation/selector";
 import { isLagosToday, lagosTodayBounds } from "../src/lib/lagosDate";
 import { tierFor, REFRESH_TIERS, idleRefreshDue } from "../src/lib/enrichment";
@@ -261,6 +262,25 @@ check("price: longest prefix wins over the bare provider fallback",
 const measured = estimateCostUsd("gemini:gemini-flash-latest", 3788, 1400);
 check("cost: a measured real generation stays under two cents", measured < 0.02, measured);
 check("cost: and is not implausibly free", measured > 0.001, measured);
+
+// --- Spend by pass (admin generation panel) ---------------------------------
+console.log("\nSpend by pass");
+check("goals pass label", passOf(JSON.stringify({ intent: "GOALS" })) === "Goals");
+check("rewrite label", passOf(JSON.stringify({ rewriteOf: "p1" })) === "Rewrite");
+check("same-game double label", passOf(JSON.stringify({ categories: ["SAME_GAME_DOUBLE"] })) === "Same-game double");
+check("plain scheduled label", passOf(JSON.stringify({ categories: ["FEATURED"] })) === "Scheduled");
+check("unparseable prompt", passOf("not json") === "Other");
+{
+  const at = new Date("2026-10-30T12:00:00Z");
+  const rows = spendByPass([
+    { prompt: JSON.stringify({ intent: "GOALS" }), model: "gemini:gemini-3.7-flash", status: "COMPLETED", promptTokens: 8000, outputTokens: 2000, createdAt: at },
+    { prompt: JSON.stringify({ intent: "GOALS" }), model: "gemini:gemini-3.7-flash", status: "REJECTED", promptTokens: 8000, outputTokens: 2000, createdAt: at },
+    { prompt: JSON.stringify({}), model: "gemini:gemini-3.7-flash", status: "FAILED", promptTokens: null, outputTokens: null, createdAt: at },
+  ]);
+  check("one row per day and pass, failed jobs left out", rows.length === 1 && rows[0].jobs === 2, rows);
+  check("rejected drafts counted", rows[0]?.rejected === 1, rows[0]);
+  check("cost includes the rejected draft", rows[0]?.costUsd.toFixed(3) === "0.027", rows[0]?.costUsd);
+}
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {

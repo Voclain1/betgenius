@@ -1,4 +1,4 @@
-import { getGenerationStats, type WindowSummary } from "@/lib/generation/stats";
+import { getGenerationStats, type PassSpend, type WindowSummary } from "@/lib/generation/stats";
 import { getBetOfDayCalibration, type BetOfDayCalibration } from "@/lib/betOfDayCalibration";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,11 @@ function WindowCard({ title, s }: { title: string; s: WindowSummary }) {
       <h2 className="text-sm font-semibold">{title}</h2>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Stat label="Model calls" value={s.jobs} hint={s.failedJobs > 0 ? `${s.failedJobs} failed` : undefined} />
-        <Stat label="Est. cost" value={usd(s.costUsd)} hint="from stored token counts" />
+        <Stat
+          label="Est. cost"
+          value={usd(s.costUsd)}
+          hint={s.rejectedJobs > 0 ? `${usd(s.rejectedCostUsd)} on ${s.rejectedJobs} rejected drafts` : "from stored token counts"}
+        />
         <Stat label="Fallback rate" value={s.fallbackPct == null ? "—" : `${s.fallbackPct}%`} hint="non-primary provider" />
         <Stat label="Input tokens" value={s.promptTokens.toLocaleString()} />
         <Stat label="Output tokens" value={s.outputTokens.toLocaleString()} />
@@ -145,6 +149,56 @@ function CalibrationPanel({ c }: { c: BetOfDayCalibration }) {
   );
 }
 
+/**
+ * Where the model spend goes: one row per day and generation pass, with the
+ * share of each pass's calls that were paid for and then rejected. The
+ * answer to "why did the AI bill go up" without leaving the admin.
+ */
+function SpendByPass({ rows }: { rows: PassSpend[] }) {
+  if (rows.length === 0) return null;
+  const days = [...new Set(rows.map((r) => r.day))];
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold">Spend by pass, last 7 days</h2>
+        <p className="text-xs text-gray-500">Estimated from stored token counts. Rejected = a draft paid for and then not used.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] uppercase text-gray-500">
+            <tr>
+              <th className="py-1.5 pr-3">Day</th>
+              <th className="py-1.5 pr-3">Pass</th>
+              <th className="py-1.5 pr-3 text-right">Calls</th>
+              <th className="py-1.5 pr-3 text-right">Rejected</th>
+              <th className="py-1.5 pr-3 text-right">Input tok</th>
+              <th className="py-1.5 pr-3 text-right">Output tok</th>
+              <th className="py-1.5 text-right">Est. cost</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-brand-border">
+            {days.map((day) => {
+              const dayRows = rows.filter((r) => r.day === day);
+              const total = dayRows.reduce((a, r) => a + r.costUsd, 0);
+              return dayRows.map((r, i) => (
+                <tr key={`${day}-${r.pass}`} className="tabular-nums">
+                  <td className="py-1.5 pr-3 text-gray-400">{i === 0 ? `${day} · ${usd(total)}` : ""}</td>
+                  <td className="py-1.5 pr-3">{r.pass}</td>
+                  <td className="py-1.5 pr-3 text-right">{r.jobs}</td>
+                  <td className="py-1.5 pr-3 text-right">{r.rejected || "—"}</td>
+                  <td className="py-1.5 pr-3 text-right">{r.promptTokens.toLocaleString()}</td>
+                  <td className="py-1.5 pr-3 text-right">{r.outputTokens.toLocaleString()}</td>
+                  <td className="py-1.5 text-right">{usd(r.costUsd)}</td>
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default async function GenerationPage() {
   const [stats, calibration] = await Promise.all([getGenerationStats(), getBetOfDayCalibration()]);
 
@@ -174,6 +228,8 @@ export default async function GenerationPage() {
         <WindowCard title="Today" s={stats.today} />
         <WindowCard title="Last 7 days" s={stats.last7d} />
       </div>
+
+      <SpendByPass rows={stats.spendByPass} />
 
       <div className="card space-y-3">
         <h2 className="text-sm font-semibold">Attempt ledger</h2>
