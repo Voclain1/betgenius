@@ -165,10 +165,12 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     // newer cache), or knockout-tie wording for a fixture that is not one.
     // Nothing is announced to the reader; the published pick is untouched.
     const ctx = staffCtx(digest);
+    const draftIssues = digest ? evidenceClaimIssues(digest, [r.matchPreview, r.reasoning, ...(parseAnalysis(r.analysisJson)?.keyFactors ?? [])].filter(Boolean).join("\n")) : [];
     const nonKnockout = !!digest?.fixture.round && competitionStage(digest.fixture) !== "knockout";
     const clean = (text: string) => {
       const bad = new Set(unsupportedStaffSentences(text, ctx));
       if (digest) for (const issue of evidenceClaimIssues(digest, text)) bad.add(issue.claim);
+      for (const issue of draftIssues) if (text.includes(issue.claim)) bad.add(issue.claim);
       if (nonKnockout) for (const s of text.split(/(?<=[.!?])\s+|\n+/)) if (KNOCKOUT_TIE.test(s)) bad.add(s);
       return removeSentences(text, bad);
     };
