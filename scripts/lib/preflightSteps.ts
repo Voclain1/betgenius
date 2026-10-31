@@ -22,7 +22,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-adaptive-combo.ts",
   "tsx scripts/check-confidence-consistency.ts",
   "tsx scripts/check-brand-assets.ts",
-  "tsx scripts/check-nav-width.ts",
+  `${RENDER} scripts/check-nav-fit.tsx`,
   "tsx scripts/check-preview-banner.ts",
   "tsx scripts/check-kickoff-assert.ts",
   "tsx scripts/check-european-handicap.ts",

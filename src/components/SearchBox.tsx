@@ -106,7 +106,7 @@ export function SearchBox({ onNavigate, autoFocus = false }: { onNavigate?: () =
   };
 
   return (
-    <div ref={boxRef} className="relative w-full md:w-44 lg:w-56 xl:w-64">
+    <div ref={boxRef} className="relative w-full">
       <div className="flex items-center gap-2 rounded-md border border-brand-border bg-brand-card px-2.5 py-1.5">
         <Search size={15} className="shrink-0 text-gray-500" />
         <input
