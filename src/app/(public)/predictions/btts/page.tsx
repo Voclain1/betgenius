@@ -25,10 +25,10 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: row.awayTeam ?? row.fixture?.awayTeam?.name,
   })));
   return {
-    title: "BTTS Predictions Today",
+    title: `BTTS Predictions ${day[0].toUpperCase()}${day.slice(1)}`,
     description: rows.length
-      ? `${rows.length} BTTS predictions${sample ? `, including ${sample}` : ""}. Both Teams to Score Yes or No picks with match evidence and confidence ratings.`
-      : "No BTTS predictions are published yet — check back for the latest Both Teams to Score picks.",
+      ? `${rows.length} BTTS predictions for ${day}${sample ? `, including ${sample}` : ""}. Both Teams to Score Yes or No picks with match evidence and confidence ratings.`
+      : `No BTTS predictions are published for ${day}. Browse another day or explore the other prediction markets.`,
     robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
     alternates: { canonical: feedDayHref("btts", day) },
   };
@@ -101,7 +101,7 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
       ]} />
       <CategoryMasthead
         kicker="Market guide"
-        title="BTTS predictions today"
+        title={`BTTS predictions ${day}`}
         blurb={<>{rows.length} Both Teams to Score {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
         dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
         stats={[

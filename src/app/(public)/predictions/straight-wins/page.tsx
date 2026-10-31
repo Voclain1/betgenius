@@ -25,10 +25,10 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: row.awayTeam ?? row.fixture?.awayTeam?.name,
   })));
   return {
-    title: "Straight Win Predictions Today",
+    title: `Straight Win Predictions ${day[0].toUpperCase()}${day.slice(1)}`,
     description: rows.length
-      ? `${rows.length} straight win predictions${sample ? `, including ${sample}` : ""}. Home win and away win picks with match evidence.`
-      : "No straight win predictions are published yet — check back for the latest football picks.",
+      ? `${rows.length} straight win predictions for ${day}${sample ? `, including ${sample}` : ""}. Home win and away win picks with match evidence.`
+      : `No straight win predictions are published for ${day}. Browse another day or explore the other prediction markets.`,
     robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
     alternates: { canonical: feedDayHref("straight-wins", day) },
   };
@@ -101,7 +101,7 @@ export default async function StraightWinsPage({ searchParams }: { searchParams?
       ]} />
       <CategoryMasthead
         kicker="Market guide"
-        title="Straight win predictions today"
+        title={`Straight win predictions ${day}`}
         blurb={<>{rows.length} straight win {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
         dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
         stats={[
