@@ -17,6 +17,7 @@ import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { geminiProvider } from "@/lib/ai/providers/gemini";
 import { groqProvider } from "@/lib/ai/providers/groq";
+import { makeAnthropicProvider } from "@/lib/ai/providers/anthropic";
 import { AllProvidersFailedError, type AIProvider, type AIUsage, type CompletionRequest } from "@/lib/ai/providers/types";
 
 export type { AIUsage } from "@/lib/ai/providers/types";
@@ -26,7 +27,19 @@ export type { AIUsage } from "@/lib/ai/providers/types";
  * Gemini is the model the published track record was built on; Groq exists so
  * an outage or an exhausted quota degrades the service instead of stopping it.
  */
-const PROVIDER_CHAIN: AIProvider[] = [geminiProvider, groqProvider];
+/**
+ * Claude Haiku 5.5 first, at high effort; Gemini, then Groq, behind it.
+ *
+ * Measured, not assumed (scripts/compare-models.ts, 60 settled fixtures, the
+ * identical production prompt and evidence): Haiku 5.5 at high effort won
+ * 44/58 top picks against 45/60 for Gemini's published picks, at about $0.0033
+ * a call against $0.0143. Default effort fell to 69%, so high effort is part
+ * of the choice, not a tuning detail. An unconfigured provider (no
+ * ANTHROPIC_API_KEY) is skipped, so production keeps answering on Gemini
+ * until the key is set. AIJob.model records which provider answered, so the
+ * track record can be split by model.
+ */
+const PROVIDER_CHAIN: AIProvider[] = [makeAnthropicProvider({ effort: "high" }), geminiProvider, groqProvider];
 
 /**
  * Should the next provider be tried, or is this request simply wrong?
@@ -44,12 +57,18 @@ const PROVIDER_CHAIN: AIProvider[] = [geminiProvider, groqProvider];
  */
 export function shouldFailOver(err: unknown): boolean {
   if (isModelUnavailable(err) || isQuotaExhausted(err)) return true;
-  const e = err as { name?: unknown; message?: unknown; cause?: unknown };
+  const e = err as { name?: unknown; message?: unknown; cause?: unknown; status?: unknown };
+  // Anthropic: 529 overloaded and other 5xx arrive as a numeric status.
+  if (typeof e?.status === "number" && e.status >= 500) return true;
+  // Out of prepaid credit is this provider's billing, not a bad request: the
+  // next provider can still answer. A refusal is this model's judgement call.
+  if (e?.name === "ModelRefusalError") return true;
   // NonJsonOutputError: the request was fine, this provider just wrote prose.
   // Worth asking the other one rather than failing the generation.
   if (e?.name === "ModelUnavailableError" || e?.name === "AbortError" || e?.name === "NonJsonOutputError") return true;
   const msg = typeof e?.message === "string" ? e.message : "";
-  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket disconnected|network/i.test(msg)) return true;
+  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket disconnected|network|timed out/i.test(msg)) return true;
+  if (/credit balance is too low|billing/i.test(msg)) return true;
   // A 5xx from any provider is worth trying elsewhere; a 4xx is not.
   return /\b5\d\d\b/.test(msg);
 }
@@ -617,7 +636,7 @@ a reason to inflate it, and if nothing is genuinely likely, return fewer entries
 /** The draft being replaced, shown to the model on a rewrite so it can't simply restate it. */
 export type PreviousDraft = { matchPreview?: string | null; reasoning?: string | null; pick?: string | null; confidence?: number | null };
 
-export async function generatePredictionForFixture(input: {
+export type PredictionRequestInput = {
   /** The trimmed football evidence — see src/lib/ai/digest.ts for what it keeps and why. */
   digest: MatchDigest;
   /** Free-text admin direction for a rewrite, e.g. "the confidence feels too high given the h2h". */
@@ -671,7 +690,24 @@ export async function generatePredictionForFixture(input: {
    * evidence supports it. Empty or absent, the prompt is unchanged.
    */
   shortPriceBlock?: string;
-}): Promise<AIPredictionResult> {
+};
+
+/**
+ * The model call and its checks. The prompt itself is built by
+ * buildPredictionRequest, so a harness can send the exact production prompt
+ * to another model (scripts/compare-models.ts).
+ */
+export async function generatePredictionForFixture(input: PredictionRequestInput): Promise<AIPredictionResult> {
+  const d = input.digest;
+  const request = buildPredictionRequest(input);
+  const label = request.label;
+
+  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+  return checkPredictionOutput(d, label, result);
+}
+
+/** The system + user prompt production generation sends for one fixture. Pure. */
+export function buildPredictionRequest(input: PredictionRequestInput): CompletionRequest {
   // No eager key check here, deliberately. This function predates the provider
   // chain and used to guard on GEMINI_API_KEY directly — which silently defeated
   // the whole point of the fallback: a missing or revoked Gemini key threw
@@ -771,7 +807,7 @@ ${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock 
 ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
-  const request = {
+  return {
     system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin", input.marketBreadth ?? "single"),
     user: userPrompt,
     label,
@@ -780,8 +816,10 @@ ${marketInstruction}`;
     // request for a different take, so the extra variance is the point.
     ...(isRewrite ? { temperature: 1.0 } : {}),
   };
+}
 
-  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+/** The post-call checks every draft goes through, whichever model wrote it. */
+export function checkPredictionOutput(d: MatchDigest, label: string, result: AIPredictionResult): AIPredictionResult {
   // Shared by first-pass generation and draft rewrites, regardless of provider.
   // The unsupported SENTENCE is removed (a contradicted H2H figure, an
   // unnamed manager, knockout wording off-stage) rather than the draft
@@ -806,7 +844,7 @@ ${marketInstruction}`;
  * being asked for JSON natively, so this stays in the shared path rather than
  * per provider.
  */
-function parsePredictionOutput(text: string): AIPredictionOutput {
+export function parsePredictionOutput(text: string): AIPredictionOutput {
   const cleaned = text.replace(/^```json\s*|^```\s*|```$/gim, "").trim();
   return JSON.parse(cleaned) as AIPredictionOutput;
 }

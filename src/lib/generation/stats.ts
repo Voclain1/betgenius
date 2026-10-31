@@ -41,6 +41,9 @@ export const MODEL_PRICES: Array<{ match: string; input: number; output: number;
   { match: "gemini:gemini-flash-latest", input: 0.75, output: 3.75, note: "legacy alias — resolved to 3.7 Flash" },
   { match: "gemini", input: 0.75, output: 3.75 },
   { match: "groq", input: 0, output: 0 },
+  // Anthropic list price; used by scripts/compare-models.ts and, if adopted,
+  // by the panel. Prompts over 100K tokens price higher, which this app never sends.
+  { match: "anthropic:claude-haiku-5-5", input: 0.1, output: 0.5 },
 ];
 
 /** Used when no price is known, so an unrecognised model reports zero rather than crashing the panel. */
@@ -63,7 +66,7 @@ export function estimateCostUsd(model: string, promptTokens: number, outputToken
 }
 
 /** The primary provider, for fallback-rate purposes. Everything else counts as a fallback. */
-const PRIMARY_PROVIDER = "gemini";
+const PRIMARY_PROVIDER = "anthropic";
 
 /**
  * "gemini:gemini-2.5-flash" -> "gemini".
@@ -77,7 +80,8 @@ const PRIMARY_PROVIDER = "gemini";
  */
 export function providerOf(model: string): string {
   const i = model.indexOf(":");
-  return i === -1 ? PRIMARY_PROVIDER : model.slice(0, i);
+  // Legacy rows are Gemini's: it was the primary when they were written.
+  return i === -1 ? "gemini" : model.slice(0, i);
 }
 
 /** Percentile over a sorted-in-place copy. Null for an empty sample rather than 0, which would read as "instant". */

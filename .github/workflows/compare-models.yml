@@ -1,0 +1,90 @@
+# Gemini vs Claude Haiku 5.5 on settled fixtures (scripts/compare-models.ts).
+#
+# Read-only against production, like diagnose-generation: the session is made
+# read-only and the script refuses to run unless it can confirm that. Each run
+# makes one call per Claude setup for every fixture, about $0.40 for the
+# default 60 fixtures and three setups. Gemini is NOT called: its column is the
+# pick production published for each fixture (GEMINI_BASELINE=published), so
+# the comparison never spends the Gemini credit live generation needs.
+#
+# Keys: GEMINI_API_KEY (and GEMINI_MODEL, if set) are read from the existing
+# PROD_ENV_FILE secret, so the comparison runs on the same key and model as
+# production. ANTHROPIC_API_KEY must be added as a repository secret.
+#
+# Trigger from the Actions tab ("Run workflow") only: every run spends real
+# model credit, so it never starts on a push. Results: the run's summary page,
+# and the "model-comparison" artifact with every output for side-by-side reading.
+
+name: compare-models
+
+on:
+  workflow_dispatch:
+    inputs:
+      fixtures:
+        description: "Settled fixtures to compare"
+        default: "60"
+      arms:
+        description: "Claude setups, comma-separated: default|low|medium|high, each optionally +tuned"
+        default: "default,high,high+tuned"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+
+      - name: Model keys
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "::error::Add the ANTHROPIC_API_KEY repository secret (Settings > Secrets and variables > Actions)"; exit 1; }
+          read_env() { printf '%s\n' "$PROD_ENV_FILE" | grep -E "^$1=" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+          G=$(read_env GEMINI_API_KEY)
+          [ -n "$G" ] || { echo "::error::GEMINI_API_KEY not found in PROD_ENV_FILE"; exit 1; }
+          echo "::add-mask::$G"
+          echo "GEMINI_API_KEY=$G" >> "$GITHUB_ENV"
+          M=$(read_env GEMINI_MODEL)
+          [ -z "$M" ] || echo "GEMINI_MODEL=$M" >> "$GITHUB_ENV"
+          echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> "$GITHUB_ENV"
+
+      - name: Compare
+        env:
+          REQUIRE_READ_ONLY: "1"
+          COMPARE_N: ${{ github.event.inputs.fixtures || '60' }}
+          CLAUDE_ARMS: ${{ github.event.inputs.arms || 'default,high,high+tuned' }}
+          # Gemini's side is the pick it actually published: no Gemini calls,
+          # so the comparison never spends production's Gemini credit.
+          GEMINI_BASELINE: published
+        run: npx tsx scripts/compare-models.ts
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model-comparison
+          path: _compare/
+          if-no-files-found: ignore

@@ -24,7 +24,7 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
 
 const ms = (v: number | null) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${v}ms`);
 const usd = (v: number) => (v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`);
-const providerLabel = (provider: string) => provider === "gemini" ? "Primary engine" : "Fallback engine";
+const providerLabel = (provider: string) => provider === "anthropic" ? "Primary engine" : "Fallback engine";
 const safeOperationalError = (error: string | null | undefined) => error
   ?.replace(/gemini/gi, "generation service")
   .replace(/\bAI\b/gi, "generation")
