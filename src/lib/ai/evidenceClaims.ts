@@ -14,10 +14,21 @@ export type ClaimIssue = { code: string; claim: string; evidence: string };
  */
 export function evidenceClaimIssues(d: MatchDigest, text: string): ClaimIssue[] {
   const issues: ClaimIssue[] = [];
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/);
+  // A cache can itself omit the latest meeting. Catch the contradiction in
+  // the prose even when every older cached meeting did clear 2.5 goals.
+  const latestLowScore = sentences.find(sentence => {
+    if (!/\b(?:most recent|previous|last) (?:competitive )?(?:meeting|clash|encounter)\b/i.test(sentence) || !/\b(?:ended|finished|draw|drew|held)\b/i.test(sentence)) return false;
+    return [...sentence.matchAll(/\b(\d+)[-–‑](\d+)\b/g)].some(m => Number(m[1]) + Number(m[2]) <= 2);
+  });
+  if (latestLowScore) for (const sentence of sentences) {
+    if (/\b(?:last|previous) (?:\d+|ten|nine|eight|seven|six|five|four|three|two|one) (?:(?:head[- ]to[- ]head |h2h )(?:fixtures|meetings|encounters|clashes)|(?:meetings|encounters|clashes))\b/i.test(sentence)
+      && /\ball (?:\d+|ten|nine|eight|seven|six|five|four|three|two|one|of them) (?:meetings |matches |fixtures )?(?:featur(?:ed|ing)|finish(?:ed|ing)|had|were|went|exceed(?:ed|ing)) (?:over |above )?2[.]5/i.test(sentence))
+      issues.push({ code: "h2h-internal-score-conflict", claim: sentence, evidence: "The same analysis reports a latest meeting with no more than two goals." });
+  }
   const meetings = d.h2h?.meetings;
   const homeId = d.teams?.home?.apiId, awayId = d.teams?.away?.apiId;
   if (!meetings?.length || homeId == null || awayId == null) return issues;
-  const sentences = text.split(/(?<=[.!?])\s+|\n+/);
   for (const sentence of sentences) {
     const scope = sentence.match(new RegExp(`(?:last|previous) ${number} (?:(?:head[- ]to[- ]head |h2h )(?:meetings|encounters|clashes|fixtures|matches)|(?:meetings|encounters|clashes))`, "i"));
     if (!scope) continue;
@@ -78,10 +89,13 @@ export function stripUnsupportedClaims<T extends DraftProse>(d: MatchDigest, out
   const ctx = staffContext(d);
   const nonKnockout = competitionStage(d.fixture) !== "knockout";
   const removed: string[] = [];
+  const draftIssues = evidenceClaimIssues(d, [output.matchPreview, ...(output.keyFactors ?? []), ...(output.predictions ?? []).map(p => p.reasoning)].filter(Boolean).join("\n"));
+  const conflictingClaims = new Set(draftIssues.map(i => i.claim));
   const clean = (text: string | undefined): string | undefined => {
     if (typeof text !== "string" || !text) return text;
     const bad = new Set<string>(unsupportedStaffSentences(text, ctx));
     for (const issue of evidenceClaimIssues(d, text)) bad.add(issue.claim);
+    for (const sentence of conflictingClaims) if (text.includes(sentence)) bad.add(sentence);
     if (nonKnockout) for (const s of text.split(/(?<=[.!?])\s+|\n+/)) if (KNOCKOUT_TIE.test(s)) bad.add(s);
     removed.push(...bad);
     return removeSentences(text, bad);

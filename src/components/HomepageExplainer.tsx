@@ -13,7 +13,7 @@ const GUIDE_LINKS = [
 /** Editorial content only: server-rendered, with native disclosure controls. */
 export function HomepageExplainer() {
   return (
-    <>
+    <div className="space-y-8 [&_[id]]:scroll-mt-36">
       <section aria-labelledby="home-football-guide">
         <SectionHead kicker="Football predictions and match analysis" title="Football predictions today: understand the pick before you decide" id="home-football-guide" />
         <div className="max-w-4xl space-y-4 text-sm leading-7 text-gray-400">
@@ -207,7 +207,7 @@ export function HomepageExplainer() {
           read our <Link href="/responsible-gambling" className={LINK}>responsible gambling guidance</Link> for practical support.
         </p>
       </section>
-    </>
+    </div>
   );
 }
 

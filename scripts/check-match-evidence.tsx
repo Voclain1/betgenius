@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { buildTeamDigest, assembleMatchDigest } from '../src/lib/ai/digest';
-import { evidenceClaimIssues, assertEvidenceClaims } from '../src/lib/ai/evidenceClaims';
+import { evidenceClaimIssues, assertEvidenceClaims, stripUnsupportedClaims } from '../src/lib/ai/evidenceClaims';
 import { MatchRecentResults } from '../src/components/MatchRecentResults';
 import { MatchStatsComparison } from '../src/components/MatchStatsComparison';
 import { MatchSectionNav } from '../src/components/MatchSectionNav';
@@ -47,3 +47,13 @@ assert.ok(!nocomp.includes('not recorded'));
 const enriched=renderToStaticMarkup(<MatchRecentResults home={home} away={away} homeTeam={home.name} awayTeam={away.name} homeHistory={[{id:1,date:'2026-09-19T18:00:00+00:00',status:'FT',leagueId:39,leagueName:'Premier League',homeId:9,homeName:'Rivals',awayId:1,awayName:'FC Midtjylland',home:0,away:2}]}/>);
 assert.ok(enriched.includes('Premier League')&&enriched.includes('leagues/39.png')&&enriched.includes('teams/9.png'));
 console.log('Match evidence: claim grounding, exact samples, recent results, missing coverage and conditional navigation passed');
+
+// A stale stored sample may omit the latest result explicitly named elsewhere
+// in the same draft. Check across preview/key-factor boundaries as well.
+const contradictory = 'The last ten head-to-head fixtures averaged 4.7 goals, with all ten featuring over 2.5 goals. Their most recent competitive meeting ended in a 1-1 draw.';
+assert.ok(evidenceClaimIssues(d,contradictory).some(i=>i.code==='h2h-internal-score-conflict'));
+assert.ok(!evidenceClaimIssues(d,'The last ten fixtures all ten featuring over 2.5 goals. Their most recent meeting ended in a 1-1 draw.').some(i=>i.code==='h2h-internal-score-conflict'), 'unscoped recent fixtures are not silently treated as H2H');
+
+const crossField=stripUnsupportedClaims(d,{matchPreview:'Their most recent competitive meeting ended in a 1-1 draw.',keyFactors:['The last ten head-to-head fixtures averaged 4.7 goals, with all ten featuring over 2.5 goals.'],predictions:[{reasoning:'The home side has useful attacking options.'}]});
+assert.equal(crossField.output.keyFactors.length,0,'cross-field contradiction is removed from key factors');
+assert.equal(crossField.output.predictions[0].reasoning,'The home side has useful attacking options.');

@@ -1,0 +1,200 @@
+{
+  "mode": "READ_ONLY",
+  "summary": {
+    "checked": 6412,
+    "missingEvidence": 968,
+    "unknownStage": 764,
+    "flaggedPredictions": 32,
+    "flaggedMatches": 27,
+    "byCode": {
+      "h2h-goal-average": 11,
+      "h2h-wins": 7,
+      "competition-stage": 13,
+      "h2h-internal-score-conflict": 1
+    }
+  },
+  "sample": [
+    {
+      "slug": "sporting-cp-vs-alverca-2026-08-22",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "gaziantep-fk-vs-rizespor-2026-08-29",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "istra-1961-vs-dinamo-zagreb-2026-08-29",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "west-brom-vs-charlton-2026-09-02",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "korona-kielce-vs-rakow-czestochowa-2026-09-19",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "lyon-vs-rennes-2026-09-19",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "brechin-vs-buckie-thistle-2026-10-03",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "blackburn-vs-cardiff-2026-10-10",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "lask-linz-vs-liverpool-2026-10-14",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "feyenoord-vs-como-2026-10-14",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "feyenoord-vs-como-2026-10-14",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "feyenoord-vs-como-2026-10-14",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "slovan-bratislava-vs-vfb-stuttgart-2026-10-14",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "az-alkmaar-vs-hapoel-beer-sheva-2026-10-15",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "az-alkmaar-vs-hapoel-beer-sheva-2026-10-15",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "sparta-praha-vs-lillestrom-2026-10-15",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "mjallby-aif-vs-inter-club-d-escaldes-2026-10-15",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "everton-vs-chelsea-2026-10-17",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "bayer-leverkusen-vs-sc-freiburg-2026-10-18",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "trabzonspor-vs-besiktas-2026-10-19",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "as-roma-vs-slovan-bratislava-2026-10-20",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "como-vs-manchester-united-2026-10-21",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "como-vs-manchester-united-2026-10-21",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "juventus-vs-rennes-2026-10-22",
+      "codes": [
+        "competition-stage"
+      ]
+    },
+    {
+      "slug": "fortuna-sittard-vs-excelsior-2026-10-25",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "monaco-vs-lille-2026-10-25",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "sparta-rotterdam-vs-ajax-2026-10-25",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "lillestrom-vs-brann-2026-10-25",
+      "codes": [
+        "h2h-goal-average"
+      ]
+    },
+    {
+      "slug": "silkeborg-vs-fc-nordsjaelland-2026-10-25",
+      "codes": [
+        "h2h-wins"
+      ]
+    },
+    {
+      "slug": "fc-midtjylland-vs-odense-2026-10-29",
+      "codes": [
+        "h2h-internal-score-conflict"
+      ]
+    }
+  ],
+  "sampleLimit": 30,
+  "limitation": "Targeted H2H/internal-score/stage checks; not a comprehensive fact audit. Unknown historic stages are not inferred."
+}
