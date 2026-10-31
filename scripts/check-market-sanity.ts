@@ -85,13 +85,14 @@ check("cup tables alone: null", pickDomesticStanding(505, [tables[0]]) === null)
 console.log("\n5. Backup AI flag");
 check("groq pick flagged", isBackupModel("groq:openai/gpt-oss-120b"));
 check("gemini pick not flagged", !isBackupModel("gemini:gemini-3.7-flash"));
+check("claude pick not flagged", !isBackupModel("anthropic:claude-haiku-5-5"));
 check("no job / old unprefixed model: not flagged", !isBackupModel(null) && !isBackupModel("gpt-4o"));
 
 console.log("\n6. Wiring");
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
 check("odds checks skip Goals, handicap and VIP/PREMIUM but not manual runs", /const checksMarket = !goalsOnly && !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(gen) && /const odds = checksMarket \? await loadFixtureOdds\(/.test(gen));
 check("every draft off the market: one more ask with the market's view", /marketSanityRetryBlock\(odds, off, input\.home, input\.away\)/.test(gen));
-check("off-market drafts are dropped; none left throws MarketSanityError", /payable\.filter\(\(p\) => !offMarket\(p\)\)/.test(gen) && /throw new MarketSanityError\(/.test(gen));
+check("off-market drafts are dropped; none left throws MarketSanityError", /payable\.filter\(\(p\) => !offMarket\(p\)\)/.test(gen) && /throw (await rejected\()?new MarketSanityError\(/.test(gen));
 check("bulk panel explains MarketSanityError", /bookmakers/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "MarketSanityError" }))));
 const ctx = readFileSync(join(__dirname, "../src/lib/ai/generationContext.ts"), "utf8");
 check("cup fixtures carry each side's domestic standing", /if \(cupFixture\) \{\s*\[home\.domestic, away\.domestic\] = await Promise\.all/.test(ctx));

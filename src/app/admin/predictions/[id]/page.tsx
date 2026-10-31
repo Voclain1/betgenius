@@ -338,7 +338,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         <p className="flex items-start gap-2 text-sm text-amber-300">
           <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-400" aria-hidden />
           <span>
-            <b>{BACKUP_MODEL_WARNING}.</b> Written by the fallback model ({p.aiJob?.model}) while the main one was
+            <b>{BACKUP_MODEL_WARNING}.</b> Written by the fallback model ({p.aiJob?.model}) while the main ones were
             unavailable. It reads the evidence less carefully: check the pick against both teams&apos; league form and
             the odds before approving, or ask for a rewrite.
           </span>
