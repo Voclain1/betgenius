@@ -78,6 +78,7 @@ jobs:
       - name: Ship settings and switch
         env:
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
@@ -95,6 +96,13 @@ jobs:
           printf '%s\n' "$PROD_ENV_FILE" | grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED)=' > out/app.env
           echo "DATABASE_URL=postgresql://betgenius:${POSTGRES_PASSWORD}@postgres:5432/betgenius" >> out/app.env
           echo "DATABASE_URL_UNPOOLED=postgresql://betgenius:${POSTGRES_PASSWORD}@postgres:5432/betgenius" >> out/app.env
+          # The model key lives in its own secret so it can be set or rotated
+          # without re-entering PROD_ENV_FILE (GitHub secrets are write-only).
+          # When set, it wins over any ANTHROPIC_API_KEY line in PROD_ENV_FILE.
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            grep -v '^ANTHROPIC_API_KEY=' out/app.env > out/app.env.tmp && mv out/app.env.tmp out/app.env
+            echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> out/app.env
+          fi
           printf '%s\n' "$OPS_ENV_FILE" > out/ops.env
           ssh vps "test -f /opt/betgenius/deploy.env && grep '^APP_TAG=' /opt/betgenius/deploy.env || true" > out/deploy.env
           {
