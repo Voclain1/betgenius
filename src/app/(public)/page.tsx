@@ -42,6 +42,10 @@ import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdNativeCard, AdRectangle } 
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
+import { TopMatches, type TopMatchCard } from "@/components/TopMatches";
+import { getTopMatches } from "@/lib/topMatches";
+import { getLiveSnapshot } from "@/lib/liveSnapshot";
+import { classifyStatus } from "@/lib/matchStatus";
 
 export const revalidate = 60;
 
@@ -197,6 +201,19 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Crests for the Bet of the Day card: one batched read, only when a pick holds the slot.
   const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;
   const viewer = await getViewerEntitlement();
+  // The day's biggest games as score cards: today's, else tomorrow's, else
+  // the section is not rendered (src/lib/topMatches.ts). Both reads are
+  // shared copies, so this adds no provider calls per visitor.
+  const topMatches = await getTopMatches(
+    (await getLiveSnapshot().catch(() => null))?.rows ?? [],
+    matchIndex,
+  ).catch(() => ({ day: "today" as const, rows: [] }));
+  const topCards: TopMatchCard[] = topMatches.rows.map((r) => {
+    const key = matchKey({ homeTeamApiId: r.teams.home.id, awayTeamApiId: r.teams.away.id, kickoff: r.fixture.date });
+    const slug = key ? matchIndex[key] : null;
+    return { ...r, href: slug ? `/predictions/match/${slug}` : "/livescores" };
+  });
+  const topLive = topCards.some((r) => classifyStatus(r.fixture.status.short) === "live");
   const popular = popularLeagues(leagues);
 
   // A row can be cross-posted from a paywalled category into GENIUS — gate
@@ -224,6 +241,24 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       {/* The top banner draws flush under the header, not here: this only
           reserves its place (src/lib/topBanner.ts). */}
       <TopBanner />
+      {/* The day's top matches, first thing under the banner: live minute and
+          score, or kickoff, or the result. Each card opens its match page
+          when we have one, otherwise Livescores. */}
+      {topCards.length > 0 && (
+        <PremiumPanel
+          kicker={topLive ? "Live now" : topMatches.day === "today" ? "Livescores" : "Coming up"}
+          title={topMatches.day === "today" ? "Top matches today" : "Top matches tomorrow"}
+          id="home-top-matches"
+          aside={
+            <Link href="/livescores" className={ARROW}>
+              All livescores →
+            </Link>
+          }
+          bare
+        >
+          <TopMatches rows={topCards} />
+        </PremiumPanel>
+      )}
       {/* Two columns once there's a pick to show: the claim on the left, a
           real published pick as its evidence on the right. Collapses to the
           original single column when nothing public is available, so the hero
