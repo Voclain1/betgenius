@@ -14,8 +14,9 @@ const LIVE_WINDOW_MS = 150 * 60_000;
 export type TopMatchCard = FixtureRow & { href: string };
 
 /**
- * The homepage's Top matches: three or four score cards, crest either side of
- * the score, the minute or kickoff above it and the competition below.
+ * The homepage's Today's highlights: three or four compact score cards, crest
+ * either side of the score, the minute or kickoff under it and the
+ * competition below. Every card opens the match's prediction page.
  *
  * Rows arrive from the server (getTopMatches in src/lib/topMatches.ts), with
  * the live feed already laid over them. While a card is between kickoff and
@@ -25,8 +26,8 @@ export type TopMatchCard = FixtureRow & { href: string };
  * tip rows (src/components/LiveScores.tsx). Nothing polls once every card is
  * settled or still to come.
  *
- * Phones get a swipeable row with the next card peeking in; from sm up the
- * cards sit in a grid.
+ * Phones get a swipeable row, two cards and a peek of the next; from sm up
+ * the cards sit in one row.
  */
 export function TopMatches({ rows }: { rows: TopMatchCard[] }) {
   const [cards, setCards] = useState(rows);
@@ -80,12 +81,12 @@ export function TopMatches({ rows }: { rows: TopMatchCard[] }) {
 
   return (
     <ul
-      className={`-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden ${
-        cards.length >= 4 ? "sm:grid-cols-2 lg:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+      className={`-mx-4 flex snap-x gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:grid sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
+        cards.length >= 4 ? "sm:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"
       }`}
     >
       {cards.map((c) => (
-        <li key={c.fixture.id} className="w-[82%] shrink-0 snap-start sm:w-auto">
+        <li key={c.fixture.id} className="w-[44%] min-w-[9.5rem] shrink-0 snap-start sm:w-auto sm:min-w-0">
           <Card c={c} />
         </li>
       ))}
@@ -102,74 +103,70 @@ function LiveDot() {
   );
 }
 
-const STATUS = "text-[10px] font-black uppercase tracking-[0.16em]";
+const STATUS = "text-[9px] font-black uppercase tracking-[0.14em] sm:text-[10px]";
 
 function Status({ c }: { c: FixtureRow }) {
   const code = c.fixture.status.short;
   const group = classifyStatus(code);
   if (group === "live") {
-    if (code === "HT") return <span className={`${STATUS} text-amber-400`}>Half-time</span>;
+    if (code === "HT") return <span className={`${STATUS} text-amber-400`}>HT</span>;
     return (
-      <span className="flex items-center gap-1.5 text-red-400">
+      <span className="flex items-center gap-1 text-red-400">
         <LiveDot />
-        <span className="text-xs font-bold tabular-nums">{c.fixture.status.elapsed != null ? `${c.fixture.status.elapsed}'` : statusLabel(code)}</span>
+        <span className="text-[10px] font-bold tabular-nums sm:text-xs">{c.fixture.status.elapsed != null ? `${c.fixture.status.elapsed}'` : statusLabel(code)}</span>
       </span>
     );
   }
   if (isIrregular(code)) return <span className={`${STATUS} text-amber-400`}>{statusLabel(code)}</span>;
   if (group === "finished") return <span className={`${STATUS} text-gray-500`}>{statusLabel(code)}</span>;
-  return (
-    <span className={`${STATUS} text-gray-400`}>Kick-off</span>
-  );
+  return <span className={`${STATUS} text-gray-500`}>WAT</span>;
 }
 
 function Side({ id, name }: { id: number; name: string }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-2 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-bg ring-1 ring-brand-border transition group-hover:ring-brand">
-        <TeamCrest teamApiId={id} name={name} size={34} />
+    <div className="flex min-w-0 flex-col items-center gap-1 text-center">
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-bg ring-1 ring-brand-border transition group-hover:ring-brand sm:h-10 sm:w-10">
+        <TeamCrest teamApiId={id} name={name} size={20} className="sm:!h-6 sm:!w-6" />
       </span>
-      <span className="line-clamp-2 min-h-[2.5em] w-full text-xs font-bold leading-tight text-gray-200">{name}</span>
+      <span className="w-full truncate text-[10px] font-bold leading-tight text-gray-200 sm:text-[11px]">{name}</span>
     </div>
   );
 }
 
+/**
+ * A compact score card: crest, score, crest, the competition underneath.
+ * Sized to sit above the hero without displacing it: two cards and a peek of
+ * the third across a phone.
+ */
 function Card({ c }: { c: TopMatchCard }) {
   const group = classifyStatus(c.fixture.status.short);
   const showScore = group !== "upcoming" && !isIrregular(c.fixture.status.short);
-  const label = `${c.teams.home.name} v ${c.teams.away.name}, ${c.league.name}`;
+  const label = `${c.teams.home.name} v ${c.teams.away.name} prediction, ${c.league.name}`;
   return (
     <Link
       href={c.href}
       aria-label={label}
-      className="group block h-full rounded-3xl border border-brand-border bg-brand-card p-4 transition hover:-translate-y-0.5 hover:border-brand sm:p-5"
+      className="group block h-full rounded-2xl border border-brand-border bg-brand-card px-2 py-2.5 transition hover:border-brand sm:px-3 sm:py-3"
     >
-      <div className="grid grid-cols-[1fr,auto,1fr] items-start gap-2">
+      <div className="grid grid-cols-[1fr,auto,1fr] items-start gap-1">
         <Side id={c.teams.home.id} name={c.teams.home.name} />
-        <div className="flex min-w-[5.5rem] flex-col items-center gap-1.5 pt-1">
-          <Status c={c} />
+        <div className="flex min-w-[2.75rem] flex-col items-center gap-0.5 pt-0.5">
           {showScore ? (
-            <span className={`text-3xl font-black tabular-nums tracking-tight ${group === "live" ? "text-gray-100" : "text-gray-200"}`}>
+            <span className={`text-base font-black leading-none tabular-nums sm:text-xl ${group === "live" ? "text-gray-100" : "text-gray-200"}`}>
               {c.goals.home ?? "-"}
-              <span className="mx-1.5 text-gray-600">–</span>
+              <span className="mx-0.5 text-gray-600">-</span>
               {c.goals.away ?? "-"}
             </span>
           ) : (
-            <span className="text-xl font-black tabular-nums tracking-tight text-gray-100" suppressHydrationWarning>
+            <span className="text-sm font-black leading-none tabular-nums text-gray-100 sm:text-base" suppressHydrationWarning>
               {kickoffTime(c.fixture.date).replace(" WAT", "")}
             </span>
           )}
-          {!showScore && <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">WAT</span>}
+          <Status c={c} />
         </div>
         <Side id={c.teams.away.id} name={c.teams.away.name} />
       </div>
-      <div className="mt-4 flex items-center justify-center gap-1.5 border-t border-brand-border pt-3">
-        {c.league.logo && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={c.league.logo} alt="" width={14} height={14} loading="lazy" className="h-3.5 w-3.5 shrink-0 object-contain" />
-        )}
-        <span className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-gray-400">{c.league.name}</span>
-      </div>
+      <div className="mt-1.5 truncate text-center text-[9px] font-bold uppercase tracking-[0.12em] text-gray-500 sm:text-[10px]">{c.league.name}</div>
     </Link>
   );
 }

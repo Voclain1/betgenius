@@ -1,10 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
-import { GENERATION_TIERS, isSeniorWomensCompetition } from "@/lib/leagues";
 import { tabOfStatus, classifyStatus } from "@/lib/matchStatus";
 import { trimLiveRow } from "@/lib/liveSnapshot";
-import { resultsRank } from "@/lib/recentResultsSnapshot";
+import { resultsRank, RESULTS_LEAGUE_IDS } from "@/lib/recentResultsSnapshot";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { matchKey } from "@/lib/slug";
 
@@ -18,18 +17,18 @@ import { matchKey } from "@/lib/slug";
  * qualifiers) shows tomorrow's instead, labelled as such. With neither, the
  * homepage drops the section rather than show an empty box.
  *
- * WHICH MATCHES. Men's headline competitions only (TOP_MATCH_LEAGUE_IDS).
- * Within those, a game with one of the biggest clubs in it outranks one
- * without, then the European club competitions and competition priority
- * lead (resultsRank), then a game we have published analysis for, then
- * kickoff. At most two per competition while others are available, so a
+ * WHICH MATCHES. Only games we have published a prediction for, so every
+ * card opens its prediction page, in the men's competitions the site covers
+ * every day (TOP_MATCH_LEAGUE_IDS). A game with one of the biggest clubs in
+ * it outranks one without, then the European club competitions and
+ * competition priority lead (resultsRank), then kickoff. At most two per competition while others are available, so a
  * Saturday does not fill all four with Premier League games. Status never
  * enters the ranking, so the same four stay from the morning to full time.
  *
  * WHERE FROM. One shared stored copy, like Recent results
  * (recentResultsSnapshot.ts): at most one refresh per REFRESH_MINUTES
- * site-wide, one provider call for today's slate and a second for tomorrow's
- * only when today has nothing to show, under a daily cap and a quota floor,
+ * site-wide, one provider call for today's slate, plus tomorrow's once per
+ * Lagos day (kept in the copy for the evening fallback), under a daily cap and a quota floor,
  * and never on a database error. Live minutes and scores between refreshes
  * come from the shared live snapshot, on the server here and polled by the
  * cards in the browser.
@@ -47,10 +46,8 @@ export const TOP_MATCHES_POLICY = {
 
 export const TOP_MATCHES_SNAPSHOT_KEY = "top-matches-snapshot";
 
-/** Men's headline competitions: the top five leagues and their cups, Europe, and national-team tournaments and qualifiers. */
-export const TOP_MATCH_LEAGUE_IDS: ReadonlySet<number> = new Set(
-  [...GENERATION_TIERS.CORE, 5, 32, 34, 29, 36].filter((id) => !isSeniorWomensCompetition(id)),
-);
+/** Men's top and mid-tier competitions: the same scope as Recent results. */
+export const TOP_MATCH_LEAGUE_IDS: ReadonlySet<number> = RESULTS_LEAGUE_IDS;
 
 /**
  * The clubs whose games are the day's headline wherever they play. API-Football
@@ -68,7 +65,16 @@ export const BIG_CLUB_IDS: ReadonlySet<number> = new Set([
 export type TopMatchesDay = "today" | "tomorrow";
 export type TopMatches = { day: TopMatchesDay; rows: FixtureRow[] };
 
-type Snapshot = { version: 1; day: string; calls: number; fetchedAt: string | null; rows: FixtureRow[] };
+type Snapshot = {
+  version: 1;
+  day: string;
+  calls: number;
+  fetchedAt: string | null;
+  rows: FixtureRow[];
+  /** Lagos date whose slate `tomorrowRows` is; fetched once per Lagos day. */
+  tomorrowKey?: string;
+  tomorrowRows?: FixtureRow[];
+};
 const EMPTY: Snapshot = { version: 1, day: "", calls: 0, fetchedAt: null, rows: [] };
 
 export function parseTopSnapshot(raw: string | null | undefined): Snapshot {
@@ -85,10 +91,11 @@ function bigClubs(r: FixtureRow): number {
   return (BIG_CLUB_IDS.has(r.teams.home.id) ? 1 : 0) + (BIG_CLUB_IDS.has(r.teams.away.id) ? 1 : 0);
 }
 
-function published(r: FixtureRow, index?: Record<string, string>): boolean {
-  if (!index) return false;
+/** The prediction page's slug for a fixture, or null when we have published none. */
+export function predictionSlug(r: FixtureRow, index?: Record<string, string>): string | null {
+  if (!index) return null;
   const key = matchKey({ homeTeamApiId: r.teams.home.id, awayTeamApiId: r.teams.away.id, kickoff: r.fixture.date });
-  return !!(key && index[key]);
+  return (key && index[key]) || null;
 }
 
 /** In scope for the strip at all: a headline competition, not postponed or cancelled. Pure. */
@@ -109,7 +116,7 @@ export function selectTopMatchesForDay(
   const { start, end } = lagosDayBounds(offsetDays, now);
   const byId = new Map<number, FixtureRow>();
   for (const r of rows) {
-    if (!isTopMatchCandidate(r)) continue;
+    if (!isTopMatchCandidate(r) || !predictionSlug(r, linkIndex)) continue;
     const t = new Date(r.fixture.date).getTime();
     if (Number.isNaN(t) || t < start.getTime() || t >= end.getTime()) continue;
     byId.set(r.fixture.id, r);
@@ -118,7 +125,6 @@ export function selectTopMatchesForDay(
     (a, b) =>
       bigClubs(b) - bigClubs(a) ||
       resultsRank(a.league.id) - resultsRank(b.league.id) ||
-      Number(published(b, linkIndex)) - Number(published(a, linkIndex)) ||
       new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime() ||
       a.fixture.id - b.fixture.id,
   );
@@ -213,17 +219,30 @@ async function getTopSnapshot(now: Date): Promise<Snapshot> {
         // filtering by Lagos bounds below drops the hour that falls outside.
         let calls = callsToday(previous, now) + 1;
         const today = await getFixturesByDate(lagosDateKey(now));
-        let rows = (today ?? []).filter(isTopMatchCandidate);
-        let ok = today !== null;
-        if (selectTopMatchesForDay(rows, now, 0).length === 0 && mayRefreshTop({ ...previous, day: utcDay(now), calls }, now, quota)) {
+        // Tomorrow's slate barely moves, so it is fetched once per Lagos day
+        // and carried in the copy for the "no published match today" fallback.
+        const tomorrowKey = lagosDateKey(lagosDayBounds(1, now).start);
+        let tomorrowRows = previous.tomorrowKey === tomorrowKey ? previous.tomorrowRows ?? [] : [];
+        let fetchedTomorrowKey = previous.tomorrowKey === tomorrowKey ? tomorrowKey : undefined;
+        if (!fetchedTomorrowKey && mayRefreshTop({ ...previous, day: utcDay(now), calls }, now, quota)) {
           calls += 1;
-          const tomorrow = await getFixturesByDate(lagosDateKey(lagosDayBounds(1, now).start));
-          rows = rows.concat((tomorrow ?? []).filter(isTopMatchCandidate));
-          ok = ok || tomorrow !== null;
+          const tomorrow = await getFixturesByDate(tomorrowKey);
+          if (tomorrow) {
+            tomorrowRows = tomorrow.filter(isTopMatchCandidate).map(trimLiveRow);
+            fetchedTomorrowKey = tomorrowKey;
+          }
         }
-        snapshot = ok
-          ? { version: 1, day: utcDay(now), calls, fetchedAt: now.toISOString(), rows: rows.map(trimLiveRow) }
-          : { ...previous, day: utcDay(now), calls };
+        snapshot = today
+          ? {
+              version: 1,
+              day: utcDay(now),
+              calls,
+              fetchedAt: now.toISOString(),
+              rows: today.filter(isTopMatchCandidate).map(trimLiveRow),
+              tomorrowKey: fetchedTomorrowKey,
+              tomorrowRows,
+            }
+          : { ...previous, day: utcDay(now), calls, tomorrowKey: fetchedTomorrowKey, tomorrowRows };
         await prisma.appLock.update({ where: { key: TOP_MATCHES_SNAPSHOT_KEY }, data: { holder: JSON.stringify(snapshot) } });
       }
     }
@@ -242,6 +261,6 @@ export async function getTopMatches(
   now: Date = new Date(),
 ): Promise<TopMatches> {
   const snapshot = await getTopSnapshot(now);
-  const picked = selectTopMatches(snapshot.rows, now, linkIndex);
+  const picked = selectTopMatches([...snapshot.rows, ...(snapshot.tomorrowRows ?? [])], now, linkIndex);
   return { day: picked.day, rows: orderTopMatchCards(overlayLive(picked.rows, live)) };
 }
