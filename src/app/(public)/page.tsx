@@ -43,7 +43,7 @@ import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
 import { TopMatches, type TopMatchCard } from "@/components/TopMatches";
-import { getTopMatches } from "@/lib/topMatches";
+import { getTopMatches, predictionSlug } from "@/lib/topMatches";
 import { getLiveSnapshot } from "@/lib/liveSnapshot";
 import { classifyStatus } from "@/lib/matchStatus";
 
@@ -201,17 +201,17 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Crests for the Bet of the Day card: one batched read, only when a pick holds the slot.
   const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;
   const viewer = await getViewerEntitlement();
-  // The day's biggest games as score cards: today's, else tomorrow's, else
-  // the section is not rendered (src/lib/topMatches.ts). Both reads are
+  // The day's biggest published games as score cards: today's, else
+  // tomorrow's, else the section is not rendered (src/lib/topMatches.ts). Both reads are
   // shared copies, so this adds no provider calls per visitor.
   const topMatches = await getTopMatches(
     (await getLiveSnapshot().catch(() => null))?.rows ?? [],
     matchIndex,
   ).catch(() => ({ day: "today" as const, rows: [] }));
-  const topCards: TopMatchCard[] = topMatches.rows.map((r) => {
-    const key = matchKey({ homeTeamApiId: r.teams.home.id, awayTeamApiId: r.teams.away.id, kickoff: r.fixture.date });
-    const slug = key ? matchIndex[key] : null;
-    return { ...r, href: slug ? `/predictions/match/${slug}` : "/livescores" };
+  // Only published matches are selected, so every card has a prediction page.
+  const topCards: TopMatchCard[] = topMatches.rows.flatMap((r) => {
+    const slug = predictionSlug(r, matchIndex);
+    return slug ? [{ ...r, href: `/predictions/match/${slug}` }] : [];
   });
   const topLive = topCards.some((r) => classifyStatus(r.fixture.status.short) === "live");
   const popular = popularLeagues(leagues);
@@ -241,65 +241,72 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       {/* The top banner draws flush under the header, not here: this only
           reserves its place (src/lib/topBanner.ts). */}
       <TopBanner />
-      {/* The day's top matches, first thing under the banner: live minute and
-          score, or kickoff, or the result. Each card opens its match page
-          when we have one, otherwise Livescores. */}
-      {topCards.length > 0 && (
-        <PremiumPanel
-          kicker={topLive ? "Live now" : topMatches.day === "today" ? "Livescores" : "Coming up"}
-          title={topMatches.day === "today" ? "Top matches today" : "Top matches tomorrow"}
-          id="home-top-matches"
-          aside={
-            <Link href="/livescores" className={ARROW}>
-              All livescores →
-            </Link>
-          }
-          bare
-        >
-          <TopMatches rows={topCards} />
-        </PremiumPanel>
-      )}
-      {/* Two columns once there's a pick to show: the claim on the left, a
-          real published pick as its evidence on the right. Collapses to the
-          original single column when nothing public is available, so the hero
-          never renders a hole. */}
-      <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
-        <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
-        <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
-          <div>
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Football predictions</span>
+      {/* The day's highlights, first thing under the banner: small score
+          cards (live minute and score, kickoff, or result) for the biggest
+          games we have published a prediction for, each opening its
+          prediction page. Kept tight to the hero so it never displaces it. */}
+      <div className="space-y-5">
+        {topCards.length > 0 && (
+          <section aria-label={topMatches.day === "today" ? "Today's highlights" : "Tomorrow's highlights"}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                {topLive && (
+                  <span aria-hidden className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+                  </span>
+                )}
+                {topMatches.day === "today" ? "Today's highlights" : "Tomorrow's highlights"}
+              </span>
+              <Link href="/livescores" className="whitespace-nowrap text-xs font-semibold text-gray-400 hover:text-brand">
+                Livescores →
+              </Link>
             </div>
-            {/* Built rather than written inline: the banker half of this
-                headline is a claim about the day's card, and it is gated on
-                the same count the paragraph below it uses. See homeHeadline. */}
-            <h1 className="mt-3 text-[28px] font-black leading-[1.05] tracking-tight text-gray-100 sm:text-4xl md:text-5xl">
-              {homeHeadline({ day, bankerCount: slate.bankerCount })}
-            </h1>
-            {/* Directly under the H1, before the pick card and everything
-                below it: what is actually published right now, in counts and
-                competitions. No percentage — /track-record owns the rate, and
-                a second copy of it here would be free to drift. */}
-            <div className="mt-4">
-              <AnswerSummary text={homeSummary({ day, ...slate })} />
+            <TopMatches rows={topCards} />
+          </section>
+        )}
+        {/* Two columns once there's a pick to show: the claim on the left, a
+            real published pick as its evidence on the right. Collapses to the
+            original single column when nothing public is available, so the hero
+            never renders a hole. */}
+        <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+          <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
+          <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
+          <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
+            <div>
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Football predictions</span>
+              </div>
+              {/* Built rather than written inline: the banker half of this
+                  headline is a claim about the day's card, and it is gated on
+                  the same count the paragraph below it uses. See homeHeadline. */}
+              <h1 className="mt-3 text-[28px] font-black leading-[1.05] tracking-tight text-gray-100 sm:text-4xl md:text-5xl">
+                {homeHeadline({ day, bankerCount: slate.bankerCount })}
+              </h1>
+              {/* Directly under the H1, before the pick card and everything
+                  below it: what is actually published right now, in counts and
+                  competitions. No percentage — /track-record owns the rate, and
+                  a second copy of it here would be free to drift. */}
+              <div className="mt-4">
+                <AnswerSummary text={homeSummary({ day, ...slate })} />
+              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
+                {/* The markets named here are the ones actually published — see
+                    the marketType mix in the corpus — so the line reinforces
+                    what a reader searches for without promising a market this
+                    site has never produced. */}
+                Data-driven football predictions across every major league — banker picks, match winner, double chance, over/under and combo bets — each with a confidence rating and the reasoning behind it.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
+                <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
+              </div>
             </div>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
-              {/* The markets named here are the ones actually published — see
-                  the marketType mix in the corpus — so the line reinforces
-                  what a reader searches for without promising a market this
-                  site has never produced. */}
-              Data-driven football predictions across every major league — banker picks, match winner, double chance, over/under and combo bets — each with a confidence rating and the reasoning behind it.
-            </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
-              <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
-            </div>
+            {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
           </div>
-          {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
-        </div>
-      </section>
+        </section>
+      </div>
 
       {/* The shortcuts under the hero, in two groups: today's card, then the
           longer runs. The groups are told apart by a label and a rule, and the
