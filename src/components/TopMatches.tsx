@@ -14,9 +14,9 @@ const LIVE_WINDOW_MS = 150 * 60_000;
 export type TopMatchCard = FixtureRow & { href: string };
 
 /**
- * The homepage's Today's highlights: three or four compact score cards, crest
- * either side of the score, the minute or kickoff under it and the
- * competition below. Every card opens the match's prediction page.
+ * The homepage's Today's highlights: three or four short score cards, crest
+ * and name either side, the kickoff or score in the middle with the status
+ * and competition crest under it. Every card opens the match's prediction page.
  *
  * Rows arrive from the server (getTopMatches in src/lib/topMatches.ts), with
  * the live feed already laid over them. While a card is between kickoff and
@@ -26,8 +26,8 @@ export type TopMatchCard = FixtureRow & { href: string };
  * tip rows (src/components/LiveScores.tsx). Nothing polls once every card is
  * settled or still to come.
  *
- * Phones get a swipeable row, two cards and a peek of the next; from sm up
- * the cards sit in one row.
+ * Phones get a swipeable row of exactly two cards per screen; from sm up the
+ * cards sit in one row.
  */
 export function TopMatches({ rows }: { rows: TopMatchCard[] }) {
   const [cards, setCards] = useState(rows);
@@ -81,12 +81,12 @@ export function TopMatches({ rows }: { rows: TopMatchCard[] }) {
 
   return (
     <ul
-      className={`-mx-4 flex snap-x gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:grid sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
+      className={`-mx-4 flex snap-x scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:grid sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
         cards.length >= 4 ? "sm:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"
       }`}
     >
       {cards.map((c) => (
-        <li key={c.fixture.id} className="w-[44%] min-w-[9.5rem] shrink-0 snap-start sm:w-auto sm:min-w-0">
+        <li key={c.fixture.id} className="w-[calc(50%-0.25rem)] shrink-0 snap-start sm:w-auto">
           <Card c={c} />
         </li>
       ))}
@@ -103,7 +103,7 @@ function LiveDot() {
   );
 }
 
-const STATUS = "text-[9px] font-black uppercase tracking-[0.14em] sm:text-[10px]";
+const STATUS = "text-[9px] font-black uppercase tracking-[0.12em] sm:text-[10px]";
 
 function Status({ c }: { c: FixtureRow }) {
   const code = c.fixture.status.short;
@@ -113,7 +113,7 @@ function Status({ c }: { c: FixtureRow }) {
     return (
       <span className="flex items-center gap-1 text-red-400">
         <LiveDot />
-        <span className="text-[10px] font-bold tabular-nums sm:text-xs">{c.fixture.status.elapsed != null ? `${c.fixture.status.elapsed}'` : statusLabel(code)}</span>
+        <span className="text-[10px] font-bold leading-none tabular-nums">{c.fixture.status.elapsed != null ? `${c.fixture.status.elapsed}'` : statusLabel(code)}</span>
       </span>
     );
   }
@@ -122,21 +122,50 @@ function Status({ c }: { c: FixtureRow }) {
   return <span className={`${STATUS} text-gray-500`}>WAT</span>;
 }
 
+/** Common short forms for the names that would not fit a half-width card. */
+const SHORT_NAMES: Record<string, string> = {
+  "Manchester United": "Man Utd",
+  "Manchester City": "Man City",
+  "Paris Saint Germain": "PSG",
+  "Wolverhampton Wanderers": "Wolves",
+  "Nottingham Forest": "Nott'm Forest",
+  "Brighton & Hove Albion": "Brighton",
+  "Borussia Dortmund": "Dortmund",
+  "Bayer Leverkusen": "Leverkusen",
+  "Bayern München": "Bayern",
+  "Bayern Munich": "Bayern",
+  "Borussia Mönchengladbach": "Gladbach",
+  "Atletico Madrid": "Atlético",
+  "Athletic Club": "Athletic",
+  "Sheffield Wednesday": "Sheff Wed",
+  "Sheffield Utd": "Sheff Utd",
+  "Queens Park Rangers": "QPR",
+  "West Bromwich Albion": "West Brom",
+};
+
+/** "Manchester United" → "Man Utd", "Stoke City" → "Stoke City". Pure. */
+export function shortTeamName(name: string): string {
+  return SHORT_NAMES[name] ?? name.replace(/ United$/, " Utd");
+}
+
 function Side({ id, name }: { id: number; name: string }) {
   return (
-    <div className="flex min-w-0 flex-col items-center gap-1 text-center">
-      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-bg ring-1 ring-brand-border transition group-hover:ring-brand sm:h-10 sm:w-10">
-        <TeamCrest teamApiId={id} name={name} size={20} className="sm:!h-6 sm:!w-6" />
+    <div className="flex min-w-0 flex-col items-center gap-0.5 text-center">
+      <span className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-brand-bg ring-1 ring-brand-border transition group-hover:ring-brand sm:h-8 sm:w-8">
+        <TeamCrest teamApiId={id} name={name} size={18} className="sm:!h-[22px] sm:!w-[22px]" />
       </span>
-      <span className="w-full truncate text-[10px] font-bold leading-tight text-gray-200 sm:text-[11px]">{name}</span>
+      <span className="w-full truncate text-[10px] font-bold leading-tight tracking-tight text-gray-200 sm:text-[11px] sm:tracking-normal">
+        <span className="sm:hidden">{shortTeamName(name)}</span>
+        <span className="hidden sm:inline">{name}</span>
+      </span>
     </div>
   );
 }
 
 /**
- * A compact score card: crest, score, crest, the competition underneath.
- * Sized to sit above the hero without displacing it: two cards and a peek of
- * the third across a phone.
+ * A short score card: crest and name either side, the time or score in the
+ * middle with the status and competition crest under it. Two fit across a
+ * phone; swipe for the rest.
  */
 function Card({ c }: { c: TopMatchCard }) {
   const group = classifyStatus(c.fixture.status.short);
@@ -146,27 +175,31 @@ function Card({ c }: { c: TopMatchCard }) {
     <Link
       href={c.href}
       aria-label={label}
-      className="group block h-full rounded-2xl border border-brand-border bg-brand-card px-2 py-2.5 transition hover:border-brand sm:px-3 sm:py-3"
+      title={`${c.teams.home.name} v ${c.teams.away.name} · ${c.league.name}`}
+      className="group grid h-full grid-cols-[1fr,auto,1fr] items-center gap-1 rounded-2xl border border-brand-border bg-brand-card px-1.5 py-2 transition hover:border-brand sm:px-3 sm:py-2.5"
     >
-      <div className="grid grid-cols-[1fr,auto,1fr] items-start gap-1">
-        <Side id={c.teams.home.id} name={c.teams.home.name} />
-        <div className="flex min-w-[2.75rem] flex-col items-center gap-0.5 pt-0.5">
-          {showScore ? (
-            <span className={`text-base font-black leading-none tabular-nums sm:text-xl ${group === "live" ? "text-gray-100" : "text-gray-200"}`}>
-              {c.goals.home ?? "-"}
-              <span className="mx-0.5 text-gray-600">-</span>
-              {c.goals.away ?? "-"}
-            </span>
-          ) : (
-            <span className="text-sm font-black leading-none tabular-nums text-gray-100 sm:text-base" suppressHydrationWarning>
-              {kickoffTime(c.fixture.date).replace(" WAT", "")}
-            </span>
+      <Side id={c.teams.home.id} name={c.teams.home.name} />
+      <div className="flex min-w-[2.5rem] flex-col items-center gap-1">
+        {showScore ? (
+          <span className={`text-[15px] font-black leading-none tabular-nums sm:text-lg ${group === "live" ? "text-gray-100" : "text-gray-200"}`}>
+            {c.goals.home ?? "-"}
+            <span className="mx-0.5 text-gray-600">-</span>
+            {c.goals.away ?? "-"}
+          </span>
+        ) : (
+          <span className="text-sm font-black leading-none tabular-nums text-gray-100 sm:text-base" suppressHydrationWarning>
+            {kickoffTime(c.fixture.date).replace(" WAT", "")}
+          </span>
+        )}
+        <span className="flex items-center gap-1">
+          {c.league.logo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={c.league.logo} alt="" width={10} height={10} loading="lazy" className="h-2.5 w-2.5 shrink-0 object-contain" />
           )}
           <Status c={c} />
-        </div>
-        <Side id={c.teams.away.id} name={c.teams.away.name} />
+        </span>
       </div>
-      <div className="mt-1.5 truncate text-center text-[9px] font-bold uppercase tracking-[0.12em] text-gray-500 sm:text-[10px]">{c.league.name}</div>
+      <Side id={c.teams.away.id} name={c.teams.away.name} />
     </Link>
   );
 }
