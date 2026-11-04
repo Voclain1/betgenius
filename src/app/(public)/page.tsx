@@ -455,7 +455,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           the hero on purpose. Everything above this point is a pick or an
           argument for one — the hero pick, Genius, Bet of the Day, Featured —
           and a leaderboard among those would sit close enough to our own calls
-          to read as part of them. "Popular leagues" and "Recent results" are
+          to read as part of them. "Predictions by competition" and "Recent results" are
           navigation and settled scores, so a band between them is unambiguous
           chrome. See the placement rule in AdPlacements.tsx. */}
       <AdLeaderboard />
