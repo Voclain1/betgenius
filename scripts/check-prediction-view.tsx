@@ -162,7 +162,7 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   // Every team shows a crest: the CDN image by id, or an initials badge without one.
   const noIds = html(<CategoryPredictionsList category="TODAY" rows={rows(1, { homeTeamApiId: null, awayTeamApiId: null }) as any} />);
   check("crest: a team without an id still shows an initials badge", /ring-brand-border[^"]*"[^>]*>HO<\/span>/.test(noIds) || noIds.includes(">HO</span>"), noIds.slice(0, 400));
-  check("phone layout: home and away each get their own line", (upcoming.match(/truncate text-\[15px\] font-bold/g) ?? []).length === 2);
+  check("phone layout: home and away each get their own line", (upcoming.match(/truncate text-sm font-bold/g) ?? []).length === 2);
   check("score column: the match name keeps its vs", upcoming.includes('<span class="text-gray-500">vs</span>'));
 }
 
