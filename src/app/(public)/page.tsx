@@ -42,6 +42,8 @@ import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdNativeCard, AdRectangle } 
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
+import { DayCompetitions } from "@/components/DayCompetitions";
+import { selectDayCompetitions } from "@/lib/dayCompetitions";
 import { TopMatches, type TopMatchCard } from "@/components/TopMatches";
 import { getTopMatches, predictionSlug } from "@/lib/topMatches";
 import { getLiveSnapshot } from "@/lib/liveSnapshot";
@@ -175,7 +177,7 @@ async function fetchDaySlate(day: FeedDay) {
     },
   });
 
-  return { pickCount: rows.length, leagueCount: leagues.size, topLeagues, bankerCount };
+  return { pickCount: rows.length, leagueCount: leagues.size, topLeagues, bankerCount, rows };
 }
 
 export default async function HomePage({ searchParams }: { searchParams?: { date?: string } }) {
@@ -215,6 +217,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   });
   const topLive = topCards.some((r) => classifyStatus(r.fixture.status.short) === "live");
   const popular = popularLeagues(leagues);
+  const dayCompetitions = selectDayCompetitions(slate.rows, popular);
 
   // A row can be cross-posted from a paywalled category into GENIUS — gate
   // per row on its own primary category (same as B1's league/team pages),
@@ -429,22 +432,30 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         )}
       </section>
 
-      <PremiumPanel kicker="Where we publish most" title="Popular leagues" id="home-popular" bare>
-        <LeagueNav
-          leagues={popular}
-          empty={
-            leagues.length > 0
-              ? "No major-league predictions published yet — browse every league we cover further down this page."
-              : "No leagues yet. Once tips are published, the leagues they cover appear here."
+      {/* The competitions with tips on the day being browsed, headline ones
+          first, ten at most; a quiet day is topped up to three from the
+          competitions we publish most for (src/lib/dayCompetitions.ts). */}
+      {dayCompetitions.length > 0 && (
+        <PremiumPanel
+          kicker={day === "today" ? "Playing today" : day === "tomorrow" ? "Playing tomorrow" : "Played yesterday"}
+          title="Predictions by competition"
+          id="home-competitions"
+          aside={
+            <Link href="#home-leagues" className={ARROW}>
+              All leagues →
+            </Link>
           }
-        />
-      </PremiumPanel>
+          bare
+        >
+          <DayCompetitions items={dayCompetitions} dayWord={day} />
+        </PremiumPanel>
+      )}
 
       {/* The first in-content ad, and it is here rather than under
           the hero on purpose. Everything above this point is a pick or an
           argument for one — the hero pick, Genius, Bet of the Day, Featured —
           and a leaderboard among those would sit close enough to our own calls
-          to read as part of them. "Popular leagues" and "Recent results" are
+          to read as part of them. "Predictions by competition" and "Recent results" are
           navigation and settled scores, so a band between them is unambiguous
           chrome. See the placement rule in AdPlacements.tsx. */}
       <AdLeaderboard />

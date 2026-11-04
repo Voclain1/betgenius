@@ -107,7 +107,7 @@ export function PredictionsTable({
             {linkRows && <th className="px-3 py-3"><span className="sr-only">Open</span></th>}
           </tr>
         </thead>
-        <tbody className="block space-y-3 sm:table-row-group sm:space-y-0 sm:divide-y sm:divide-brand-border">
+        <tbody className="block space-y-2 sm:table-row-group sm:space-y-0 sm:divide-y sm:divide-brand-border">
           {rows.map((p, index) => {
             const home = p.homeTeam ?? p.fixture?.homeTeam.name;
             const away = p.awayTeam ?? p.fixture?.awayTeam.name;
@@ -121,12 +121,12 @@ export function PredictionsTable({
             const when = kickoff ? kickoffLabel(kickoff) : null;
             return (
               <Fragment key={p.id}>
-              <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-2.5 rounded-2xl bg-brand-card px-4 py-4 ring-1 ring-brand-border transition active:ring-brand/60 sm:static sm:table-row sm:rounded-none sm:bg-transparent sm:p-0 sm:ring-0 sm:hover:bg-brand-bg/40">
+              <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-2xl bg-brand-card px-3.5 py-2.5 ring-1 ring-brand-border transition active:ring-brand/60 sm:static sm:table-row sm:rounded-none sm:bg-transparent sm:p-0 sm:ring-0 sm:hover:bg-brand-bg/40">
                 {/* Phone: competition and kickoff on the row's top line. */}
-                <td className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-gray-500 sm:hidden">
+                <td className="col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-[10.5px] font-semibold text-gray-500 sm:hidden">
                   {visual && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={visual.src} alt="" width={14} height={14} loading="lazy" className="shrink-0 rounded-sm object-contain" />
+                    <img src={visual.src} alt="" width={12} height={12} loading="lazy" className="shrink-0 rounded-sm object-contain" />
                   )}
                   <span className="truncate">{visual?.name ?? leagueName ?? "—"}</span>
                   {when && <span className="shrink-0">· {when}</span>}
@@ -150,24 +150,24 @@ export function PredictionsTable({
                       { name: away, id: p.awayTeamApiId },
                     ].map((t, i) => (
                       <span key={i} className="flex min-w-0 items-center gap-2">
-                        <TeamCrest teamApiId={t.id} name={t.name} size={16} />
-                        <span className="truncate text-[15px] font-bold text-gray-100">{t.name ?? "—"}</span>
+                        <TeamCrest teamApiId={t.id} name={t.name} size={14} />
+                        <span className="truncate text-sm font-bold leading-snug text-gray-100">{t.name ?? "—"}</span>
                       </span>
                     ));
                     return matchHref ? (
-                      <Link href={matchHref} className="block space-y-1 after:absolute after:inset-0 after:content-['']">
+                      <Link href={matchHref} className="block space-y-0.5 after:absolute after:inset-0 after:content-['']">
                         {teams}
                       </Link>
                     ) : (
-                      <div className="space-y-1">{teams}</div>
+                      <div className="space-y-0.5">{teams}</div>
                     );
                   })()}
                 </td>
                 <td className="hidden px-3 py-3 sm:table-cell">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="col-start-1 row-start-3 min-w-0 pt-0.5 text-[15px] font-black text-brand sm:px-3 sm:py-3 sm:text-sm">
-                  <span className="mr-2 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:hidden">Tip</span>
+                <td className="col-start-1 row-start-3 min-w-0 text-sm font-black text-brand sm:px-3 sm:py-3 sm:text-sm">
+                  <span className="mr-1.5 text-[9.5px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:hidden">Tip</span>
                   {matchHref ? (
                     <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : standalonePickText(p.pick, p.marketType, p.market)}</Link>
                   ) : p.locked ? "LOCKED" : standalonePickText(p.pick, p.marketType, p.market)}
@@ -211,9 +211,9 @@ export function PredictionsTable({
                       <Link
                         href={matchHref}
                         aria-label={`Open the prediction for ${home} vs ${away}`}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-brand-border text-gray-300 transition hover:border-brand hover:text-brand"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-border text-gray-300 transition hover:border-brand hover:text-brand"
                       >
-                        <ChevronRight aria-hidden className="h-4 w-4" />
+                        <ChevronRight aria-hidden className="h-3.5 w-3.5" />
                       </Link>
                     )}
                   </td>
