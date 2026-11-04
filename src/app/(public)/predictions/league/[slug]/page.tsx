@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
+import { COMPETITION_PAGE_SIZE } from "@/lib/predictionTimeline";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { canViewCategory } from "@/lib/access";
@@ -232,8 +233,16 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         </section>
       )}
 
-      {/* Between the table and the season's facts: reference data both sides. */}
-      <AdNativeCard />
+      {/* Directly under the table: the upcoming picks, six at a time, then
+          the played ones collapsed behind "Show past". Short reasoning
+          excerpts, and room under the view switch. */}
+      <section aria-labelledby="predictions" className="space-y-4">
+        <SectionHead kicker="Predictions" title={`${rows.length} published ${rows.length === 1 ? "pick" : "picks"}`} id="predictions" />
+        <PredictionViewSwitch
+          detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt pageSize={COMPETITION_PAGE_SIZE} pastCollapsed emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+          compact={<PredictionTimelineList rows={shaped as any} view="compact" pageSize={COMPETITION_PAGE_SIZE} pastCollapsed emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+        />
+      </section>
 
       {stats && (
         <section aria-labelledby="facts">
@@ -241,6 +250,10 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           <CompetitionStatsFacts stats={stats} />
         </section>
       )}
+
+      {/* Between the season's facts and the fixture list: reference data
+          both sides, never beside our picks. */}
+      <AdNativeCard />
 
       <section aria-labelledby="upcoming">
         <SectionHead kicker="Fixtures" title="Upcoming fixtures" id="upcoming" />
@@ -283,15 +296,6 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
         </section>
       )}
 
-      {/* Picks after the reference sections, as on team pages: short reasoning
-          excerpts, and room under the view switch. */}
-      <section aria-labelledby="predictions" className="space-y-4">
-        <SectionHead kicker="Predictions" title={`${rows.length} published ${rows.length === 1 ? "pick" : "picks"}`} id="predictions" />
-        <PredictionViewSwitch
-          detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
-          compact={<PredictionTimelineList rows={shaped as any} view="compact" emptyUpcoming={`No upcoming ${name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
-        />
-      </section>
 
       {about.length > 0 && <TeamAbout name={competitionInSentence(name)} paragraphs={about} kicker="Competition profile" />}
 

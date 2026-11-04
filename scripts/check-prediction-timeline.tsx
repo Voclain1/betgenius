@@ -13,6 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import "./lib/reactCacheShim";
 import { PredictionTimelineList } from "../src/components/PredictionTimelineList";
 import {
+  COMPETITION_PAGE_SIZE,
   HIDE_PAST_KEY,
   PREDICTION_PAGE_SIZE,
   pages,
@@ -27,6 +28,7 @@ const check = (l: string, c: boolean, got?: unknown) => {
   if (c) passed++;
   else failures.push(`${l}${got === undefined ? "" : `\n      got: ${JSON.stringify(String(got).slice(0, 300))}`}`);
 };
+const same = (a: number[], b: number[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 const count = (s: string, needle: RegExp) => (s.match(needle) ?? []).length;
 
 const NOW = new Date("2026-10-09T12:00:00Z");
@@ -83,6 +85,19 @@ for (const view of ["detailed", "compact"] as const) {
 {
   const out = renderToStaticMarkup(<PredictionTimelineList rows={[row(1, at(48))] as any} view="detailed" emptyUpcoming="x" now={NOW} />);
   check("nothing played: no band", !out.includes("Played matches") && !out.includes("Hide past"));
+}
+
+// --- competition pages: six at a time, played collapsed ---------------------
+check("competition page size is 6", COMPETITION_PAGE_SIZE === 6);
+for (const view of ["detailed", "compact"] as const) {
+  const out = renderToStaticMarkup(
+    <PredictionTimelineList rows={many as any} view={view} emptyUpcoming="None yet." pageSize={COMPETITION_PAGE_SIZE} pastCollapsed now={NOW} />,
+  );
+  const seen = order(out);
+  check(`competition ${view}: first 6 upcoming, soonest first`, same(seen.filter((n) => n < 100), [0, 1, 2, 3, 4, 5]), seen);
+  check(`competition ${view}: Show more says what is left`, plain(out).includes("Show 6 more · 19 left"), plain(out).match(/Show \d+ more[^A-Z]*/g));
+  check(`competition ${view}: played picks not rendered until Show past`, !seen.some((n) => n >= 100) && out.includes("Show past") && !out.includes("Hide past"), seen);
+  check(`competition ${view}: the band still counts them`, plain(out).includes("30 predictions on matches already played"));
 }
 
 // --- stored preference -----------------------------------------------------
