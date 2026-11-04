@@ -36,6 +36,10 @@ function MoreButton({ shown, total, pageSize, onClick }: { shown: number; total:
  * output), so no row data or gating moves to the browser; this only decides
  * how many are mounted. Played matches are shown by default, which is also
  * what the server renders; a stored "hide" is applied after mount.
+ *
+ * With `pastCollapsed` (competition pages) played matches start hidden, on
+ * the server too, and open only on "Show past"; the stored preference is
+ * neither read nor written, so a reader's choice on team pages is untouched.
  */
 export function PredictionTimeline({
   upcoming,
@@ -44,6 +48,7 @@ export function PredictionTimeline({
   pastCount,
   pageSize,
   emptyUpcoming,
+  pastCollapsed = false,
 }: {
   upcoming: React.ReactNode[];
   past: React.ReactNode[];
@@ -51,18 +56,19 @@ export function PredictionTimeline({
   pastCount: number;
   pageSize: number;
   emptyUpcoming: string;
+  pastCollapsed?: boolean;
 }) {
   const [upPages, setUpPages] = useState(1);
   const [pastPages, setPastPages] = useState(1);
-  const [hidePast, setHidePast] = useState(false);
+  const [hidePast, setHidePast] = useState(pastCollapsed);
 
   useEffect(() => {
-    setHidePast(readHidePast(localStore()));
-  }, []);
+    if (!pastCollapsed) setHidePast(readHidePast(localStore()));
+  }, [pastCollapsed]);
 
   const toggle = () => {
     setHidePast(!hidePast);
-    writeHidePast(localStore(), !hidePast);
+    if (!pastCollapsed) writeHidePast(localStore(), !hidePast);
   };
 
   return (

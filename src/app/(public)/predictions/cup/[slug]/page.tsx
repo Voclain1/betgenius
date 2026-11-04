@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PredictionTimelineList } from "@/components/PredictionTimelineList";
+import { COMPETITION_PAGE_SIZE } from "@/lib/predictionTimeline";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { notFound } from "next/navigation";
 import { CupRounds } from "@/components/CupRounds";
@@ -144,6 +145,21 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         </section>
       )}
 
+      {/* Directly under the table (or where it would be): upcoming picks six
+          at a time, the played ones collapsed behind "Show past". */}
+      {hubContent && (
+        <section aria-labelledby="predictions" className="space-y-4">
+          <SectionHead kicker="Predictions" title={`Published ${data.cup.name} picks`} id="predictions" />
+          {scoped && <div className="max-w-sm"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
+          {shaped.length > 0 ? (
+            <PredictionViewSwitch
+              detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt pageSize={COMPETITION_PAGE_SIZE} pastCollapsed emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+              compact={<PredictionTimelineList rows={shaped as any} view="compact" pageSize={COMPETITION_PAGE_SIZE} pastCollapsed emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
+            />
+          ) : <div className="card text-sm text-gray-400">No {data.cup.name} predictions are published yet.</div>}
+        </section>
+      )}
+
       {stats && (
         <section aria-labelledby="facts">
           <SectionHead kicker="Season so far" title="Stats and facts" id="facts" />
@@ -178,18 +194,6 @@ export default async function CupPage({ params, searchParams }: { params: { slug
         <LeagueClubGrid clubs={data.clubs} />
       </section>
 
-      {hubContent && (
-        <section aria-labelledby="predictions" className="space-y-4">
-          <SectionHead kicker="Predictions" title={`Published ${data.cup.name} picks`} id="predictions" />
-          {scoped && <div className="max-w-sm"><RateCard stat={scoped.stat} label={`All-time in ${data.cup.name}`} big /></div>}
-          {shaped.length > 0 ? (
-            <PredictionViewSwitch
-              detailed={<PredictionTimelineList rows={shaped as any} view="detailed" reasoningExcerpt emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
-              compact={<PredictionTimelineList rows={shaped as any} view="compact" emptyUpcoming={`No upcoming ${data.cup.name} picks yet. New predictions are published as bookmakers open their markets, usually a day or two before kickoff.`} />}
-            />
-          ) : <div className="card text-sm text-gray-400">No {data.cup.name} predictions are published yet.</div>}
-        </section>
-      )}
 
       {about.length > 0 && <TeamAbout name={competitionInSentence(data.cup.name)} paragraphs={about} kicker="Competition profile" />}
 

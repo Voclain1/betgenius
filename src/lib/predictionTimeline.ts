@@ -10,6 +10,12 @@
 /** Picks shown before "Show more", per group. */
 export const PREDICTION_PAGE_SIZE = 20;
 
+/**
+ * Competition (league and cup) pages: a short first page, since the list sits
+ * directly under the table rather than at the foot of the page.
+ */
+export const COMPETITION_PAGE_SIZE = 6;
+
 /** A match counts as played two hours after kickoff; until then it stays with the upcoming (and live) picks. */
 export const PLAYED_AFTER_MS = 2 * 60 * 60_000;
 
