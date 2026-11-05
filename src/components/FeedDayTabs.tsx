@@ -23,7 +23,7 @@ const LABELS: Record<FeedDay, string> = {
 /** basePath is the surface the switch belongs to: a category feed, or "/" for the homepage. */
 export function FeedDayTabs({ basePath, active }: { basePath: string; active: FeedDay }) {
   return (
-    <nav aria-label="Select day" className="inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
+    <nav aria-label="Select day" className="feed-day-tabs inline-flex rounded-2xl border border-brand-border bg-brand-card p-1">
       {FEED_DAYS.map((day) => {
         const isActive = day === active;
         return (

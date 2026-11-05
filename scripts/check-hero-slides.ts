@@ -65,7 +65,8 @@ check("a short stored list is topped up to 3, keeping its first slide first", gr
 
 // Wiring.
 const page = readFileSync(join(__dirname, "../src/app/(public)/page.tsx"), "utf8");
-check("homepage hero renders the slider from getHeroSlides", page.includes("getHeroSlides()") && page.includes("<HeroSlider slides={heroSlides} />"));
+const masthead = readFileSync(join(__dirname, "../src/components/HomeMasthead.tsx"), "utf8");
+check("homepage hero renders the slider from getHeroSlides", page.includes("getHeroSlides()") && page.includes("<HomeMasthead") && page.includes("heroSlides={heroSlides}") && masthead.includes("<HeroSlider slides={heroSlides} />"));
 const lib = readFileSync(join(__dirname, "../src/lib/heroSlides.ts"), "utf8");
 check("only public categories feed the hero", lib.includes('categories: { some: { category: { in: ["FEATURED", "GENIUS"] } } }'));
 check("the day's selection is stored per Lagos date", lib.includes("hero-slides:${day}") && lib.includes("lagosDateKey(now)"));

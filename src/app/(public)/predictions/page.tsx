@@ -1,3 +1,4 @@
+import { PredictionCategoryTile } from "@/components/PredictionCategoryTile";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { LinkTile } from "@/components/LinkTile";
@@ -71,7 +72,7 @@ export default function PredictionsIndex() {
       <PremiumPanel kicker="Categories" title="Browse predictions by category" id="prediction-categories" bare>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {cats.map((c) => (
-            <LinkTile key={c.slug} href={`/predictions/${c.slug}`} title={c.name} desc={c.desc} />
+            <PredictionCategoryTile key={c.slug} slug={c.slug} name={c.name} desc={c.desc} />
           ))}
         </div>
       </PremiumPanel>
