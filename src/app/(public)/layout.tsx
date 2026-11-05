@@ -1,3 +1,4 @@
+import { DiscoveryShell } from "@/components/DiscoveryShell";
 import { BackButton } from "@/components/BackButton";
 import { PreviewDataBanner } from "@/components/PreviewDataBanner";
 import { Nav } from "@/components/Nav";
@@ -31,12 +32,12 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           owner (mb-3 lives on the button, not on a wrapper here), so on every
           page without a back button this contributes no element and no
           space — the heading sits exactly where it always did. */}
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        <BackButton />
-        {/* Live scores on tips (src/components/LiveScores.tsx): renders no
-            element of its own, and polls only while a match on the page is
-            in play. */}
-        <LiveScoresProvider>{children}</LiveScoresProvider>
+      <main className="public-main mx-auto max-w-[1280px] px-4 py-6 lg:px-6">
+        <DiscoveryShell>
+          <BackButton />
+          {/* Live scores on tips poll only while a match on the page is in play. */}
+          <LiveScoresProvider>{children}</LiveScoresProvider>
+        </DiscoveryShell>
       </main>
       <SiteFooter />
       {/* The push onboarding prompt. Mounted here rather than in the root

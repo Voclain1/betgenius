@@ -81,7 +81,7 @@ export function TopMatches({ rows }: { rows: TopMatchCard[] }) {
 
   return (
     <ul
-      className={`-mx-4 flex snap-x scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:grid sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
+      className={`top-matches -mx-4 flex snap-x scroll-px-4 gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:grid sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden ${
         cards.length >= 4 ? "sm:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"
       }`}
     >

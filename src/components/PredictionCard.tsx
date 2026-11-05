@@ -90,7 +90,7 @@ export function PredictionCard({
   const hasConfidence = p.confidence !== null && p.confidence !== undefined;
 
   return (
-    <article className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
+    <article className="prediction-card flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
       {/* Category and result as coloured small caps, never as tinted pills. */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3 text-[11px] font-black uppercase tracking-[0.14em]">

@@ -83,7 +83,7 @@ export function PredictionViewSwitch({
         {/* Deliberately unlike the day tabs beside it: round, small, icon-led,
             and an inverted (light-on-dark / dark-on-light) active state rather
             than brand green, so the two controls never read as one. */}
-        <div role="group" aria-label="Prediction view" className="inline-flex shrink-0 items-center gap-0.5 rounded-full border-2 border-gray-500 p-0.5">
+        <div role="group" aria-label="Prediction view" className="prediction-view-control inline-flex shrink-0 items-center gap-0.5 rounded-full border-2 border-gray-500 p-0.5">
           {PREDICTION_VIEWS.map((option) => {
             const isActive = option === view;
             const Icon = ICONS[option];

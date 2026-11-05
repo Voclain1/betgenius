@@ -25,7 +25,7 @@ const ORDINAL = (n: number) => {
 /** Section label: a short brand rule and small-caps kicker over a heavy title. */
 export function SectionHead({ kicker, title, id }: { kicker: string; title: string; id?: string }) {
   return (
-    <div className="mb-4">
+    <div className="section-head mb-4">
       <div className="flex items-center gap-2">
         <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
         <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">{kicker}</span>

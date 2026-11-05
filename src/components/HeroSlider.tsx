@@ -1,5 +1,5 @@
 "use client";
-import { kickoffLabel, footballDay } from "@/lib/footballTime";
+import { kickoffLabel } from "@/lib/footballTime";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -40,7 +40,8 @@ export function HeroSlider({ slides }: { slides: HeroSlideData[] }) {
       if (document.visibilityState !== "visible") return;
       const el = track.current;
       if (!el) return;
-      const next = (Math.round(el.scrollLeft / el.clientWidth) + 1) % slides.length;
+      const next =
+        (Math.round(el.scrollLeft / el.clientWidth) + 1) % slides.length;
       goTo(next);
     }, AUTOPLAY_MS);
     return () => window.clearInterval(t);
@@ -51,7 +52,7 @@ export function HeroSlider({ slides }: { slides: HeroSlideData[] }) {
   return (
     // min-w-0: as a grid item the track would otherwise size to all its slides side by side.
     <div
-      className="relative w-full min-w-0"
+      className="hero-picks relative w-full min-w-0"
       aria-roledescription="carousel"
       aria-label="Top picks today"
       onPointerEnter={stop}
@@ -72,8 +73,8 @@ export function HeroSlider({ slides }: { slides: HeroSlideData[] }) {
       </div>
 
       {slides.length > 1 && (
-        <div className="pointer-events-none absolute bottom-5 left-5 z-10 sm:bottom-6 sm:left-7">
-          <div className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/35 px-2.5 py-2 backdrop-blur">
+        <div className="spotlight-pagination">
+          <div className="spotlight-pagination-inner">
             {slides.map((s, i) => (
               <button
                 key={s.id}
@@ -84,8 +85,13 @@ export function HeroSlider({ slides }: { slides: HeroSlideData[] }) {
                   stop();
                   goTo(i);
                 }}
-                className={`h-2 rounded-full transition-all duration-300 ${i === active ? "w-5 bg-white" : "w-2 bg-white/40 hover:bg-white/70"}`}
-              />
+                className="flex h-7 w-7 items-center justify-center rounded-full"
+              >
+                <span
+                  aria-hidden
+                  className={`h-1.5 rounded-full transition-all ${i === active ? "w-4 bg-brand" : "w-1.5 bg-gray-500"}`}
+                />
+              </button>
             ))}
           </div>
         </div>
@@ -94,92 +100,116 @@ export function HeroSlider({ slides }: { slides: HeroSlideData[] }) {
   );
 }
 
-function Slide({ slide: s, index, total }: { slide: HeroSlideData; index: number; total: number }) {
+function Slide({
+  slide: s,
+  index,
+  total,
+}: {
+  slide: HeroSlideData;
+  index: number;
+  total: number;
+}) {
   const slug = matchSlug(s);
   const settled = !!s.outcome && s.outcome !== "PENDING";
   const kickoff = s.kickoff ? new Date(s.kickoff) : null;
 
   const body = (
-    <div className="relative isolate flex h-full min-h-[300px] flex-col overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,rgb(var(--card))_0%,rgb(var(--bg))_100%)] p-5 ring-1 ring-inset ring-brand-border sm:min-h-[320px] sm:p-7">
-      {/* Light from the top right, as in a studio shot of the two crests. */}
-      <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 -z-10 h-80 w-80 rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,0.16),transparent)]" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-24 right-10 -z-10 h-72 w-72 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.22),transparent)]" />
-
-      <div className="flex items-center justify-between gap-3 text-[11px] font-bold uppercase tracking-[0.18em]">
-        <span className="text-brand">Top pick {total > 1 ? `${index + 1}/${total}` : "today"}</span>
-        <span className="tabular-nums tracking-[0.08em] text-gray-400" suppressHydrationWarning>
-          {kickoff ? kickoffLabel(kickoff) : ""}
+    <div className="hero-pick spotlight-match">
+      <div aria-hidden className="spotlight-pitch">
+        <div />
+        <span />
+      </div>
+      <div className="spotlight-topline">
+        <LeagueBadge leagueApiId={s.leagueApiId} leagueName={s.leagueName} />
+        <span className="spotlight-index">
+          {String(index + 1).padStart(2, "0")}{" "}
+          <span>/ {String(total).padStart(2, "0")}</span>
         </span>
       </div>
-
-      <div className="mt-4 flex flex-1 items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <LeagueBadge leagueApiId={s.leagueApiId} leagueName={s.leagueName} />
-          <div className="mt-2 space-y-0.5 text-[21px] font-black leading-[1.15] tracking-tight text-gray-100 [overflow-wrap:anywhere] sm:text-[26px]">
-            <div className="line-clamp-2">{s.homeTeam}</div>
-            <div className="line-clamp-2">
-              <span className="text-gray-500">vs </span>
-              {s.awayTeam}
-            </div>
+      <div className="spotlight-matchup">
+        <div className="spotlight-team">
+          <div className="spotlight-crest">
+            <TeamCrest
+              teamApiId={s.homeTeamApiId}
+              name={s.homeTeam}
+              size={66}
+            />
           </div>
+          <span>{s.homeTeam}</span>
         </div>
-
-        {/* The picture: both crests on a lit tile, like the artwork on a promo slide.
-            Shown at every width (it was hidden under 380px, so 360px phones had no
-            crests); a little smaller there so the team names keep their room. */}
-        <div
-          aria-hidden
-          className="relative block h-[96px] w-[96px] shrink-0 rotate-[-4deg] rounded-[26px] bg-[linear-gradient(160deg,rgba(255,255,255,0.14),rgba(255,255,255,0.02))] shadow-[0_24px_50px_-20px_rgba(0,0,0,0.8)] ring-1 ring-white/15 min-[380px]:h-[112px] min-[380px]:w-[112px] sm:h-[150px] sm:w-[150px]"
-        >
-          <div className="absolute left-3 top-3 drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)] sm:left-4 sm:top-4">
-            <TeamCrest teamApiId={s.homeTeamApiId} name={s.homeTeam} size={56} className="max-[379px]:!h-[46px] max-[379px]:!w-[46px] sm:!h-16 sm:!w-16" />
+        <div className="spotlight-versus">
+          <span>VS</span>
+          <time suppressHydrationWarning>
+            {kickoff ? kickoffLabel(kickoff) : ""}
+          </time>
+        </div>
+        <div className="spotlight-team">
+          <div className="spotlight-crest">
+            <TeamCrest
+              teamApiId={s.awayTeamApiId}
+              name={s.awayTeam}
+              size={66}
+            />
           </div>
-          <div className="absolute bottom-3 right-3 drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)] sm:bottom-4 sm:right-4">
-            <TeamCrest teamApiId={s.awayTeamApiId} name={s.awayTeam} size={56} className="max-[379px]:!h-[46px] max-[379px]:!w-[46px] sm:!h-16 sm:!w-16" />
-          </div>
+          <span>{s.awayTeam}</span>
         </div>
       </div>
-
-      <div className="mt-5 flex items-end justify-between gap-4 pb-9 sm:pb-10">
-        <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500">{s.market}</div>
-          <div className="mt-1 break-words text-xl font-black leading-tight text-brand sm:text-2xl">{s.pick}</div>
+      <div className="spotlight-verdict">
+        <div>
+          <div className="spotlight-market">{s.market}</div>
+          <div className="spotlight-pick">{s.pick}</div>
         </div>
-        <div className="shrink-0 text-right">
+        <div className="spotlight-confidence">
           {settled ? (
             <>
-              <div className="text-2xl font-black leading-none tabular-nums text-gray-100">
+              <strong>
                 {s.finalHomeScore ?? "–"}–{s.finalAwayScore ?? "–"}
-              </div>
-              <div className={`mt-1 text-[11px] font-black uppercase tracking-[0.14em] ${textTone(OUTCOME_STYLES[s.outcome!] ?? "text-gray-400")}`}>{s.outcome}</div>
+              </strong>
+              <span
+                className={textTone(
+                  OUTCOME_STYLES[s.outcome!] ?? "text-gray-400",
+                )}
+              >
+                {s.outcome}
+              </span>
             </>
           ) : (
             <>
-              <div className="text-3xl font-black leading-none tabular-nums text-gray-100">
+              <strong>
                 {s.confidence}
-                <span className="text-base text-gray-500">%</span>
-              </div>
-              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Confidence</div>
-              <div className="mt-1 flex justify-end">
-                <ScoreCell
-                  homeTeamApiId={s.homeTeamApiId}
-                  awayTeamApiId={s.awayTeamApiId}
-                  kickoff={s.kickoff}
-                  align="right"
-                  hideWhenEmpty
-                />
-              </div>
+                <small>%</small>
+              </strong>
+              <span>Confidence</span>
+              <ScoreCell
+                homeTeamApiId={s.homeTeamApiId}
+                awayTeamApiId={s.awayTeamApiId}
+                kickoff={s.kickoff}
+                align="right"
+                hideWhenEmpty
+              />
             </>
           )}
         </div>
+      </div>
+      <div className="spotlight-open">
+        <span>Read the full prediction</span>
+        <span aria-hidden>↗</span>
       </div>
     </div>
   );
 
   return (
-    <div className="w-full shrink-0 snap-center" role="group" aria-roledescription="slide" aria-label={`${index + 1} of ${total}`}>
+    <div
+      className="w-full shrink-0 snap-center"
+      role="group"
+      aria-roledescription="slide"
+      aria-label={`${index + 1} of ${total}`}
+    >
       {slug ? (
-        <Link href={`/predictions/match/${slug}`} className="block h-full transition hover:brightness-110">
+        <Link
+          href={`/predictions/match/${slug}`}
+          className="block h-full transition hover:brightness-110"
+        >
           {body}
         </Link>
       ) : (
