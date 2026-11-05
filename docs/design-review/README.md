@@ -4,7 +4,7 @@ Status: visual direction approved by the owner on 5 November 2026. Application r
 
 Private interactive preview: https://betgenius-editorial-review.topbook2.chatgpt.site
 
-The isolated preview contains only sample HTML screens, the stylesheet and preview interactions. It is owner-private, requires ChatGPT sign-in, and does not change betgenius.ng. The public GitHub source branch has not been pushed.
+The isolated preview contains only sample HTML screens, the stylesheet and preview interactions. It is owner-private, requires ChatGPT sign-in, and does not change betgenius.ng.
 
 ## Scope
 
