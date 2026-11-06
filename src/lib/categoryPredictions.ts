@@ -1,3 +1,4 @@
+import { onePerFixture } from "@/lib/fixtureIdentity";
 import { cache } from "react";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { prisma } from "@/lib/prisma";
@@ -204,5 +205,8 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
     take: 60,
   });
   const rows = cat === "GOALS" ? goalsFeedRows(found) : found;
-  return orderForDisplay(rows);
+  const ordered = orderForDisplay(rows);
+  // The Banker feed is one call per match: the best-ranked pick on each
+  // (src/lib/fixtureIdentity.ts). Every other category lists every pick.
+  return cat === "BANKER" ? onePerFixture(ordered) : ordered;
 });
