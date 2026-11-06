@@ -313,8 +313,8 @@ export function Nav() {
 
   return (
     <>
-      <header className="site-nav sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-2.5 px-4 py-3">
+      <header className="sticky top-0 z-40 border-b border-brand-border surface-blur backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2.5 px-4 py-3">
           <Link href="/" aria-label="BetGenius home" prefetch={false} className="flex shrink-0 items-center gap-2">
             <BrandLockup className="text-xl font-bold tracking-tight" />
           </Link>

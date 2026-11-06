@@ -92,7 +92,7 @@ export function PredictionsTable({
   return (
     // Phone: each tip is its own card with space between, rather than rows
     // ruled off inside one box. From sm up, the one bordered table.
-    <div className="prediction-table sm:overflow-x-auto sm:rounded-3xl sm:border sm:border-brand-border sm:bg-brand-card">
+    <div className="sm:overflow-x-auto sm:rounded-3xl sm:border sm:border-brand-border sm:bg-brand-card">
       <table className="block w-full text-sm sm:table">
         <thead className="hidden bg-brand-bg/60 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:table-header-group">
           <tr>

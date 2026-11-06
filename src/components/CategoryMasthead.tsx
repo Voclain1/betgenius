@@ -21,13 +21,14 @@ export function CategoryMasthead({
   actions?: React.ReactNode;
 }) {
   return (
-    <header className="category-masthead relative overflow-hidden rounded-2xl border border-brand-border bg-brand-card">
+    <header className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+      <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
       <div className="relative space-y-3 p-5 sm:p-8">
         <div className="flex items-center gap-2">
           <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
           <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">{kicker}</span>
         </div>
-        <h1 className="text-3xl font-bold leading-[1.12] tracking-tight text-gray-100 sm:text-4xl">{title}</h1>
+        <h1 className="text-3xl font-black leading-[1.05] tracking-tight text-gray-100 sm:text-5xl">{title}</h1>
         {dateLabel && <p className="text-xs font-semibold text-gray-500">{dateLabel}</p>}
         <p className="max-w-2xl text-sm leading-relaxed text-gray-300 sm:text-base">{blurb}</p>
         {actions && <div className="flex flex-wrap items-center gap-2 pt-1">{actions}</div>}
