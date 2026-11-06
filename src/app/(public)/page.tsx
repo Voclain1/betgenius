@@ -1,6 +1,6 @@
-import { HomeCategoryNav } from "@/components/HomeCategoryNav";
 import { HomepageExplainer } from "@/components/HomepageExplainer";
 import Link from "next/link";
+import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
 import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -11,13 +11,15 @@ import { PredictionsTable } from "@/components/PredictionsTable";
 import { AdStickyMobile } from "@/components/ads/AdStickyMobile";
 import { AdInterstitial } from "@/components/ads/AdInterstitial";
 import { TopBanner } from "@/components/ads/TopBanner";
+import { MarketChips } from "@/components/MarketChips";
 import { LeagueNav } from "@/components/LeagueNav";
 import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
-import { HomeMasthead } from "@/components/HomeMasthead";
+import { HeroSlider } from "@/components/HeroSlider";
 import { getHeroSlides } from "@/lib/heroSlides";
+import { AnswerSummary } from "@/components/AnswerSummary";
 import { homeSummary, homeHeadline } from "@/lib/answerSummary";
 import { BetOfTheDayCard } from "@/components/BetOfTheDayCard";
 import { getHomepageBetOfTheDay } from "@/lib/betOfTheDay";
@@ -250,7 +252,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   const ARROW = "whitespace-nowrap text-sm font-semibold text-brand hover:underline";
 
   return (
-    <div className="home-discovery space-y-10">
+    <div className="space-y-12">
       <JsonLd data={websiteJsonLd()} />
       {/* The top banner draws flush under the header, not here: this only
           reserves its place (src/lib/topBanner.ts). */}
@@ -283,14 +285,86 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             real published pick as its evidence on the right. Collapses to the
             original single column when nothing public is available, so the hero
             never renders a hole. */}
-        <HomeMasthead headline={homeHeadline({ day, bankerCount: slate.bankerCount })} summary={homeSummary({ day, ...slate })} heroSlides={heroSlides} />
+        <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+          <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
+          <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
+          <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
+            <div>
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="h-[3px] w-5 rounded-full bg-brand" />
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand">Football predictions</span>
+              </div>
+              {/* Built rather than written inline: the banker half of this
+                  headline is a claim about the day's card, and it is gated on
+                  the same count the paragraph below it uses. See homeHeadline. */}
+              <h1 className="mt-3 text-[28px] font-black leading-[1.05] tracking-tight text-gray-100 sm:text-4xl md:text-5xl">
+                {homeHeadline({ day, bankerCount: slate.bankerCount })}
+              </h1>
+              {/* Directly under the H1, before the pick card and everything
+                  below it: what is actually published right now, in counts and
+                  competitions. No percentage — /track-record owns the rate, and
+                  a second copy of it here would be free to drift. */}
+              <div className="mt-4">
+                <AnswerSummary text={homeSummary({ day, ...slate })} />
+              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
+                {/* The markets named here are the ones actually published — see
+                    the marketType mix in the corpus — so the line reinforces
+                    what a reader searches for without promising a market this
+                    site has never produced. */}
+                Data-driven football predictions across every major league — banker picks, match winner, double chance, over/under and combo bets — each with a confidence rating and the reasoning behind it.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
+                <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
+              </div>
+            </div>
+            {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
+          </div>
+        </section>
       </div>
 
       {/* The shortcuts under the hero, in two groups: today's card, then the
           longer runs. The groups are told apart by a label and a rule, and the
           longer-run links by their brand outline, so the row can keep growing
           without one list of look-alike buttons. */}
-      <HomeCategoryNav />
+      <nav aria-label="Prediction categories" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              {HOME_CATEGORY_LINKS.map((c) => (
+                <Link
+                  key={c.href}
+                  href={c.href}
+                  className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+                >
+                  {c.label}
+                </Link>
+              ))}
+            </div>
+            {/* Today's tips by market, directly under the Today buttons: one
+                slim line of small chips (MarketChips), so it costs a single
+                row and never pushes Genius or Featured down by more. */}
+            <MarketChips />
+          </div>
+        </div>
+        <span aria-hidden className="h-px w-full bg-brand-border lg:h-8 lg:w-px" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Longer runs</span>
+          <div className="flex flex-wrap gap-2">
+            {HOME_PERIOD_LINKS.map((c) => (
+              <Link
+                key={c.href}
+                href={c.href}
+                className="rounded-full border border-brand px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-on-brand"
+              >
+                {c.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </nav>
 
       {genius.length > 0 && (
         <section aria-labelledby="home-genius">

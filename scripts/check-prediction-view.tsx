@@ -177,9 +177,8 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   const css = readFileSync(join(__dirname, "..", "src", "app", "globals.css"), "utf8");
   const masthead = readFileSync(join(__dirname, "..", "src", "components", "CategoryMasthead.tsx"), "utf8");
   const footer = readFileSync(join(__dirname, "..", "src", "components", "SiteFooter.tsx"), "utf8");
-  const hero = readFileSync(join(__dirname, "..", "src", "components", "HomeMasthead.tsx"), "utf8");
-  check("discovery headings use theme-aware card surfaces; footer keeps its brand surface",
-    hero.includes("home-masthead") && hero.includes("editorial-hero") && css.includes(".editorial-title") && css.includes("rgb(var(--gray-100))") && masthead.includes("category-masthead") && masthead.includes("bg-brand-card") && footer.includes('className="brand-surface '));
+  check("light theme: hero, mastheads and footer carry the brand surface",
+    home.includes('className="brand-surface relative') && masthead.includes('className="brand-surface relative') && footer.includes('className="brand-surface '));
   check("light theme: the brand surface is defined for both light selectors and never for dark",
     css.includes(':root:not([data-theme]) .brand-surface') && css.includes(':root[data-theme="light"] .brand-surface') && !css.includes('[data-theme="dark"] .brand-surface'));
 }
@@ -346,9 +345,8 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("every homepage label says Tips", HOME_CATEGORY_LINKS.every((l) => /Tips$/.test(l.label)));
 
   const home = readFileSync(join(__dirname, "..", "src", "app", "(public)", "page.tsx"), "utf8");
-  const shortcuts = readFileSync(join(__dirname, "..", "src", "components", "HomeCategoryNav.tsx"), "utf8");
-  check("homepage renders HOME_CATEGORY_LINKS", home.includes("<HomeCategoryNav />") && shortcuts.includes("HOME_CATEGORY_LINKS.map("));
-  check("homepage renders the weekend and midweek links as their own group", home.includes("<HomeCategoryNav />") && shortcuts.includes("HOME_PERIOD_LINKS.map(") &&
+  check("homepage renders HOME_CATEGORY_LINKS", home.includes("HOME_CATEGORY_LINKS.map("));
+  check("homepage renders the weekend and midweek links as their own group", home.includes("HOME_PERIOD_LINKS.map(") &&
     JSON.stringify(HOME_PERIOD_LINKS.map((l) => l.href)) === JSON.stringify(["/predictions/weekend", "/predictions/midweek"]));
   check("See all Genius Tips still links to the Genius feed (full width on phones)",
     home.includes('<Link href="/predictions/genius" className="btn btn-primary w-full justify-center sm:w-auto">See all Genius Tips</Link>'));

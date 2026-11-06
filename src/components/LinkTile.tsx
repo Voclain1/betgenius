@@ -10,7 +10,7 @@ export function LinkTile({ href, title, desc, kicker }: { href: string; title: s
   return (
     <Link
       href={href}
-      className="link-tile group relative flex h-full flex-col gap-1.5 rounded-3xl border border-brand-border bg-brand-card p-5 transition hover:border-brand/60 hover:bg-brand-bg/40"
+      className="group relative flex h-full flex-col gap-1.5 rounded-3xl border border-brand-border bg-brand-card p-5 transition hover:border-brand/60 hover:bg-brand-bg/40"
     >
       {kicker && <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500">{kicker}</span>}
       <span className="pr-8 text-lg font-black leading-snug tracking-tight text-gray-100">{title}</span>
