@@ -29,6 +29,7 @@ import {
   type HomepageComboLeg,
 } from "../src/lib/homepageFeatured";
 import { orderForDisplay } from "../src/lib/predictionOrdering";
+import { onePerFixture, takeFixture } from "../src/lib/fixtureIdentity";
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -368,6 +369,44 @@ console.log("\n8b. Genius homepage showcase: one pick per match, no Over/Under 2
 }
 
 // ── 9. Short days and the empty state ───────────────────────────────────────
+console.log("\n8c. Featured: one pick per match, and none already shown above it");
+{
+  // The reported case: two picks on Chelsea W v Everton W (80%, 78%) on a
+  // day with plenty of other matches. Before, both took Featured slots.
+  const chelsea = (id: string, confidence: number, extra: Partial<Row> & { fixtureApiId?: number | null; homeTeam?: string; awayTeam?: string } = {}) => ({
+    ...single(id, confidence, "12:45"), homeTeamApiId: 49, awayTeamApiId: 45, homeTeam: "Chelsea W", awayTeam: "Everton W", ...extra,
+  });
+  const others = ["o1", "o2", "o3", "o4", "o5", "o6", "o7"].map((id, i) => single(id, 76 - i, "15:00"));
+  const day = [chelsea("cw-80", 80), chelsea("cw-78", 78), ...others];
+  const got = ids(selectHomepageFeatured(day, new Map()));
+  check("a match takes one Featured slot: its best pick", got.includes("cw-80") && !got.includes("cw-78"), got.join(","));
+  check("the freed slot goes to the next match", got.length === HOMEPAGE_FEATURED_LIMIT && got.includes("o5"), got.join(","));
+
+  // One pick has its provider fixture id resolved, the other does not.
+  const mixed = [chelsea("cw-80", 80, { fixtureApiId: 777 }), chelsea("cw-78", 78, { fixtureApiId: null }), ...others];
+  check("same match even when only one pick has a fixture id", !ids(selectHomepageFeatured(mixed, new Map())).includes("cw-78"));
+
+  // Team ids missing on one pick: the names still identify the match.
+  const named = [chelsea("cw-80", 80), chelsea("cw-78", 78, { homeTeamApiId: null as any, awayTeamApiId: null as any, homeTeam: "Chelsea  W", awayTeam: "everton w" }), ...others];
+  check("same match by team names when ids are missing", !ids(selectHomepageFeatured(named, new Map())).includes("cw-78"));
+
+  // Shown higher on the page (Genius or Bet of the Day): Featured skips it.
+  const taken = new Set<string>();
+  takeFixture({ id: "botd", homeTeamApiId: 49, awayTeamApiId: 45 }, taken);
+  const below = ids(selectHomepageFeatured(day, new Map(), HOMEPAGE_FEATURED_LIMIT, taken));
+  check("a match already shown above is not repeated in Featured", !below.some((x) => x.startsWith("cw-")) && below.length === HOMEPAGE_FEATURED_LIMIT, below.join(","));
+  check("the page's taken set is not modified by Featured", taken.size === 1);
+
+  // Genius honours the same set.
+  const g = ids(selectHomepageGenius(day, new Map(), HOMEPAGE_GENIUS_LIMIT, taken));
+  check("Genius skips a match Bet of the Day shows", !g.some((x) => x.startsWith("cw-")), g.join(","));
+
+  // Banker feed helper: best-ranked pick per match, order kept.
+  const banker = onePerFixture([chelsea("b1", 82), single("b2", 80, "15:00"), chelsea("b3", 79)]);
+  check("Banker: one pick per match, the first (best-ranked) kept", ids(banker).join(",") === "b1,b2", ids(banker).join(","));
+  check("rows with no identity are never merged", onePerFixture([{ id: "x" }, { id: "y" }]).length === 2);
+}
+
 console.log("\n9. Short days are not padded; empty-state copy");
 {
   const legs = new Map<string, HomepageComboLeg>();
@@ -390,10 +429,14 @@ console.log("\n9. Short days are not padded; empty-state copy");
   const pageCode = page.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   check("page no longer ranks either excerpt with orderForDisplay", !/orderForDisplay/.test(pageCode));
   check("page picks Genius with selectHomepageGenius and the combos' legs",
-    /fetchCategoryDay\("GENIUS", day\)/.test(page) && /selectHomepageGenius\(rows, await loadComboLegs\(rows\)\)/.test(page));
+    /fetchCategoryDay\("GENIUS", day\)/.test(page) && /legs: await loadComboLegs\(rows\)/.test(page) && /selectHomepageGenius\(geniusDay\.candidates, geniusDay\.legs/.test(page));
+  check("page takes Bet of the Day's match, then Genius's, before choosing Featured",
+    /takeFixture\(betOfTheDay\.row, shownMatches\)/.test(page) && /selectHomepageFeatured\(featuredDay\.candidates, featuredDay\.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches\)/.test(page));
   const feeds = readFileSync("src/lib/categoryPredictions.ts", "utf8");
   check("/predictions/genius untouched: the category feed never uses the homepage selector",
-    !/homepageFeatured|selectHomepageGenius|isHomepageGeniusEligible/.test(feeds) && /return orderForDisplay\(rows\)/.test(feeds));
+    !/homepageFeatured|selectHomepageGenius|isHomepageGeniusEligible/.test(feeds) && /const ordered = orderForDisplay\(rows\)/.test(feeds));
+  check("category feeds list every pick; only Banker is one per match",
+    /return cat === "BANKER" \? onePerFixture\(ordered\) : ordered;/.test(feeds));
 }
 
 // ── 10. Source guards ───────────────────────────────────────────────────────
@@ -419,7 +462,7 @@ console.log("\n10. Source guards");
   check("only the homepage uses the homepage selector", outside.length === 0, outside.join(", "));
   check(
     "category feeds (incl. combo-bets) still order with orderForDisplay",
-    /return orderForDisplay\(rows\)/.test(readFileSync("src/lib/categoryPredictions.ts", "utf8")),
+    /const ordered = orderForDisplay\(rows\)/.test(readFileSync("src/lib/categoryPredictions.ts", "utf8")),
   );
 }
 

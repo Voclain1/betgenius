@@ -2,6 +2,7 @@ import { leaguePriorityRank } from "@/lib/leagues";
 import { isValidSelection, type MarketType, type Selection } from "@/lib/markets";
 import { checkLegCompatibility } from "@/lib/sameGameDouble";
 import type { FeedDay } from "@/lib/categoryPredictions";
+import { isFixtureTaken, takeFixture } from "@/lib/fixtureIdentity";
 
 /**
  * Which six FEATURED picks the homepage excerpt shows for a Lagos day.
@@ -32,6 +33,11 @@ import type { FeedDay } from "@/lib/categoryPredictions";
  * SAME_GAME_DOUBLE is considered only when fewer than six singles exist, and
  * only if it is exceptional (isExceptionalHomepageCombo). The excerpt is never
  * padded past that: a day with three eligible picks shows three.
+ *
+ * ONE PICK PER MATCH, ACROSS THE PAGE. Featured never shows a match twice,
+ * and never one already shown in Genius or Bet of the Day above it: the page
+ * passes those matches in `taken`. A match's next-best pick does not take a
+ * second slot; the next match does. See src/lib/fixtureIdentity.ts.
  *
  * GENIUS uses the same outcome-blind ranking for its three-row excerpt
  * (selectHomepageGenius) and is a deliberate showcase: three different
@@ -74,6 +80,8 @@ export type HomepageFeaturedCandidate = {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
   fixtureApiId?: number | null;
+  homeTeam?: string | null;
+  awayTeam?: string | null;
 };
 
 /** What the page loads for each leg a combo references. Pre-match fields only. */
@@ -164,23 +172,31 @@ export function isExceptionalHomepageCombo(
 
 /**
  * The homepage Featured excerpt: the best singles first, then exceptional
- * combos in whatever slots remain.
+ * combos in whatever slots remain, one pick per match.
  *
- * `legsById` only has to cover the combos in `rows`; when six singles exist it
- * is never read, so the caller may pass an empty map.
+ * `taken` holds the matches already shown higher on the page (Genius, Bet of
+ * the Day); it is not modified. `legsById` only has to cover the combos in
+ * `rows`; when singles fill every slot it is never read.
  */
 export function selectHomepageFeatured<T extends HomepageFeaturedCandidate>(
   rows: readonly T[],
   legsById: ReadonlyMap<string, HomepageComboLeg>,
   limit: number = HOMEPAGE_FEATURED_LIMIT,
+  taken: ReadonlySet<string> = new Set(),
 ): T[] {
-  const singles = rows.filter((r) => !isComboRow(r)).sort(compareForHomepageExcerpt).slice(0, limit);
-  if (singles.length >= limit) return singles;
-  const combos = rows
-    .filter((r) => isComboRow(r) && isExceptionalHomepageCombo(r, legsById))
-    .sort(compareForHomepageExcerpt)
-    .slice(0, limit - singles.length);
-  return [...singles, ...combos];
+  const used = new Set(taken);
+  const picked: T[] = [];
+  const walk = (candidates: T[]) => {
+    for (const r of candidates) {
+      if (picked.length >= limit) return;
+      if (isFixtureTaken(r, used)) continue;
+      takeFixture(r, used);
+      picked.push(r);
+    }
+  };
+  walk(rows.filter((r) => !isComboRow(r)).sort(compareForHomepageExcerpt));
+  if (picked.length < limit) walk(rows.filter((r) => isComboRow(r) && isExceptionalHomepageCombo(r, legsById)).sort(compareForHomepageExcerpt));
+  return picked;
 }
 
 /** A structured Over/Under 2.5 total-goals call: marketType OVER_UNDER on the 2.5 line. */
@@ -212,23 +228,9 @@ export function isHomepageGeniusEligible(
 }
 
 /**
- * The match a row is about, for the one-pick-per-fixture rule.
- *
- * The provider fixture id when the row has one, else the team pair; the
- * excerpt covers a single Lagos day, so a team pair is one match. Kickoff is
- * deliberately not part of it: settlement rewrites kickoff on a reschedule. A
- * row with neither falls back to its own id and is never merged with another.
- */
-function homepageFixtureKey(row: HomepageFeaturedCandidate): string {
-  if (row.fixtureApiId != null) return `fx:${row.fixtureApiId}`;
-  if (row.homeTeamApiId != null && row.awayTeamApiId != null) return `teams:${row.homeTeamApiId}-${row.awayTeamApiId}`;
-  return `row:${row.id}`;
-}
-
-/**
  * The homepage Genius excerpt: walk the day's GENIUS picks from strongest to
  * weakest by the outcome-blind ranking, skip ineligible ones and any match
- * already shown, and stop at three.
+ * already shown (here or in `taken`), and stop at three.
  *
  * `legsById` has to cover the legs of every combo in `rows`; a combo whose
  * legs are missing is skipped.
@@ -237,15 +239,15 @@ export function selectHomepageGenius<T extends HomepageFeaturedCandidate>(
   rows: readonly T[],
   legsById: ReadonlyMap<string, Pick<HomepageComboLeg, "marketType" | "selection">>,
   limit: number = HOMEPAGE_GENIUS_LIMIT,
+  taken: ReadonlySet<string> = new Set(),
 ): T[] {
   const picked: T[] = [];
-  const fixtures = new Set<string>();
+  const used = new Set(taken);
   for (const row of [...rows].sort(compareForHomepageExcerpt)) {
     if (picked.length >= limit) break;
     if (!isHomepageGeniusEligible(row, legsById)) continue;
-    const fixture = homepageFixtureKey(row);
-    if (fixtures.has(fixture)) continue;
-    fixtures.add(fixture);
+    if (isFixtureTaken(row, used)) continue;
+    takeFixture(row, used);
     picked.push(row);
   }
   return picked;

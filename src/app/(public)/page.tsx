@@ -33,9 +33,10 @@ import {
   selectHomepageGenius,
   featuredBarMessage,
   comboLegIds,
-  isComboRow,
   HOMEPAGE_FEATURED_LIMIT,
+  HOMEPAGE_GENIUS_LIMIT,
 } from "@/lib/homepageFeatured";
+import { takeFixture } from "@/lib/fixtureIdentity";
 import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdNativeCard, AdRectangle } from "@/components/ads/AdPlacements";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
@@ -93,15 +94,16 @@ async function fetchCategoryDay(category: string, day: FeedDay) {
  * separates "nothing published" from "nothing cleared the homepage bar" in
  * the empty state.
  *
- * Combo legs are loaded only when singles cannot fill the excerpt, since the
- * selector never looks at them otherwise.
+ * Combo legs are loaded whenever the day has combos (one query): with one
+ * pick per match, the singles' count no longer says whether they fill it.
+ *
+ * Returns the candidates, not the excerpt: the page selects once it knows the
+ * matches Genius and Bet of the Day already show, so no match appears twice.
  */
 async function fetchFeatured(day: FeedDay) {
   const rows = await fetchCategoryDay("FEATURED", day);
 
-  const singles = rows.filter((r) => !isComboRow(r)).length;
-  const legs = await loadComboLegs(singles >= HOMEPAGE_FEATURED_LIMIT ? [] : rows);
-  return { rows: selectHomepageFeatured(rows, legs), published: rows.length };
+  return { candidates: rows, legs: await loadComboLegs(rows), published: rows.length };
 }
 
 /** The legs behind any combos in `rows`, keyed by id. One query, or none when there are no combos. */
@@ -127,7 +129,7 @@ async function loadComboLegs(rows: Parameters<typeof comboLegIds>[0][]) {
  */
 async function fetchGeniusPreview(day: FeedDay) {
   const rows = await fetchCategoryDay("GENIUS", day);
-  return selectHomepageGenius(rows, await loadComboLegs(rows));
+  return { candidates: rows, legs: await loadComboLegs(rows) };
 }
 
 /**
@@ -185,7 +187,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // Verified in production: Cache-Control is no-store and x-vercel-cache MISS.
   const day = parseFeedDay(searchParams?.date);
   const showOutcomes = dayShowsOutcomes(day);
-  const [featured, geniusPreview, session, leagues, matchIndex, heroSlides, betOfTheDay, slate, recentResults] = await Promise.all([
+  const [featuredDay, geniusDay, session, leagues, matchIndex, heroSlides, betOfTheDay, slate, recentResults] = await Promise.all([
     fetchFeatured(day),
     fetchGeniusPreview(day),
     getServerSession(authOptions),
@@ -199,6 +201,17 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getRecentResults(),
   ]);
   // Crests for the Bet of the Day card: one batched read, only when a pick holds the slot.
+  // One pick per match across the page: Bet of the Day's match first, then
+  // Genius, then Featured, each skipping the matches above it
+  // (src/lib/fixtureIdentity.ts).
+  const shownMatches = new Set<string>();
+  if (betOfTheDay) takeFixture(betOfTheDay.row, shownMatches);
+  const geniusPreview = selectHomepageGenius(geniusDay.candidates, geniusDay.legs, HOMEPAGE_GENIUS_LIMIT, shownMatches);
+  for (const r of geniusPreview) takeFixture(r, shownMatches);
+  const featured = {
+    rows: selectHomepageFeatured(featuredDay.candidates, featuredDay.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches),
+    published: featuredDay.published,
+  };
   const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;
   const viewer = await getViewerEntitlement();
   // The day's biggest published games as score cards: today's, else
