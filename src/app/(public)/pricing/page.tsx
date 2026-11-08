@@ -35,9 +35,13 @@ export default function Pricing() {
   const [err, setErr] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const router = useRouter();
-  // Which ways to pay are switched on (lib/payments/methods). Until it loads,
-  // Paystack alone — the behaviour before there was a choice.
+  // Which ways to pay are switched on (lib/payments/methods), the primary
+  // first. The plan buttons wait for it, so an early tap cannot fall through
+  // to a method that is not the primary; if it cannot load, Paystack alone,
+  // the behaviour before there was a choice.
   const [methods, setMethods] = useState<Method[]>(["PAYSTACK"]);
+  const [primary, setPrimary] = useState<Method>("PAYSTACK");
+  const [loaded, setLoaded] = useState(false);
   const [usdtNetwork, setUsdtNetwork] = useState("TRC20");
   const [choosing, setChoosing] = useState<PaidTier | null>(null);
 
@@ -50,11 +54,13 @@ export default function Pricing() {
   useEffect(() => {
     fetch("/api/payments/methods")
       .then((r) => (r.ok ? r.json() : null))
-      .then((j: { methods: Method[]; usdtNetwork: string } | null) => {
+      .then((j: { methods: Method[]; primary: Method | null; usdtNetwork: string } | null) => {
         if (j?.methods?.length) setMethods(j.methods);
+        if (j?.primary) setPrimary(j.primary);
         if (j?.usdtNetwork) setUsdtNetwork(j.usdtNetwork);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
   // Paystack's "Cancel payment" link returns here (metadata.cancel_action, set
@@ -68,13 +74,21 @@ export default function Pricing() {
   // Sends the tier only — the server derives the amount from lib/pricing.
   // Posting an amount from here would let anyone with devtools name their
   // own price.
-  // One method: straight to it, as before. Several: ask which.
+  // The plan button goes straight to the primary method (Korapay when it is
+  // configured). The others are one tap away under "Other ways to pay".
   const choose = (tier: PaidTier) => {
     if (!data?.user) return (window.location.href = "/login");
     setErr(null);
-    if (methods.length <= 1) return void pay(tier, methods[0] ?? "PAYSTACK");
+    setChoosing(null);
+    void pay(tier, primary);
+  };
+  const others = (tier: PaidTier) => {
+    if (!data?.user) return (window.location.href = "/login");
+    setErr(null);
     setChoosing(tier);
   };
+  const gatewayName: Partial<Record<Method, string>> = { KORAPAY: "Korapay", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+  const gateways = methods.map((m) => gatewayName[m]).filter((n): n is string => !!n);
 
   const pay = async (tier: PaidTier, method: Method) => {
     if (method === "PAYSTACK") return subscribe(tier);
@@ -166,11 +180,19 @@ export default function Pricing() {
                 {t.features.map((f) => <li key={f}>✓ {f}</li>)}
               </ul>
               <button
-                disabled={busy === t.id}
+                disabled={busy === t.id || !loaded}
                 onClick={() => choose(t.id)}
                 className="btn btn-primary mt-4 w-full disabled:opacity-50">
                 {busy === t.id ? "Redirecting…" : `Get ${t.name} — 30 days`}
               </button>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+                <span>{gatewayName[primary] ? `Secure checkout by ${gatewayName[primary]}` : methodCopy(primary, t.id, usdtNetwork).title}</span>
+                {methods.length > 1 && (
+                  <button type="button" disabled={!loaded} onClick={() => others(t.id)} className="font-semibold text-gray-300 underline-offset-2 hover:text-brand hover:underline disabled:opacity-50">
+                    Other ways to pay
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -179,7 +201,7 @@ export default function Pricing() {
         <section id="pay-with" className="card space-y-3" aria-live="polite">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-lg font-semibold text-gray-100">
-              Pay for {choosing === "PREMIUM" ? "Premium" : "VIP"} — choose how
+              Pay for {choosing === "PREMIUM" ? "Premium" : "VIP"}: other ways to pay
             </h2>
             <button type="button" onClick={() => setChoosing(null)} className="text-sm text-gray-400 hover:text-gray-200">Cancel</button>
           </div>
@@ -194,7 +216,10 @@ export default function Pricing() {
                   onClick={() => pay(choosing, m)}
                   className="rounded-lg border border-brand-border p-4 text-left transition hover:bg-brand-card disabled:opacity-50"
                 >
-                  <div className="font-semibold text-gray-100">{copy.title}</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-semibold text-gray-100">{copy.title}</span>
+                    {m === primary && <span className="text-[11px] font-bold uppercase tracking-wide text-brand">Recommended</span>}
+                  </div>
                   <div className="mt-1 text-sm text-gray-400">{copy.detail}</div>
                 </button>
               );
@@ -211,7 +236,9 @@ export default function Pricing() {
         {/* Names no payment methods inside the gateways: each shows what it
             offers on our account, and naming one that is missing there
             breaks the promise. */}
-        <p>Online payments happen on {["Paystack", methods.includes("KORAPAY") && "Korapay", methods.includes("FLUTTERWAVE") && "Flutterwave"].filter(Boolean).join(" or ")}&apos;s secure checkout page, which shows the payment methods available to you; BetGenius never sees your card or bank details. Your plan unlocks as soon as the payment is confirmed, even if you have closed the page.</p>
+        {gateways.length > 0 && (
+          <p>Online payments happen on {gateways.join(" or ")}&apos;s secure checkout page, which shows the payment methods available to you; BetGenius never sees your card or bank details. Your plan unlocks as soon as the payment is confirmed, even if you have closed the page.</p>
+        )}
         {(methods.includes("BANK") || methods.includes("USDT")) && (
           <p>You can also pay {methods.includes("BANK") ? "straight into our bank account" : ""}{methods.includes("BANK") && methods.includes("USDT") ? " or " : ""}{methods.includes("USDT") ? "in USDT" : ""}. Those payments are confirmed by our team, usually within a few hours, and you get an email when your plan is active.</p>
         )}

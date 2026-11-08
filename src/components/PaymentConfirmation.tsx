@@ -65,6 +65,8 @@ export function PaymentConfirmation({
   /** Flutterwave's transaction id from the redirect; absent when they cancelled. */
   transactionId?: string | null;
 }) {
+  // Whose checkout the payer came back from, for the messages below.
+  const gateway = provider === "korapay" ? "Korapay" : provider === "flutterwave" ? "Flutterwave" : "Paystack";
   const { update } = useSession();
   const router = useRouter();
   const [waiting, setWaiting] = useState(!activated);
@@ -155,8 +157,8 @@ export function PaymentConfirmation({
     return (
       <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
         {status === "failed"
-          ? "Paystack declined this payment, so your plan has not changed. You can try again — choosing a different payment method sometimes helps."
-          : "Paystack hasn't received this payment, so your plan has not changed. If you already sent a bank transfer, access unlocks automatically when it arrives — you don't need to pay again. Otherwise you can try again whenever you're ready."}{" "}
+          ? `${gateway} declined this payment, so your plan has not changed. You can try again — choosing a different payment method sometimes helps.`
+          : `${gateway} hasn't received this payment, so your plan has not changed. If you already sent a bank transfer, access unlocks automatically when it arrives — you don't need to pay again. Otherwise you can try again whenever you're ready.`}{" "}
         <Link href="/pricing" className="font-medium text-brand underline">
           Choose a plan
         </Link>
@@ -167,7 +169,7 @@ export function PaymentConfirmation({
   if (status === "pending") {
     return (
       <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
-        Paystack is still confirming your payment — bank transfers can take a few minutes. Your access unlocks
+        {gateway} is still confirming your payment — bank transfers can take a few minutes. Your access unlocks
         automatically as soon as it clears; you don&apos;t need to stay on this page.
       </div>
     );
@@ -179,7 +181,7 @@ export function PaymentConfirmation({
     </div>
   ) : (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-      We haven&apos;t had confirmation from Paystack yet. If you were charged, your access will unlock as soon as it
+      We haven&apos;t had confirmation from {gateway} yet. If you were charged, your access will unlock as soon as it
       arrives — refresh this page in a minute, or contact support if it persists. If you didn&apos;t finish paying,{" "}
       <Link href="/pricing" className="font-medium text-brand underline">
         choose a plan

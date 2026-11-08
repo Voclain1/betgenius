@@ -33,6 +33,7 @@ import { PROBLEM_CATEGORIES, REMINDER_LEAD_MS, inDailyPicksWindow, lagosHour, pr
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
 const OUR_REFERENCE = /^bg_(VIP|PREMIUM)_[0-9a-f]{32}$/;
+const KORAPAY_REFERENCE = /^kp_(VIP|PREMIUM)_[0-9a-f]{32}$/;
 
 // ---------------------------------------------------------------------------
 // Paystack sync. Paystack only sends a webhook for SUCCESSFUL payments, so a
@@ -252,18 +253,24 @@ export async function queueDailyPicks(now: Date): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Admin alert: Paystack says a BetGenius checkout was paid, and no access was
+// Admin alert: the gateway says a BetGenius checkout was paid, and no access was
 // granted for it half an hour later. This is the "charged and locked out"
 // case, and it is the one an admin must hear about without having to look.
 // ---------------------------------------------------------------------------
 
 export async function queueAdminPaymentAlerts(now: Date): Promise<number> {
+  const window = { gte: new Date(now.getTime() - 7 * DAY), lte: new Date(now.getTime() - 30 * 60_000) };
   const stuck = await prisma.paymentAttempt.findMany({
     where: {
-      status: "success",
       entitlementGrantedAt: null,
-      reference: { startsWith: "bg_" },
-      occurredAt: { gte: new Date(now.getTime() - 7 * DAY), lte: new Date(now.getTime() - 30 * 60_000) },
+      occurredAt: window,
+      OR: [
+        { status: "success", reference: { startsWith: "bg_" } },
+        // Korapay grants in the same transaction that marks the row paid, so
+        // "paid, no access" there is a charge Korapay confirmed and we
+        // refused (wrong amount or currency): entitlementError is set.
+        { provider: "KORAPAY", reference: { startsWith: "kp_" }, entitlementError: { not: null } },
+      ],
     },
     select: { reference: true, tier: true, amountKobo: true, entitlementError: true, verifyError: true },
     take: 50,
@@ -272,7 +279,7 @@ export async function queueAdminPaymentAlerts(now: Date): Promise<number> {
   const admins = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "SUPER_ADMIN"] } }, select: { id: true, email: true } });
   const queue: QueueInput[] = [];
   for (const s of stuck) {
-    if (!OUR_REFERENCE.test(s.reference)) continue;
+    if (!OUR_REFERENCE.test(s.reference) && !KORAPAY_REFERENCE.test(s.reference)) continue;
     for (const admin of admins) {
       queue.push({
         key: `admin-payment-alert:${s.reference}:${admin.id}`,

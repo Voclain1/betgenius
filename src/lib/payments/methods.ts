@@ -15,6 +15,9 @@ import { randomInt } from "node:crypto";
  *   BANK         BANK_TRANSFER_BANK_NAME, BANK_TRANSFER_ACCOUNT_NUMBER,
  *                BANK_TRANSFER_ACCOUNT_NAME
  *   USDT         USDT_WALLET_ADDRESS (USDT_NETWORK, default "TRC20")
+ *
+ * Korapay is the main processor: when configured, the pricing page leads with
+ * it (primaryMethod). PRIMARY_PAYMENT_METHOD overrides that.
  */
 export type PaymentMethod = "PAYSTACK" | "KORAPAY" | "FLUTTERWAVE" | "BANK" | "USDT";
 
@@ -26,6 +29,29 @@ export function enabledMethods(env: Record<string, string | undefined> = process
   if (env.BANK_TRANSFER_BANK_NAME && env.BANK_TRANSFER_ACCOUNT_NUMBER && env.BANK_TRANSFER_ACCOUNT_NAME) methods.push("BANK");
   if (env.USDT_WALLET_ADDRESS) methods.push("USDT");
   return methods;
+}
+
+/**
+ * The way to pay the pricing page leads with: its plan buttons go straight to
+ * it, and every other enabled method sits behind "Other ways to pay".
+ *
+ * PRIMARY_PAYMENT_METHOD names it when that method is enabled; otherwise
+ * Korapay when it is configured (the main processor); otherwise the first
+ * enabled method. Null when nothing is enabled.
+ */
+export function primaryMethod(env: Record<string, string | undefined> = process.env): PaymentMethod | null {
+  const methods = enabledMethods(env);
+  const named = env.PRIMARY_PAYMENT_METHOD?.trim().toUpperCase() as PaymentMethod | undefined;
+  if (named && methods.includes(named)) return named;
+  if (methods.includes("KORAPAY")) return "KORAPAY";
+  return methods[0] ?? null;
+}
+
+/** The enabled methods with the primary first, the rest in their usual order. */
+export function checkoutMethods(env: Record<string, string | undefined> = process.env): { methods: PaymentMethod[]; primary: PaymentMethod | null } {
+  const primary = primaryMethod(env);
+  const methods = enabledMethods(env);
+  return { primary, methods: primary ? [primary, ...methods.filter((m) => m !== primary)] : methods };
 }
 
 export function bankDetails(env: Record<string, string | undefined> = process.env) {

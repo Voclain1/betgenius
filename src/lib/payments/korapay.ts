@@ -140,23 +140,27 @@ export type KorapayOutcome =
  * Verify one charge with Korapay and apply it.
  * `expectUserId` (the return page) restricts it to the signed-in user's own payment.
  */
-export async function applyKorapayCharge(reference: string, source: "CALLBACK" | "WEBHOOK", expectUserId?: string): Promise<KorapayOutcome> {
+export async function applyKorapayCharge(reference: string, source: "CALLBACK" | "WEBHOOK" | "RECONCILE", expectUserId?: string): Promise<KorapayOutcome> {
   const tier = tierFromKorapayReference(reference);
   if (!tier) return { outcome: "REJECTED", problems: ["NOT_OUR_REFERENCE"] };
   const row = await prisma.paymentAttempt.findUnique({ where: { reference }, select: { userId: true } });
   if (!row?.userId || (expectUserId && row.userId !== expectUserId)) return { outcome: "REJECTED", problems: ["USER_MISMATCH"] };
+  // When Korapay told us about it, for the admin Payments log.
+  const seen = source === "WEBHOOK" ? { webhookAt: new Date() } : source === "CALLBACK" ? { callbackAt: new Date() } : {};
 
   let charge: VerifiedKorapay;
   try {
     charge = (await kora<{ data: VerifiedKorapay }>(`/charges/${encodeURIComponent(reference)}`)).data ?? {};
   } catch (error) {
-    return { outcome: "VERIFICATION_FAILED", message: error instanceof Error ? error.message : "Unknown error" };
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await prisma.paymentAttempt.update({ where: { reference }, data: { verifyError: message.slice(0, 300), ...seen } }).catch(() => null);
+    return { outcome: "VERIFICATION_FAILED", message };
   }
 
   if (charge.status !== "success") {
     const status = charge.status === "failed" ? "failed" : charge.status === "expired" ? "abandoned" : "pending";
     await prisma.paymentAttempt
-      .update({ where: { reference }, data: { status, category: classifyPaymentAttempt({ status }), channel: charge.payment_method ?? null, source } })
+      .update({ where: { reference }, data: { status, category: classifyPaymentAttempt({ status }), channel: charge.payment_method ?? null, source, verifyError: null, ...seen } })
       .catch(() => null);
     return { outcome: "NOT_PAID", status: charge.status ?? null };
   }
@@ -164,7 +168,7 @@ export async function applyKorapayCharge(reference: string, source: "CALLBACK" |
   const problems = korapayMismatches(charge, { reference });
   if (problems.length) {
     console.error("Korapay payment refused", { reference, problems });
-    await prisma.paymentAttempt.update({ where: { reference }, data: { entitlementError: problems.join(",") } }).catch(() => null);
+    await prisma.paymentAttempt.update({ where: { reference }, data: { entitlementError: problems.join(","), verifyError: null, ...seen } }).catch(() => null);
     return { outcome: "REJECTED", problems };
   }
 
@@ -179,5 +183,73 @@ export async function applyKorapayCharge(reference: string, source: "CALLBACK" |
     occurredAt: charge.created_at ? new Date(charge.created_at) : new Date(),
     source,
   });
+  await prisma.paymentAttempt.update({ where: { reference }, data: { verifyError: null, ...seen } }).catch(() => null);
   return { outcome: result.outcome };
+}
+
+/**
+ * Missed-webhook recovery. A Korapay webhook can fail to arrive (our deploy
+ * was restarting, a network blip, Korapay gave up retrying), and a payer who
+ * closed the tab never comes back through the return page. This finds our own
+ * recent Korapay checkouts that are still pending and asks Korapay about each,
+ * through applyKorapayCharge: the same verified, exactly-once path as the
+ * webhook, so a sweep can never grant anything the webhook would not have.
+ *
+ * Runs on a schedule (deploy/ops/crontab, /api/payments/korapay/reconcile).
+ */
+export const KORAPAY_SWEEP = {
+  /** Leave the webhook and the return page a head start. */
+  MIN_AGE_MS: 3 * 60_000,
+  /**
+   * Korapay's one-time transfer accounts and checkouts are long expired by
+   * then. An abandoned checkout stays "pending" at Korapay, so a longer
+   * window would only re-ask about it for nothing.
+   */
+  MAX_AGE_MS: 24 * 60 * 60_000,
+  /** Per run; a run every 10 minutes clears a backlog quickly. */
+  LIMIT: 40,
+} as const;
+
+/** Which attempts a sweep re-checks. Pure, so the window is asserted in scripts/check-payments.ts. */
+export function korapaySweepWhere(now: Date) {
+  return {
+    provider: "KORAPAY",
+    status: "pending",
+    entitlementGrantedAt: null,
+    entitlementError: null,
+    occurredAt: { gte: new Date(now.getTime() - KORAPAY_SWEEP.MAX_AGE_MS), lte: new Date(now.getTime() - KORAPAY_SWEEP.MIN_AGE_MS) },
+  };
+}
+
+export type KorapaySweep = { checked: number; granted: number; notPaid: number; refused: number; failed: number };
+
+export async function sweepKorapay(now: Date = new Date(), apply: typeof applyKorapayCharge = applyKorapayCharge): Promise<KorapaySweep> {
+  const pending = await prisma.paymentAttempt.findMany({
+    where: korapaySweepWhere(now),
+    orderBy: { occurredAt: "desc" },
+    select: { reference: true },
+    take: KORAPAY_SWEEP.LIMIT,
+  });
+  const out: KorapaySweep = { checked: 0, granted: 0, notPaid: 0, refused: 0, failed: 0 };
+  for (const { reference } of pending) {
+    out.checked += 1;
+    const result = await apply(reference, "RECONCILE");
+    switch (result.outcome) {
+      case "GRANTED":
+        out.granted += 1;
+        break;
+      case "ALREADY_GRANTED":
+        break;
+      case "NOT_PAID":
+        out.notPaid += 1;
+        break;
+      case "REJECTED":
+        out.refused += 1;
+        break;
+      default:
+        out.failed += 1;
+    }
+  }
+  if (out.granted || out.refused || out.failed) console.info("Korapay sweep", out);
+  return out;
 }

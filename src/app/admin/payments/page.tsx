@@ -27,6 +27,7 @@ type Attempt = {
   verifyError: string | null;
   entitlementError: string | null;
   entitlementGrantedAt: string | null;
+  provider: string;
   origin: AttemptOrigin;
   entitled: boolean;
   stage: CheckoutStage;
@@ -109,7 +110,8 @@ export default function AdminPayments() {
   // and applies every check the webhook does; this button supplies only the
   // reference.
   const grant = async (reference: string) => {
-    if (!window.confirm(`Verify ${reference} with Paystack and grant access if it is a valid, unpaid-for payment?`)) return;
+    const gateway = reference.startsWith("kp_") ? "Korapay" : "Paystack";
+    if (!window.confirm(`Verify ${reference} with ${gateway} and grant access if it is a valid, unpaid-for payment?`)) return;
     setBusy(true);
     try {
       const res = await fetch("/api/admin/payments", {
@@ -303,7 +305,17 @@ export default function AdminPayments() {
                   {a.entitlementError && <div className="text-red-300">refused: {a.entitlementError}</div>}
                   {!a.webhookAt && !a.callbackAt && !a.entitled && !a.verifyError && <div>reconcile only</div>}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-gray-500">{a.reference}</td>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">
+                  {a.reference}
+                  {/* A Korapay checkout with no access: ask Korapay again
+                      through the webhook's verified path. Grants only a
+                      confirmed payment of the right amount, never twice. */}
+                  {a.provider === "KORAPAY" && a.origin === "CHECKOUT" && !a.entitled && (
+                    <button onClick={() => grant(a.reference)} disabled={busy} className="mt-1 block font-sans text-xs font-semibold text-brand hover:underline disabled:opacity-50">
+                      Check with Korapay
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {rows.length === 0 && (

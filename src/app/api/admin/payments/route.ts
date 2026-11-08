@@ -15,6 +15,7 @@ import {
 } from "@/lib/paystack/attemptDiagnosis";
 import { applyCheckoutPayment } from "@/lib/paystack/applyCheckoutPayment";
 import { planReconciliation } from "@/lib/paystack/reconcile";
+import { applyKorapayCharge, tierFromKorapayReference } from "@/lib/payments/korapay";
 
 /**
  * The payment-attempt log, for admins.
@@ -31,7 +32,8 @@ import { planReconciliation } from "@/lib/paystack/reconcile";
  * Paystack says was paid that has no entitlement. It grants nothing.
  *
  * POST { reference, apply: true } is the one action that can grant: it runs
- * that single reference through applyCheckoutPayment, the webhook's own
+ * that single reference through applyCheckoutPayment (applyKorapayCharge for
+ * a kp_ reference), the webhook's own
  * verified path, which fetches Paystack's record and refuses anything that is
  * not a successful payment of the right amount, by the right customer, for
  * that tier, and never grants a reference twice.
@@ -117,7 +119,11 @@ export async function POST(req: Request) {
   if (body && typeof body === "object" && "apply" in body) {
     const parsed = Apply.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "A reference and apply: true are required" }, { status: 400 });
-    const result = await applyCheckoutPayment(parsed.data.reference, undefined, "RECONCILE");
+    // A Korapay reference goes through Korapay's own verified path; anything
+    // else is a Paystack checkout, as before.
+    const result = tierFromKorapayReference(parsed.data.reference)
+      ? await applyKorapayCharge(parsed.data.reference, "RECONCILE")
+      : await applyCheckoutPayment(parsed.data.reference, undefined, "RECONCILE");
     console.info("Admin payment reconcile applied", {
       reference: parsed.data.reference,
       outcome: result.outcome,

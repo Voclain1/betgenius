@@ -65,9 +65,10 @@ function fakeDb() {
 
 async function main() {
   const { grantPayment } = await import("../src/lib/payments/grant");
-  const { enabledMethods, newManualCode, manualReference } = await import("../src/lib/payments/methods");
+  const { enabledMethods, primaryMethod, checkoutMethods, newManualCode, manualReference } = await import("../src/lib/payments/methods");
   const { flutterwaveMismatches, tierFromFlutterwaveReference, newFlutterwaveReference, validFlutterwaveSignature } = await import("../src/lib/payments/flutterwave");
-  const { korapayMismatches, tierFromKorapayReference, newKorapayReference, validKorapaySignature } = await import("../src/lib/payments/korapay");
+  const { korapayMismatches, tierFromKorapayReference, newKorapayReference, validKorapaySignature, korapaySweepWhere, KORAPAY_SWEEP } = await import("../src/lib/payments/korapay");
+  const { gatewayForReference, paymentProblemEmail, adminPaymentAlertEmail } = await import("../src/lib/mail/templates");
   const { attemptOrigin } = await import("../src/lib/paystack/attemptDiagnosis");
   const { PAID_PERIOD_MS } = await import("../src/lib/paystack/entitlement");
 
@@ -81,6 +82,16 @@ async function main() {
     enabledMethods({ PAYSTACK_SECRET_KEY: "x", KORAPAY_SECRET_KEY: "k", FLUTTERWAVE_SECRET_KEY: "x", FLUTTERWAVE_SECRET_HASH: "h", BANK_TRANSFER_BANK_NAME: "OPay", BANK_TRANSFER_ACCOUNT_NUMBER: "1", BANK_TRANSFER_ACCOUNT_NAME: "BetGenius", USDT_WALLET_ADDRESS: "T..." }),
     ["PAYSTACK", "KORAPAY", "FLUTTERWAVE", "BANK", "USDT"],
   );
+
+  // --- Korapay is the main processor: the plan buttons lead with it.
+  const all = { PAYSTACK_SECRET_KEY: "x", KORAPAY_SECRET_KEY: "k", FLUTTERWAVE_SECRET_KEY: "x", FLUTTERWAVE_SECRET_HASH: "h", USDT_WALLET_ADDRESS: "T..." };
+  assert.equal(primaryMethod(all), "KORAPAY", "Korapay leads when configured");
+  assert.deepEqual(checkoutMethods(all).methods, ["KORAPAY", "PAYSTACK", "FLUTTERWAVE", "USDT"], "primary first, the rest in order");
+  assert.equal(primaryMethod({ PAYSTACK_SECRET_KEY: "x" }), "PAYSTACK", "without Korapay, the first enabled method");
+  assert.equal(primaryMethod({ ...all, PRIMARY_PAYMENT_METHOD: "paystack" }), "PAYSTACK", "the override wins");
+  assert.equal(primaryMethod({ PAYSTACK_SECRET_KEY: "x", PRIMARY_PAYMENT_METHOD: "KORAPAY" }), "PAYSTACK", "an override naming a disabled method is ignored");
+  assert.equal(primaryMethod({}), null);
+  assert.deepEqual(checkoutMethods({}), { methods: [], primary: null });
 
   // --- References: ours, recognised by the admin view, tier recoverable.
   const code = newManualCode();
@@ -124,6 +135,32 @@ async function main() {
     assert.equal(validKorapaySignature(body, null, "sk_live"), false);
     assert.equal(validKorapaySignature(body, sign(body), ""), false, "no key configured, nothing is trusted");
     assert.equal(validKorapaySignature("not json", sign("not json"), "sk_live"), false);
+
+  // --- Korapay sweep: only our pending, ungranted, unrefused checkouts, after
+  // the webhook's head start and inside the window.
+  {
+    const now = new Date("2026-11-08T12:00:00Z");
+    const where = korapaySweepWhere(now);
+    assert.equal(where.provider, "KORAPAY");
+    assert.equal(where.status, "pending");
+    assert.equal(where.entitlementGrantedAt, null, "never re-grants");
+    assert.equal(where.entitlementError, null, "a refused charge waits for an admin, not a retry loop");
+    assert.equal(now.getTime() - where.occurredAt.lte.getTime(), KORAPAY_SWEEP.MIN_AGE_MS);
+    assert.equal(now.getTime() - where.occurredAt.gte.getTime(), KORAPAY_SWEEP.MAX_AGE_MS);
+    assert.ok(KORAPAY_SWEEP.MIN_AGE_MS >= 60_000 && KORAPAY_SWEEP.MAX_AGE_MS <= 24 * 3600_000);
+  }
+
+  // --- Emails name the gateway the payer used.
+  assert.equal(gatewayForReference(kpRef), "Korapay");
+  assert.equal(gatewayForReference(fwRef), "Flutterwave");
+  assert.equal(gatewayForReference("bg_VIP_" + "0".repeat(32)), "Paystack");
+  assert.equal(gatewayForReference("manual_BG-AAAAAA"), "The payment provider");
+  {
+    const kpMail = paymentProblemEmail({ tier: "VIP", problem: "UNKNOWN_FAILURE", reference: kpRef });
+    assert.ok(kpMail.text.includes("Korapay reported") && !kpMail.text.includes("Paystack"), "a Korapay payer is never told about Paystack");
+    const alert = adminPaymentAlertEmail({ reference: kpRef, tier: "VIP", amountNgn: 1, problem: "refused (AMOUNT_MISMATCH)" });
+    assert.ok(alert.text.startsWith("Korapay reports"));
+  }
   }
 
   // --- Webhook secret.
@@ -167,7 +204,7 @@ async function main() {
     assert.equal(subs.get("u3").currentPeriodEnd.getTime(), now.getTime() + 2 * PAID_PERIOD_MS, "two payments, two months");
   }
 
-  console.log("Payment checks passed: method switches, references, Korapay and Flutterwave verification rules and webhook signatures, exactly-once grants that extend and never lose a month.");
+  console.log("Payment checks passed: method switches, Korapay as primary, the Korapay sweep window, gateway names in emails, references, Korapay and Flutterwave verification rules and webhook signatures, exactly-once grants that extend and never lose a month.");
 }
 
 main().catch((error) => {

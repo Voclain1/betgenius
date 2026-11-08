@@ -127,7 +127,19 @@ export function receiptEmail(input: { tier: PaidTier; amountNgn: number; amountL
   };
 }
 
-/** Paystack categories this email speaks to, and what each one tells the payer. */
+/**
+ * Whose checkout a reference came from, by our own prefixes: kp_ Korapay,
+ * fw_ Flutterwave, bg_ Paystack. Anything else reads as "the payment
+ * provider", so an email never names a gateway the payer did not use.
+ */
+export function gatewayForReference(reference: string | null | undefined): string {
+  if (reference?.startsWith("kp_")) return "Korapay";
+  if (reference?.startsWith("fw_")) return "Flutterwave";
+  if (reference?.startsWith("bg_")) return "Paystack";
+  return "The payment provider";
+}
+
+/** Payment-attempt categories this email speaks to, and what each one tells the payer. */
 /**
  * TIMED_OUT is not a Paystack category: it is a failure whose response says the
  * order expired ("The order was closed due to timeout") — the payer chose a
@@ -146,7 +158,7 @@ function contactUs(): string {
   return process.env.NEXT_PUBLIC_CONTACT_EMAIL ? "reply to this email" : `contact us at ${SITE_URL}/contact`;
 }
 
-const problemCopy = (): Record<PaymentProblem, { heading: string; body: string }> => ({
+const problemCopy = (gateway: string): Record<PaymentProblem, { heading: string; body: string }> => ({
   ABANDONED: {
     heading: "Your payment wasn't completed",
     body: "You started a checkout but the payment wasn't finished, so nothing was charged and your plan hasn't changed. If something on the payment page didn't work for you, a different payment method — bank transfer or USSD — usually gets through.",
@@ -161,7 +173,7 @@ const problemCopy = (): Record<PaymentProblem, { heading: string; body: string }
   },
   FRAUD_BLOCK: {
     heading: "Your payment was stopped by a security check",
-    body: `Paystack's automatic security checks stopped this payment before it completed, so your plan hasn't changed. This is not a problem with your bank. Please try again with bank transfer or USSD, or ${contactUs()} and we'll sort it out with you.`,
+    body: `${gateway}'s automatic security checks stopped this payment before it completed, so your plan hasn't changed. This is not a problem with your bank. Please try again with bank transfer or USSD, or ${contactUs()} and we'll sort it out with you.`,
   },
   TIMED_OUT: {
     heading: "Your payment timed out",
@@ -173,13 +185,13 @@ const problemCopy = (): Record<PaymentProblem, { heading: string; body: string }
   },
   UNKNOWN_FAILURE: {
     heading: "Your payment didn't go through",
-    body: `Paystack reported that your payment didn't complete, so your plan hasn't changed. Please try again, or ${contactUs()} and we'll look into it with you.`,
+    body: `${gateway} reported that your payment didn't complete, so your plan hasn't changed. Please try again, or ${contactUs()} and we'll look into it with you.`,
   },
 });
 
 export function paymentProblemEmail(input: { tier: PaidTier; problem: PaymentProblem; reference: string }): RenderedEmail {
   const name = TIER_NAME[input.tier];
-  const copy = problemCopy()[input.problem];
+  const copy = problemCopy(gatewayForReference(input.reference))[input.problem];
   const note = `If money did leave your account for this attempt, ${contactUs()} with the reference below and we will make sure you get your access or a refund.`;
   return {
     subject: `${copy.heading} — ${SITE_NAME} ${name}`,
@@ -278,7 +290,7 @@ export function announcementEmail(input: { subject: string; body: string; unsubs
 }
 
 export function adminPaymentAlertEmail(input: { reference: string; tier: string | null; amountNgn: number | null; problem: string }): RenderedEmail {
-  const body = `Paystack reports a successful payment that has not unlocked access.\n\nReference: ${input.reference}\nPlan: ${input.tier ?? "unknown"}\nAmount: ${input.amountNgn != null ? formatNgn(input.amountNgn) : "unknown"}\nWhy: ${input.problem}\n\nOpen Payments in the admin area to verify and grant it, or to see why it was refused.`;
+  const body = `${gatewayForReference(input.reference)} reports a successful payment that has not unlocked access.\n\nReference: ${input.reference}\nPlan: ${input.tier ?? "unknown"}\nAmount: ${input.amountNgn != null ? formatNgn(input.amountNgn) : "unknown"}\nWhy: ${input.problem}\n\nOpen Payments in the admin area to verify and grant it, or to see why it was refused.`;
   return {
     subject: `Action needed: a paid ${input.tier ?? ""} checkout has no access`.replace("  ", " "),
     html: layout({ preheader: `Reference ${input.reference}`, heading: "A customer paid but has no access", bodyHtml: paragraphsHtml(body) + button("Open Payments", absoluteUrl("/admin/payments")) }),
