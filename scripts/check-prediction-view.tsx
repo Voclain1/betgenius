@@ -123,15 +123,18 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
 // VIP and PREMIUM for a reader without access: a subscribe cover, no data.
 {
   const { PaidFeedCover } = require("../src/components/PaidFeedCover");
-  const out = html(<PaidFeedCover tier="VIP" count={6} floor={75} dayWord="today" signedIn={false} path="/predictions/vip" />);
-  const member = html(<PaidFeedCover tier="Premium" count={1} floor={80} dayWord="tomorrow" signedIn path="/predictions/premium" />);
-  check("paid cover: states the count and the bar", out.includes("6 VIP picks today") && out.includes("75% confidence"));
+  const out = html(<PaidFeedCover tier="VIP" floor={75} signedIn={false} path="/predictions/vip" />);
+  const member = html(<PaidFeedCover tier="Premium" floor={80} signedIn path="/predictions/premium" />);
+  check("paid cover: states the bar and no count", out.includes("VIP picks are for VIP members") && out.includes("75% confidence") && !/\d+ VIP picks?\b/.test(out));
   check("paid cover: signed out sees Subscribe and a log-in link back to the feed", out.includes("Subscribe to VIP") && out.includes("/login?callbackUrl=%2Fpredictions%2Fvip"));
-  check("paid cover: a free member sees Upgrade and no log-in link", member.includes("Upgrade to Premium") && !member.includes("Log in") && member.includes("1 Premium pick tomorrow"));
+  check("paid cover: a free member sees Upgrade and no log-in link", member.includes("Upgrade to Premium") && !member.includes("Log in"));
   const page = readFileSync(join(__dirname, "..", "src", "app", "(public)", "predictions", "[category]", "page.tsx"), "utf8");
   check("paid feed page: covered days render PaidFeedCover instead of the list", /paidCovered \? \([\s\S]*?<PaidFeedCover[\s\S]*?\) : \(\s*<PredictionViewSwitch/.test(page));
   check("paid feed page: no structured data names a paid feed's matches", page.includes("(paidFeed ? [] : rows)"));
-  check("paid feed page: yesterday is covered too", page.includes("const paidCovered = paidFeed && !canView && rows.length > 0;"));
+  check("paid feed page: every day is covered, a day with no picks included", page.includes("const paidCovered = paidFeed && !canView;"));
+  check("paid feed page: a covered feed shows no picks, competitions or win rate", page.includes("if (paidCovered) stats.length = 0;"));
+  check("paid feed page: a covered feed's summary sentence (with its count) is left out", /\{!paidCovered && \(\s*<AnswerSummary/.test(page));
+  check("paid feed page: the description carries no count and is the same on an empty day", /if \(cat === "VIP" \|\| cat === "PREMIUM"\) \{\s*return \{[\s\S]*?\};\s*\}\s*const rows = await getCategoryPredictions/.test(page));
   check("paid feed page: past results are members-only", /paidFeed && !canView \? \(\s*<PaidResultsCover/.test(page));
   const { PaidResultsCover } = require("../src/components/PaidFeedCover");
   const resultsCover = html(<PaidResultsCover tier="VIP" signedIn={false} />);
@@ -139,7 +142,6 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   const route = readFileSync(join(__dirname, "..", "src", "app", "api", "predictions", "results", "route.ts"), "utf8");
   check("results API: refuses VIP/Premium days to non-members before reading any rows",
     route.indexOf("MEMBERS_ONLY_RESULTS.includes(category)") > 0 && route.indexOf("MEMBERS_ONLY_RESULTS.includes(category)") < route.indexOf("getFeedDayResults(category"));
-  check("paid feed page: the description names no paid matches", /cat === "VIP" \|\| cat === "PREMIUM" \? null : fixtureSample\(/.test(page));
 }
 
 // The Score column: its own column after Pick, never folded into the match name.

@@ -22,7 +22,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { getCategoryTrackRecord, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { AnswerSummary } from "@/components/AnswerSummary";
 import { categorySummary } from "@/lib/answerSummary";
-import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventsForFixtures, fixtureSample, SITE_NAME } from "@/lib/seo";
 import { getFixtureEventContext } from "@/lib/predictionScope";
 import { FollowButton } from "@/components/FollowButton";
 import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/TodayPredictionsGuide";
@@ -67,6 +67,19 @@ export async function generateMetadata(
   const emptyDescription = cat === "TODAY"
     ? "Today's predictions are not published yet — check back soon for our latest football picks."
     : `No ${seoPhrase} published yet — check back soon for our latest football predictions.`;
+  // VIP and PREMIUM: one description every day, with no count in it. Search
+  // results would otherwise say "No VIP predictions published yet" on a quiet
+  // day, or how few there are on a light one, to readers deciding whether to
+  // pay. The feed is indexed only on its default day, like every other feed.
+  if (cat === "VIP" || cat === "PREMIUM") {
+    return {
+      title: seoTitle,
+      description: `${cat === "PREMIUM" ? "Premium" : "VIP"} football predictions from ${SITE_NAME}: every pick clears ${cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}% confidence or better, with the reasoning behind it. Football predictions updated daily.`,
+      robots: day === "today" ? undefined : { index: false, follow: true },
+      alternates: { canonical: feedDayHref(params.category, day) },
+    };
+  }
+
   const rows = await getCategoryPredictions(cat, day);
 
   // Thin/empty content shouldn't claim a rich, specific title as if it had
@@ -81,8 +94,7 @@ export async function generateMetadata(
     };
   }
 
-  // A paid feed's matches are for members: none are named in its description.
-  const sample = cat === "VIP" || cat === "PREMIUM" ? null : fixtureSample(
+  const sample = fixtureSample(
     rows.map((r) => ({
       homeTeam: r.homeTeam ?? r.fixture?.homeTeam?.name,
       awayTeam: r.awayTeam ?? r.fixture?.awayTeam?.name,
@@ -121,10 +133,14 @@ export default async function CategoryPage(
   const needsRegistration = !canView && cat === "BANKER" && !session?.user;
   // VIP and PREMIUM, for a reader who cannot see them: every day, yesterday
   // included, shows a subscribe cover instead of the list, and no match,
-  // league, kickoff or pick reaches the markup. The past-results section is
-  // members-only too (PaidResultsCover); the masthead's win rate stays.
+  // league, kickoff or pick reaches the markup. Nor does any number: the
+  // masthead's picks, competitions and win rate, and the summary sentence's
+  // count, are all left out, and the cover shows on a day with no picks as on
+  // a day with six, so a quiet day never reads as "0 VIP picks" to a reader
+  // deciding whether to pay. The past-results section is members-only too
+  // (PaidResultsCover).
   const paidFeed = cat === "VIP" || cat === "PREMIUM";
-  const paidCovered = paidFeed && !canView && rows.length > 0;
+  const paidCovered = paidFeed && !canView;
   const lockReason = needsRegistration
     ? "Sign up free to unlock this tip and full reasoning."
     : "Subscribe to VIP or Premium to unlock this tip and full reasoning.";
@@ -159,7 +175,8 @@ export default async function CategoryPage(
 
   // The masthead's numbers, all read from the rows listed below (or the feed's
   // settled record, gated on sample size). A locked feed shows no confidence:
-  // the number would describe picks the reader cannot see.
+  // the number would describe picks the reader cannot see. A covered paid feed
+  // shows no stats at all (see paidCovered).
   const record = await getCategoryTrackRecord(cat);
   const competitions = new Set(rows.map((r) => r.leagueApiId ?? r.leagueName ?? r.fixture?.league?.name).filter((v) => v != null)).size;
   const topConfidence = canView ? Math.max(0, ...rows.map((r) => r.confidence ?? 0)) : 0;
@@ -169,6 +186,7 @@ export default async function CategoryPage(
   ];
   if (topConfidence > 0) stats.push({ label: "Top confidence", value: `${topConfidence}%` });
   if (record?.rate != null && (cat !== "BANKER" || record.decided >= MIN_SETTLED_SAMPLE_SIZE)) stats.push({ label: cat === "BANKER" ? "All-time win rate" : "Win rate", value: `${Math.round(record.rate * 100)}%`, accent: true });
+  if (paidCovered) stats.length = 0;
   // url points at the match page, so the SportsEvent resolves to the one page
   // that collects every market for the fixture rather than to a feed — and one
   // event per fixture, since this feed lists a row per market.
@@ -250,6 +268,7 @@ export default async function CategoryPage(
       {/* Above the day filter and the grid: the count the header used to carry,
           as a sentence that says what this feed is and how many picks are in
           it for the day being browsed. */}
+      {!paidCovered && (
       <AnswerSummary
         text={categorySummary({
           name: NAMES[cat],
@@ -261,6 +280,7 @@ export default async function CategoryPage(
           day,
         })}
       />
+      )}
 
       {/* The broad free feeds point on to the market pages, one compact line. */}
       {(cat === "TODAY" || cat === "FEATURED" || cat === "GENIUS") && <MarketChips />}
@@ -285,9 +305,7 @@ export default async function CategoryPage(
             <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
             <PaidFeedCover
               tier={cat === "PREMIUM" ? "Premium" : "VIP"}
-              count={shaped.length}
               floor={cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}
-              dayWord={day}
               signedIn={!!session?.user}
               path={feedDayHref(slug, day)}
             />

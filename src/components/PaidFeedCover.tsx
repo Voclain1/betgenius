@@ -7,28 +7,28 @@ import { Lock } from "lucide-react";
  *
  * The placeholders carry NO data. Not blurred text, not hidden text: the
  * match, league, kickoff and pick of a paid tip never reach this markup, so
- * nothing can be read from the page source. The banner states only the count
- * and the tier's bar, which is what the reader is being asked to pay for.
+ * nothing can be read from the page source.
+ *
+ * Nor does it say how many picks there are. The owner's call: a reader deciding
+ * whether to pay should not see "0 VIP picks" on a quiet day, or a small number
+ * on a light one. The banner states the tier's bar, which holds every day, and
+ * the same cover shows whether the day has six picks or none.
  */
 export function PaidFeedCover({
   tier,
-  count,
   floor,
-  dayWord,
   signedIn,
   path,
 }: {
   tier: "VIP" | "Premium";
-  count: number;
   /** The tier's confidence floor (VIP_CONFIDENCE_FLOOR / PREMIUM_CONFIDENCE_FLOOR). */
   floor: number;
-  /** "yesterday", "today" or "tomorrow". */
-  dayWord: string;
   signedIn: boolean;
   /** This feed's path, to come back to after logging in. */
   path: string;
 }) {
-  const rows = Math.min(Math.max(count, 3), 6);
+  // A fixed number of placeholders: a count-shaped list would give the count away.
+  const rows = 5;
   return (
     <div className="grid overflow-hidden rounded-3xl border border-brand-border bg-brand-card">
       {/* Both layers share one grid cell, so the card is as tall as the taller
@@ -47,10 +47,10 @@ export function PaidFeedCover({
         <div className="max-w-md text-center">
           <Lock aria-hidden className="mx-auto h-6 w-6 text-brand" />
           <h2 className="mt-3 text-xl font-black tracking-tight text-gray-100 sm:text-2xl">
-            {count === 1 ? `1 ${tier} pick ${dayWord}` : `${count} ${tier} picks ${dayWord}`}
+            {tier} picks are for {tier} members
           </h2>
           <p className="mt-2 text-sm leading-6 text-gray-300">
-            Every {tier} pick clears {floor}% confidence or better. The matches and picks are for {tier} members.
+            Every {tier} pick clears {floor}% confidence or better. Subscribe to see the matches, the picks and the reasoning.
           </p>
           <div className="mt-5 flex flex-col items-center gap-3">
             <Link href="/pricing" className="btn btn-primary">
@@ -70,8 +70,8 @@ export function PaidFeedCover({
 
 /**
  * The past-results section of a VIP or PREMIUM page for a reader without
- * access: the heading and an invitation, no days and no matches. The tier's
- * win rate stays in the page masthead; the record behind it is for members.
+ * access: the heading and an invitation, no days, no matches and no win rate.
+ * The record is for members.
  */
 export function PaidResultsCover({ tier, signedIn }: { tier: "VIP" | "Premium"; signedIn: boolean }) {
   return (
