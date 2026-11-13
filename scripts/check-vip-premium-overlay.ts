@@ -131,7 +131,7 @@ stub("../src/lib/predictions", {
     return r;
   },
 });
-stub("../src/lib/football/usage", { getUsageSnapshot: async () => ({ remaining: 5000 }) });
+stub("../src/lib/football/usage", { getUsageSnapshot: async () => ({ remaining: 5000 }), PAID_PRIORITY_RESERVE: 300, withPaidPriority: (fn: () => Promise<unknown>) => fn() });
 const generated: Any[] = [];
 stub("../src/lib/ai/generate", {
   generateAndPersistPrediction: async (input: Any) => {

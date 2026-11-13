@@ -26,6 +26,7 @@ on:
       - scripts/measure-paid-performance.ts
       - scripts/backtest-paid-selection.ts
       - scripts/fit-calibration.ts
+      - scripts/verify-paid-production.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -184,3 +185,7 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/fit-calibration.ts
+      - name: Production verification, paid lifecycle audit and public leak probe
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/verify-paid-production.ts

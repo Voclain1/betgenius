@@ -66,6 +66,10 @@ jobs:
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           BUILD_ARGS: ${{ steps.public.outputs.args }}
         run: |
+          # Build-only connection settings, as in preflight
+          # (scripts/ci/build-database-url.mjs). The running app's own
+          # DATABASE_URL is written to app.env below and is not affected.
+          export DATABASE_URL="$(node scripts/ci/build-database-url.mjs "$DATABASE_URL")"
           args=()
           while IFS= read -r line; do [ -n "$line" ] && args+=(--build-arg "$line"); done <<< "$BUILD_ARGS"
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin

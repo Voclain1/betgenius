@@ -42,6 +42,7 @@ import {
   readVipPremiumAttempt,
   attemptKickoffDay,
   attemptsByKickoffDay,
+  PAID_MIN_PUBLISH_LEAD_MS,
   paidCurationWidened,
   PAID_WIDENED_LEAGUE_IDS,
   PAID_MAX_MARKET_PROBABILITY,
@@ -63,6 +64,7 @@ export {
   PREMIUM_MARKET_FLOOR,
   VIP_PREMIUM_ODDS_WARM_LIMIT,
   VIP_PREMIUM_RUN_LIMIT,
+  PAID_MIN_PUBLISH_LEAD_MS,
   type PaidTier,
   type VipPremiumTarget,
 } from "@/lib/vipPremiumOverlay";
@@ -672,6 +674,9 @@ export async function autoPublishVipPremiumPrediction(
     fetchedAt: quote?.fetchedAt ?? null,
     now,
   });
+  if (row.kickoff && row.kickoff.getTime() - now.getTime() < PAID_MIN_PUBLISH_LEAD_MS) {
+    return { published: false, blocks: ["TOO_CLOSE_TO_KICKOFF"], ordinaryPaidTagsRemoved: 0 };
+  }
   const { publish, blocks } = paidAutoPublishVerdict(
     {
       provenance: row.provenance,

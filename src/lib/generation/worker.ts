@@ -32,6 +32,8 @@ import {
   type Candidate,
 } from "@/lib/generation/selector";
 import { assessCoverage, selectQueuedCandidates } from "@/lib/generation/queue";
+import { PAID_PRIORITY_RESERVE, withPaidPriority } from "@/lib/football/usage";
+import { isProviderOutage, ledgerFailureUpdate } from "@/lib/generation/failurePolicy";
 import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage";
 import type { GenerationTier } from "@/lib/leagues";
 import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPlan } from "@/lib/goalsGeneration";
@@ -98,7 +100,15 @@ const LEASE_TTL_MS = 6 * 60_000;
 const SOFT_DEADLINE_MS = 22_000;
 
 /** Below this remaining daily api-football budget the run stops early rather than starting work it can't finish. */
-const MIN_QUOTA_HEADROOM = 200;
+const BASE_QUOTA_HEADROOM = 200;
+/**
+ * Ordinary and Goals runs stop this far from the ceiling: their usual headroom
+ * plus the paid reserve, which their calls may not spend (usage.ts), so they
+ * stand down cleanly instead of starting and having every call refused.
+ */
+const MIN_QUOTA_HEADROOM = BASE_QUOTA_HEADROOM + PAID_PRIORITY_RESERVE;
+/** The paid pass runs inside the reserve; one run needs ≤12 odds calls and a few context calls. */
+export const PAID_PASS_MIN_QUOTA_HEADROOM = 30;
 
 export type RunReport = {
   ok: boolean;
@@ -177,7 +187,7 @@ async function releaseLock(holder: string): Promise<void> {
  */
 async function recordAttempt(
   c: Candidate,
-  outcome: { ok: true; predictionIds: string[] } | { ok: false; error: string },
+  outcome: { ok: true; predictionIds: string[] } | { ok: false; error: string; outage?: boolean },
 ): Promise<{ terminal: boolean }> {
   const attempts = c.priorAttempts + 1;
   const now = new Date();
@@ -200,11 +210,12 @@ async function recordAttempt(
     return { terminal: true };
   }
 
-  const retryAt = attempts >= MAX_GENERATION_ATTEMPTS ? null : nextAttemptAt(attempts, now);
   // Retries spent — dead-letter it. The row stays visible in the admin panel so
   // a permanently broken fixture is something you can see, not something that
-  // silently stopped happening.
-  const status = retryAt === null ? "ABANDONED" : "FAILED";
+  // silently stopped happening. A provider-wide outage is not the fixture's
+  // fault and does not count (src/lib/generation/failurePolicy.ts).
+  const policy = ledgerFailureUpdate(c.priorAttempts, !!outcome.outage, now);
+  const status = policy.status;
   const data = {
     fixtureApiId: c.fixtureApiId,
     leagueApiId: c.leagueApiId,
@@ -212,10 +223,10 @@ async function recordAttempt(
     awayTeam: c.awayTeam,
     kickoff: c.kickoff,
     status,
-    attempts,
-    lastError: outcome.error.slice(0, 500),
+    attempts: policy.attempts,
+    lastError: `${outcome.outage ? "Provider outage, retry not counted: " : ""}${outcome.error}`.slice(0, 500),
     lastAttemptAt: now,
-    nextAttemptAt: retryAt,
+    nextAttemptAt: policy.nextAttemptAt,
   };
   await prisma.generationAttempt.upsert({ where: { matchKey: c.matchKey }, create: { matchKey: c.matchKey, ...data }, update: data });
   return { terminal: status === "ABANDONED" };
@@ -400,10 +411,17 @@ export async function runGeneration(opts: {
         report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: true, predictions: predictionIds.length });
       } catch (err: any) {
         const message = err?.message ?? String(err);
-        const { terminal } = await recordAttempt(c, { ok: false, error: message });
+        const outage = isProviderOutage(err);
+        const { terminal } = await recordAttempt(c, { ok: false, error: message, outage });
         if (terminal) report.abandoned++;
         else report.failed++;
         report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: false, error: message, terminal });
+        // Every provider is down: the next fixture would fail the same way.
+        // Stop here; queued fixtures keep their state and are retried later.
+        if (outage) {
+          report.reason = "every model provider failed — run stopped; fixtures retried in 60 minutes without spending a retry";
+          break;
+        }
       }
     }
 
@@ -695,7 +713,12 @@ type VipPremiumRunTarget = { fixture: string; kickoff: string; market: string; s
  * Generates drafts only. The odds gate (applyVipPremiumGate) runs after this,
  * in the same request, and decides what is promoted.
  */
+/** The paid pass, with paid api-football priority (usage.ts withPaidPriority). */
 export async function runVipPremiumGeneration(opts: { authorId: string; limit?: number; now?: Date }): Promise<VipPremiumRunReport> {
+  return withPaidPriority(() => runVipPremiumGenerationInner(opts));
+}
+
+async function runVipPremiumGenerationInner(opts: { authorId: string; limit?: number; now?: Date }): Promise<VipPremiumRunReport> {
   const startedAt = Date.now();
   const now = opts.now ?? new Date();
   const vipPremium: VipPremiumRunReport["vipPremium"] = {
@@ -714,7 +737,7 @@ export async function runVipPremiumGeneration(opts: { authorId: string; limit?: 
   try {
     const usage = await getUsageSnapshot();
     base.quotaRemaining = usage.remaining;
-    if (usage.remaining < MIN_QUOTA_HEADROOM) {
+    if (usage.remaining < PAID_PASS_MIN_QUOTA_HEADROOM) {
       return { ...base, ok: false, reason: `api-football daily budget nearly exhausted (${usage.remaining} left)`, elapsedMs: Date.now() - startedAt, vipPremium };
     }
 

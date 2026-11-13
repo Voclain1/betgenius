@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 /**
  * Daily quota accounting for api-football.
  *
@@ -35,6 +36,36 @@ export const DAILY_LIMIT = Number(process.env.API_FOOTBALL_DAILY_LIMIT) || 7500;
  * true limit keeps that drift from turning into hard 429s mid-run.
  */
 export const RESERVE = Number(process.env.API_FOOTBALL_DAILY_RESERVE) || 100;
+
+/**
+ * Requests only the paid VIP/Premium pass may spend.
+ *
+ * WHY. Every consumer (enrichment, settlement, live scores, discovery,
+ * ordinary generation) draws on one daily api-football budget, first come
+ * first served. Over 14 Oct – 13 Nov 2026 the paid pass — the one consumer a
+ * paying subscriber depends on, and one of the cheapest (≤12 odds calls and a
+ * handful of context calls per run) — stood down about 130 times because the
+ * budget was gone, 102 of them at 0 left (scripts/verify-paid-production.ts).
+ * Calls made inside withPaidPriority may use the last PAID_PRIORITY_RESERVE of
+ * the budget; everything else stops that much earlier.
+ */
+export const PAID_PRIORITY_RESERVE = Number(process.env.API_FOOTBALL_PAID_RESERVE) || 300;
+
+const priorityScope = new AsyncLocalStorage<boolean>();
+
+/** Run `fn` with paid priority: its api-football calls may use the paid reserve. */
+export function withPaidPriority<T>(fn: () => Promise<T>): Promise<T> {
+  return priorityScope.run(true, fn);
+}
+
+export function inPaidPriority(): boolean {
+  return priorityScope.getStore() === true;
+}
+
+/** The day's ceiling for a caller: the paid pass may go to DAILY_LIMIT − RESERVE, everyone else stops PAID_PRIORITY_RESERVE short. */
+export function budgetCeiling(priority: boolean): number {
+  return DAILY_LIMIT - RESERVE - (priority ? 0 : PAID_PRIORITY_RESERVE);
+}
 
 export type UsageSnapshot = {
   day: string;
@@ -103,7 +134,7 @@ export async function recordCall(path: string, day: string = utcDay()): Promise<
  */
 export async function hasBudget(day: string = utcDay()): Promise<boolean> {
   try {
-    return (await usedToday(day)) < DAILY_LIMIT - RESERVE;
+    return (await usedToday(day)) < budgetCeiling(inPaidPriority());
   } catch (err) {
     console.error("[api-football/usage] budget check failed — allowing request", err);
     return true;

@@ -14,6 +14,7 @@ import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { textTone } from "@/lib/tone";
 import { SavePredictionButton } from "@/components/SavePredictionButton";
+import type { PaidCardDetail } from "@/lib/paidFeedData";
 
 export type PredictionRow = {
   id: string;
@@ -47,6 +48,12 @@ export type PredictionRow = {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
   kickoff?: string | Date | null;
+  /**
+   * VIP / Premium feeds only, for a reader who can view them (set by the feed
+   * page after its entitlement check): status, price and its provenance,
+   * publication time and why the pick is there. Never set on a locked row.
+   */
+  paid?: PaidCardDetail | null;
   fixture?: {
     kickoff: string | Date;
     league: { name: string };
@@ -183,7 +190,8 @@ export function PredictionCard({
       {/* Below the pick, above the reasoning: the badge qualifies the number
           before it is relied on. Locked rows never reach here — a reader who
           cannot see the pick is not shown its evidence. */}
-      {p.marketConfirmation && !p.locked && <MarketConfirmedBadge confirmation={p.marketConfirmation} />}
+      {p.paid && !p.locked && <PaidDetails paid={p.paid} />}
+      {p.marketConfirmation && !p.locked && <MarketConfirmedBadge confirmation={badgeConfirmation(p.marketConfirmation)} />}
       {/*
         Prose, not a raw <p>. Prose splits blank-line paragraphs and strips
         any markdown markers in the stored text. Without it a combo's leg
@@ -209,5 +217,76 @@ export function PredictionCard({
         </Link>
       )}
     </article>
+  );
+}
+
+/**
+ * Only the fields the badge renders. MarketConfirmedBadge is a client
+ * component, so whatever it is handed is serialised into the page; the stored
+ * confirmation also carries internal assessment fields (entry value record,
+ * experimental expected value) that must never reach a reader.
+ */
+export function badgeConfirmation(mc: MarketConfirmation): MarketConfirmation {
+  return {
+    modelProbability: mc.modelProbability,
+    marketProbability: mc.marketProbability ?? null,
+    gapPP: mc.gapPP ?? null,
+    bookmakers: mc.bookmakers ?? null,
+    market: mc.market ?? null,
+    value: mc.value ?? null,
+    quoteFetchedAt: mc.quoteFetchedAt ?? null,
+  };
+}
+
+const STATUS_TONE: Record<string, string> = {
+  WON: "text-emerald-300",
+  LOST: "text-red-300",
+  VOID: "text-gray-300",
+  LIVE: "text-brand",
+  UPCOMING: "text-gray-300",
+  AWAITING_RESULT: "text-gray-400",
+};
+
+const PRICE_LABEL: Record<string, string> = {
+  entry: "Price when published",
+  current: "Price now",
+  closing: "Closing price",
+};
+
+/** Status, price and its provenance, publication time and the reason the pick is in the feed. */
+function PaidDetails({ paid }: { paid: PaidCardDetail }) {
+  return (
+    <div className="space-y-3 text-sm">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+        {paid.statusLabel && (
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Status</dt>
+            <dd className={`mt-0.5 font-black ${STATUS_TONE[paid.status ?? ""] ?? "text-gray-300"}`}>{paid.statusLabel}</dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{paid.price ? PRICE_LABEL[paid.price.kind] : "Price"}</dt>
+          <dd className="mt-0.5 font-black tabular-nums text-gray-100">
+            {paid.price ? (
+              <>
+                {paid.price.odds.toFixed(2)}
+                <span className="ml-1 text-xs font-semibold text-gray-500">
+                  median{paid.price.bookmakers ? ` of ${paid.price.bookmakers} books` : ""}{paid.price.at && paid.price.kind !== "entry" ? ` · ${kickoffLabel(paid.price.at)}` : ""}
+                </span>
+              </>
+            ) : (
+              <span className="text-xs font-semibold text-gray-500">No bookmaker quote for this market</span>
+            )}
+          </dd>
+        </div>
+        {paid.publishedAt && (
+          <div>
+            <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">Published</dt>
+            <dd className="mt-0.5 font-semibold tabular-nums text-gray-300">{kickoffLabel(paid.publishedAt)}</dd>
+          </div>
+        )}
+      </dl>
+      <p className="text-xs leading-relaxed text-gray-400">{paid.reason}</p>
+    </div>
   );
 }
