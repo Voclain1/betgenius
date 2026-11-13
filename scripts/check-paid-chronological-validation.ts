@@ -14,7 +14,7 @@ assert.equal(r.splitAt, rows[70].kickoff.toISOString());
 assert.equal(r.training.reduce((s, x) => s + x.decided, 0), 70);
 assert.equal(r.validation.reduce((s, x) => s + x.decided, 0), 30);
 assert(!r.warnings.length);
-const tied = chronologicalHoldout([observation(1), observation(2, rows[1].kickoff), observation(3)], "market", { minTraining: 0, minValidation: 0 });
+const tied = chronologicalHoldout([observation(1), observation(2, rows[1].kickoff), observation(3, rows[1].kickoff)], "market", { minTraining: 0, minValidation: 0 });
 assert.equal(tied.trainingCount, 0);
 assert.equal(tied.validationCount, 3);
 assert.throws(() => chronologicalHoldout(rows, "market", { validationFraction: 1 }));
