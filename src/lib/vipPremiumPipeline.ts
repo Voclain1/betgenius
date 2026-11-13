@@ -1,3 +1,4 @@
+import { appendPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
 import { prisma } from "@/lib/prisma";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
@@ -725,11 +726,12 @@ export async function autoPublishVipPremiumPrediction(
   if (persisted?.status === "PUBLISHED" && persisted.marketConfirmation &&
       typeof persisted.marketConfirmation === "object" && !Array.isArray(persisted.marketConfirmation)) {
     const original = persisted.marketConfirmation as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(original, "publicationQuoteEvidence")) {
+    const next = appendPublicationQuoteEvidence(original, publicationEvidence);
+    if (next) {
       // Compare-and-set avoids overwriting a snapshot from a concurrent writer.
       await prisma.prediction.updateMany({
         where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted.marketConfirmation } },
-        data: { marketConfirmation: { ...original, publicationQuoteEvidence: publicationEvidence } },
+        data: { marketConfirmation: next },
       });
     }
   }
