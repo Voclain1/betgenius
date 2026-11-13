@@ -40,7 +40,7 @@ export function chronologicalHoldout(
   const validation = ordered.filter(r => r.kickoff.getTime() >= splitTime);
   if (training.length < minTraining) warnings.push("INSUFFICIENT_TRAINING_SAMPLE");
   if (validation.length < minValidation) warnings.push("INSUFFICIENT_VALIDATION_SAMPLE");
-  if (training.length && validation.length && training[training.length - 1].kickoff >= validation[0].kickoff) {
+  if (training.length && validation.length && training[training.length - 1].kickoff.getTime() >= validation[0].kickoff.getTime()) {
     throw new Error("Chronological holdout boundary overlaps");
   }
   return {
