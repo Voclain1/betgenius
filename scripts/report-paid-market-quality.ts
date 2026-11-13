@@ -12,6 +12,7 @@ const react = require("react");
 if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
 
 import { prisma } from "../src/lib/prisma";
+import { chronologicalHoldout, validationWarnings } from "../src/lib/paidChronologicalValidation";
 import { segmentPaidPerformance, type SegmentDimension, type SettledPaidObservation } from "../src/lib/paidMarketQuality";
 
 const DAY = 86_400_000;
@@ -59,6 +60,7 @@ async function main() {
     entryPriced: observations.filter(r => r.priceSource === "entry").length,
     missingEntryPrice: observations.filter(r => r.priceSource === "missing").length,
     dimensions: Object.fromEntries(dimensions.map(d => [d, segmentPaidPerformance(observations, d)])),
+    chronologicalHoldout: Object.fromEntries(dimensions.map(d => { const result = chronologicalHoldout(observations, d); return [d, { ...result, warnings: validationWarnings(result) }]; })),
   };
   console.log(JSON.stringify(output, null, 2));
 }
