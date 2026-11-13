@@ -9,6 +9,7 @@ export type SettledPaidObservation = {
   kickoff: Date;
   marketType: string;
   leagueApiId: number | null;
+  /** Bookmaker identity only; never substitute a generation model/provider. */
   provider: string | null;
   odds: number | null;
   priceSource: "entry" | "closing" | "missing";
