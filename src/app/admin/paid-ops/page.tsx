@@ -1,5 +1,6 @@
 import { loadPaidQualityDiagnostics } from "@/lib/paidQualityDiagnostics";
 import { loadPaidOpsSnapshot } from "@/lib/paidOpsData";
+import { loadCoverageDiagnostics } from "@/lib/coverageDiagnostics";
 import { effectivePaidSelection } from "@/lib/paidSelectionMode";
 import type { PaidDayStatus } from "@/lib/paidOps";
 
@@ -20,7 +21,7 @@ const STATUS_TEXT: Record<PaidDayStatus, { label: string; tone: string }> = {
 };
 
 export default async function PaidOpsPage() {
-  const [s, quality] = await Promise.all([loadPaidOpsSnapshot(14), loadPaidQualityDiagnostics(90)]);
+  const [s, quality, coverage] = await Promise.all([loadPaidOpsSnapshot(14), loadPaidQualityDiagnostics(90), loadCoverageDiagnostics(14)]);
   const mode = effectivePaidSelection();
   const time = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "—");
   return (
@@ -90,6 +91,66 @@ export default async function PaidOpsPage() {
             </table>
           </div>
         ))}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-xl font-bold text-gray-100">League coverage · last {coverage.days} days</h2>
+        <p className="max-w-3xl text-sm text-gray-400">
+          Where fixtures leave the pipeline, per competition: discovered (ledger), generated, published, and VIP / Premium picks.
+          Eligibility rollout <code>COVERAGE_ROLLOUT</code> is <strong className="text-gray-200">{coverage.rollout}</strong>;
+          in shadow the proposed rules are only recorded, never acted on.
+        </p>
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Discovery runs", `${coverage.discovery.runs} · ${Object.entries(coverage.discovery.modes).map(([k, n]) => `${k} ${n}`).join(" · ") || "none"}`],
+            ["Fallback sweeps", `${coverage.discovery.sweeps} run · ${Object.values(coverage.discovery.skipped).reduce((a, b) => a + b, 0)} skipped while widened`],
+            ["Shadow sweeps", `${coverage.discovery.shadowSweeps} compared current vs proposed rules`],
+            ["Quality shadow, 24h", `${coverage.quality.runs} runs · ${coverage.quality.liveSelectedRejected} live picks the proposed bars would reject`],
+          ].map(([k, v]) => (
+            <div key={k} className="card">
+              <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{k}</dt>
+              <dd className="mt-1 text-sm font-semibold text-gray-100">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="card space-y-3">
+          <h3 className="text-sm font-bold text-gray-100">Why were Welsh fixtures not covered?</h3>
+          {coverage.wales.map((w) => (
+            <div key={w.leagueApiId}>
+              <p className="text-sm font-semibold text-gray-200">{w.name} · id {w.leagueApiId}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-gray-400">{w.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+        {Object.keys(coverage.quality.decisions).length > 0 && (
+          <p className="text-xs text-gray-400">
+            Candidate-quality decisions (shadow only, last 24h): {Object.entries(coverage.quality.decisions).map(([k, n]) => `${k} ${n}`).join(" · ")}.
+            Proposed tiers: {Object.entries(coverage.quality.proposedTiers).map(([k, n]) => `${k} ${n}`).join(" · ")}.
+          </p>
+        )}
+        <div className="overflow-x-auto rounded-2xl border border-brand-border">
+          <table className="w-full min-w-[48rem] text-xs">
+            <thead className="bg-brand-card text-left text-gray-400"><tr>
+              <th className="p-2">Tier</th><th className="p-2">Competition</th><th className="p-2 text-right">Discovered</th>
+              <th className="p-2 text-right">Generated</th><th className="p-2 text-right">Failed / abandoned</th><th className="p-2 text-right">Priced</th>
+              <th className="p-2 text-right">Published</th><th className="p-2 text-right">VIP / Premium</th><th className="p-2">Gate rejections</th>
+            </tr></thead>
+            <tbody className="divide-y divide-brand-border">
+              {coverage.funnel.leagues.slice(0, 120).map((l) => {
+                const rej = l.leagueApiId != null ? coverage.discovery.rejectedByLeague[l.leagueApiId] : undefined;
+                return (
+                  <tr key={`${l.leagueApiId}-${l.name}`} className="tabular-nums text-gray-200">
+                    <td className="p-2 text-gray-400">{l.tier ?? "—"}</td><td className="p-2">{l.name ?? "—"}</td>
+                    <td className="p-2 text-right">{l.discovered}</td><td className="p-2 text-right">{l.succeeded}</td>
+                    <td className="p-2 text-right">{l.failed} / {l.abandoned}</td><td className="p-2 text-right">{l.priced}</td>
+                    <td className="p-2 text-right">{l.published}</td><td className="p-2 text-right">{l.vip} / {l.premium}</td>
+                    <td className="p-2 text-gray-400">{rej ? Object.entries(rej).map(([k, n]) => `${k} ${n}`).join(", ") : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
       <div className="overflow-x-auto rounded-2xl border border-brand-border">
         <table className="w-full min-w-[56rem] text-sm">

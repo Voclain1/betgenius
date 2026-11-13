@@ -6,6 +6,7 @@ import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football"
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { matchKey } from "@/lib/slug";
 import { laneFixtureIds } from "@/lib/europeanClubsPipeline";
+import { CURRENT_RULES, PROPOSED_RULES, coverageRollout, liveRules, type CoverageRollout } from "@/lib/generation/competitionEligibility";
 import {
   COVERAGE_POLICY,
   coverageHorizon,
@@ -13,6 +14,8 @@ import {
   emptyTierCounts,
   fillFromTiers,
   planFallback,
+  compareFallbackPlans,
+  type FallbackShadow,
   summariseCoverage,
   sweepDates,
   tallySlate,
@@ -60,6 +63,10 @@ export type CoverageReport = {
     fixturesInPayload: number;
     fallbackConsidered: number;
     gateRejected: Partial<Record<GateRejection, number>>;
+    /** Sprint 05: rejections per competition, the rollout setting, and the shadow comparison of rule sets. */
+    gateRejectedByLeague?: Record<number, Partial<Record<GateRejection, number>>>;
+    rollout?: CoverageRollout;
+    shadow?: FallbackShadow;
   };
   /** Why the scope widened, or null when it did not. */
   widenedReason: string | null;
@@ -280,7 +287,7 @@ export async function discoverGenerationCandidates(opts: {
       const keyOf = (r: FixtureRow) => matchKey({ homeTeamApiId: r.teams?.home?.id, awayTeamApiId: r.teams?.away?.id, kickoff: r.fixture?.date });
       const fallbackKeys = rows
         .filter((r) => {
-          const tier = generationTierOf(r.league?.id);
+          const tier = PROPOSED_RULES.tierOf(r.league?.id);
           return isFallbackTier(tier) && decision.allowedTiers.includes(tier);
         })
         .map(keyOf)
@@ -290,10 +297,23 @@ export async function discoverGenerationCandidates(opts: {
         : [];
       const odds = new Map<string, OddsKnowledge>(oddsRows.map((o) => [o.matchKey, { bookmakerCount: o.bookmakerCount, fetchedAt: o.fetchedAt }]));
 
-      const plan = planFallback(rows, decision, odds, keyOf, now);
+      // COVERAGE_ROLLOUT (competitionEligibility.ts): "on" acts on the
+      // proposed rules; "shadow" (default) acts on the current rules and
+      // records what the proposed ones would have done with this same
+      // payload; "off" records nothing extra. No extra provider calls.
+      const rollout = coverageRollout();
+      const rules = liveRules(rollout);
+      const plan = planFallback(rows, decision, odds, keyOf, now, rules);
       sweepByTier = plan.leaguesSeenByTier;
       sweep.fallbackConsidered = plan.considered;
       sweep.gateRejected = plan.rejected;
+      sweep.gateRejectedByLeague = plan.rejectedByLeague;
+      sweep.rollout = rollout;
+      if (rollout !== "off") {
+        const other = planFallback(rows, decision, odds, keyOf, now, rules.name === "current" ? PROPOSED_RULES : CURRENT_RULES);
+        const [current, proposed] = rules.name === "current" ? [plan, other] : [other, plan];
+        sweep.shadow = compareFallbackPlans(current, proposed, decision, rules.name);
+      }
 
       // Same candidate rules as the cursor (window, cup scope, dedupe,
       // already-generated, ledger backoff, paid-tier reservation). Only

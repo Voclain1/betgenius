@@ -228,7 +228,7 @@ async function main() {
   eq("mode CORE (core alone is healthy)", d50.mode, "CORE");
   check("not widened, needs nothing", !d50.widened && d50.need === 0 && d50.target === null);
   eq("only CORE+SECONDARY allowed", d50.allowedTiers, ["CORE", "SECONDARY"]);
-  check("every fallback and deep league is excluded from generation", JSON.stringify(excludedLeagueIds(d50)) === JSON.stringify([...FALLBACK, ...DEEP]));
+  check("every fallback and deep league is excluded from generation", JSON.stringify(excludedLeagueIds(d50)) === JSON.stringify([...FALLBACK, ...DEEP, 111]), "the registry's DEEP_FALLBACK addition (111, FAW Championship) is excluded with its tier");
   const plan50 = planFallback(payload(40, 40), d50);
   check("a healthy decision plans zero fallback fixtures even with a full payload", plan50.eligible.FALLBACK.length === 0 && plan50.eligible.DEEP_FALLBACK.length === 0);
   check("narrow reason says so in words", /healthy/.test(d50.reason) && /not scanned or generated/.test(d50.reason), d50.reason);

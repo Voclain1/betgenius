@@ -687,7 +687,7 @@ async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) 
     const { selectedIds, added, removed, ...counts } = plan;
     await pipeline.recordPaidSelectionShadow({
       category, day: lagosDateKey(start), effective: decision.effective, assessments: decision.assessments,
-      selectedIds, plan: { ...counts, added: added.length, removed: removed.length },
+      selectedIds, plan: { ...counts, added: added.length, removed: removed.length }, rows, now,
     });
   }
   return plan;

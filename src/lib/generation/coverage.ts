@@ -34,6 +34,7 @@
  */
 
 import type { FixtureRow } from "@/lib/football/api-football";
+import { COMPETITION_REGISTRY, CURRENT_RULES, fairOrder, type EligibilityRules } from "@/lib/generation/competitionEligibility";
 import {
   GENERATION_TIER_ORDER,
   generationTierOf,
@@ -173,7 +174,12 @@ export function decideCoverage(counts: TierCounts, policy = COVERAGE_POLICY): Co
 
 /** League ids ordinary generation must NOT take right now: every tier outside the decision's scope. */
 export function excludedLeagueIds(decision: Pick<CoverageDecision, "allowedTiers">): number[] {
-  return leaguesInTiers(GENERATION_TIER_ORDER.filter((t) => !decision.allowedTiers.includes(t)));
+  const out = GENERATION_TIER_ORDER.filter((t) => !decision.allowedTiers.includes(t));
+  // Registry additions (competitionEligibility.ts) are excluded by the same
+  // rule, so a fixture queued under COVERAGE_ROLLOUT=on is not generated once
+  // its tier is out of scope again.
+  const added = COMPETITION_REGISTRY.flatMap((e) => (e.proposal.action === "ADD" && out.includes(e.proposal.tier) ? [e.id] : []));
+  return [...leaguesInTiers(out), ...added];
 }
 
 /**
@@ -252,8 +258,9 @@ export type OddsKnowledge = { bookmakerCount: number | null; fetchedAt: Date | n
  */
 export function fallbackQualityGate(
   row: FixtureRow,
-  ctx: { odds?: OddsKnowledge | null; now?: Date } = {},
+  ctx: { odds?: OddsKnowledge | null; now?: Date; rules?: EligibilityRules } = {},
 ): { ok: true; tier: GenerationTier } | { ok: false; reason: GateRejection } {
+  const rules = ctx.rules ?? CURRENT_RULES;
   const isPositiveInt = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v > 0;
   const home = row.teams?.home;
   const away = row.teams?.away;
@@ -261,7 +268,7 @@ export function fallbackQualityGate(
     return { ok: false, reason: "invalid_ids" };
   }
 
-  const tier = generationTierOf(row.league?.id);
+  const tier = rules.tierOf(row.league?.id);
   if (tier !== "FALLBACK" && tier !== "DEEP_FALLBACK") return { ok: false, reason: "unrecognised_competition" };
 
   if (row.fixture.status?.short !== "NS") return { ok: false, reason: "not_scheduled" };
@@ -277,7 +284,7 @@ export function fallbackQualityGate(
 
   // A configured cup we have recorded as unpriced. Unconfigured competitions
   // are leagues, which cupSupports treats as supported.
-  if (isCupCompetition(row.league.id) && !cupSupports(row.league.id, "odds")) return { ok: false, reason: "unpriced_cup" };
+  if (isCupCompetition(row.league.id) && !rules.cupPriced(row.league.id)) return { ok: false, reason: "unpriced_cup" };
 
   // Bookmakers already asked and answered "nothing". Absence of a cache row is
   // not evidence either way and is not held against the fixture.
@@ -294,6 +301,11 @@ export type FallbackPlan = {
   rejected: Partial<Record<GateRejection, number>>;
   /** Fallback-tier rows in the payload, before the gate. */
   considered: number;
+  /** Gate rejections per competition (provider league id), for "why was this competition ignored". */
+  rejectedByLeague: Record<number, Partial<Record<GateRejection, number>>>;
+  /** Eligible rows dropped by the per-competition cap (proposed rules only). */
+  capped: number;
+  rules: EligibilityRules["name"];
 };
 
 /**
@@ -309,11 +321,12 @@ export function planFallback(
   keyOf: (row: FixtureRow) => string | null = () => null,
   /** When set, fixtures inside GENERATE_FROM_HOURS of kickoff are refused (inside_lead_time). */
   now?: Date,
+  rules: EligibilityRules = CURRENT_RULES,
 ): FallbackPlan {
-  const plan: FallbackPlan = { eligible: { FALLBACK: [], DEEP_FALLBACK: [] }, leaguesSeenByTier: emptyTierCounts(), rejected: {}, considered: 0 };
+  const plan: FallbackPlan = { eligible: { FALLBACK: [], DEEP_FALLBACK: [] }, leaguesSeenByTier: emptyTierCounts(), rejected: {}, considered: 0, rejectedByLeague: {}, capped: 0, rules: rules.name };
   const leaguesSeen = new Set<number>();
   for (const row of rows) {
-    const tier = generationTierOf(row.league?.id);
+    const tier = rules.tierOf(row.league?.id);
     if (tier && !leaguesSeen.has(row.league.id)) {
       leaguesSeen.add(row.league.id);
       plan.leaguesSeenByTier[tier]++;
@@ -323,26 +336,95 @@ export function planFallback(
 
   const taken = new Set<number>();
   for (const row of rows) {
-    const tier = generationTierOf(row.league?.id);
+    const tier = rules.tierOf(row.league?.id);
     if ((tier !== "FALLBACK" && tier !== "DEEP_FALLBACK") || !decision.allowedTiers.includes(tier)) continue;
     plan.considered++;
     const key = keyOf(row);
-    const verdict = fallbackQualityGate(row, { odds: key ? oddsByMatchKey.get(key) : null, now });
+    const verdict = fallbackQualityGate(row, { odds: key ? oddsByMatchKey.get(key) : null, now, rules });
     if (!verdict.ok) {
       plan.rejected[verdict.reason] = (plan.rejected[verdict.reason] ?? 0) + 1;
+      const byLeague = (plan.rejectedByLeague[row.league.id] ??= {});
+      byLeague[verdict.reason] = (byLeague[verdict.reason] ?? 0) + 1;
       continue;
     }
     if (taken.has(row.fixture.id)) continue;
     taken.add(row.fixture.id);
     plan.eligible[verdict.tier as "FALLBACK" | "DEEP_FALLBACK"].push(row);
   }
-  const order = (a: FixtureRow, b: FixtureRow) =>
-    leaguePriorityRank(a.league.id) - leaguePriorityRank(b.league.id)
-    || new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime()
-    || a.fixture.id - b.fixture.id;
-  plan.eligible.FALLBACK.sort(order);
-  plan.eligible.DEEP_FALLBACK.sort(order);
+  const kickoff = (r: FixtureRow) => new Date(r.fixture.date).getTime();
+  for (const tier of ["FALLBACK", "DEEP_FALLBACK"] as const) {
+    let list = plan.eligible[tier];
+    if (rules.order === "fair") {
+      list = fairOrder(list, (r) => r.league.id, kickoff, (r) => r.fixture.id);
+    } else {
+      list = [...list].sort((a, b) =>
+        leaguePriorityRank(a.league.id) - leaguePriorityRank(b.league.id) || kickoff(a) - kickoff(b) || a.fixture.id - b.fixture.id);
+    }
+    if (rules.perCompetitionCap != null) {
+      const per = new Map<number, number>();
+      list = list.filter((r) => {
+        const n = (per.get(r.league.id) ?? 0) + 1;
+        per.set(r.league.id, n);
+        if (n > rules.perCompetitionCap!) { plan.capped++; return false; }
+        return true;
+      });
+    }
+    plan.eligible[tier] = list;
+  }
   return plan;
+}
+
+/**
+ * Shadow comparison of the current and proposed rules on ONE sweep payload:
+ * no extra provider calls. `wouldQueue` simulates fillFromTiers on each plan
+ * (before the shared candidate rules, which apply equally to both), so the
+ * difference is purely what the eligibility rules change.
+ */
+export type FallbackShadow = {
+  rules: { live: EligibilityRules["name"]; compared: EligibilityRules["name"] };
+  eligible: { current: number; proposed: number };
+  wouldQueue: { current: Record<number, number>; proposed: Record<number, number> };
+  addedCompetitions: number[];
+  droppedCompetitions: number[];
+  proposedCapped: number;
+  /** Rejections the proposed rules lift, by competition: e.g. Welsh Cup unpriced_cup. */
+  liftedRejections: Record<number, Partial<Record<GateRejection, number>>>;
+};
+
+export function simulateFill(plan: FallbackPlan, decision: Pick<CoverageDecision, "allowedTiers" | "need">): Record<number, number> {
+  let remaining = decision.need;
+  const out: Record<number, number> = {};
+  for (const tier of ["FALLBACK", "DEEP_FALLBACK"] as const) {
+    if (!decision.allowedTiers.includes(tier)) continue;
+    for (const r of plan.eligible[tier]) {
+      if (remaining <= 0) break;
+      out[r.league.id] = (out[r.league.id] ?? 0) + 1;
+      remaining--;
+    }
+  }
+  return out;
+}
+
+export function compareFallbackPlans(current: FallbackPlan, proposed: FallbackPlan, decision: Pick<CoverageDecision, "allowedTiers" | "need">, live: EligibilityRules["name"]): FallbackShadow {
+  const qc = simulateFill(current, decision);
+  const qp = simulateFill(proposed, decision);
+  const lifted: FallbackShadow["liftedRejections"] = {};
+  for (const [id, reasons] of Object.entries(current.rejectedByLeague)) {
+    for (const [reason, n] of Object.entries(reasons)) {
+      const left = proposed.rejectedByLeague[Number(id)]?.[reason as GateRejection] ?? 0;
+      if ((n ?? 0) > left) (lifted[Number(id)] ??= {})[reason as GateRejection] = (n ?? 0) - left;
+    }
+  }
+  const count = (p: FallbackPlan) => p.eligible.FALLBACK.length + p.eligible.DEEP_FALLBACK.length;
+  return {
+    rules: { live, compared: live === "current" ? "proposed" : "current" },
+    eligible: { current: count(current), proposed: count(proposed) },
+    wouldQueue: { current: qc, proposed: qp },
+    addedCompetitions: Object.keys(qp).map(Number).filter((id) => !(id in qc)),
+    droppedCompetitions: Object.keys(qc).map(Number).filter((id) => !(id in qp)),
+    proposedCapped: proposed.capped,
+    liftedRejections: lifted,
+  };
 }
 
 /**

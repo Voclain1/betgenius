@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
@@ -358,8 +359,26 @@ export async function recordPaidSelectionShadow(input: {
   assessments: readonly PaidCandidateAssessment[];
   selectedIds: readonly string[];
   plan: Record<string, unknown>;
+  /** Sprint 05: the curation rows, so the shadow quality layer can read kickoff and selection. Optional. */
+  rows?: ReadonlyArray<{ id: string; kickoff: Date | null; selection?: unknown }>;
+  now?: Date;
 }): Promise<void> {
   const selected = new Set(input.selectedIds);
+  // Shadow-only candidate-quality decisions (paidCandidateQuality.ts). Never
+  // read by curation; a failure here only loses the extra record.
+  let quality: unknown = null;
+  if (input.rows) {
+    try {
+      const now = input.now ?? new Date();
+      quality = shadowQualityRecord(
+        [...input.assessments], new Map(input.rows.map((r) => [r.id, r])),
+        input.category === "PREMIUM" ? "PREMIUM" : "VIP", now, input.selectedIds,
+      );
+    } catch (error) {
+      console.error("[paid-selection] shadow quality record failed", error);
+      quality = { error: "QUALITY_RECORD_FAILED" };
+    }
+  }
   const s = summarisePaidAssessments(input.assessments);
   const integrity = auditPaidSelectionConcentration(input.assessments, input.selectedIds);
   const artifact = calibrationArtifact();
@@ -377,6 +396,7 @@ export async function recordPaidSelectionShadow(input: {
           calibrationActive: !!artifact?.active,
           summary: s,
           integrity,
+          quality,
           plan: input.plan,
           candidates: input.assessments.map((a) => ({ ...a, selected: selected.has(a.id) })),
         })),
