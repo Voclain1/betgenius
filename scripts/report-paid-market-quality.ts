@@ -1,4 +1,5 @@
 import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { evaluateShadowSegmentPolicy } from "../src/lib/paidHoldoutPolicy";
 /**
  * Read-only VIP Sprint 04 market-quality report.
  *
@@ -60,6 +61,7 @@ async function main() {
     missingEntryPrice: observations.filter(r => r.priceSource === "missing").length,
     dimensions: Object.fromEntries(dimensions.map(d => [d, segmentPaidPerformance(observations, d)])),
     chronologicalHoldout: Object.fromEntries(dimensions.map(d => { const result = chronologicalHoldout(observations, d); return [d, { ...result, warnings: validationWarnings(result) }]; })),
+    shadowPolicyComparisons: Object.fromEntries(dimensions.map(d => [d, evaluateShadowSegmentPolicy(observations, d)])),
   };
   console.log(JSON.stringify(output, null, 2));
 }
