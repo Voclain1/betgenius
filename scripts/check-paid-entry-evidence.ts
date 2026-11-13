@@ -10,8 +10,6 @@ assert.equal(verifiedEntryPrice({ ...good, entryPrice: 1 }, kickoff), null);
 assert.equal(verifiedEntryPrice({}, kickoff), null);
 assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-12T08:00:00Z" }, kickoff), null);
 assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-13T09:04:00Z" }, kickoff), null);
-console.log("paid entry evidence: all assertions passed");
-
 const sourced = { ...good, entryPriceBasis: "BOOKMAKER_MEDIAN_INDICATIVE", entryBookmakers: 6,
   entryQuoteSelection: { market: "Match Winner", value: "Home" },
   entryQuoteSources: [{ bookmaker: "Bookmaker A", odd: 1.9 }] };
@@ -23,3 +21,13 @@ assert.equal(auditPaidQuoteEvidence({ ...sourced, entryQuoteSelection: null }, k
 assert.equal(auditPaidQuoteEvidence({ ...sourced, confirmedAt: "2026-11-13T18:00:00Z" }, kickoff).usable, false);
 assert.equal(auditPaidQuoteEvidence({ ...sourced, quoteFetchedAt: "2026-11-12T08:00:00Z" }, kickoff).usable, false);
 assert.equal(auditPaidQuoteEvidence({ ...sourced, entryPrice: null }, kickoff).usable, false);
+
+const published = { ...sourced, confirmedAt: "2026-11-13T15:15:00Z" };
+const promotionAndPublication = { ...sourced, publicationQuoteEvidence: published };
+assert.equal(auditPaidQuoteEvidence(promotionAndPublication, kickoff).usable, true);
+assert.equal(auditPaidQuoteEvidence(promotionAndPublication.publicationQuoteEvidence, kickoff).usable, true);
+assert.equal(auditPaidQuoteEvidence({ ...published, entryPriceBasis: "UNAVAILABLE" }, kickoff).usable, false);
+assert.equal(auditPaidQuoteEvidence({ ...published, entryQuoteSources: [{ bookmaker: "", odd: 1.9 }] }, kickoff).usable, false);
+assert.equal(auditPaidQuoteEvidence({ ...published, entryQuoteSources: [{ bookmaker: "Bookmaker A", odd: 0 }] }, kickoff).usable, false);
+assert.equal(auditPaidQuoteEvidence({ ...published, confirmedAt: "2026-11-13T17:01:00Z" }, kickoff).usable, false);
+console.log("paid entry evidence: all assertions passed");
