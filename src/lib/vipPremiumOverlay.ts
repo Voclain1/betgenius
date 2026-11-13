@@ -2,6 +2,7 @@ import { GENERATION_TIERS, isSeniorWomensCompetition, leaguePriorityRank } from 
 import { VIP_PROXY_LEAGUE_IDS } from "@/lib/ai/generationRisk";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS, SAME_DAY_GENERATE_FROM_HOURS } from "@/lib/generation/window";
 import type { FixtureOdds } from "@/lib/odds";
+import { lagosDateKey } from "@/lib/lagosDate";
 import {
   lopsidednessSignal,
   MC_MAX_QUOTE_AGE_MS,
@@ -204,8 +205,32 @@ export type OverlayFixtureRow = {
   contextComplete: boolean;
 };
 
-/** A previous VIP_PREMIUM-intent AIJob, read from its stored prompt. */
-export type OverlayAttempt = { fixtureApiId: number | null; createdAt: Date };
+/** A previous VIP_PREMIUM-intent AIJob, read from its stored prompt. `kickoff` is null on a prompt that did not record it. */
+export type OverlayAttempt = { fixtureApiId: number | null; createdAt: Date; kickoff?: Date | null };
+
+/**
+ * The Lagos day an attempt counts against: its fixture's kickoff day.
+ *
+ * WHY KICKOFF, NOT CREATION. The window reaches 48h ahead, and the pass ranks
+ * targets by market strength across that whole window. Counted by the day the
+ * call was made, the quota was spent in a burst just after midnight on
+ * whichever fixtures were priced then, often tomorrow's. On 13 Nov 2026 the
+ * eight attempts all ran between 00:05 and 02:35 Lagos time, four of them on
+ * 14 Nov fixtures; the pass then stood down on 75 runs while that day's own
+ * later fixtures went unattempted. Counting by kickoff day gives every day its
+ * own eight. An attempt whose prompt has no kickoff counts against the day it
+ * was made, which is what the old rule did.
+ */
+export function attemptKickoffDay(a: OverlayAttempt): string {
+  return lagosDateKey(a.kickoff ?? a.createdAt);
+}
+
+/** Attempts per kickoff day. Pure. */
+export function attemptsByKickoffDay(attempts: readonly OverlayAttempt[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const a of attempts) m.set(attemptKickoffDay(a), (m.get(attemptKickoffDay(a)) ?? 0) + 1);
+  return m;
+}
 
 export type OverlayCandidate = {
   matchKey: string;
@@ -356,7 +381,7 @@ export type VipPremiumTarget = OverlayCandidate & {
 };
 
 /** NO_QUOTED_MARKET: no targetable market quoted by MC_MIN_BOOKMAKERS or more books (lopsidednessSignal drops thinner ones). */
-export type OddsSkipReason = "NO_FRESH_QUOTE" | "NO_QUOTED_MARKET" | "MARKET_BELOW_BAR";
+export type OddsSkipReason = "NO_FRESH_QUOTE" | "NO_QUOTED_MARKET" | "MARKET_BELOW_BAR" | "KICKOFF_DAY_QUOTA";
 
 export type OddsQualification = {
   targets: VipPremiumTarget[];
@@ -381,6 +406,8 @@ export function qualifyVipPremiumTargets(
   quotes: ReadonlyMap<string, OverlayQuote>,
   now: Date,
   limit: number,
+  /** Attempts already spent per kickoff day (attemptsByKickoffDay) and the per-day quota. Absent: no per-day limit. */
+  kickoffDayQuota?: { used: ReadonlyMap<string, number>; quota: number },
 ): OddsQualification {
   const skipped: OddsQualification["skipped"] = {};
   const skip = (r: OddsSkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
@@ -393,6 +420,7 @@ export function qualifyVipPremiumTargets(
     const best = lopsidednessSignal(q!.oddsJson);
     if (!best) { skip("NO_QUOTED_MARKET"); continue; }
     if (best.probability < VIP_MARKET_FLOOR) { skip("MARKET_BELOW_BAR"); continue; }
+    if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= kickoffDayQuota.quota) { skip("KICKOFF_DAY_QUOTA"); continue; }
     qualified.push({
       ...c,
       marketProbability: best.probability,
@@ -402,10 +430,13 @@ export function qualifyVipPremiumTargets(
       quoteAgeMs: now.getTime() - q!.fetchedAt!.getTime(),
     });
   }
-  // Strongest market conviction first: the market's own confidence is the
-  // thing being bought. League priority, then kickoff, break ties.
+  // The soonest kickoff DAY first, so today's fixtures are attempted before
+  // tomorrow's take the slots (see attemptKickoffDay). Within a day, strongest
+  // market conviction first: the market's own confidence is the thing being
+  // bought. League priority, then kickoff, break ties.
   qualified.sort(
     (a, b) =>
+      lagosDateKey(a.kickoff).localeCompare(lagosDateKey(b.kickoff)) ||
       b.marketProbability - a.marketProbability ||
       leaguePriorityRank(a.leagueApiId) - leaguePriorityRank(b.leagueApiId) ||
       a.kickoff.getTime() - b.kickoff.getTime() ||
@@ -650,7 +681,8 @@ export function readVipPremiumAttempt(prompt: string, createdAt: Date): OverlayA
   try {
     const p = JSON.parse(prompt);
     if (p?.intent !== VIP_PREMIUM_INTENT) return null;
-    return { fixtureApiId: typeof p.fixtureApiId === "number" ? p.fixtureApiId : null, createdAt };
+    const kickoff = typeof p.kickoff === "string" && !Number.isNaN(new Date(p.kickoff).getTime()) ? new Date(p.kickoff) : null;
+    return { fixtureApiId: typeof p.fixtureApiId === "number" ? p.fixtureApiId : null, createdAt, kickoff };
   } catch {
     return null;
   }

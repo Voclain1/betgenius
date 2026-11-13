@@ -257,6 +257,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       shortPriceBlock: block,
       ...(goalsOnly ? { goalsOnly: true } : {}),
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
+      ...(riskRoute.calibration === "vip" || input.intent === "VIP_PREMIUM" ? { paidRoute: true } : {}),
     });
   const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
   // A call that was paid for and then rejected inside generatePredictionForFixture

@@ -113,7 +113,11 @@ export function CategoryPredictionsList({
 export function emptyFeedMessage(category?: PredictionCategory): string {
   if (category === "VIP" || category === "PREMIUM") {
     const name = category === "PREMIUM" ? "Premium" : "VIP";
-    return `No ${name} tips for this day yet. New ${name} predictions are added through the day as bookmakers open their markets.`;
+    // Says why a day can be quiet, because it can be by design: a pick is
+    // published only when the match analysis and the bookmakers' prices both
+    // clear the tier's bar, and on international-break or cup-heavy days few
+    // fixtures do. The bar is never lowered to fill the feed.
+    return `No ${name} tips for this day yet. A ${name} pick is published only when our match analysis and the bookmakers' prices both clear the ${name} bar, so on quieter days, such as international breaks, there may be few or none. New picks are added through the day as markets open.`;
   }
   return "No published tips in this category yet.";
 }

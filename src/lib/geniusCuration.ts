@@ -316,6 +316,8 @@ export function compareByConfidenceRank(a: Rankable, b: Rankable): number {
 /** A published row curation may rank: today's kickoff, not a hidden combo leg. */
 export type CurationRow = {
   id: string;
+  /** The structured selection, for the paid market check (loadPaidCurationVerdicts). Optional: pure callers may omit it. */
+  selection?: unknown;
   leagueApiId: number | null;
   confidence: number;
   provenance: string | null;
@@ -344,6 +346,10 @@ export type CurationPlan = {
   fixtureDuplicatesExcluded: number;
   /** Paid tiers: ordinary rows held back because the dedicated pass may still find a distinct pick for the fixture. */
   awaitingDedicatedExcluded: number;
+  /** Paid tiers: VIP-route rows NOT admitted because a usable quote put the market more than 10pp from the model. */
+  marketDisagreeExcluded: number;
+  /** Paid tiers: non-VIP-route rows admitted on a thin day because the market confirmed them. */
+  widenedAdmitted: number;
 };
 
 /**
@@ -367,9 +373,22 @@ export function planCuration(
    * slot only once the dedicated pass has found nothing distinct to carry.
    */
   awaitingDedicatedFixtures: ReadonlySet<string> = new Set(),
+  /**
+   * Paid tiers: assessPaidCuration's verdict per row id (src/lib/paidSelection.ts),
+   * from loadPaidCurationVerdicts. Absent, the route rule is exactly as before.
+   *
+   * ADMISSION ONLY. A verdict decides whether an UNTAGGED row may join the feed.
+   * A row already in the feed keeps its place on the route rule: the market
+   * moves through the day and its quote ages out at kickoff, and a pick a
+   * subscriber has already seen, or that has already kicked off, must not drop
+   * out of the feed or its record because a price changed.
+   */
+  paidVerdicts?: ReadonlyMap<string, boolean>,
 ): CurationPlan {
   const rule = CURATION_RULES[category];
   const tagged = new Set(rows.filter((r) => r.categories.includes(category)).map((r) => r.id));
+  let marketDisagreeExcluded = 0;
+  let widenedAdmitted = 0;
 
   // Dedicated-pass picks already IN this feed are fixed points: they keep their
   // place and they consume slots, but they are never re-ranked and never
@@ -438,9 +457,16 @@ export function planCuration(
    * now refuse doubles outright (see isPaidEligible), so the carve-out is gone.
    * Combo Bets and GENIUS are unaffected.
    */
+  const verdictFor = (r: CurationRow): boolean | null =>
+    rule.requireVipRoute && paidVerdicts && !tagged.has(r.id) && !(DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") && paidVerdicts.has(r.id)
+      ? paidVerdicts.get(r.id)!
+      : null;
   const hasRequiredRoute = (r: CurationRow) =>
     !rule.requireVipRoute ||
-    r.provenance === VIP_ROUTE_PROVENANCE ||
+    (verdictFor(r) ?? false) ||
+    (verdictFor(r) === null && r.provenance === VIP_ROUTE_PROVENANCE) ||
+    // Already in the feed under the market-aware rule: kept (see paidVerdicts).
+    (!!paidVerdicts && tagged.has(r.id)) ||
     // A dedicated-pass row satisfies the route requirement on its own evidence:
     // it was generated FOR this tier and the market independently confirmed the
     // pick, which is a stronger claim than the league-rank proxy the VIP route
@@ -507,6 +533,15 @@ export function planCuration(
   const remainingMin = Math.max(0, CURATION_MIN - protectedIds.size);
 
   const curatedIds = selectCuratedIds(curatable, rule.floor, remainingMin, remainingMax, { hardFloor: rule.hardFloor, confidenceFirst: rule.confidenceFirst });
+  if (paidVerdicts) {
+    const chosenNow = new Set(curatedIds);
+    for (const r of rows) {
+      if (r.confidence < rule.floor) continue;
+      const v = verdictFor(r);
+      if (v === false && r.provenance === VIP_ROUTE_PROVENANCE) marketDisagreeExcluded++;
+      if (v === true && r.provenance !== VIP_ROUTE_PROVENANCE && chosenNow.has(r.id)) widenedAdmitted++;
+    }
+  }
   const selectedIds = [...protectedIds, ...curatedIds];
   const selected = new Set(selectedIds);
   return {
@@ -522,12 +557,14 @@ export function planCuration(
     doublesExcluded,
     fixtureDuplicatesExcluded,
     awaitingDedicatedExcluded,
+    marketDisagreeExcluded,
+    widenedAdmitted,
   };
 }
 
 const CURATION_ROW_SELECT = {
   id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true,
-  kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true,
+  kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, selection: true,
   categories: { select: { category: true } },
 } as const;
 
@@ -593,7 +630,10 @@ async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) 
   const awaiting = CURATION_RULES[category].paid
     ? await (await import("@/lib/vipPremiumPipeline")).loadFixturesAwaitingDedicated(rows, now)
     : new Set<string>();
-  const plan = planCuration(category, rows, paidClaimed, awaiting);
+  const verdicts = CURATION_RULES[category].paid
+    ? await (await import("@/lib/vipPremiumPipeline")).loadPaidCurationVerdicts(rows, category === "PREMIUM" ? "PREMIUM" : "VIP", now)
+    : undefined;
+  const plan = planCuration(category, rows, paidClaimed, awaiting, verdicts);
   await prisma.$transaction([
     ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category })), skipDuplicates: true })] : []),
     ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category } })] : []),

@@ -50,6 +50,7 @@ const DAY = 24 * H;
 type Row = {
   id: string; kickoff: Date; leagueApiId: number | null; leagueName: string | null; homeTeam: string | null; awayTeam: string | null;
   marketType: string; selection: unknown; market: string; pick: string; confidence: number; outcome: string; provenance: string | null;
+  settlementNote?: string | null;
   categories: string[]; finalHomeScore: number | null; finalAwayScore: number | null; manualSettlementOnly: boolean;
   fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; marketConfirmation: any;
   publishedAt: Date | null; createdAt: Date;
@@ -191,7 +192,7 @@ async function main() {
     select: {
       id: true, kickoff: true, leagueApiId: true, leagueName: true, homeTeam: true, awayTeam: true, marketType: true, selection: true,
       market: true, pick: true, confidence: true, outcome: true, provenance: true, finalHomeScore: true, finalAwayScore: true,
-      manualSettlementOnly: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, marketConfirmation: true,
+      manualSettlementOnly: true, settlementNote: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, marketConfirmation: true,
       publishedAt: true, createdAt: true, categories: { select: { category: true } }, aiJob: { select: { model: true } },
     },
   });
@@ -299,6 +300,16 @@ async function main() {
   console.log(`\nD. Settlement audit: ${auditable.length} auto-settleable rows re-resolved from stored scores; ${mismatches.length} disagree; ${unresolvable} not re-resolvable from full-time score alone (half-time markets).`);
   for (const m of mismatches.slice(0, 25)) console.log(`   ${m}`);
   console.log(`   Unresolved more than 6h after kickoff: ${stale.length} (${[...group(stale, (r) => `${r.manualSettlementOnly ? "manual-only " : ""}${r.marketType}`).entries()].map(([k, v]) => `${k} ${v.length}`).join(", ") || "none"})`);
+
+  for (const [k, v] of [...group(stale, (r) => String(r.settlementNote ?? "no note").replace(/\d+/g, "N").slice(0, 90)).entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 6)) console.log(`     ${String(v.length).padStart(3)} × ${k}`);
+  const dupList: string[] = [];
+  for (const feed of ["VIP", "PREMIUM"]) {
+    for (const [k, rs] of group(settledWindow.filter((r) => r.categories.includes(feed)), (r) => matchKey(r) ?? r.id)) {
+      if (rs.length > 1) dupList.push(`${feed} ${lagosDateKey(rs[0].kickoff)} ${rs[0].homeTeam} v ${rs[0].awayTeam}: ${rs.map((r) => `${r.marketType}/${r.provenance}`).join(" + ")}`);
+    }
+  }
+  console.log(`   Paid fixtures carried twice in one feed: ${dupList.length}`);
+  for (const d of dupList) console.log(`     ${d}`);
 
   // ── F. By generation model and by week ──────────────────────────────────
   const provider = (r: Row) => (r.aiJob?.model ?? "none").split(":")[0];
