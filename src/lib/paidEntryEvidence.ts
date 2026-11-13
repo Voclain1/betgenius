@@ -76,3 +76,18 @@ export function publicationSnapshotDecision(
   const next = appendPublicationQuoteEvidence(confirmation, publicationEvidence);
   return next ? { kind: "APPEND", next } : { kind: "SKIP_ALREADY_RECORDED" };
 }
+
+/** Distinguish an absent publication snapshot from invalid market evidence.
+ * Never fall back to the promotion quote when assessing publication coverage.
+ */
+export function auditPublicationQuoteEvidence(confirmation: unknown, kickoff: Date) {
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation))
+    return { usable: false, reason: "MISSING_CONFIRMATION" as const };
+  const snapshot = (confirmation as Record<string, unknown>).publicationQuoteEvidence;
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot))
+    return { usable: false, reason: "MISSING_PUBLICATION_SNAPSHOT" as const };
+  const evidence = snapshot as Record<string, unknown>;
+  if (evidence.evidenceKind !== "PUBLICATION_INDICATIVE")
+    return { usable: false, reason: "INVALID_PUBLICATION_KIND" as const };
+  return auditPaidQuoteEvidence(evidence, kickoff);
+}
