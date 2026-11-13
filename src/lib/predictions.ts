@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { appendPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { presentedCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
@@ -149,5 +150,46 @@ export async function applyReviewAction(
     });
     await recordPredictionEvents(tx, row, updated, action);
     return updated;
+  });
+}
+
+/**
+ * Dedicated paid-auto-publisher: no change to human review or Goals publishing.
+ * Row lock via conditional updateMany serializes competing workers. Publication,
+ * immutable quote snapshot, and notification event commit in one transaction.
+ * A failed write rolls everything back; retries return false without events.
+ */
+export async function publishPaidPredictionAtomically(
+  row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null; marketConfirmation: unknown },
+  actorId: string,
+  publicationEvidence: Record<string, unknown>,
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.prediction.updateMany({
+      where: {
+        id: row.id,
+        status: row.status,
+        OR: [{ kickoff: null }, { kickoff: { gt: new Date() } }],
+      },
+      data: { updatedAt: new Date() },
+    });
+    if (claimed.count !== 1) return false;
+    const before = await tx.prediction.findUnique({
+      where: { id: row.id }, include: { categories: true },
+    });
+    if (!before || before.status === "PUBLISHED") return false;
+    if (reviewBlockedByKickoff("PUBLISH", before.kickoff)) throw new KickoffPassedError();
+    const snapshot = appendPublicationQuoteEvidence(before.marketConfirmation, publicationEvidence);
+    if (!snapshot) throw new Error("Paid publication requires an unrecorded confirmation snapshot");
+    const updated = await tx.prediction.update({
+      where: { id: row.id },
+      data: {
+        ...reviewTransition("PUBLISH", actorId, before),
+        marketConfirmation: snapshot as any,
+      },
+      include: { categories: true },
+    });
+    await recordPredictionEvents(tx, before, updated, "PUBLISH");
+    return true;
   });
 }
