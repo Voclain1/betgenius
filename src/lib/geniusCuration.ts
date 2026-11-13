@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { lagosDayBounds } from "@/lib/lagosDate";
+import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
 import { matchKey } from "@/lib/slug";
 import { VIP_GENERATED_PROVENANCE, PREMIUM_GENERATED_PROVENANCE, isPaidOnlyProvenance } from "@/lib/paidOnly";
@@ -318,6 +318,8 @@ export type CurationRow = {
   id: string;
   /** The structured selection, for the paid market check (loadPaidCurationVerdicts). Optional: pure callers may omit it. */
   selection?: unknown;
+  /** AIJob.model of the generation, for provider-specific calibration. Optional. */
+  model?: string | null;
   leagueApiId: number | null;
   confidence: number;
   provenance: string | null;
@@ -384,6 +386,13 @@ export function planCuration(
    * out of the feed or its record because a price changed.
    */
   paidVerdicts?: ReadonlyMap<string, boolean>,
+  /**
+   * Paid tiers, value mode only (src/lib/paidSelectionMode.ts): order admitted
+   * rows by `rank` (higher first; lower-bound expected value) instead of the
+   * editorial rank, and take at most `perMarketCap` rows of one market type,
+   * protected rows included. Absent, ordering is exactly as before.
+   */
+  paidOrdering?: { rank: ReadonlyMap<string, number>; perMarketCap: number },
 ): CurationPlan {
   const rule = CURATION_RULES[category];
   const tagged = new Set(rows.filter((r) => r.categories.includes(category)).map((r) => r.id));
@@ -509,7 +518,9 @@ export function planCuration(
     const isDedicatedRow = (r: CurationRow) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "");
     const taken = new Set<string>();
     const kept: CurationRow[] = [];
-    for (const r of [...curatable].sort(compareByEditorialRank)) {
+    const byRank = (a: CurationRow, b: CurationRow) =>
+      (paidOrdering!.rank.get(b.id) ?? -Infinity) - (paidOrdering!.rank.get(a.id) ?? -Infinity) || compareByEditorialRank(a, b);
+    for (const r of [...curatable].sort(paidOrdering ? byRank : compareByEditorialRank)) {
       const key = paidFixtureKey(r);
       if (taken.has(key) || protectedKeys.has(key) || (claimed.has(key) && !isDedicatedRow(r))) {
         fixtureDuplicatesExcluded++;
@@ -532,7 +543,24 @@ export function planCuration(
   const remainingMax = Math.max(0, CURATION_MAX - protectedIds.size);
   const remainingMin = Math.max(0, CURATION_MIN - protectedIds.size);
 
-  const curatedIds = selectCuratedIds(curatable, rule.floor, remainingMin, remainingMax, { hardFloor: rule.hardFloor, confidenceFirst: rule.confidenceFirst });
+  const curatedIds = rule.paid && paidOrdering
+    ? (() => {
+        // `curatable` is already in rank order (the dedupe loop above). Hard
+        // floor, then the per-market cap counting what is already protected.
+        const perMarket = new Map<string, number>();
+        for (const r of rows) if (protectedIds.has(r.id)) perMarket.set(r.marketType, (perMarket.get(r.marketType) ?? 0) + 1);
+        const out: string[] = [];
+        for (const r of curatable) {
+          if (out.length >= remainingMax) break;
+          if (r.confidence < rule.floor) continue;
+          const n = perMarket.get(r.marketType) ?? 0;
+          if (n >= paidOrdering.perMarketCap) continue;
+          perMarket.set(r.marketType, n + 1);
+          out.push(r.id);
+        }
+        return out;
+      })()
+    : selectCuratedIds(curatable, rule.floor, remainingMin, remainingMax, { hardFloor: rule.hardFloor, confidenceFirst: rule.confidenceFirst });
   if (paidVerdicts) {
     const chosenNow = new Set(curatedIds);
     for (const r of rows) {
@@ -565,7 +593,7 @@ export function planCuration(
 const CURATION_ROW_SELECT = {
   id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true,
   kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, selection: true,
-  categories: { select: { category: true } },
+  categories: { select: { category: true } }, aiJob: { select: { model: true } },
 } as const;
 
 /**
@@ -616,7 +644,7 @@ async function loadCurationRows(start: Date, end: Date): Promise<CurationRow[]> 
     },
     select: CURATION_ROW_SELECT,
   });
-  return raw.map((r) => ({ ...r, categories: r.categories.map((c) => c.category) }));
+  return raw.map(({ aiJob, ...r }) => ({ ...r, model: aiJob?.model ?? null, categories: r.categories.map((c) => c.category) }));
 }
 
 async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) {
@@ -630,14 +658,22 @@ async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) 
   const awaiting = CURATION_RULES[category].paid
     ? await (await import("@/lib/vipPremiumPipeline")).loadFixturesAwaitingDedicated(rows, now)
     : new Set<string>();
-  const verdicts = CURATION_RULES[category].paid
-    ? await (await import("@/lib/vipPremiumPipeline")).loadPaidCurationVerdicts(rows, category === "PREMIUM" ? "PREMIUM" : "VIP", now)
-    : undefined;
-  const plan = planCuration(category, rows, paidClaimed, awaiting, verdicts);
+  const pipeline = CURATION_RULES[category].paid ? await import("@/lib/vipPremiumPipeline") : null;
+  const decision = pipeline ? await pipeline.loadPaidCurationDecision(rows, category === "PREMIUM" ? "PREMIUM" : "VIP", now) : null;
+  const plan = planCuration(category, rows, paidClaimed, awaiting, decision?.verdicts, decision?.ordering);
   await prisma.$transaction([
     ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category })), skipDuplicates: true })] : []),
     ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category } })] : []),
   ]);
+  // Shadow log (PAID_SELECTION_MODE shadow or value): what each candidate was
+  // worth at this moment and what the live rule did with it. Best effort.
+  if (pipeline && decision && decision.effective.mode !== "current") {
+    const { selectedIds, added, removed, ...counts } = plan;
+    await pipeline.recordPaidSelectionShadow({
+      category, day: lagosDateKey(start), effective: decision.effective, assessments: decision.assessments,
+      selectedIds, plan: { ...counts, added: added.length, removed: removed.length },
+    });
+  }
   return plan;
 }
 

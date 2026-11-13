@@ -198,8 +198,8 @@ async function main() {
     check("loader: reads the odds cache and nothing else", reads.length === 1 && reads[0].startsWith("fixtureOddsCache:"), reads);
     eq("loader: no candidates, no read", (reads.length = 0, (await pipeline.loadPaidCurationVerdicts([row("low", 40, { confidence: 60 })], "VIP", NOW)).size + reads.length), 0);
     const src = readFileSync(join(__dirname, "../src/lib/geniusCuration.ts"), "utf8");
-    check("wiring: paid curation loads verdicts and passes them to planCuration", /loadPaidCurationVerdicts\(rows/.test(src) && /planCuration\(category, rows, paidClaimed, awaiting, verdicts\)/.test(src));
-    check("wiring: Genius curation does not", /CURATION_RULES\[category\]\.paid\s*\?\s*await \(await import\("@\/lib\/vipPremiumPipeline"\)\)\.loadPaidCurationVerdicts/.test(src));
+    check("wiring: paid curation loads its decision and passes the verdicts to planCuration", /loadPaidCurationDecision\(rows/.test(src) && /planCuration\(category, rows, paidClaimed, awaiting, decision\?\.verdicts, decision\?\.ordering\)/.test(src));
+    check("wiring: Genius curation does not", /const pipeline = CURATION_RULES\[category\]\.paid \? await import\("@\/lib\/vipPremiumPipeline"\) : null;/.test(src));
   }
 
   // ── 7. Paid-route provider switch ──────────────────────────────────────

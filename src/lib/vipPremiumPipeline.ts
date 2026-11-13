@@ -5,6 +5,7 @@ import type { FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 import {
+  devigProbability,
   evaluateMarketConfirmed,
   compareMarketConfirmed,
   type MarketConfirmedVerdict,
@@ -12,6 +13,9 @@ import {
 import { matchKey } from "@/lib/slug";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { assessPaidCuration, pickPrice, usableCurationQuote } from "@/lib/paidSelection";
+import { applyCalibration, providerOf, type CalibrationArtifact } from "@/lib/calibration";
+import { assessValue, combinePaidDecisions, summarisePaidAssessments, type PaidCandidateAssessment } from "@/lib/paidValue";
+import { calibrationArtifact, effectivePaidSelection, paidValueMinEvLower } from "@/lib/paidSelectionMode";
 import {
   DEDICATED_PAID_PROVENANCES,
   PAID_TIER_CATEGORIES,
@@ -233,23 +237,29 @@ export async function loadFixturesAwaitingDedicated(
   });
 }
 
+type PaidCandidateRow = { id: string; leagueApiId: number | null; confidence: number; provenance: string | null; marketType: string; selection?: unknown; model?: string | null; kickoff: Date | null; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null };
+
 /**
- * Paid curation's market check, loaded: assessPaidCuration's verdict for every
- * ordinary row on the day that meets the tier's confidence floor, keyed by row
- * id, for planCuration. Reads FixtureOddsCache only; writes nothing.
+ * Assess every ordinary row on the day that meets the tier's confidence floor:
+ * the #175 rule (assessPaidCuration) and the value assessment (calibrated
+ * probability and expected value at the median price usable NOW). Reads
+ * FixtureOddsCache only; writes nothing.
  *
  * A quote is read only if it was taken before kickoff and is no older than
  * PAID_CURATION_QUOTE_MAX_AGE_MS; otherwise the row is judged unpriced (a
- * VIP-route row stays eligible, a widened row does not).
+ * VIP-route row stays eligible under #175, a widened row does not, and no row
+ * can show value).
  */
-export async function loadPaidCurationVerdicts(
-  rows: ReadonlyArray<{ id: string; leagueApiId: number | null; confidence: number; provenance: string | null; marketType: string; selection?: unknown; kickoff: Date | null; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null }>,
+export async function assessPaidCandidates(
+  rows: ReadonlyArray<PaidCandidateRow>,
   tier: PaidTier,
   now: Date = new Date(),
-): Promise<Map<string, boolean>> {
+  artifact: CalibrationArtifact | null = calibrationArtifact(),
+  minEvLower = paidValueMinEvLower(),
+): Promise<PaidCandidateAssessment[]> {
   const floor = tier === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR;
   const candidates = rows.filter((r) => r.confidence >= floor && !isDedicated(r.provenance) && !isPaidOnlyProvenance(r.provenance) && r.marketType !== "SAME_GAME_DOUBLE");
-  if (candidates.length === 0) return new Map();
+  if (candidates.length === 0) return [];
   const widened = paidCurationWidened(rows);
   const keyOf = (r: (typeof candidates)[number]) => matchKey(r);
   const keys = [...new Set(candidates.map(keyOf).filter((k): k is string => !!k))];
@@ -257,10 +267,11 @@ export async function loadPaidCurationVerdicts(
     ? await prisma.fixtureOddsCache.findMany({ where: { matchKey: { in: keys } }, select: { matchKey: true, oddsJson: true, fetchedAt: true } })
     : [];
   const byKey = new Map(cached.map((c) => [c.matchKey, c]));
-  const out = new Map<string, boolean>();
-  for (const r of candidates) {
+  return candidates.map((r) => {
     const q = byKey.get(keyOf(r) ?? "");
-    const price = q && usableCurationQuote(q.fetchedAt, r.kickoff, now) ? pickPrice(q.oddsJson as unknown as FixtureOdds | null, r.marketType, r.selection) : null;
+    const usable = !!q && usableCurationQuote(q.fetchedAt, r.kickoff, now);
+    const odds = usable ? (q!.oddsJson as unknown as FixtureOdds | null) : null;
+    const price = odds ? pickPrice(odds, r.marketType, r.selection) : null;
     const verdict = assessPaidCuration({
       confidence: r.confidence,
       vipRoute: r.provenance === VIP_ROUTE_PROVENANCE,
@@ -269,9 +280,106 @@ export async function loadPaidCurationVerdicts(
       marketFloor: tier === "PREMIUM" ? PREMIUM_MARKET_FLOOR : VIP_MARKET_FLOOR,
       maxMarketProbability: PAID_MAX_MARKET_PROBABILITY,
     });
-    out.set(r.id, verdict.eligible);
+    const provider = providerOf(r.model);
+    const executable = price && !price.derived ? price : null;
+    const cal = artifact && executable?.fair != null
+      ? applyCalibration(artifact, { provider, marketType: r.marketType, rawConfidence: r.confidence, marketProbability: executable.fair })
+      : null;
+    const pDraw = odds ? (devigProbability(odds, "Match Winner", "Draw")?.probability ?? null) : null;
+    const value = assessValue({
+      marketType: r.marketType,
+      rawConfidence: r.confidence,
+      price,
+      pDraw: pDraw != null ? pDraw / 100 : null,
+      estimate: cal?.withMarket != null ? { p: cal.withMarket, se: cal.withMarketSE ?? 0, version: cal.version } : null,
+      minEvLower,
+    });
+    return {
+      id: r.id,
+      fixtureKey: paidFixtureKey(r),
+      provider,
+      marketType: r.marketType,
+      leagueApiId: r.leagueApiId,
+      rawConfidence: r.confidence,
+      rule: { eligible: verdict.eligible, tag: verdict.eligible ? verdict.basis : verdict.reason },
+      value,
+      quoteAgeMinutes: usable && q?.fetchedAt ? Math.round((now.getTime() - q.fetchedAt.getTime()) / 60_000) : null,
+    };
+  });
+}
+
+/** Paid curation's #175 market check alone, as a verdict per row id. Kept for callers that only need admission. */
+export async function loadPaidCurationVerdicts(rows: ReadonlyArray<PaidCandidateRow>, tier: PaidTier, now: Date = new Date()): Promise<Map<string, boolean>> {
+  return combinePaidDecisions(await assessPaidCandidates(rows, tier, now, null), "current").verdicts;
+}
+
+/**
+ * Everything paid curation needs from this module for one run: verdicts and,
+ * in value mode, ordering — per PAID_SELECTION_MODE (src/lib/paidSelectionMode.ts)
+ * — and the assessments for the shadow log.
+ */
+export async function loadPaidCurationDecision(rows: ReadonlyArray<PaidCandidateRow>, tier: PaidTier, now: Date = new Date(), artifact: CalibrationArtifact | null = calibrationArtifact()) {
+  const effective = effectivePaidSelection();
+  if (effective.mode === "current") {
+    return { effective, assessments: [] as PaidCandidateAssessment[], ...combinePaidDecisions(await assessPaidCandidates(rows, tier, now, null), "current") };
   }
-  return out;
+  try {
+    const assessments = await assessPaidCandidates(rows, tier, now, artifact);
+    const decision = combinePaidDecisions(assessments, effective.live);
+    return { effective: { ...effective, fallback: effective.fallback ?? decision.fallback }, assessments, ...decision };
+  } catch (error) {
+    // Assessment must never be able to break live curation: fall back to the
+    // #175 rule exactly as current mode computes it, and say so in the log.
+    console.error("[paid-selection] value assessment failed; using the #175 rule", error);
+    return {
+      effective: { ...effective, live: "current" as const, fallback: "ASSESSMENT_FAILED" },
+      assessments: [] as PaidCandidateAssessment[],
+      ...combinePaidDecisions(await assessPaidCandidates(rows, tier, now, null), "current"),
+    };
+  }
+}
+
+/** Shadow log job name. One row per paid curation run, mode shadow or value. */
+export const JOB_PAID_SELECTION_SHADOW = "paid-selection-shadow" as const;
+
+/**
+ * Record one curation run's assessments as a JobRun: the point-in-time
+ * evidence (price, books, quote age, calibrated probability, EV and every
+ * rejection reason, plus what the live rule did) that future activation must be
+ * judged on. Best effort: a failed write never affects curation.
+ */
+export async function recordPaidSelectionShadow(input: {
+  category: string;
+  day: string;
+  effective: ReturnType<typeof effectivePaidSelection>;
+  assessments: readonly PaidCandidateAssessment[];
+  selectedIds: readonly string[];
+  plan: Record<string, unknown>;
+}): Promise<void> {
+  const selected = new Set(input.selectedIds);
+  const s = summarisePaidAssessments(input.assessments);
+  const artifact = calibrationArtifact();
+  try {
+    await prisma.jobRun.create({
+      data: {
+        job: JOB_PAID_SELECTION_SHADOW,
+        ok: true,
+        summary: `${input.category} ${input.day} mode ${input.effective.mode}/${input.effective.live}${input.effective.fallback ? ` (fallback ${input.effective.fallback})` : ""}: ${s.candidates} at floor, ${s.priced} priced, ${s.ruleEligible} pass #175, ${s.valueEligible} show value, ${s.both} both; feed ${input.selectedIds.length}`,
+        detail: JSON.parse(JSON.stringify({
+          ...input.effective,
+          category: input.category,
+          day: input.day,
+          calibrationVersion: artifact?.version ?? null,
+          calibrationActive: !!artifact?.active,
+          summary: s,
+          plan: input.plan,
+          candidates: input.assessments.map((a) => ({ ...a, selected: selected.has(a.id) })),
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("[paid-selection] could not record the shadow log", error);
+  }
 }
 
 export type TargetSelection = {
@@ -438,6 +546,26 @@ export type GateRunResult = {
   /** Ordinary rows whose VIP/PREMIUM tag was removed because a dedicated pick was published on their fixture. */
   ordinaryPaidTagsRemoved: number;
 };
+
+/** The provenance and value fields frozen onto a dedicated pick at promotion. Never throws. */
+function entryValueRecord(row: { marketType: string; selection: unknown; confidence: number; aiJob?: { model?: string | null } | null }, odds: FixtureOdds | null) {
+  try {
+    const provider = providerOf(row.aiJob?.model ?? null);
+    const artifact = calibrationArtifact();
+    const price = odds ? pickPrice(odds, row.marketType, row.selection) : null;
+    const executable = price && !price.derived ? price : null;
+    const cal = artifact && executable?.fair != null ? applyCalibration(artifact, { provider, marketType: row.marketType, rawConfidence: row.confidence, marketProbability: executable.fair }) : null;
+    const pDraw = odds ? (devigProbability(odds, "Match Winner", "Draw")?.probability ?? null) : null;
+    const value = assessValue({
+      marketType: row.marketType, rawConfidence: row.confidence, price, pDraw: pDraw != null ? pDraw / 100 : null,
+      estimate: cal?.withMarket != null ? { p: cal.withMarket, se: cal.withMarketSE ?? 0, version: cal.version } : null,
+      minEvLower: paidValueMinEvLower(),
+    });
+    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: price?.median ?? null, entryBookmakers: price?.bookmakers ?? null, valueAssessment: value };
+  } catch {
+    return {};
+  }
+}
 
 /** PREMIUM is a strict subset: it also carries VIP, so the higher tier is never a narrower feed. */
 export function categoriesForTier(tier: PaidTier): string[] {
@@ -624,7 +752,7 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
     select: {
       id: true, marketType: true, selection: true, confidence: true, market: true, pick: true,
       homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, fixtureApiId: true,
-      aiJob: { select: { prompt: true } },
+      aiJob: { select: { prompt: true, model: true } },
     },
   });
 
@@ -744,6 +872,10 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
             tier,
             quoteFetchedAt: entry?.fetchedAt?.toISOString() ?? null,
             confirmedAt: now.toISOString(),
+            // Point-in-time value record at the entry price (median of the
+            // quote the gate read), with the calibration version and provider
+            // that produced it. Raw confidence stays on the row, unchanged.
+            ...entryValueRecord(winner.row, odds),
           },
         },
       });

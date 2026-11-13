@@ -152,3 +152,65 @@ export function rankByValue<T extends { id: string; marketType: string; value: V
   }
   return out;
 }
+
+// ── Paid curation decisions ─────────────────────────────────────────────────
+
+/** One curation candidate, assessed at the moment curation ran. What the shadow log records. */
+export type PaidCandidateAssessment = {
+  id: string;
+  fixtureKey: string;
+  provider: string | null;
+  marketType: string;
+  leagueApiId: number | null;
+  rawConfidence: number;
+  /** The #175 rule (assessPaidCuration): eligible or the reason it is not. */
+  rule: { eligible: boolean; tag: string };
+  value: ValueAssessment;
+  /** Age of the quote read, in minutes; null when none was usable. */
+  quoteAgeMinutes: number | null;
+};
+
+/**
+ * Turn assessments into curation inputs.
+ *
+ *   current  admission = the #175 rule; editorial ordering.
+ *   value    admission = #175 rule AND value; ordered by lower-bound EV, with no
+ *            market type taking more than half the admitted rows (at least 2).
+ *            If no candidate has an executable price at all (a pricing outage,
+ *            not a quiet market) value cannot be judged, so it falls back to
+ *            the #175 rule for the run and reports NO_PRICING.
+ */
+export function combinePaidDecisions(
+  assessments: readonly PaidCandidateAssessment[],
+  live: "current" | "value",
+): { verdicts: Map<string, boolean>; ordering?: { rank: Map<string, number>; perMarketCap: number }; fallback: string | null } {
+  const rule = new Map(assessments.map((a) => [a.id, a.rule.eligible]));
+  if (live === "current") return { verdicts: rule, fallback: null };
+  if (assessments.length && assessments.every((a) => a.value.reasons.includes("NO_EXECUTABLE_PRICE"))) return { verdicts: rule, fallback: "NO_PRICING" };
+  const verdicts = new Map(assessments.map((a) => [a.id, a.rule.eligible && a.value.eligible]));
+  const admitted = assessments.filter((a) => verdicts.get(a.id));
+  return {
+    verdicts,
+    ordering: {
+      rank: new Map(assessments.map((a) => [a.id, a.value.expectedValueLower ?? -Infinity])),
+      perMarketCap: Math.max(2, Math.ceil(admitted.length / 2)),
+    },
+    fallback: null,
+  };
+}
+
+/** Why candidates fell out, counted: the dry-day diagnosis the shadow log carries. */
+export function summarisePaidAssessments(assessments: readonly PaidCandidateAssessment[]) {
+  const ruleOut: Record<string, number> = {};
+  const valueOut: Record<string, number> = {};
+  let ruleEligible = 0, valueEligible = 0, both = 0, priced = 0, positiveEv = 0;
+  for (const a of assessments) {
+    if (a.rule.eligible) ruleEligible++; else ruleOut[a.rule.tag] = (ruleOut[a.rule.tag] ?? 0) + 1;
+    if (a.value.eligible) valueEligible++;
+    for (const r of a.value.reasons) valueOut[r] = (valueOut[r] ?? 0) + 1;
+    if (a.rule.eligible && a.value.eligible) both++;
+    if (!a.value.reasons.includes("NO_EXECUTABLE_PRICE")) priced++;
+    if ((a.value.expectedValue ?? -1) > 0) positiveEv++;
+  }
+  return { candidates: assessments.length, priced, ruleEligible, valueEligible, both, positiveEv, ruleOut, valueOut };
+}
