@@ -1,3 +1,4 @@
+import { paidReturnUncertainty } from "./paidReturnUncertainty";
 import { chronologicalHoldout } from "./paidChronologicalValidation";
 import { oddsBand, segmentPaidPerformance, type SettledPaidObservation, type SegmentDimension } from "./paidMarketQuality";
 
@@ -10,6 +11,7 @@ export type ShadowPolicyReport = {
   baseline: { decided: number; priced: number; roiPct: number | null };
   candidate: { decided: number; priced: number; roiPct: number | null };
   warnings: string[];
+  uncertainty: { baselineLower95Pct: number | null; candidateLower95Pct: number | null; baselinePriceCoverage: number; candidatePriceCoverage: number };
   activationAllowed: false;
 };
 
@@ -60,7 +62,11 @@ export function evaluateShadowSegmentPolicy(
   const candidate = holdout.filter(r => chosen.has(key(r, dimension)));
   const baseline = performance(holdout);
   const measured = performance(candidate);
+  const baselineUncertainty = paidReturnUncertainty(holdout);
+  const candidateUncertainty = paidReturnUncertainty(candidate);
   const warnings = [...split.warnings];
+  if (baselineUncertainty.coverage < 0.8 || candidateUncertainty.coverage < 0.8) warnings.push("LOW_OR_BIASED_ENTRY_PRICE_COVERAGE");
+  if (candidateUncertainty.lower95Pct === null || candidateUncertainty.lower95Pct <= 0) warnings.push("POSITIVE_RETURN_NOT_STATISTICALLY_SUPPORTED");
   if (!chosen.size) warnings.push("NO_TRAINING_SEGMENT_QUALIFIED");
   if (holdout.length < (options.minValidation ?? 30)) warnings.push("INSUFFICIENT_HOLDOUT");
   if (measured.priced < 30) warnings.push("INSUFFICIENT_CANDIDATE_ENTRY_PRICES");
@@ -70,5 +76,7 @@ export function evaluateShadowSegmentPolicy(
     warnings.push("NO_HOLDOUT_ROI_IMPROVEMENT");
   warnings.push("RETROSPECTIVE_ONLY_NOT_POINT_IN_TIME_SETTLEMENT_VALIDATED");
   return { dimension, splitAt: split.splitAt, training: train.length, validation: holdout.length,
-    selectedTrainingKeys, baseline, candidate: measured, warnings, activationAllowed: false };
+    selectedTrainingKeys, baseline, candidate: measured, warnings,
+    uncertainty: { baselineLower95Pct: baselineUncertainty.lower95Pct, candidateLower95Pct: candidateUncertainty.lower95Pct, baselinePriceCoverage: baselineUncertainty.coverage, candidatePriceCoverage: candidateUncertainty.coverage },
+    activationAllowed: false };
 }
