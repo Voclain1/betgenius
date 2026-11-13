@@ -37,6 +37,7 @@ These checks insert their own rows and delete them afterwards:
 - `check-tier-provenance`
 - `check-vip-premium-gate` (it also upserts `FixtureOddsCache` rows)
 - `check-betofday-targeting` (it also upserts `FixtureOddsCache` rows)
+- `check-personalization-db` (users, predictions, follows, preferences, saved predictions and one league/team cache row; Sprint 01)
 
 They never run against Production. The repository holds no fingerprint of any real database, not even a hash. Every comparison is made at runtime, against the database identities the machine running the checks actually has.
 

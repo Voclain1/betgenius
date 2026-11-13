@@ -1,4 +1,5 @@
 import { kickoffLabel, footballDay } from "@/lib/footballTime";
+import { SavePredictionButton } from "@/components/SavePredictionButton";
 import { Fragment } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -197,7 +198,13 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
                 <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
-                  {kickoff ? kickoffLabel(kickoff) : "—"}
+                  {/* The save control rides in this cell rather than a new
+                      column, so the column count, the ad rows and the phone
+                      grid are unchanged. Never on a locked row. */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span>{kickoff ? kickoffLabel(kickoff) : "—"}</span>
+                    {!p.locked && <SavePredictionButton predictionId={p.id} source="card" className="-my-2 shrink-0" />}
+                  </div>
                 </td>
                 {/* Phone, without the arrow column: a chevron that says the row opens. */}
                 {!linkRows && matchHref && (

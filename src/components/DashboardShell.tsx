@@ -12,6 +12,8 @@ export type DashboardNavItem = {
   href: string;
   label: string;
   locked?: boolean;
+  /** Items sharing a group are listed under that heading; ungrouped items lead. */
+  group?: string;
 };
 
 function isMobileViewport() {
@@ -93,25 +95,31 @@ export function DashboardShell({
             </button>
           </div>
 
-          <nav className="flex flex-col gap-1">
-            {items.map((item) => {
+          <nav className="flex flex-col gap-0.5" aria-label="Account">
+            {items.map((item, i) => {
               const active = item.key === activeKey;
+              const heading = item.group && item.group !== items[i - 1]?.group ? item.group : null;
               return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  onClick={handleNavigate}
-                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
-                    active
-                      ? "bg-brand/15 text-brand"
-                      : item.locked
-                        ? "text-gray-500 hover:bg-brand-bg"
-                        : "text-gray-300 hover:bg-brand-bg"
-                  }`}
-                >
-                  <span className="flex-1">{item.label}</span>
-                  {item.locked && <Lock size={13} className="shrink-0 text-gray-500" />}
-                </Link>
+                <div key={item.key}>
+                  {heading && (
+                    <div className="px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{heading}</div>
+                  )}
+                  <Link
+                    href={item.href}
+                    onClick={handleNavigate}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex min-h-10 items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
+                      active
+                        ? "bg-brand/15 text-brand"
+                        : item.locked
+                          ? "text-gray-500 hover:bg-brand-bg"
+                          : "text-gray-300 hover:bg-brand-bg"
+                    }`}
+                  >
+                    <span className="flex-1">{item.label}</span>
+                    {item.locked && <Lock size={13} className="shrink-0 text-gray-500" />}
+                  </Link>
+                </div>
               );
             })}
           </nav>
@@ -150,7 +158,7 @@ export function DashboardShell({
               the other, since they are the same site to a signed-in admin. */}
           <ThemeToggle className="ml-auto" />
         </div>
-        <main className="flex-1 space-y-6 p-4 sm:p-6">{children}</main>
+        <main className="w-full max-w-6xl flex-1 space-y-6 p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

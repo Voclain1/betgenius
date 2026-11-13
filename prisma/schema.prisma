@@ -48,25 +48,27 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  subscription    Subscription?
-  predictions     Prediction[]  @relation("PredictionAuthor")
-  approvals       Prediction[]  @relation("PredictionApprover")
-  settlements     Prediction[]  @relation("PredictionSettler")
-  rewriteRequests Prediction[]  @relation("PredictionRewriteRequester")
-  betOfDayPins    Prediction[]  @relation("PredictionBetOfDayPinner")
-  assignedTasks   AdminTask[]   @relation("AssignedTo")
-  createdTasks    AdminTask[]   @relation("CreatedBy")
-  betSlips        BetSlip[]
-  aiJobs          AIJob[]
-  accounts        Account[]
-  follows         UserFollow[]
+  subscription           Subscription?
+  predictions            Prediction[]            @relation("PredictionAuthor")
+  approvals              Prediction[]            @relation("PredictionApprover")
+  settlements            Prediction[]            @relation("PredictionSettler")
+  rewriteRequests        Prediction[]            @relation("PredictionRewriteRequester")
+  betOfDayPins           Prediction[]            @relation("PredictionBetOfDayPinner")
+  assignedTasks          AdminTask[]             @relation("AssignedTo")
+  createdTasks           AdminTask[]             @relation("CreatedBy")
+  betSlips               BetSlip[]
+  aiJobs                 AIJob[]
+  accounts               Account[]
+  follows                UserFollow[]
   notificationPreference NotificationPreference?
-  pushSubscriptions PushSubscription[]
-  notifications   UserNotification[]
+  pushSubscriptions      PushSubscription[]
+  notifications          UserNotification[]
   notificationDeliveries NotificationDelivery[]
-  emailPreference EmailPreference?
-  emailMessages   EmailMessage[]
-  manualPayments  ManualPayment[]
+  emailPreference        EmailPreference?
+  emailMessages          EmailMessage[]
+  manualPayments         ManualPayment[]
+  preference             UserPreference?
+  savedPredictions       SavedPrediction[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -95,23 +97,23 @@ model Account {
 }
 
 model Subscription {
-  id               String    @id @default(cuid())
-  userId           String    @unique
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier             String    @default("FREE")
-  status           String    @default("PENDING")
-  paystackRef      String?
-  paystackSubCode  String?
+  id                 String    @id @default(cuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier               String    @default("FREE")
+  status             String    @default("PENDING")
+  paystackRef        String?
+  paystackSubCode    String?
   // The reference of the transaction that last granted entitlement. A payment
   // is spent once: a redelivered webhook, or a callback racing that webhook,
   // recognises its own reference here and extends nothing a second time.
   lastPaymentRef     String?
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
-  approvedById     String?
-  approvedAt       DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  approvedById       String?
+  approvedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 model League {
@@ -392,6 +394,7 @@ model Prediction {
   fixture              Fixture?                 @relation(fields: [fixtureId], references: [id])
   category             String // primary category — kept in sync with `categories[0]` for backward compat
   categories           PredictionCategoryLink[]
+  savedBy              SavedPrediction[]
   leagueApiId          Int? // API-Football league id — see src/lib/leagues.ts for the known list
   leagueName           String?
   homeTeam             String? // free-text match info — not tied to the Fixture ingestion table
@@ -551,11 +554,11 @@ model Prediction {
   // source field bypasses the extension. scripts/check-prediction-slugs.ts
   // (in preflight) recomputes every published row and fails on drift;
   // scripts/backfill-prediction-slugs.ts repairs it.
-  leagueSlugKey        String?
-  homeSlugKey          String?
-  awaySlugKey          String?
-  matchSlugKey         String?
-  h2hSlugKey           String?
+  leagueSlugKey String?
+  homeSlugKey   String?
+  awaySlugKey   String?
+  matchSlugKey  String?
+  h2hSlugKey    String?
 
   @@index([status, leagueSlugKey])
   @@index([status, homeSlugKey])
@@ -577,6 +580,73 @@ model PredictionCategoryLink {
 
   @@unique([predictionId, category])
   @@index([category])
+}
+
+// Personalization settings that are not follows (Sprint 01,
+// docs/sprints/sprint-01-personalization.md).
+//
+// Favourite teams and competitions are NOT stored here: they are UserFollow
+// rows (TEAM / LEAGUE, keyed by provider id), the same rows notification
+// fan-out already matches on. A second favourites table would let "my teams"
+// on the dashboard and "my teams" for alerts drift apart.
+//
+// No row = never personalised. The row is created on the first save, skip or
+// completion of onboarding, which is also how the dashboard tells a brand-new
+// account from one that has already been offered the setup flow.
+model UserPreference {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // MarketType values from src/lib/markets.ts, restricted to PREFERENCE_MARKETS
+  // in src/lib/personalization.ts. Empty = no market preference.
+  preferredMarkets      String[]  @default([])
+  // IANA identifier. Display only; NotificationPreference.timezone (quiet
+  // hours) is kept in step when that row exists.
+  timezone              String    @default("Africa/Lagos")
+  onboardingCompletedAt DateTime?
+  onboardingSkippedAt   DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+// A bookmarked prediction, with a snapshot of the selection AS SAVED.
+//
+// The snapshot is the point: a prediction can be rewritten before kickoff, and
+// the reader's bookmark must keep showing what they saved rather than silently
+// becoming the new pick. Display compares the snapshot with the live row and
+// says so when they differ.
+//
+// predictionId is nullable with SetNull so a hard-deleted prediction leaves the
+// bookmark (and its snapshot) intact rather than erasing the user's record.
+// Postgres treats NULLs as distinct, so the unique key still prevents a second
+// bookmark of a live prediction while allowing several orphaned ones.
+model SavedPrediction {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  predictionId  String?
+  prediction    Prediction? @relation(fields: [predictionId], references: [id], onDelete: SetNull)
+  // ---- snapshot at save time ----
+  category      String
+  marketType    String
+  selection     Json?
+  market        String
+  pick          String
+  odds          Float?
+  confidence    Int?
+  homeTeam      String?
+  awayTeam      String?
+  homeTeamApiId Int?
+  awayTeamApiId Int?
+  leagueApiId   Int?
+  leagueName    String?
+  kickoff       DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, predictionId])
+  @@index([userId, kickoff])
+  @@index([userId, createdAt])
+  @@index([predictionId])
 }
 
 model AIJob {
@@ -782,11 +852,11 @@ model UserFollow {
 }
 
 model NotificationPreference {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  pushEnabled           Boolean  @default(false)
-  newPredictions        Boolean  @default(true)
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushEnabled       Boolean  @default(false)
+  newPredictions    Boolean  @default(true)
   // The two independent audiences a notification can reach, split apart from
   // newPredictions because they are not one preference.
   //
@@ -820,32 +890,32 @@ model NotificationPreference {
   //
   // preferenceAllows mirrors this asymmetry for users with NO preference row at
   // all: followed alerts fall back to true, editorial to false.
-  followedAlerts        Boolean  @default(true)
-  editorialAlerts       Boolean  @default(false)
-  kickoffReminders     Boolean  @default(true)
-  tipChanges            Boolean  @default(true)
-  results               Boolean  @default(true)
-  kickoffMinutes        Int      @default(30)
-  timezone              String   @default("Africa/Lagos")
-  quietStartMinutes     Int?
-  quietEndMinutes       Int?
-  dailyCap              Int      @default(12)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  followedAlerts    Boolean  @default(true)
+  editorialAlerts   Boolean  @default(false)
+  kickoffReminders  Boolean  @default(true)
+  tipChanges        Boolean  @default(true)
+  results           Boolean  @default(true)
+  kickoffMinutes    Int      @default(30)
+  timezone          String   @default("Africa/Lagos")
+  quietStartMinutes Int?
+  quietEndMinutes   Int?
+  dailyCap          Int      @default(12)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model PushSubscription {
-  id             String   @id @default(cuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  endpointHash   String   @unique
-  endpoint       String   @db.Text
-  p256dh         String   @db.Text
-  auth           String   @db.Text
-  userAgent      String?
-  createdAt      DateTime @default(now())
-  lastSuccessAt  DateTime?
-  failureCount   Int      @default(0)
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpointHash  String    @unique
+  endpoint      String    @db.Text
+  p256dh        String    @db.Text
+  auth          String    @db.Text
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+  failureCount  Int       @default(0)
 
   @@index([userId, createdAt])
 }
@@ -853,23 +923,23 @@ model PushSubscription {
 // Event/outbox rows are immutable facts. eventKey prevents lifecycle hooks and
 // retrying cron requests from creating the same event twice.
 model NotificationEvent {
-  id           String   @id @default(cuid())
-  eventKey     String   @unique
-  type         String
-  predictionId String?
-  fixtureApiId Int?
-  category     String?
-  leagueApiId  Int?
-  teamApiIds   Int[]
-  title        String
-  body         String
-  link         String
-  data         Json?
-  availableAt  DateTime @default(now())
-  expiresAt    DateTime?
-  fannedOutAt  DateTime?
-  createdAt    DateTime @default(now())
-  deliveries   NotificationDelivery[]
+  id            String                 @id @default(cuid())
+  eventKey      String                 @unique
+  type          String
+  predictionId  String?
+  fixtureApiId  Int?
+  category      String?
+  leagueApiId   Int?
+  teamApiIds    Int[]
+  title         String
+  body          String
+  link          String
+  data          Json?
+  availableAt   DateTime               @default(now())
+  expiresAt     DateTime?
+  fannedOutAt   DateTime?
+  createdAt     DateTime               @default(now())
+  deliveries    NotificationDelivery[]
   notifications UserNotification[]
 
   @@index([fannedOutAt, availableAt, createdAt])
@@ -877,19 +947,19 @@ model NotificationEvent {
 }
 
 model NotificationDelivery {
-  id          String   @id @default(cuid())
-  eventId     String
-  event       NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status      String   @default("PENDING")
-  attempts    Int      @default(0)
-  nextAttemptAt DateTime @default(now())
-  leaseToken  String?
-  leasedUntil DateTime?
-  lastError   String?
-  deliveredAt DateTime?
-  createdAt   DateTime @default(now())
+  id            String            @id @default(cuid())
+  eventId       String
+  event         NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        String            @default("PENDING")
+  attempts      Int               @default(0)
+  nextAttemptAt DateTime          @default(now())
+  leaseToken    String?
+  leasedUntil   DateTime?
+  lastError     String?
+  deliveredAt   DateTime?
+  createdAt     DateTime          @default(now())
 
   @@unique([eventId, userId])
   @@index([status, nextAttemptAt, leasedUntil])
@@ -897,13 +967,13 @@ model NotificationDelivery {
 }
 
 model UserNotification {
-  id        String   @id @default(cuid())
+  id        String            @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId   String
   event     NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime          @default(now())
 
   @@unique([userId, eventId])
   @@index([userId, readAt, createdAt])
@@ -1091,15 +1161,15 @@ model ComboLeg {
 /// on our side at all and "is anyone able to pay?" could only be answered by
 /// logging into Paystack. Nothing here grants, revokes or changes entitlement.
 model PaymentAttempt {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   /// Our checkout reference (bg_<TIER>_<random>) or Paystack's own. Unique so
   /// the webhook, the callback and a reconcile all converge on one row rather
   /// than logging the same attempt three times.
-  reference       String    @unique
+  reference       String   @unique
   /// Who took the money: PAYSTACK, FLUTTERWAVE, BANK (direct transfer to our
   /// account, approved by an admin) or USDT (likewise). Every row before this
   /// column existed is Paystack, hence the default.
-  provider        String    @default("PAYSTACK")
+  provider        String   @default("PAYSTACK")
   userId          String?
   tier            String?
   /// Paystack's channel: card, bank, bank_transfer, ussd, qr, mobile_money.
@@ -1117,34 +1187,34 @@ model PaymentAttempt {
   /// When Paystack created the transaction.
   occurredAt      DateTime
   /// When we recorded it, and which path saw it: WEBHOOK, CALLBACK, RECONCILE.
-  observedAt      DateTime  @default(now())
+  observedAt      DateTime @default(now())
   source          String
-  updatedAt       DateTime  @updatedAt
+  updatedAt       DateTime @updatedAt
 
   // How far the payer got, summarised from Paystack's checkout session log.
   // Only counts, method names and error text are kept — never the raw log,
   // which can carry what the payer typed. Null means not observed yet (rows
   // recorded before this existed), which is NOT the same as false.
   /// Whether Paystack recorded any checkout-page activity at all.
-  sessionLogged   Boolean?
+  sessionLogged Boolean?
   /// Payment methods the payer selected, in order, e.g. "bank_transfer,ussd".
-  methodsTried    String?
+  methodsTried  String?
   /// Authorization attempts Paystack counted. 0 means nothing was ever charged.
-  authAttempts    Int?
+  authAttempts  Int?
   /// The first error Paystack's session log shows, e.g. "Denied by Fraud System."
-  sessionError    String?
-  timeSpentSec    Int?
-  paidAt          DateTime?
+  sessionError  String?
+  timeSpentSec  Int?
+  paidAt        DateTime?
 
   // Our side of the attempt.
   /// Last time a webhook / the payer's callback reached our verification.
-  webhookAt       DateTime?
-  callbackAt      DateTime?
+  webhookAt            DateTime?
+  callbackAt           DateTime?
   /// Why server-side verification with Paystack last failed, if it did.
-  verifyError     String?
+  verifyError          String?
   /// Why a Paystack-successful payment was refused entitlement, e.g.
   /// "AMOUNT_MISMATCH". Set only when Paystack reported success.
-  entitlementError String?
+  entitlementError     String?
   /// THE EXACTLY-ONCE LEDGER. Set in the same transaction as the grant, and
   /// claimed with a compare-and-set on null, so a reference buys one period
   /// however many times the webhook, callback or reconcile presents it.

@@ -13,6 +13,7 @@ import { ReasoningExcerpt } from "@/components/ReasoningExcerpt";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { textTone } from "@/lib/tone";
+import { SavePredictionButton } from "@/components/SavePredictionButton";
 
 export type PredictionRow = {
   id: string;
@@ -99,11 +100,17 @@ export function PredictionCard({
             <span className={textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}>{p.outcome}</span>
           )}
         </div>
-        {kickoff && !hideMatchHeader && (
-          <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-400">
-            {kickoffLabel(kickoff)}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {kickoff && !hideMatchHeader && (
+            <span className="text-xs font-semibold tabular-nums text-gray-400">
+              {kickoffLabel(kickoff)}
+            </span>
+          )}
+          {/* Save is offered only on a pick the reader can see: the API
+              refuses a locked one anyway, and a bookmark icon on a padlocked
+              card would promise something it cannot keep. */}
+          {!p.locked && <SavePredictionButton predictionId={p.id} source={hideMatchHeader ? "match" : "card"} className="-my-2 -mr-2" />}
+        </div>
       </div>
       {!hideMatchHeader && (home || leagueName) && (
         <div className="space-y-1.5">

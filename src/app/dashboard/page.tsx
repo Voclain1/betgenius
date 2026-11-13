@@ -1,14 +1,18 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ArrowRight, Lock } from "lucide-react";
-import { getServerSession } from "next-auth";
+import { ArrowRight, Bookmark, CalendarDays, Lock, Star } from "lucide-react";
 import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewCategory } from "@/lib/access";
-import { entitlementFor, hasActivePaidAccess } from "@/lib/entitlement";
-import { DashboardShell, type DashboardNavItem } from "@/components/DashboardShell";
+import { hasActivePaidAccess, type Entitlement } from "@/lib/entitlement";
+import { DashboardShell } from "@/components/DashboardShell";
+import { dashboardNavItems, loadDashboardContext } from "@/lib/dashboardContext";
+import { getPersonalization, interestsOf, personalizePicks, savedHighlights, todaysPicks, upcomingForFavourites, type PersonalizationState } from "@/lib/personalizationData";
+import { hasInterests, longDateInZone, marketPreferenceLabel, shouldInviteToPersonalize, shouldStartOnboarding, zoneAbbreviation } from "@/lib/personalization";
+import { EmptyState, PickList, PickRow, SavedRow, SectionHeader, UpcomingList } from "@/components/personal/DashboardParts";
+import { DashboardViewTracker, PersonalizeInvite, RemoveSavedButton } from "@/components/personal/ClientBits";
+import { leagueSlug, teamSlug } from "@/lib/slug";
+import { competitionPredictionsHref } from "@/lib/cupConfig";
 import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { SubscriptionBanner } from "@/components/SubscriptionBanner";
 import { SignupUpsellModal } from "@/components/SignupUpsellModal";
@@ -17,9 +21,11 @@ import { tierFromFlutterwaveReference } from "@/lib/payments/flutterwave";
 import { tierFromKorapayReference } from "@/lib/payments/korapay";
 import { SignupConfirmation } from "@/components/SignupConfirmation";
 import { catStyles } from "@/components/PredictionCard";
+import { textTone } from "@/lib/tone";
 import { CATEGORY_NAMES, CATEGORY_CHIP_LABELS, getCategoryPredictions } from "@/lib/categoryPredictions";
 import { getMonthTrackRecord, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
 import { PREDICTION_CATEGORIES, type PredictionCategory, type SubscriptionStatus, type SubscriptionTier } from "@/lib/enums";
+export const dynamic = "force-dynamic";
 import { tierFromCheckoutReference } from "@/lib/paystack/checkoutReference";
 import { PLAN_PRICING, type PaidTier } from "@/lib/pricing";
 
@@ -39,23 +45,56 @@ const TILE_LABELS = CATEGORY_CHIP_LABELS;
 
 function AccountSection({
   email,
+  name,
+  memberSince,
   tier,
   status,
   currentPeriodEnd,
+  personal,
+  savedCount,
 }: {
   email: string;
+  name: string | null;
+  memberSince: Date | null;
   tier: SubscriptionTier;
   status: SubscriptionStatus;
   currentPeriodEnd: Date | null;
+  personal: PersonalizationState;
+  savedCount: number;
 }) {
+  const rows: Array<{ label: string; value: ReactNode; href?: string; action?: string }> = [
+    { label: "Favourite teams", value: personal.teams.length ? personal.teams.map((t) => t.name).join(", ") : "None yet", href: "/dashboard/preferences#teams", action: "Edit" },
+    { label: "Favourite competitions", value: personal.leagues.length ? personal.leagues.map((l) => l.name).join(", ") : "None yet", href: "/dashboard/preferences#competitions", action: "Edit" },
+    { label: "Preferred markets", value: personal.preferredMarkets.length ? personal.preferredMarkets.map(marketPreferenceLabel).join(", ") : "Any market", href: "/dashboard/preferences#markets", action: "Edit" },
+    { label: "Timezone", value: `${personal.timezone} (${zoneAbbreviation(personal.timezone)})`, href: "/dashboard/preferences#timezone", action: "Change" },
+    { label: "Saved predictions", value: `${savedCount}`, href: "/dashboard/saved", action: "View" },
+    { label: "Notifications", value: "Push alerts, kickoff reminders and quiet hours", href: "/notifications", action: "Manage" },
+    { label: "Email", value: "Newsletters and account email", href: "/email", action: "Manage" },
+  ];
   return (
-    <div className="max-w-xl space-y-6">
-      <h1 className="text-2xl font-bold">My account</h1>
-      <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
-      <div className="card space-y-1">
-        <div className="text-sm text-gray-400">Email</div>
-        <div>{email}</div>
+    <div className="max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">My account</h1>
+        <p className="text-sm text-gray-400">
+          {name ? `${name} · ` : ""}
+          {email}
+          {memberSince ? ` · Member since ${memberSince.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: personal.timezone })}` : ""}
+        </p>
       </div>
+      <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
+      <dl className="divide-y divide-brand-border overflow-hidden rounded-xl border border-brand-border bg-brand-card">
+        {rows.map((r) => (
+          <div key={r.label} className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3 sm:grid-cols-[12rem_1fr_auto]">
+            <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">{r.label}</dt>
+            <dd className="col-start-1 min-w-0 text-sm text-gray-100 sm:col-start-auto">{r.value}</dd>
+            {r.href && (
+              <Link href={r.href} className="col-start-2 row-span-2 row-start-1 text-sm font-semibold text-brand hover:underline sm:col-start-auto sm:row-span-1 sm:row-start-auto">
+                {r.action}
+              </Link>
+            )}
+          </div>
+        ))}
+      </dl>
       <Link href="/" className="btn btn-ghost inline-flex">Back to site</Link>
     </div>
   );
@@ -109,75 +148,184 @@ async function TrackRecordSection() {
   );
 }
 
-// Default landing view: the subscription banner (the one signature moment),
-// quick-access tiles to whatever's unlocked, and a compact recent-picks
-// preview — something actionable, not a settings form.
+function greeting(now: Date, timezone: string): string {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: timezone }).format(now));
+  return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+}
+
+// The personalised overview. Every section reads real published data and
+// says plainly when there is nothing to show; nothing is invented to fill it.
+// Below it, the existing subscription banner and category tiles carry on.
 async function OverviewSection({
+  userId,
+  name,
+  viewer,
+  personal,
   tier,
   status,
   currentPeriodEnd,
   unlockedCategories,
   paymentNotice,
 }: {
+  userId: string;
+  name: string | null;
+  viewer: Entitlement;
+  personal: PersonalizationState;
   tier: SubscriptionTier;
   status: SubscriptionStatus;
   currentPeriodEnd: Date | null;
   unlockedCategories: PredictionCategory[];
   paymentNotice?: ReactNode;
 }) {
-  const categoryRows = Object.fromEntries(
-    await Promise.all(
-      unlockedCategories.map(async (cat) => [cat, await getCategoryPredictions(cat)] as const),
-    ),
-  ) as Record<PredictionCategory, Awaited<ReturnType<typeof getCategoryPredictions>>>;
+  const now = new Date();
+  const tz = personal.timezone;
+  const interests = interestsOf(personal);
+  const personalised = hasInterests(interests);
+  const favouriteCount = personal.teams.length + personal.leagues.length;
 
-  const previewCategory =
-    unlockedCategories.find((c) => c === "TODAY" && categoryRows[c].length > 0) ??
-    unlockedCategories.find((c) => categoryRows[c].length > 0) ??
-    unlockedCategories[0];
-
-  const previewRows = previewCategory
-    ? categoryRows[previewCategory].slice(0, 3).map((r) => ({ ...r, category: previewCategory }))
-    : [];
+  const [picks, upcoming, saved, categoryCounts] = await Promise.all([
+    todaysPicks(viewer, tz, now),
+    upcomingForFavourites(personal, now),
+    savedHighlights(userId, viewer, now),
+    Promise.all(unlockedCategories.map(async (cat) => [cat, (await getCategoryPredictions(cat)).length] as const)),
+  ]);
+  const { relevant, others } = personalizePicks(picks, interests, now);
+  const invite = shouldInviteToPersonalize({
+    hasPreferenceRow: personal.hasPreferenceRow,
+    favouriteCount,
+    marketCount: personal.preferredMarkets.length,
+    skipped: !!personal.onboardingSkippedAt,
+    completed: !!personal.onboardingCompletedAt,
+  });
+  const firstName = name?.trim().split(/\s+/)[0];
 
   return (
     <div className="space-y-8">
+      <DashboardViewTracker personalized={personalised} />
       {paymentNotice}
+
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">
+            {longDateInZone(now, tz)} · {zoneAbbreviation(tz, now)}
+          </p>
+          <h1 className="mt-1 text-2xl font-black tracking-tight sm:text-[1.75rem]">
+            {greeting(now, tz)}{firstName ? `, ${firstName}` : ""}
+          </h1>
+        </div>
+        <Link href="/dashboard/preferences" className="btn btn-ghost px-3 py-1.5 text-sm">Edit preferences</Link>
+      </header>
+
+      {invite && <PersonalizeInvite />}
+
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <section className="space-y-3" aria-labelledby="for-you">
+          <span id="for-you" className="sr-only">Today&apos;s predictions for you</span>
+          {personalised ? (
+            <>
+              <SectionHeader title="For you today" count={relevant.length} action={{ href: "/predictions/today", label: "All of today" }} />
+              {relevant.length > 0 ? (
+                <PickList>{relevant.slice(0, 8).map((r) => <PickRow key={r.row.id} row={r.row} reasons={r.reasons} timezone={tz} />)}</PickList>
+              ) : (
+                <EmptyState
+                  title={picks.length ? "Nothing from your teams or markets today" : "No predictions published for today yet"}
+                  body={picks.length
+                    ? "None of today's published predictions involve your teams, competitions or preferred markets. The rest of today's slate is below."
+                    : "Predictions are published through the day as the analysis for each fixture completes. Check back later."}
+                  action={{ href: "/dashboard/preferences", label: "Review your preferences" }}
+                />
+              )}
+              {others.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <SectionHeader title="Also today" />
+                  <PickList>{others.slice(0, relevant.length ? 4 : 8).map((r) => <PickRow key={r.row.id} row={r.row} reasons={[]} timezone={tz} />)}</PickList>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <SectionHeader title="Today's top predictions" count={others.length} action={{ href: "/predictions/today", label: "All of today" }} />
+              {others.length > 0 ? (
+                <PickList>{others.slice(0, 8).map((r) => <PickRow key={r.row.id} row={r.row} reasons={[]} timezone={tz} />)}</PickList>
+              ) : (
+                <EmptyState title="No predictions published for today yet" body="Predictions are published through the day as the analysis for each fixture completes." action={{ href: "/predictions", label: "Browse predictions" }} />
+              )}
+            </>
+          )}
+        </section>
+
+        <div className="space-y-8">
+          <section className="space-y-3">
+            <SectionHeader title="Upcoming for you" action={favouriteCount ? { href: "/dashboard/preferences#teams", label: "Manage" } : undefined} />
+            {upcoming.length > 0 ? (
+              <UpcomingList fixtures={upcoming.slice(0, 6)} timezone={tz} />
+            ) : favouriteCount ? (
+              <EmptyState icon={<CalendarDays size={18} />} title="No upcoming fixtures found" body="We have no scheduled matches for your teams or competitions in the next three weeks. Fixture lists refresh daily." />
+            ) : (
+              <EmptyState icon={<Star size={18} />} title="Follow your teams" body="Choose the clubs and competitions you care about and their next matches appear here." action={{ href: "/dashboard/preferences#teams", label: "Choose teams" }} />
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader title="Saved" count={saved.total || undefined} action={saved.total ? { href: "/dashboard/saved", label: "View all" } : undefined} />
+            {saved.total === 0 ? (
+              <EmptyState icon={<Bookmark size={18} />} title="No saved predictions" body="Tap the bookmark on any prediction to keep it here and follow its result." action={{ href: "/predictions/today", label: "Browse today's predictions" }} />
+            ) : (
+              <div className="space-y-4">
+                {saved.upcoming.length > 0 && (
+                  <PickList>{saved.upcoming.map((i) => <SavedRow key={i.id} item={i} timezone={tz} actions={<RemoveSavedButton predictionId={i.predictionId} savedId={i.id} />} />)}</PickList>
+                )}
+                {saved.settled.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold text-gray-500">Recently settled</div>
+                    <PickList>{saved.settled.map((i) => <SavedRow key={i.id} item={i} timezone={tz} />)}</PickList>
+                  </div>
+                )}
+                {saved.upcoming.length === 0 && saved.settled.length === 0 && (
+                  <p className="text-sm text-gray-400">Your saved predictions are waiting on results. <Link href="/dashboard/saved" className="font-semibold text-brand hover:underline">Open saved</Link></p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <SectionHeader title="Your favourites" action={{ href: "/dashboard/preferences", label: favouriteCount ? "Edit" : "Add" }} />
+            {favouriteCount ? (
+              <div className="flex flex-wrap gap-2">
+                {personal.teams.map((t) => (
+                  <Link key={`t${t.id}`} href={`/predictions/team/${teamSlug(t.name)}`} className="inline-flex min-h-9 items-center rounded-lg border border-brand-border px-3 text-sm text-gray-100 hover:border-gray-500">{t.name}</Link>
+                ))}
+                {personal.leagues.map((l) => (
+                  <Link key={`l${l.id}`} href={competitionPredictionsHref(l.id, leagueSlug(l.name, l.id))} className="inline-flex min-h-9 items-center rounded-lg border border-brand-border px-3 text-sm text-gray-400 hover:border-gray-500">{l.name}</Link>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No favourites yet. Teams and competitions you follow appear here.</p>
+            )}
+          </section>
+        </div>
+      </div>
+
       <SubscriptionBanner tier={tier} status={status} currentPeriodEnd={currentPeriodEnd} />
 
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Your categories</h2>
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-          {unlockedCategories.map((cat) => (
+        <SectionHeader title="Your categories" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {categoryCounts.map(([cat, count]) => (
             <Link
               key={cat}
               href={`/dashboard?section=${categoryKey(cat)}`}
-              className="group flex flex-col gap-3 rounded-2xl border border-brand-border bg-brand-card p-4 transition hover:border-brand/50 hover:bg-brand-bg/60 sm:p-5"
+              className="group flex flex-col gap-2 rounded-xl border border-brand-border bg-brand-card p-3 transition hover:bg-brand-bg/60"
             >
-              <div className="flex items-center justify-between">
-                <span className={`chip whitespace-nowrap ${catStyles[cat] ?? "bg-gray-500/20"}`}>{TILE_LABELS[cat]}</span>
-                <ArrowRight size={16} className="shrink-0 text-gray-500 transition group-hover:translate-x-0.5 group-hover:text-brand" />
+              <div className="flex items-center justify-between gap-2">
+                <span className={`whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.1em] ${textTone(catStyles[cat] ?? "text-gray-400")}`}>{TILE_LABELS[cat]}</span>
+                <ArrowRight size={14} className="shrink-0 text-gray-500 transition group-hover:translate-x-0.5 group-hover:text-brand" />
               </div>
-              <div>
-                <div className="text-2xl font-bold">{categoryRows[cat].length}</div>
-                <div className="text-xs text-gray-400">live picks</div>
-              </div>
+              <div className="text-xl font-bold tabular-nums">{count} <span className="text-xs font-normal text-gray-400">live</span></div>
             </Link>
           ))}
         </div>
       </div>
-
-      {previewCategory && previewRows.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">Recent picks</h2>
-            <Link href={`/dashboard?section=${categoryKey(previewCategory)}`} className="text-sm text-gray-400 hover:text-brand">
-              View all →
-            </Link>
-          </div>
-          <CategoryPredictionsList category={previewCategory} rows={previewRows as any} />
-        </div>
-      )}
     </div>
   );
 }
@@ -187,33 +335,23 @@ export default async function AccountDashboard({
 }: {
   searchParams: { section?: string; paid?: string; reference?: string; trxref?: string; provider?: string; tx_ref?: string; transaction_id?: string };
 }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login");
-
-  const sub = await prisma.subscription.findUnique({ where: { userId: session.user.id } });
-
-  // WHEN the account was created — the signal the post-signup offer turns on.
-  // Read here rather than taken from the session: a JWT carries no createdAt,
-  // and a claim the client could influence is not something to decide an offer
-  // from. See src/lib/signupUpsell.ts for why createdAt rather than a flag.
-  const account = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { createdAt: true },
-  });
-
-  // Gating uses the subscription row this page already loaded, resolved through
-  // the same helper every other gate uses — so the dashboard agrees with the
-  // rest of the app without a second query. It reads the row rather than the
-  // session's tier/subStatus deliberately: those are a sign-in snapshot, and
-  // this is the page a customer lands on straight after paying.
-  const viewer = entitlementFor(sub, session.user.role);
-  const canViewMap = Object.fromEntries(
-    PREDICTION_CATEGORIES.map((cat) => [
-      cat,
-      canViewCategory(cat, viewer.tier, viewer.status, viewer.role),
-    ]),
-  ) as Record<PredictionCategory, boolean>;
+  const { session, userId, sub, account, viewer, canViewMap } = await loadDashboardContext("/dashboard");
   const unlockedCategories = PREDICTION_CATEGORIES.filter((cat) => canViewMap[cat]);
+  const personal = await getPersonalization(userId);
+
+  // A brand-new account lands in the setup flow once. Only the bare
+  // /dashboard: a payment callback (?paid=1, references) or any ?section= is
+  // a destination the reader asked for and is never intercepted. Existing
+  // accounts are never redirected — they get the invitation card instead.
+  const bare = !searchParams.section && !searchParams.paid && !searchParams.reference && !searchParams.trxref && !searchParams.tx_ref;
+  if (
+    bare &&
+    account &&
+    shouldStartOnboarding({ createdAt: account.createdAt, hasPreferenceRow: personal.hasPreferenceRow, favouriteCount: personal.teams.length + personal.leagues.length })
+  ) {
+    redirect("/dashboard/welcome");
+  }
+
   // Paystack appends reference/trxref to the callback; Flutterwave appends
   // tx_ref and transaction_id (lib/payments/flutterwave); Korapay returns to
   // the reference we put in its redirect_url (lib/payments/korapay).
@@ -231,30 +369,15 @@ export default async function AccountDashboard({
       : paymentReference
         ? sub?.lastPaymentRef === paymentReference ||
           !!(await prisma.paymentAttempt.findFirst({
-            where: { reference: paymentReference, userId: session.user.id, entitlementGrantedAt: { not: null } },
+            where: { reference: paymentReference, userId: userId, entitlementGrantedAt: { not: null } },
             select: { id: true },
           }))
         : hasActivePaidAccess(sub);
 
-  const navItems: DashboardNavItem[] = [
-    { key: "overview", href: "/dashboard?section=overview", label: "Overview" },
-    ...PREDICTION_CATEGORIES.map((cat) => ({
-      key: categoryKey(cat),
-      href: `/dashboard?section=${categoryKey(cat)}`,
-      label: CATEGORY_NAMES[cat],
-      locked: !canViewMap[cat],
-    })),
-    { key: "track-record", href: "/dashboard?section=track-record", label: "Track Record" },
-    // Links out to the existing standalone page rather than duplicating it as
-    // a ?section= — Bet Builder's client-side state (legs, stake, source
-    // tabs) doesn't fit the server-rendered section model the other items
-    // use, and there's no reason to maintain two copies of the same page.
-    { key: "bet-builder", href: "/bet-builder", label: "Bet Builder" },
-    { key: "multi-bets", href: "/multi-bets", label: "Multi Bets" },
-    { key: "account", href: "/dashboard?section=account", label: "Account" },
-  ];
+  const navItems = dashboardNavItems(canViewMap);
 
-  const validKeys = new Set(navItems.map((i) => i.key));
+  // Only the sections this page renders; saved/preferences/notifications are their own routes.
+  const validKeys = new Set(["overview", "track-record", "account", ...PREDICTION_CATEGORIES.map(categoryKey)]);
   const requested = searchParams.section?.toLowerCase();
   const activeKey = requested && validKeys.has(requested) ? requested : "overview";
 
@@ -263,9 +386,13 @@ export default async function AccountDashboard({
   const activeCategory = PREDICTION_CATEGORIES.find((cat) => categoryKey(cat) === activeKey);
 
   if (activeKey === "overview") {
-    title = "Overview";
+    title = "My dashboard";
     content = (
       <OverviewSection
+        userId={userId}
+        name={account?.name ?? session.user.name ?? null}
+        viewer={viewer}
+        personal={personal}
         tier={viewer.tier ?? "FREE"}
         status={viewer.status ?? "PENDING"}
         currentPeriodEnd={sub?.currentPeriodEnd ?? null}
@@ -320,6 +447,10 @@ export default async function AccountDashboard({
     content = (
       <AccountSection
         email={session.user.email}
+        name={account?.name ?? null}
+        memberSince={account?.createdAt ?? null}
+        personal={personal}
+        savedCount={await prisma.savedPrediction.count({ where: { userId } })}
         tier={viewer.tier ?? "FREE"}
         status={viewer.status ?? "PENDING"}
         currentPeriodEnd={sub?.currentPeriodEnd ?? null}
@@ -343,7 +474,7 @@ export default async function AccountDashboard({
           dismissed. */}
       {account && (
         <SignupUpsellModal
-          userId={session.user.id}
+          userId={userId}
           createdAt={account.createdAt.toISOString()}
           tier={viewer.tier ?? "FREE"}
           paid={hasActivePaidAccess(sub)}
