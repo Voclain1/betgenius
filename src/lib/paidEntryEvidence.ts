@@ -59,3 +59,20 @@ export function appendPublicationQuoteEvidence(
   if (Object.prototype.hasOwnProperty.call(original, "publicationQuoteEvidence")) return null;
   return { ...original, publicationQuoteEvidence: { ...publicationEvidence } };
 }
+
+/** Compare-and-set decision for a post-publication snapshot.
+ * A retry may only append once; a concurrent writer's newer record wins.
+ * The caller must still use a database conditional update against the
+ * exact original confirmation to enforce this across processes.
+ */
+export function publicationSnapshotDecision(
+  status: string,
+  confirmation: unknown,
+  publicationEvidence: Record<string, unknown>,
+): { kind: "SKIP_NOT_PUBLISHED" | "SKIP_MISSING_CONFIRMATION" | "SKIP_ALREADY_RECORDED" | "APPEND"; next?: Record<string, unknown> } {
+  if (status !== "PUBLISHED") return { kind: "SKIP_NOT_PUBLISHED" };
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation))
+    return { kind: "SKIP_MISSING_CONFIRMATION" };
+  const next = appendPublicationQuoteEvidence(confirmation, publicationEvidence);
+  return next ? { kind: "APPEND", next } : { kind: "SKIP_ALREADY_RECORDED" };
+}
