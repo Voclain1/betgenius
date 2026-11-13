@@ -29,6 +29,8 @@ on:
       - scripts/verify-paid-production.ts
       - scripts/measure-league-coverage.ts
       - scripts/research-league-coverage.ts
+      - scripts/research-global-competitions.ts
+      - scripts/research-paid-policy.ts
       - scripts/validate-paid-candidate-quality.ts
       - .github/workflows/diagnose-generation.yml
 
@@ -239,8 +241,18 @@ jobs:
       - name: Provider probe, Welsh competitions and uncatalogued fixtures
         if: env.API_FOOTBALL_KEY != ''
         run: npx tsx scripts/research-league-coverage.ts
+      - name: Global competition audit (every uncatalogued competition with fixtures, <= 90 calls)
+        if: env.API_FOOTBALL_KEY != ''
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/research-global-competitions.ts
       - name: Candidate-quality shadow validation (chronological)
         if: hashFiles('scripts/validate-paid-candidate-quality.ts') != ''
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/validate-paid-candidate-quality.ts 120
+      - name: VIP/PREMIUM policy research (development period, untouched final holdout)
+        if: hashFiles('scripts/research-paid-policy.ts') != ''
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/research-paid-policy.ts 150
