@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+const kickoff = new Date("2026-11-13T17:00:00Z");
+const good = { entryPrice: 1.88, quoteFetchedAt: "2026-11-13T15:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" };
+assert.equal(verifiedEntryPrice(good, kickoff), 1.88);
+assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: null }, kickoff), null);
+assert.equal(verifiedEntryPrice({ ...good, confirmedAt: "2026-11-13T18:00:00Z" }, kickoff), null);
+assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-13T16:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" }, kickoff), null);
+assert.equal(verifiedEntryPrice({ ...good, entryPrice: 1 }, kickoff), null);
+assert.equal(verifiedEntryPrice({}, kickoff), null);
+console.log("paid entry evidence: all assertions passed");
