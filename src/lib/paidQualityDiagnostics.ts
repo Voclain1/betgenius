@@ -25,7 +25,7 @@ export async function loadPaidQualityDiagnostics(days = 90) {
     const odds = verifiedEntryPrice(r.marketConfirmation, r.kickoff!);
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
-      leagueApiId: r.leagueApiId, provider: r.aiJob?.model ?? null,
+      leagueApiId: r.leagueApiId, provider: (r.marketConfirmation && typeof r.marketConfirmation === "object" && !Array.isArray(r.marketConfirmation) && typeof (r.marketConfirmation as Record<string, unknown>).provider === "string") ? (r.marketConfirmation as Record<string, unknown>).provider as string : null,
       odds, priceSource: odds === null ? "missing" : "entry",
       confidence: r.confidence, outcome: r.outcome as "WON" | "LOST" | "VOID",
     };
