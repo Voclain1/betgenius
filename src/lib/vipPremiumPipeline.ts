@@ -1,8 +1,7 @@
-import { publicationSnapshotDecision } from "@/lib/paidEntryEvidence";
 import { prisma } from "@/lib/prisma";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
+import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
@@ -703,16 +702,8 @@ export async function autoPublishVipPremiumPrediction(
   );
   if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
 
-  try {
-    await applyReviewAction(row, "PUBLISH", actorId);
-  } catch (error) {
-    // Kickoff passed between the read and the publish: not published, not a failed run.
-    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
-    throw error;
-  }
-
-  // Store the publication gate's observed quote separately from promotion.
-  // Indicative market quotes are not proof of a subscriber's executed odds.
+  // Publication, its immutable indicative quote and the notification event
+  // must commit together; a failed transaction leaves the draft untouched.
   const publicationRecord = entryValueRecord(row, (quote?.oddsJson as unknown as FixtureOdds | null) ?? null);
   const publicationEvidence = {
     ...publicationRecord,
@@ -720,32 +711,12 @@ export async function autoPublishVipPremiumPrediction(
     confirmedAt: now.toISOString(),
     evidenceKind: "PUBLICATION_INDICATIVE",
   };
-  // Publication has already committed at this point. An evidence-storage
-  // outage must not misreport the pick as unpublished or skip fixture cleanup.
-  // Missing evidence remains explicitly missing in the audit; never invent it.
   try {
-    const persisted = await prisma.prediction.findUnique({
-      where: { id: row.id }, select: { status: true, marketConfirmation: true },
-    });
-    const decision = publicationSnapshotDecision(
-      persisted?.status ?? "MISSING", persisted?.marketConfirmation, publicationEvidence,
-    );
-    if (decision.kind === "APPEND" && decision.next) {
-      // Database compare-and-set: only the first writer may append.
-      const saved = await prisma.prediction.updateMany({
-        where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted!.marketConfirmation! } },
-        data: { marketConfirmation: decision.next },
-      });
-      if (saved.count === 0) {
-        console.warn("[vip-publication-evidence] concurrent snapshot update; audit required", { predictionId: row.id });
-      }
-    } else if (decision.kind === "SKIP_MISSING_CONFIRMATION") {
-      console.warn("[vip-publication-evidence] published row has no confirmation snapshot", { predictionId: row.id });
-    }
+    const published = await publishPaidPredictionAtomically(row, actorId, publicationEvidence);
+    if (!published) return { published: false, blocks: ["CONCURRENT_OR_STALE_PUBLISH"], ordinaryPaidTagsRemoved: 0 };
   } catch (error) {
-    console.error("[vip-publication-evidence] snapshot persistence failed after publication", {
-      predictionId: row.id, error,
-    });
+    if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
+    throw error;
   }
 
   // The fixture's one paid pick is now this one.
