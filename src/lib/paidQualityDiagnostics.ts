@@ -1,3 +1,4 @@
+import { verifiedEntryPrice } from "@/lib/paidEntryEvidence";
 import { prisma } from "@/lib/prisma";
 import { segmentPaidPerformance, type SegmentDimension, type SettledPaidObservation } from "@/lib/paidMarketQuality";
 import { chronologicalHoldout, validationWarnings } from "@/lib/paidChronologicalValidation";
@@ -21,9 +22,7 @@ export async function loadPaidQualityDiagnostics(days = 90) {
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
   });
   const observations: SettledPaidObservation[] = raw.filter(r => r.kickoff).map(r => {
-    const confirmation = r.marketConfirmation as { entryPrice?: unknown } | null;
-    const value = confirmation?.entryPrice;
-    const odds = typeof value === "number" && Number.isFinite(value) && value > 1 ? value : null;
+    const odds = verifiedEntryPrice(r.marketConfirmation, r.kickoff!);
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
       leagueApiId: r.leagueApiId, provider: r.aiJob?.model ?? null,
