@@ -5,7 +5,8 @@ import { LEAGUE_CATALOGUE, generationTierOf } from "@/lib/leagues";
 import { PAID_ANY_LEAGUE_IDS } from "@/lib/vipPremiumOverlay";
 import { JOB_PAID_SELECTION_SHADOW } from "@/lib/vipPremiumPipeline";
 import { auditCoverageFunnel, type CoverageFunnel } from "@/lib/generation/coverageFunnel";
-import { COMPETITION_REGISTRY, coverageRollout, registryEntry, type CoverageRollout } from "@/lib/generation/competitionEligibility";
+import { COMPETITION_REGISTRY, PROPOSED_RULES, coverageRollout, globalAuditRow, laneCompetitionIds, registryEntry, type CoverageRollout } from "@/lib/generation/competitionEligibility";
+import { GLOBAL_AUDIT } from "@/lib/generation/globalCompetitionEvidence";
 
 /**
  * League-coverage and candidate-quality diagnostics for /admin/paid-ops.
@@ -21,6 +22,10 @@ export type DiscoveryTally = {
   shadowSweeps: number;
   shadowAdded: Record<number, number>;
   shadowLifted: Record<number, Record<string, number>>;
+  /** Evaluation lane (healthy days): runs, shortlist appearances per competition, fixtures queued. */
+  laneRuns: number;
+  laneShortlisted: Record<number, number>;
+  laneQueued: number;
 };
 
 export type CompetitionExplanation = { leagueApiId: number; name: string; lines: string[] };
@@ -31,14 +36,75 @@ export type CoverageDiagnostics = {
   funnel: CoverageFunnel;
   discovery: DiscoveryTally;
   quality: { runs: number; decisions: Record<string, number>; proposedTiers: Record<string, number>; liveSelectedRejected: number };
+  /** Shadow quality decisions per competition (last 24h), for the explorer. */
+  qualityByLeague: Record<number, LeagueQuality>;
   wales: CompetitionExplanation[];
 };
+
+export type LeagueQuality = { candidates: number; decisions: Record<string, number>; liveSelected: number };
+
+export type ExplorerAnswer = { question: string; answer: string };
+export type CompetitionExplorer = { leagueApiId: number; name: string; answers: ExplorerAnswer[] };
+
+/**
+ * Pure: the reusable competition coverage explorer. Answers the eight
+ * questions for ANY competition id, from configuration, the stored provider
+ * audit, the measured funnel, discovery records and the shadow quality log.
+ * Every answer states its source; nothing is inferred beyond the records.
+ */
+export function exploreCompetition(
+  leagueApiId: number,
+  d: Pick<CoverageDiagnostics, "funnel" | "discovery" | "qualityByLeague" | "rollout">,
+): CompetitionExplorer {
+  const cat = LEAGUE_CATALOGUE.find((l) => l.id === leagueApiId);
+  const reg = registryEntry(leagueApiId);
+  const audit = globalAuditRow(leagueApiId);
+  const name = cat ? `${cat.name} (${cat.country})` : reg ? `${reg.name} (${reg.country})` : audit ? `${audit.name} (${audit.country})` : `league ${leagueApiId}`;
+  const tier = generationTierOf(leagueApiId);
+  const proposedTier = PROPOSED_RULES.tierOf(leagueApiId);
+  const row = d.funnel.leagues.find((l) => l.leagueApiId === leagueApiId);
+  const rej = d.discovery.rejectedByLeague[leagueApiId];
+  const q = d.qualityByLeague[leagueApiId];
+  const inLane = laneCompetitionIds().includes(leagueApiId);
+  const fmt = (o: Record<string, number> | undefined) => (o && Object.keys(o).length ? Object.entries(o).map(([k, n]) => `${k} ${n}`).join(", ") : "none recorded");
+  const answers: ExplorerAnswer[] = [];
+
+  answers.push({ question: "Was the fixture available from API-Football?", answer: audit
+    ? `Global audit (${GLOBAL_AUDIT.asOf}): season ${audit.season ?? "none"}${audit.current ? " (current)" : ""}, ${audit.upcoming} fixtures in the next 3 days, ${audit.finished} finished in the previous 7 (${audit.finishedWithScore} with a score), provider odds coverage ${audit.coverage.odds ? "on" : "off"}, sampled bookmakers ${audit.sampledBookmakers.join(", ") || "not sampled"}.`
+    : reg ? `Registry evidence (${reg.evidence.checkedAt}): season ${reg.evidence.season}, odds coverage ${reg.evidence.oddsCoverage ? "on" : "off"}, sampled bookmakers ${reg.evidence.sampledBookmakers.join(", ") || "none"}.`
+    : cat ? "Catalogued competition: discovery fetches its fixtures directly (cursor) or in the by-date sweep." : "No provider evidence is recorded for this id. Re-run scripts/research-global-competitions.ts to audit it." });
+
+  answers.push({ question: "Was the league excluded or outside the active tier?", answer: tier
+    ? `Catalogue tier ${tier}. ${tier === "DEEP_FALLBACK" ? `Scanned only when CORE+SECONDARY is very thin: ${d.discovery.modes.DEEP_FALLBACK ?? 0} of the last ${d.discovery.runs} discovery runs.` : tier === "FALLBACK" ? `Scanned only when the slate is thin: ${(d.discovery.modes.FALLBACK ?? 0) + (d.discovery.modes.DEEP_FALLBACK ?? 0)} of the last ${d.discovery.runs} runs.` : "Scanned every cycle."}`
+    : proposedTier ? `Not in the catalogue, so the current rules refuse it (unrecognised_competition). The proposed rules give it ${proposedTier}${inLane ? " and the healthy-day evaluation lane" : ""}, active only with COVERAGE_ROLLOUT=on (now ${d.rollout}).`
+    : audit ? `Not in the catalogue and excluded by the global audit: ${audit.decision} (${audit.reasons.join(", ")}).` : "Not in the catalogue; no eligibility decision exists for it." });
+
+  answers.push({ question: "Was a fixture evaluated?", answer: row
+    ? `${row.discovered} discovered into the ledger, ${row.succeeded} generated, ${row.failed + row.abandoned} failed, ${row.published} published.${d.discovery.laneShortlisted[leagueApiId] ? ` The evaluation lane shortlisted it in ${d.discovery.laneShortlisted[leagueApiId]} of ${d.discovery.laneRuns} lane runs.` : ""}`
+    : `No ledger row or prediction in the window.${d.discovery.laneShortlisted[leagueApiId] ? ` The evaluation lane shortlisted it in ${d.discovery.laneShortlisted[leagueApiId]} of ${d.discovery.laneRuns} lane runs.` : ""}` });
+
+  const missing = audit?.reasons.filter((r) => r !== "MEETS_ALL_CRITERIA") ?? [];
+  answers.push({ question: "What evidence was missing?", answer: missing.length ? missing.join(", ") : audit ? "None: it meets every audit criterion." : reg ? reg.reason : "Not audited." });
+
+  answers.push({ question: "Why was a candidate rejected?", answer: `Fallback gate: ${fmt(rej)}. Candidate quality (shadow, 24h): ${q ? fmt(q.decisions) : "no candidates"}.` });
+
+  answers.push({ question: "Did the existing policy select it?", answer: row
+    ? `${row.vip} VIP / ${row.premium} Premium picks in the window.${PAID_ANY_LEAGUE_IDS.includes(leagueApiId) ? "" : " Outside the VIP/Premium competition scope, so it cannot be selected for a paid feed."}`
+    : PAID_ANY_LEAGUE_IDS.includes(leagueApiId) ? "In paid scope; no picks in the window." : "No: outside the VIP/Premium competition scope." });
+
+  const lifted = d.discovery.shadowLifted[leagueApiId];
+  answers.push({ question: "What would the proposed policy have done?", answer: [
+    lifted || d.discovery.shadowAdded[leagueApiId] ? `Discovery: in recorded shadow sweeps it would have lifted ${fmt(lifted)} and queued it in ${d.discovery.shadowAdded[leagueApiId] ?? 0}.` : "Discovery: no shadow sweep changed its outcome.",
+    q ? `Quality layer: ${q.decisions.QUALIFIED ?? 0} of ${q.candidates} candidates qualified (shadow only; the policy failed validation and cannot activate).` : "Quality layer: no candidates from it.",
+  ].join(" ") });
+  return { leagueApiId, name, answers };
+}
 
 const DAY = 86_400_000;
 
 /** Pure: tally discovery JobRun details. */
 export function tallyDiscovery(details: ReadonlyArray<unknown>): DiscoveryTally {
-  const t: DiscoveryTally = { runs: 0, modes: {}, sweeps: 0, skipped: {}, rejectedByLeague: {}, shadowSweeps: 0, shadowAdded: {}, shadowLifted: {} };
+  const t: DiscoveryTally = { runs: 0, modes: {}, sweeps: 0, skipped: {}, rejectedByLeague: {}, shadowSweeps: 0, shadowAdded: {}, shadowLifted: {}, laneRuns: 0, laneShortlisted: {}, laneQueued: 0 };
   for (const d of details) {
     const c = (d as any)?.coverage;
     if (!c) continue;
@@ -53,6 +119,12 @@ export function tallyDiscovery(details: ReadonlyArray<unknown>): DiscoveryTally 
     for (const [id, reasons] of Object.entries(s.gateRejectedByLeague ?? {})) {
       const into = (t.rejectedByLeague[Number(id)] ??= {});
       for (const [k, n] of Object.entries(reasons as Record<string, number>)) into[k] = (into[k] ?? 0) + Number(n);
+    }
+    const lane = c.lane;
+    if (lane?.ran) {
+      t.laneRuns++;
+      t.laneQueued += Number(lane.queued) || 0;
+      for (const x of lane.shortlist ?? []) if (x?.leagueApiId != null) t.laneShortlisted[Number(x.leagueApiId)] = (t.laneShortlisted[Number(x.leagueApiId)] ?? 0) + 1;
     }
     if (s.shadow) {
       t.shadowSweeps++;
@@ -135,6 +207,16 @@ export async function loadCoverageDiagnostics(days = 14, now: Date = new Date())
     for (const [k, n] of Object.entries(q.decisions as Record<string, number>)) quality.decisions[k] = (quality.decisions[k] ?? 0) + Number(n);
     for (const [k, n] of Object.entries((q.proposedTiers ?? {}) as Record<string, number>)) quality.proposedTiers[k] = (quality.proposedTiers[k] ?? 0) + Number(n);
   }
+  const qualityByLeague: Record<number, LeagueQuality> = {};
+  for (const sRun of shadow) {
+    for (const v of ((sRun.detail as any)?.quality?.verdicts ?? []) as Array<{ leagueApiId?: number | null; decision?: string; liveSelected?: boolean }>) {
+      if (v?.leagueApiId == null || typeof v.decision !== "string") continue;
+      const lq = (qualityByLeague[v.leagueApiId] ??= { candidates: 0, decisions: {}, liveSelected: 0 });
+      lq.candidates++;
+      lq.decisions[v.decision] = (lq.decisions[v.decision] ?? 0) + 1;
+      if (v.liveSelected) lq.liveSelected++;
+    }
+  }
   const rollout = coverageRollout();
-  return { days, rollout, funnel, discovery, quality, wales: WELSH_COMPETITION_IDS.map((id) => explainCompetition(id, funnel, discovery, rollout)) };
+  return { days, rollout, funnel, discovery, quality, qualityByLeague, wales: WELSH_COMPETITION_IDS.map((id) => explainCompetition(id, funnel, discovery, rollout)) };
 }

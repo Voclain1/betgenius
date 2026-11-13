@@ -271,6 +271,15 @@ export function shadowQualityRecord(
   const selected = new Set(selectedIds);
   const proposed = { PREMIUM: 0, VIP: 0, none: 0 };
   for (const c of candidates) proposed[proposedTier(c, now).tier ?? "none"]++;
+  // Prospective hypotheses (Sprint 05 continuation): formed from the
+  // development-period diagnosis, so they may only be judged on records
+  // written AFTER this version, never on the history that suggested them.
+  const prospective = candidates.map((c) => ({
+    id: c.id,
+    marketBelow75: c.marketProbability != null && c.marketProbability < 75,
+    odds150Plus: c.odds != null && c.odds >= 1.5,
+    marketAtLeast87: c.marketProbability != null && c.marketProbability >= 87,
+  }));
   const liveSelectedRejected = verdicts.filter((v) => selected.has(v.id) && v.decision !== "QUALIFIED" && v.decision !== "SHADOW_ONLY").length;
   return {
     policyVersion: QUALITY_POLICY_VERSION,
@@ -280,6 +289,13 @@ export function shadowQualityRecord(
     decisions: tallyDecisions(verdicts),
     proposedTiers: proposed,
     liveSelectedRejected,
-    verdicts: verdicts.map((v) => ({ id: v.id, decision: v.decision, reasons: v.reasons, features: v.features, liveSelected: selected.has(v.id) })),
+    prospectiveFlags: {
+      version: "prospective-s05-v1",
+      marketBelow75: prospective.filter((p) => p.marketBelow75).length,
+      odds150Plus: prospective.filter((p) => p.odds150Plus).length,
+      marketAtLeast87: prospective.filter((p) => p.marketAtLeast87).length,
+      byId: prospective.filter((p) => p.marketBelow75 || p.odds150Plus || p.marketAtLeast87),
+    },
+    verdicts: verdicts.map((v, i) => ({ id: v.id, leagueApiId: candidates[i]?.leagueApiId ?? null, decision: v.decision, reasons: v.reasons, features: v.features, liveSelected: selected.has(v.id) })),
   };
 }

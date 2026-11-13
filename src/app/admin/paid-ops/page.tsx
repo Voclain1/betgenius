@@ -1,6 +1,7 @@
 import { loadPaidQualityDiagnostics } from "@/lib/paidQualityDiagnostics";
 import { loadPaidOpsSnapshot } from "@/lib/paidOpsData";
-import { loadCoverageDiagnostics } from "@/lib/coverageDiagnostics";
+import { exploreCompetition, loadCoverageDiagnostics, WELSH_COMPETITION_IDS } from "@/lib/coverageDiagnostics";
+import { GLOBAL_AUDIT_ROWS, laneCompetitionIds } from "@/lib/generation/competitionEligibility";
 import { effectivePaidSelection } from "@/lib/paidSelectionMode";
 import type { PaidDayStatus } from "@/lib/paidOps";
 
@@ -20,9 +21,15 @@ const STATUS_TEXT: Record<PaidDayStatus, { label: string; tone: string }> = {
   PUBLICATION_FAILURE: { label: "Publication / scheduling failure", tone: "text-red-300" },
 };
 
-export default async function PaidOpsPage() {
+export default async function PaidOpsPage({ searchParams }: { searchParams?: { competition?: string } }) {
   const [s, quality, coverage] = await Promise.all([loadPaidOpsSnapshot(14), loadPaidQualityDiagnostics(90), loadCoverageDiagnostics(14)]);
   const mode = effectivePaidSelection();
+  // Explorer input: a positive integer competition id, or the first Welsh id.
+  const requested = Number.parseInt(searchParams?.competition ?? "", 10);
+  const exploreId = Number.isInteger(requested) && requested > 0 && requested < 1_000_000 ? requested : WELSH_COMPETITION_IDS[0];
+  const explorer = exploreCompetition(exploreId, coverage);
+  const included = GLOBAL_AUDIT_ROWS.filter((r) => r.decision === "INCLUDE");
+  const laneIds = new Set(laneCompetitionIds());
   const time = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "—");
   return (
     <div className="space-y-6">
@@ -113,14 +120,57 @@ export default async function PaidOpsPage() {
             </div>
           ))}
         </dl>
-        <div className="card space-y-3">
-          <h3 className="text-sm font-bold text-gray-100">Why were Welsh fixtures not covered?</h3>
-          {coverage.wales.map((w) => (
-            <div key={w.leagueApiId}>
-              <p className="text-sm font-semibold text-gray-200">{w.name} · id {w.leagueApiId}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-gray-400">{w.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
-            </div>
-          ))}
+        <div className="card space-y-3" id="explorer">
+          <h3 className="text-sm font-bold text-gray-100">Competition coverage explorer</h3>
+          <form method="get" action="/admin/paid-ops#explorer" className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-gray-400">
+              Provider competition id
+              <input name="competition" type="number" min={1} defaultValue={exploreId} className="mt-1 block w-32 rounded-lg border border-brand-border bg-brand-card px-2 py-1 text-sm text-gray-100" />
+            </label>
+            <button type="submit" className="rounded-lg border border-brand-border px-3 py-1 text-sm font-semibold text-gray-100">Explain</button>
+          </form>
+          <p className="text-sm font-semibold text-gray-200">{explorer.name} · id {explorer.leagueApiId}</p>
+          <dl className="space-y-2">
+            {explorer.answers.map((a) => (
+              <div key={a.question}>
+                <dt className="text-[11px] font-bold uppercase tracking-[0.1em] text-gray-500">{a.question}</dt>
+                <dd className="text-xs text-gray-300">{a.answer}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-xs text-gray-400">
+            Quick links: {[...WELSH_COMPETITION_IDS, ...included.map((r) => r.id)].slice(0, 40).map((id, i) => (
+              <span key={id}>{i ? " · " : ""}<a className="underline" href={`/admin/paid-ops?competition=${id}#explorer`}>{id}</a></span>
+            ))}
+          </p>
+        </div>
+        <div className="overflow-x-auto rounded-2xl border border-brand-border">
+          <div className="bg-brand-card px-3 py-3">
+            <h3 className="text-sm font-bold text-gray-100">Global competition audit · {GLOBAL_AUDIT_ROWS.length} uncatalogued competitions</h3>
+            <p className="text-xs text-gray-400">
+              {included.length} meet every evaluation criterion, {GLOBAL_AUDIT_ROWS.filter((r) => r.decision === "WATCH").length} are on watch, {GLOBAL_AUDIT_ROWS.filter((r) => r.decision === "EXCLUDE").length} are excluded.
+              Included competitions are evaluated only with <code>COVERAGE_ROLLOUT=on</code>; nothing is published because of inclusion.
+            </p>
+          </div>
+          <table className="w-full min-w-[48rem] text-xs">
+            <thead className="text-left text-gray-400"><tr>
+              <th className="p-2">Decision</th><th className="p-2">Competition</th><th className="p-2">Region</th>
+              <th className="p-2 text-right">Upcoming</th><th className="p-2 text-right">Books</th><th className="p-2">Lane</th><th className="p-2">Reasons</th>
+            </tr></thead>
+            <tbody className="divide-y divide-brand-border">
+              {GLOBAL_AUDIT_ROWS.filter((r) => r.decision !== "EXCLUDE").map((r) => (
+                <tr key={r.id} className="text-gray-200">
+                  <td className="p-2 font-semibold">{r.decision}</td>
+                  <td className="p-2"><a className="underline" href={`/admin/paid-ops?competition=${r.id}#explorer`}>{r.name}</a> <span className="text-gray-500">({r.country}, {r.id})</span></td>
+                  <td className="p-2 text-gray-400">{r.region}</td>
+                  <td className="p-2 text-right tabular-nums">{r.upcoming}</td>
+                  <td className="p-2 text-right tabular-nums">{r.sampledBookmakers.join(", ") || "—"}</td>
+                  <td className="p-2 text-gray-400">{laneIds.has(r.id) ? "yes" : "—"}</td>
+                  <td className="p-2 text-gray-400">{r.reasons.join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         {Object.keys(coverage.quality.decisions).length > 0 && (
           <p className="text-xs text-gray-400">

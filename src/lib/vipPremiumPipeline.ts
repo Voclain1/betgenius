@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
+import { paidQualityPolicyMode } from "@/lib/paidQualityPolicy";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
@@ -367,7 +368,7 @@ export async function recordPaidSelectionShadow(input: {
   // Shadow-only candidate-quality decisions (paidCandidateQuality.ts). Never
   // read by curation; a failure here only loses the extra record.
   let quality: unknown = null;
-  if (input.rows) {
+  if (input.rows && paidQualityPolicyMode() === "shadow") {
     try {
       const now = input.now ?? new Date();
       quality = shadowQualityRecord(

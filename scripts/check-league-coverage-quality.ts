@@ -189,6 +189,90 @@ check("H design rules: no accent stripe or tinted pill in the new section", !/bo
 check("design: no 'AI' wording in the new admin copy", !/\bAI\b/.test(src("src/app/admin/paid-ops/page.tsx").split("League coverage")[1]?.split("</section>")[0] ?? ""));
 check("catalogue unchanged: Welsh catalogue tiers are still DEEP_FALLBACK", generationTierOf(110) === "DEEP_FALLBACK" && generationTierOf(112) === "DEEP_FALLBACK" && generationTierOf(111) === null);
 
+
+// ── Continuation: global registry, eligibility, lane, controls, research, explorer ──
+{
+  const { decideEligibility, categoryOf, regionOf } = require("../src/lib/generation/globalCompetitionAudit");
+  const { GLOBAL_AUDIT } = require("../src/lib/generation/globalCompetitionEvidence");
+  const elig = require("../src/lib/generation/competitionEligibility");
+  const lane = require("../src/lib/generation/evaluationLane");
+  const { paidQualityPolicyMode } = require("../src/lib/paidQualityPolicy");
+  const research = require("../src/lib/paidPolicyResearch");
+  const { exploreCompetition } = require("../src/lib/coverageDiagnostics");
+  const ev = (o: any = {}) => ({ id: 9001, name: "Premier Division", country: "Ruritania", type: "League", season: 2026, seasonStart: "2026-08-01", seasonEnd: "2027-05-01", current: true,
+    coverage: { odds: true, standings: true, fixtureStats: false, events: true, lineups: true }, upcoming: 6, finished: 8, finishedWithScore: 8, finishedWithHalfTime: 8,
+    sampledBookmakers: [7], existingPredictions: 0, ...o });
+  const dec = (o: any) => decideEligibility(ev(o), "2026-11-13");
+
+  check("G1 the stored audit has all 217 competitions", GLOBAL_AUDIT.rows.length === 217 && elig.GLOBAL_AUDIT_ROWS.length === 217);
+  const src = readFileSync(join(__dirname, "../src/lib/generation/globalCompetitionEvidence.ts"), "utf8");
+  const storedDecisions = [...src.matchAll(/"(\d+)\|[^"]*?\|(INCLUDE|WATCH|EXCLUDE)\|/g)].map((m) => [Number(m[1]), m[2]] as const);
+  check("G1 decisions recomputed from evidence match the probe's own output", storedDecisions.length === 217 && storedDecisions.every(([id, d]) => elig.globalAuditRow(id)?.decision === d), storedDecisions.filter(([id, d]) => elig.globalAuditRow(id)?.decision !== d).slice(0, 5));
+  check("G1 every region is represented", ["Europe", "Africa", "Asia", "North America", "South America", "Oceania", "International"].every((r) => elig.GLOBAL_AUDIT_ROWS.some((x: any) => x.region === r)));
+  check("G2 a senior league with every criterion is INCLUDE", dec({}).decision === "INCLUDE");
+  check("G2 geography never decides: same evidence, any country, same decision", ["Kenya", "Japan", "Chile", "Australia", "USA", "Wales"].every((c) => dec({ country: c }).decision === "INCLUDE") && regionOf("Kenya") === "Africa");
+  check("G2 youth, friendly and reserve are EXCLUDE", dec({ name: "U19 League" }).decision === "EXCLUDE" && dec({ name: "Club Friendlies" }).decision === "EXCLUDE" && dec({ nonSeniorTeamShare: 0.8 }).decision === "EXCLUDE");
+  check("G2 no odds coverage / ended season / no current season are EXCLUDE", dec({ coverage: { ...ev().coverage, odds: false } }).decision === "EXCLUDE" && dec({ seasonEnd: "2026-10-01" }).decision === "EXCLUDE" && dec({ current: false }).decision === "EXCLUDE");
+  check("G2 incomplete results are EXCLUDE", dec({ finishedWithScore: 5 }).decision === "EXCLUDE" && dec({ finishedWithScore: 5 }).reasons.includes("INCOMPLETE_RESULTS"));
+  check("G2 thin book / unsampled / too few results / no standings are WATCH", ["THIN_BOOKMAKER_MARKET", "BOOKMAKERS_NOT_SAMPLED", "TOO_FEW_RECENT_RESULTS", "NO_STANDINGS_COVERAGE"].every((r, i) => {
+    const d = dec([{ sampledBookmakers: [3] }, { sampledBookmakers: [] }, { finished: 2, finishedWithScore: 2 }, { coverage: { ...ev().coverage, standings: false } }][i]);
+    return d.decision === "WATCH" && d.reasons.includes(r);
+  }));
+  check("G2 a cup needs no standings", dec({ type: "Cup", coverage: { ...ev().coverage, standings: false } }).decision === "INCLUDE");
+  check("G2 women's competitions detected from team names go to WATCH (senior-women's lane)", categoryOf({ name: "Super League", womensTeamShare: 0.9 }) === "womens" && dec({ womensTeamShare: 0.9 }).decision === "WATCH");
+  check("G2 regional levels never INCLUDE: WATCH with a market, EXCLUDE without", dec({ name: "Oberliga - Nord" }).decision === "WATCH" && dec({ name: "Oberliga - Nord", sampledBookmakers: [2] }).decision === "EXCLUDE");
+  check("G3 global inclusions are uncatalogued, not in paid scope, DEEP_FALLBACK only under the proposed rules", elig.GLOBAL_INCLUDED_IDS.length > 0 && elig.GLOBAL_INCLUDED_IDS.every((id: number) => generationTierOf(id) === null && !PAID_ANY_LEAGUE_IDS.includes(id) && PROPOSED_RULES.tierOf(id) === "DEEP_FALLBACK" && CURRENT_RULES.tierOf(id) === null));
+  check("G3 lane competitions = registry additions/cups + global inclusions", elig.laneCompetitionIds().includes(111) && elig.laneCompetitionIds().includes(112) && elig.GLOBAL_INCLUDED_IDS.every((id: number) => elig.laneCompetitionIds().includes(id)));
+  const healthy = { allowedTiers: ["CORE", "SECONDARY"] } as any;
+  check("G4 healthy day: lane competitions excluded from generation unless the lane admits them", elig.GLOBAL_INCLUDED_IDS.every((id: number) => excludedLeagueIds(healthy).includes(id)) && elig.laneCompetitionIds().every((id: number) => !excludedLeagueIds(healthy, { laneAllowed: elig.laneCompetitionIds() }).includes(id)));
+  check("G4 lane admission never un-excludes a catalogue FALLBACK league outside the lane", excludedLeagueIds(healthy, { laneAllowed: elig.laneCompetitionIds() }).includes(10));
+  check("G5 lane budget: off 0, shadow <= 16/day, on <= 40/day", lane.laneCallBudget("off").perDay === 0 && lane.laneCallBudget("shadow").perDay <= 16 && lane.laneCallBudget("on").perDay <= 40);
+  check("G5 lane allowance respects per-run and per-day caps", lane.laneAllowance(0) === lane.EVALUATION_LANE.MAX_QUEUE_PER_RUN && lane.laneAllowance(7) === 1 && lane.laneAllowance(8) === 0 && lane.laneAllowance(50) === 0);
+  const laneId = elig.GLOBAL_INCLUDED_IDS[0];
+  const lanePlan = lane.planEvaluationLane([fx(laneId, 20), fx(laneId, 21), fx(39, 20), fx(laneId, 5), fx(laneId, 22, { home: "Club U21" })], new Map(), () => null, NOW, new Set(elig.laneCompetitionIds()));
+  check("G5 lane plan: ignores non-lane leagues, one fixture per competition, gate still applies", lanePlan.considered === 4 && lanePlan.shortlist.length === 1 && lanePlan.rejected.inside_lead_time === 1 && lanePlan.rejected.non_senior_side === 1, lanePlan);
+  const q = readFileSync(join(__dirname, "../src/lib/generation/queue.ts"), "utf8");
+  const laneSrc = q.slice(q.indexOf("export async function runEvaluationLane"));
+  check("G5 lane runs only on healthy days", /if \(!decision\.widened\) \{\s*lane = await runEvaluationLane/.test(q));
+  check("G5 shadow lane returns before any odds call or queueing", laneSrc.indexOf('if (rollout !== "on") return') > 0 && laneSrc.indexOf('if (rollout !== "on") return') < laneSrc.indexOf("refreshOddsCache") && laneSrc.indexOf('if (rollout !== "on") return') < laneSrc.indexOf("queueCandidates("));
+  check("G5 lane requires a quote of >= MIN_BOOKMAKERS before queueing", /\(books \?\? 0\) >= MIN_BOOKMAKERS\) priced\.push/.test(laneSrc));
+  check("G5 worker admits lane leagues only with COVERAGE_ROLLOUT=on", /laneAllowed: coverageRollout\(\) === "on" \? laneCompetitionIds\(\) : \[\]/.test(readFileSync(join(__dirname, "../src/lib/generation/worker.ts"), "utf8")));
+  check("C1 quality-policy control: default shadow, off disables, 'on' cannot activate", paidQualityPolicyMode({}) === "shadow" && paidQualityPolicyMode({ PAID_QUALITY_POLICY: "off" }) === "off" && paidQualityPolicyMode({ PAID_QUALITY_POLICY: "on" }) === "shadow");
+  check("C1 the shadow quality record honours PAID_QUALITY_POLICY", /input\.rows && paidQualityPolicyMode\(\) === "shadow"/.test(readFileSync(join(__dirname, "../src/lib/vipPremiumPipeline.ts"), "utf8")));
+  check("C1 three independent controls exist (discovery, quality, qualification)", typeof coverageRollout === "function" && typeof paidQualityPolicyMode === "function" && typeof require("../src/lib/paidSelectionMode").effectivePaidSelection === "function");
+
+  const rrow = (i: number, o: any = {}) => ({ ...cand({ id: `r${i}`, fixtureKey: `rf${i}`, leagueApiId: 39 + (i % 7), kickoff: new Date(NOW.getTime() - (500 - Math.floor(i / 3)) * H), quoteFetchedAt: new Date(NOW.getTime() - (503 - Math.floor(i / 3)) * H), calibratedLower: null, expectedValueLower: null, odds: 1.1 + (i % 6) * 0.08, marketProbability: 70 + (i % 20) }),
+    outcome: i % 5 === 0 ? "LOST" : "WON", categories: ["VIP"], inPaidScope: true, day: `d${Math.floor(i / 9)}`, priceSource: "closing", ...o });
+  const hist2 = Array.from({ length: 300 }, (_, i) => rrow(i));
+  const sp = research.threeWaySplit(hist2);
+  check("R1 three periods are disjoint and ordered", sp.devTrain.length + sp.devValidate.length + sp.holdout.length === 300 && sp.devTrain.at(-1).kickoff < sp.devValidate[0].kickoff && sp.devValidate.at(-1).kickoff < sp.holdout[0].kickoff);
+  check("R1 a shared kickoff never straddles a period boundary", !sp.devValidate.some((v: any) => sp.devTrain.some((t: any) => t.kickoff.getTime() === v.kickoff.getTime())) && !sp.holdout.some((v: any) => sp.devValidate.some((t: any) => t.kickoff.getTime() === v.kickoff.getTime())));
+  check("R2 every hypothesis only removes picks (subset of the existing selection)", Object.values(research.HYPOTHESES).every((h: any) => { const kept = h.keep(hist2); const ids = new Set(hist2.map((r: any) => r.id)); return kept.length <= hist2.length && kept.every((r: any) => ids.has(r.id)); }));
+  const tiny = research.evaluateOnDevelopment(hist2.slice(0, 50), hist2.slice(50, 60));
+  check("R3 promotion refuses a dev-validate sample under 30", tiny.every((r: any) => !r.promoted && r.promotionReasons.some((x: string) => /n \d+ < 30/.test(x))));
+  const v = research.scoreOnHoldout("H1_PRICED_ONLY", hist2.slice(0, 20));
+  check("R3 holdout verdict refuses n < 50", v.verdict === "NO_CREDIBLE_IMPROVEMENT" && v.reasons.some((x: string) => /n \d+ < 50/.test(x)));
+  const rs = readFileSync(join(__dirname, "research-paid-policy.ts"), "utf8");
+  check("R4 only promoted hypotheses are ever scored on the final holdout", /const promoted = results\.filter\(\(r\) => r\.promoted\)/.test(rs) && /for \(const p of promoted\)/.test(rs) && (rs.match(/scoreOnHoldout\(/g) ?? []).length === 1);
+  check("R4 the research never names closing-price returns as realized", /NOT entry prices, NOT realized returns/.test(rs) && !/realized ROI|realised ROI|profit/i.test(rs.replace(/NOT realized returns/g, "")));
+  const rec2 = shadowQualityRecord(
+    [{ id: "p", fixtureKey: "k2", leagueApiId: 39, marketType: "MATCH_WINNER", rawConfidence: 78, quoteAgeMinutes: 10, value: { odds: 1.6, marketProbability: 62, bookmakers: 9, estimatedProbabilityLower: null, expectedValueLower: null, reasons: [] } }],
+    new Map([["p", { kickoff: new Date(NOW.getTime() + 20 * H), selection: "HOME" }]]), "VIP", NOW, [],
+  ) as any;
+  check("R5 prospective hypothesis flags are recorded, versioned, forward-only", rec2.prospectiveFlags.version === "prospective-s05-v1" && rec2.prospectiveFlags.marketBelow75 === 1 && rec2.prospectiveFlags.odds150Plus === 1 && rec2.verdicts[0].leagueApiId === 39);
+
+  const diag = { funnel, discovery: { ...tally, laneRuns: 2, laneShortlisted: { [laneId]: 2 }, laneQueued: 0 }, qualityByLeague: { 39: { candidates: 3, decisions: { QUALIFIED: 1, REJECTED_STALE_DATA: 2 }, liveSelected: 1 } }, rollout: "shadow" } as any;
+  const exQ = (id: number) => exploreCompetition(id, diag);
+  const questions = ["Was the fixture available from API-Football?", "Was the league excluded or outside the active tier?", "Was a fixture evaluated?", "What evidence was missing?", "Why was a candidate rejected?", "Did the existing policy select it?", "What would the proposed policy have done?"];
+  for (const id of [39, 110, 111, laneId, 999_999]) check(`E1 explorer answers every question for id ${id}`, JSON.stringify(exQ(id).answers.map((a: any) => a.question)) === JSON.stringify(questions));
+  check("E1 explorer: an uncatalogued INCLUDE names the proposed tier, the lane and the rollout", /proposed rules give it DEEP_FALLBACK and the healthy-day evaluation lane, active only with COVERAGE_ROLLOUT=on \(now shadow\)/.test(exQ(laneId).answers[1].answer) && /shortlisted it in 2 of 2 lane runs/.test(exQ(laneId).answers[2].answer));
+  check("E1 explorer: an unknown id says it has no evidence", /No provider evidence is recorded/.test(exQ(999_999).answers[0].answer));
+  check("E1 explorer: candidate decisions and existing selection come from the records", /QUALIFIED 1, REJECTED_STALE_DATA 2/.test(exQ(39).answers[4].answer) && /1 VIP/.test(exQ(39).answers[5].answer));
+  const page = readFileSync(join(__dirname, "../src/app/admin/paid-ops/page.tsx"), "utf8");
+  check("E2 explorer input is validated as a bounded positive integer", /Number\.isInteger\(requested\) && requested > 0 && requested < 1_000_000/.test(page));
+  check("E2 the Wales-only panel is replaced by the explorer", !/Why were Welsh fixtures not covered/.test(page) && /Competition coverage explorer/.test(page));
+}
+
 console.log(`\n  ${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL  ${f}`);
 if (failures.length) process.exit(1);
