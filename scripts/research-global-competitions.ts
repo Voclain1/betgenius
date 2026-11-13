@@ -19,7 +19,7 @@
  * Then it applies decideEligibility (src/lib/generation/globalCompetitionAudit.ts)
  * and prints one AUDIT_ROW line per competition plus a summary.
  *
- * Provider calls are hard-capped at MAX_CALLS (90, about 1.2% of the daily
+ * Provider calls are hard-capped at MAX_CALLS (150, 2% of the daily
  * 7,500). Read-only everywhere.
  *
  * Run: npx tsx --env-file=.env scripts/research-global-competitions.ts
@@ -30,14 +30,14 @@ const react = require("react");
 if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
 
 import { LEAGUE_CATALOGUE } from "../src/lib/leagues";
-import { auditCompetitions, decideEligibility, summariseAudit, type CompetitionEvidence } from "../src/lib/generation/globalCompetitionAudit";
+import { auditCompetitions, auditLine, decideEligibility, summariseAudit, WOMENS_TEAM_NAME, type CompetitionEvidence } from "../src/lib/generation/globalCompetitionAudit";
 
 type Env<T> = { errors: unknown; results: number; response: T };
 const host = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
 const key = process.env.API_FOOTBALL_KEY;
 if (!key) throw new Error("API_FOOTBALL_KEY is not configured");
 
-const MAX_CALLS = 90;
+const MAX_CALLS = 150;
 let calls = 0;
 let lastAt = 0;
 async function call<T>(path: string, params: Record<string, string | number>): Promise<Env<T> | null> {
@@ -54,7 +54,7 @@ async function call<T>(path: string, params: Record<string, string | number>): P
 }
 
 type LeagueRow = { league: { id: number; name: string; type: string }; country: { name: string }; seasons: Array<{ year: number; start: string; end: string; current: boolean; coverage: any }> };
-type FixtureRow = { fixture: { id: number; date: string; status: { short: string } }; league: { id: number; name: string; country: string; season: number }; goals: { home: number | null; away: number | null }; score: { halftime: { home: number | null; away: number | null } } };
+type FixtureRow = { fixture: { id: number; date: string; status: { short: string } }; league: { id: number; name: string; country: string; season: number }; teams: { home: { name: string }; away: { name: string } }; goals: { home: number | null; away: number | null }; score: { halftime: { home: number | null; away: number | null } } };
 type OddsRow = { bookmakers: Array<{ id: number }> };
 
 const DAY = 86_400_000;
@@ -122,6 +122,10 @@ async function main() {
       finishedWithHalfTime: fin.filter((f) => f.score?.halftime?.home != null && f.score?.halftime?.away != null).length,
       sampledBookmakers: [],
       existingPredictions: 0,
+      womensTeamShare: (() => {
+        const all = [...forward, ...backward].filter((f) => f.league.id === id);
+        return all.length ? all.filter((f) => WOMENS_TEAM_NAME.test(f.teams.home.name ?? "") && WOMENS_TEAM_NAME.test(f.teams.away.name ?? "")).length / all.length : 0;
+      })(),
       _sample: up[0]?.fixture.id ?? null,
     });
   }
@@ -141,7 +145,8 @@ async function main() {
 
   const existing = await existingPredictions([...auditIds]).catch((e) => { console.log(`existing-coverage read skipped: ${e.message}`); return new Map<number, number>(); });
   const rows = auditCompetitions([...evidence.values()].map(({ _sample, ...e }) => ({ ...e, existingPredictions: existing.get(e.id) ?? 0 })), asOf);
-  for (const r of rows) console.log(`AUDIT_ROW ${JSON.stringify(r)}`);
+  console.log("AUDIT_FORMAT id|region|country|name|type|season|current|seasonEnd|odds|standings|fixtureStats|upcoming|finished|finishedWithScore|finishedWithHalfTime|sampledBookmakers|existingPredictions|womensTeamShare|category|decision|reasons");
+  for (const r of rows) console.log(`AUDIT ${auditLine(r)}`);
   const s = summariseAudit(rows);
   console.log(`\nSUMMARY ${JSON.stringify(s)}`);
   console.log(`INCLUDE: ${rows.filter((r) => r.decision === "INCLUDE").map((r) => `${r.id} ${r.country}/${r.name}`).join("; ") || "none"}`);

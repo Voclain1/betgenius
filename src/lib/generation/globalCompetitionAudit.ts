@@ -39,6 +39,12 @@ export type CompetitionEvidence = {
   sampledBookmakers: number[];
   /** Predictions BetGenius already holds for this competition id (any lane, probe window). */
   existingPredictions: number;
+  /**
+   * Share of the probe's fixtures in which both sides carry a women's-team
+   * marker in the provider's team names. Detects women's competitions whose
+   * NAME carries no marker (e.g. a "Super League"), from the data, not memory.
+   */
+  womensTeamShare?: number;
 };
 
 export type EligibilityDecision = "INCLUDE" | "WATCH" | "EXCLUDE";
@@ -60,7 +66,7 @@ export const GLOBAL_ELIGIBILITY_POLICY = {
 const YOUTH = /\b(U-?\s?\d{2}|Under[- ]?\d{2}|Youth|Junior|Juniores|Juvenil|Primavera|Academy|Sub-?\d{2}|Jong|Reserve League|UEFA Youth)\b/i;
 const RESERVE = /\b(Reserves?|B Team|U-?23 League|Premier League 2|Development League)\b/i;
 const FRIENDLY = /\bFriendl(y|ies)\b/i;
-const WOMENS = /\b(Women|Womens|Women's|Feminin[ao]?|Femenin[ao]?|Frauen|Damallsvenskan|Ladies|W-League|WSL|Feminine|Dames|Kvinner|Naiset|Kobiet|Elitettan|Toppserien)\b/i;
+const WOMENS = /\b(Women|Womens|Women's|Feminin[ao]?|Femenin[ao]?|Femenil|Frauen|Damallsvenskan|Ladies|W-League|WSL|Feminine|Dames|Kvinner|Naiset|Kobiet|Elitettan|Toppserien)\b/i;
 /**
  * Regional / amateur pyramid levels, recognised by the provider's own naming:
  * a level number of 4 or more, or a regional group or division name. These are
@@ -69,10 +75,10 @@ const WOMENS = /\b(Women|Womens|Women's|Feminin[ao]?|Femenin[ao]?|Frauen|Damalls
  */
 const REGIONAL = /\b(Oberliga|Regionalliga|Landesliga|Verbandsliga|Tercera|Group \d+|Groupe \d+|Grupo \d+|Gruppe|Divizie [A-Z]|Third League -|4\. liga|5\. liga|III Liga|IV Liga|Non League|Amateur|Regional|Serie D|Derde Divisie|Tweede Divisie|Division \d+ -|Liga Premier Serie B)\b/i;
 
-export function categoryOf(e: Pick<CompetitionEvidence, "name">): CompetitionCategory {
+export function categoryOf(e: Pick<CompetitionEvidence, "name"> & { womensTeamShare?: number }): CompetitionCategory {
   if (YOUTH.test(e.name)) return "youth";
   if (FRIENDLY.test(e.name)) return "friendly";
-  if (WOMENS.test(e.name)) return "womens";
+  if (WOMENS.test(e.name) || (e.womensTeamShare ?? 0) >= 0.5) return "womens";
   if (RESERVE.test(e.name)) return "reserve";
   if (REGIONAL.test(e.name)) return "regional_amateur";
   return "senior";
@@ -145,4 +151,14 @@ export function summariseAudit(rows: readonly AuditRow[]) {
   const reasons: Record<string, number> = {};
   for (const r of rows) for (const x of r.reasons) reasons[x] = (reasons[x] ?? 0) + 1;
   return { total: rows.length, byRegion: by((r) => r.region), byCategory: by((r) => r.category), byType: by((r) => r.type), reasons };
+}
+
+/** A women's-team marker in a provider team name ("Arsenal W", "América Femenil", "... Women"). */
+export const WOMENS_TEAM_NAME = /(?:\sW|\sWomen|\sFemenil|\sFeminino|\sFemenino|\sLadies|\sFrauen|\sDames)$/i;
+
+/** Compact, pipe-separated audit line: one per competition, parseable by parseAuditLine. */
+export function auditLine(r: AuditRow): string {
+  return [r.id, r.region, r.country, r.name.replace(/\|/g, "/"), r.type, r.season ?? "", r.current ? 1 : 0, r.seasonEnd ?? "",
+    r.coverage.odds ? 1 : 0, r.coverage.standings ? 1 : 0, r.coverage.fixtureStats ? 1 : 0, r.upcoming, r.finished, r.finishedWithScore, r.finishedWithHalfTime,
+    r.sampledBookmakers.join(","), r.existingPredictions, (r.womensTeamShare ?? 0).toFixed(2), r.category, r.decision, r.reasons.join(",")].join("|");
 }
