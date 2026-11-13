@@ -22,6 +22,7 @@ export type PaidOpsSnapshot = {
   settlementBacklog: { pendingOver6h: number; manualOnly: number; oldest: string | null };
   shadow: { last24h: number; lastAt: string | null; lastSummary: string | null; fallbacks: Record<string, number>; modes: Record<string, number> };
   paidPassLast24h: { runs: number; failedRuns: number; lastAt: string | null };
+  integrityLast24h: { auditedRuns: number; warnings: Record<string, number>; missingAssessments: number };
 };
 
 const DAY_MS = 86_400_000;
@@ -97,8 +98,20 @@ export async function loadPaidOpsSnapshot(days = 14, now: Date = new Date()): Pr
   const recentShadow = shadowRuns.filter((s) => now.getTime() - s.ranAt.getTime() <= DAY_MS);
   const tally = (f: (d: any) => string | null) => recentShadow.reduce<Record<string, number>>((m, s) => { const k = f(s.detail); if (k) m[k] = (m[k] ?? 0) + 1; return m; }, {});
   const recentRuns = runs.filter((r) => now.getTime() - r.ranAt.getTime() <= DAY_MS);
+  const integrityLast24h = { auditedRuns: 0, warnings: {} as Record<string, number>, missingAssessments: 0 };
+  for (const run of recentShadow) {
+    const integrity = (run.detail as any)?.integrity;
+    if (!integrity || !Array.isArray(integrity.warnings)) continue;
+    integrityLast24h.auditedRuns++;
+    integrityLast24h.missingAssessments += Number.isFinite(integrity.missingAssessment) ? integrity.missingAssessment : 0;
+    for (const warning of integrity.warnings) {
+      if (typeof warning?.reason !== "string") continue;
+      integrityLast24h.warnings[warning.reason] = (integrityLast24h.warnings[warning.reason] ?? 0) + 1;
+    }
+  }
   return {
     days: out,
+    integrityLast24h,
     settlementBacklog: {
       pendingOver6h: pendingRows.length,
       manualOnly: pendingRows.filter((p) => p.manualSettlementOnly).length,

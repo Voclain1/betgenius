@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
-import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
-import type { FixtureOdds } from "@/lib/odds";
+import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
+import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 import {
@@ -360,6 +361,7 @@ export async function recordPaidSelectionShadow(input: {
 }): Promise<void> {
   const selected = new Set(input.selectedIds);
   const s = summarisePaidAssessments(input.assessments);
+  const integrity = auditPaidSelectionConcentration(input.assessments, input.selectedIds);
   const artifact = calibrationArtifact();
   try {
     await prisma.jobRun.create({
@@ -374,6 +376,7 @@ export async function recordPaidSelectionShadow(input: {
           calibrationVersion: artifact?.version ?? null,
           calibrationActive: !!artifact?.active,
           summary: s,
+          integrity,
           plan: input.plan,
           candidates: input.assessments.map((a) => ({ ...a, selected: selected.has(a.id) })),
         })),
@@ -556,6 +559,11 @@ function entryValueRecord(row: { marketType: string; selection: unknown; confide
     const artifact = calibrationArtifact();
     const price = odds ? pickPrice(odds, row.marketType, row.selection) : null;
     const executable = price && !price.derived ? price : null;
+    const mapped = toBookmakerSelection(row.marketType, row.selection);
+    const sourceSelection = odds && mapped ? findSelection(odds, mapped.market, mapped.value) : null;
+    const namedQuotes = executable && sourceSelection?.quotes?.length
+      ? sourceSelection.quotes.filter(q => q.bookmaker && Number.isFinite(q.odd) && q.odd > 1).slice(0, 5)
+      : [];
     const cal = artifact && executable?.fair != null ? applyCalibration(artifact, { provider, marketType: row.marketType, rawConfidence: row.confidence, marketProbability: executable.fair }) : null;
     const pDraw = odds ? (devigProbability(odds, "Match Winner", "Draw")?.probability ?? null) : null;
     const value = assessValue({
@@ -563,7 +571,7 @@ function entryValueRecord(row: { marketType: string; selection: unknown; confide
       estimate: cal?.withMarket != null ? { p: cal.withMarket, se: cal.withMarketSE ?? 0, version: cal.version } : null,
       minEvLower: paidValueMinEvLower(),
     });
-    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: price?.median ?? null, entryBookmakers: price?.bookmakers ?? null, valueAssessment: value };
+    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: executable?.median ?? null, entryBookmakers: executable?.bookmakers ?? null, entryPriceBasis: executable ? "BOOKMAKER_MEDIAN_INDICATIVE" : "UNAVAILABLE", entryQuoteSelection: mapped ? { market: mapped.market, value: mapped.value } : null, entryQuoteSources: namedQuotes, entryBestBookmaker: executable ? sourceSelection?.bestBookmaker ?? null : null, entryBestPrice: executable ? sourceSelection?.best ?? null : null, valueAssessment: value };
   } catch {
     return {};
   }
@@ -645,7 +653,7 @@ export async function autoPublishVipPremiumPrediction(
 ): Promise<{ published: boolean; blocks: PaidPublishBlock[]; ordinaryPaidTagsRemoved: number }> {
   const row = await prisma.prediction.findUnique({
     where: { id: predictionId },
-    include: { categories: true, aiJob: { select: { prompt: true, createdAt: true } } },
+    include: { categories: true, aiJob: { select: { prompt: true, createdAt: true, model: true } } },
   });
   if (!row) return { published: false, blocks: ["NOT_DEDICATED_PAID"], ordinaryPaidTagsRemoved: 0 };
 
@@ -694,10 +702,19 @@ export async function autoPublishVipPremiumPrediction(
   );
   if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
 
+  // Publication, its immutable indicative quote and the notification event
+  // must commit together; a failed transaction leaves the draft untouched.
+  const publicationRecord = entryValueRecord(row, (quote?.oddsJson as unknown as FixtureOdds | null) ?? null);
+  const publicationEvidence = {
+    ...publicationRecord,
+    quoteFetchedAt: quote?.fetchedAt?.toISOString() ?? null,
+    confirmedAt: now.toISOString(),
+    evidenceKind: "PUBLICATION_INDICATIVE",
+  };
   try {
-    await applyReviewAction(row, "PUBLISH", actorId);
+    const published = await publishPaidPredictionAtomically(row, actorId, publicationEvidence);
+    if (!published) return { published: false, blocks: ["CONCURRENT_OR_STALE_PUBLISH"], ordinaryPaidTagsRemoved: 0 };
   } catch (error) {
-    // Kickoff passed between the read and the publish: not published, not a failed run.
     if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
     throw error;
   }

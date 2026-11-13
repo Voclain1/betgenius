@@ -1,3 +1,4 @@
+import { loadPaidQualityDiagnostics } from "@/lib/paidQualityDiagnostics";
 import { loadPaidOpsSnapshot } from "@/lib/paidOpsData";
 import { effectivePaidSelection } from "@/lib/paidSelectionMode";
 import type { PaidDayStatus } from "@/lib/paidOps";
@@ -19,7 +20,7 @@ const STATUS_TEXT: Record<PaidDayStatus, { label: string; tone: string }> = {
 };
 
 export default async function PaidOpsPage() {
-  const s = await loadPaidOpsSnapshot(14);
+  const [s, quality] = await Promise.all([loadPaidOpsSnapshot(14), loadPaidQualityDiagnostics(90)]);
   const mode = effectivePaidSelection();
   const time = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "—");
   return (
@@ -45,8 +46,51 @@ export default async function PaidOpsPage() {
           </div>
         ))}
       </dl>
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold text-gray-100">Shadow integrity · last 24h</h2>
+        <p className="text-xs text-gray-400">{s.integrityLast24h.auditedRuns} audited runs · {s.integrityLast24h.missingAssessments} selections without assessment records. Diagnostics only; no live filtering.</p>
+        <div className="flex flex-wrap gap-2">{Object.entries(s.integrityLast24h.warnings).length ? Object.entries(s.integrityLast24h.warnings).map(([reason, count]) => <span key={reason} className="rounded-lg border border-amber-500/40 px-2 py-1 text-xs text-amber-300">{reason}: {count}</span>) : <span className="text-xs text-gray-400">No integrity warnings recorded in audited runs.</span>}</div>
+      </div>
       {s.shadow.lastSummary && <p className="text-xs text-gray-400">Latest shadow record: {s.shadow.lastSummary}</p>}
 
+      <section className="space-y-3">
+        <h2 className="text-xl font-bold text-gray-100">Historical paid quality · last {quality.days} days</h2>
+        <p className="text-sm text-gray-400">
+          {quality.total} settled paid predictions; {quality.priced} with recorded entry prices.
+          Missing entry odds are excluded from ROI, never filled using later bookmaker quotes.
+          Segments are diagnostics, not instructions to change live selection.
+        </p>
+        {quality.dimensions.map(group => (
+          <div key={group.dimension} className="overflow-x-auto rounded-2xl border border-brand-border">
+            <div className="bg-brand-card px-3 py-3">
+              <h3 className="text-sm font-bold capitalize text-gray-100">{group.dimension}</h3>
+              <p className="text-xs text-gray-400">
+                Chronological holdout: {group.holdout.trainingCount} training / {group.holdout.validationCount} validation
+                {group.holdout.splitAt ? ` · split ${group.holdout.splitAt.slice(0, 10)}` : " · no split"}
+              </p>
+              {group.holdout.warnings.length > 0 && <p className="text-xs text-amber-300">
+                Evidence warnings: {group.holdout.warnings.slice(0, 8).join(", ")}
+                {group.holdout.warnings.length > 8 ? ` (+${group.holdout.warnings.length - 8} more)` : ""}
+              </p>}
+            </div>
+            <table className="w-full min-w-[44rem] text-xs">
+              <thead><tr className="text-left text-gray-400">
+                <th className="p-2">Segment</th><th className="p-2">W/L</th><th className="p-2">95% win interval</th>
+                <th className="p-2">Entry priced</th><th className="p-2">Entry ROI</th><th className="p-2">Warnings</th>
+              </tr></thead>
+              <tbody className="divide-y divide-brand-border">
+                {group.segments.map(s => <tr key={s.key} className="text-gray-200">
+                  <td className="p-2">{s.key}</td><td className="p-2">{s.wins}/{s.losses}</td>
+                  <td className="p-2">{s.winRateWilson95 ? s.winRateWilson95.map(x => (x * 100).toFixed(1) + "%").join(" – ") : "—"}</td>
+                  <td className="p-2">{s.entryPriced}/{s.decided}</td>
+                  <td className="p-2">{s.roiPct === null ? "Insufficient data" : s.roiPct.toFixed(1) + "%"}</td>
+                  <td className="p-2 text-amber-300">{s.warning.join(", ") || "—"}</td>
+                </tr>)}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </section>
       <div className="overflow-x-auto rounded-2xl border border-brand-border">
         <table className="w-full min-w-[56rem] text-sm">
           <thead className="bg-brand-card text-left text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">
