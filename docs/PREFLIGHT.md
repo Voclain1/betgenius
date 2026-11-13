@@ -56,7 +56,7 @@ Before connecting, the runner refuses to start unless all of these hold:
 
 It then connects read-only and refuses if `JobRun` has any row from the last 6 hours. The live scheduler writes one every few minutes, so recent rows mean the database is serving real traffic. A fresh database without the table passes this probe, and any other failure to probe refuses.
 
-Each of the three checks also calls `assertIntegrationDatabase()` before loading Prisma. Running one directly, for example with `npm run check:vip-premium`, fails closed in the same way.
+Each of these checks also calls `assertIntegrationDatabase()` before loading Prisma. Running one directly, for example with `npm run check:vip-premium`, fails closed in the same way.
 
 Example against a disposable Neon branch:
 
