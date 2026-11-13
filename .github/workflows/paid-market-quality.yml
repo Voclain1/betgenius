@@ -11,6 +11,8 @@ on:
       - 'src/lib/paidReturnUncertainty.ts'
       - 'src/lib/paidEvidenceGate.ts'
       - 'src/lib/vipPremiumPipeline.ts'
+      - 'src/lib/predictions.ts'
+      - 'scripts/check-paid-publication-postgres.ts'
       - 'src/lib/paidQualityDiagnostics.ts'
       - 'src/lib/paidOpsData.ts'
       - 'src/app/admin/paid-ops/page.tsx'
@@ -44,3 +46,35 @@ jobs:
       - run: npm run check:paystack-entitlement
       - run: npm run check:onetime-fallback
       - run: npx tsc --noEmit
+
+  postgres-publication:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: betgenius
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: betgenius_paid_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U betgenius -d betgenius_paid_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      DATABASE_URL_UNPOOLED: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      BETGENIUS_DISPOSABLE_PG: "yes"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma db push --skip-generate
+      - run: npx tsx scripts/check-paid-publication-postgres.ts
