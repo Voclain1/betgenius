@@ -17,7 +17,8 @@ This PR is diagnostic-first. It must not change paid subscription entitlements, 
 - [ ] Check the actual source and timestamp of every historical entry price. The optional marketConfirmation.entryPrice field is not by itself evidence that an executable quote was frozen at publication.
 - [x] Stop labeling generation-model providers as bookmaker providers. Historical bookmaker identity remains unknown; provider segments must not be used for decisions until a bookmaker identifier is actually persisted.
 - [ ] Wire safeguards into the real paid-selection flow only after compatibility and shadow-mode verification.
-- [x] Implement training-only segment selection and strictly later holdout comparison with regression checks against holdout outcome leakage.\n- [ ] Execute this comparison against verified production observations with sufficient samples, settlement timing and price provenance.
+- [x] Implement training-only segment selection and strictly later holdout comparison with regression checks against holdout outcome leakage.
+- [ ] Execute this comparison against verified production observations with sufficient samples, settlement timing and price provenance.
 - [ ] Verify paid entitlement access, paid-content redaction, and subscription regressions.
 - [ ] Verify production performance and query volume of the admin diagnostics page.
 - [ ] Record rollback and confirm no live feature flags were activated.
@@ -35,3 +36,25 @@ Never infer a positive expected-value edge from a profitable-looking subgroup, a
 
 ## Rollback
 Revert PR #178 to remove the added diagnostics and scripts. Since this PR must not activate new live selection rules, no paid selection mode change or data migration should be required. If that changes before merge, update this section and add a tested rollback procedure.
+
+## Production read-only audit — 13 November 2026
+
+An initial audit was completed in a verified `BEGIN READ ONLY` PostgreSQL transaction on the production VPS. It used the existing database account with transaction read-only mode, **not** a dedicated restricted database role. The stricter restricted-role release checkbox therefore remains open.
+
+- 7,883 total prediction rows in the production database.
+- In the last 90 days, 600 **unique** settled published predictions linked to VIP or PREMIUM. Tier counts overlap; do not sum VIP and PREMIUM as unique selections.
+- 12 of those 600 have `Prediction.odds`; 103 have `marketConfirmation`; **zero** have `marketConfirmation.entryPrice`.
+- Consequently, historical paid ROI cannot be verified. Do not backfill prices from newer quotes or treat win rate as profitability.
+- The generation-model provider is not a bookmaker. Only explicit named bookmaker quotes are usable as bookmaker attribution.
+- Forward-looking quote evidence records the indicative median, selection, named bookmaker samples, and timestamps when available. This is **not** evidence of a subscriber's actual filled price.
+
+## Publication-time blocker — must resolve before 100/100
+
+The current implementation freezes `marketConfirmation` at **promotion**, while the automatic publisher rechecks a newer quote before publication. The later quote is not yet stored as a separate immutable publication snapshot. A retry may also occur after a previously held publication. Until this is implemented and tested, do **not** describe the promotion quote as a verified publication-time entry price.
+
+Release acceptance requires:
+1. Store promotion and publication evidence separately without overwriting either snapshot, including on retries and failed publishes.
+2. Record the quote source, selection, named bookmaker, observation time, and missing-evidence reason. Never synthesize a bookmaker fill.
+3. Test first publish, stale/missing quote, publish failure, retry, concurrent attempt, and no change to entitlement/redaction.
+4. Re-run CI on the final commit; perform a read-only post-deployment evidence check.
+5. Keep live selection behavior and paid access unchanged. Any activation of market-based filtering requires separate prospective validation and explicit approval.
