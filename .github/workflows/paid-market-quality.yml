@@ -9,6 +9,7 @@ on:
       - 'src/lib/paidShadowIntegrity.ts'
       - 'src/lib/vipPremiumPipeline.ts'
       - 'src/lib/paidQualityDiagnostics.ts'
+      - 'src/lib/paidOpsData.ts'
       - 'src/app/admin/paid-ops/page.tsx'
       - 'scripts/check-paid-market-quality.ts'
       - 'scripts/check-paid-chronological-validation.ts'
