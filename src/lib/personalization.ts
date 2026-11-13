@@ -502,21 +502,29 @@ export function savedPredictionView(snapshot: SavedSnapshot, live: LivePredictio
     return { state: "unavailable", outcome: null, changedTo: null, finalScore: null, locked: !canView };
   }
   const same = sameSelection(snapshot, live);
+  const liveSettled = live.outcome === "WON" || live.outcome === "LOST" || live.outcome === "VOID";
   let outcome: SavedView["outcome"] = null;
   if (same) {
-    outcome = live.outcome === "WON" || live.outcome === "LOST" || live.outcome === "VOID" ? live.outcome : null;
-  } else if (live.finalHomeScore != null && live.finalAwayScore != null && snapshot.marketType !== "OTHER" && snapshot.marketType !== "SAME_GAME_DOUBLE") {
-    const mt = snapshot.marketType as MarketType;
-    if (isValidSelection(mt, snapshot.selection)) outcome = resolveMarket(mt, snapshot.selection, live.finalHomeScore, live.finalAwayScore);
+    outcome = liveSettled ? (live.outcome as "WON" | "LOST" | "VOID") : null;
+  } else {
+    if (live.finalHomeScore != null && live.finalAwayScore != null && snapshot.marketType !== "OTHER" && snapshot.marketType !== "SAME_GAME_DOUBLE") {
+      const mt = snapshot.marketType as MarketType;
+      if (isValidSelection(mt, snapshot.selection)) outcome = resolveMarket(mt, snapshot.selection, live.finalHomeScore, live.finalAwayScore);
+    }
+    // A void with no score (abandoned, postponed past the window) voids every
+    // selection on the fixture, the saved one included.
+    if (!outcome && live.outcome === "VOID" && live.finalHomeScore == null) outcome = "VOID";
   }
   const kickoff = live.kickoff ?? snapshot.kickoff;
-  const state: SavedState = outcome
+  // Once the live row has settled the match is over: the saved pick is
+  // settled too, even when its own result cannot be derived (a rewritten
+  // free-text or half-time market). It is then "settled, result unavailable",
+  // never left waiting forever.
+  const state: SavedState = outcome || liveSettled
     ? "settled"
-    : live.outcome !== "PENDING" && same
-      ? "settled"
-      : kickoff && kickoff.getTime() > now.getTime()
-        ? "upcoming"
-        : "awaiting";
+    : kickoff && kickoff.getTime() > now.getTime()
+      ? "upcoming"
+      : "awaiting";
   if (!canView) return { state, outcome: null, changedTo: null, finalScore: state === "settled" ? finalScore : null, locked: true };
   return { state, outcome, changedTo: same ? null : live.pick, finalScore, locked: false };
 }
@@ -525,4 +533,51 @@ export const SAVED_FILTERS = ["all", "upcoming", "settled", "won", "lost"] as co
 export type SavedFilter = (typeof SAVED_FILTERS)[number];
 export function parseSavedFilter(v: unknown): SavedFilter {
   return (SAVED_FILTERS as readonly unknown[]).includes(v) ? (v as SavedFilter) : "all";
+}
+
+/**
+ * Whether a bookmark belongs under a filter — decided from its SavedView, the
+ * same value the row displays, so the list and the row can never disagree.
+ * Won/Lost exclude locked rows: listing a padlocked pick under "Won" would
+ * reveal the result the lock withholds.
+ */
+export function matchesSavedFilter(view: SavedView, filter: SavedFilter): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "upcoming":
+      return view.state === "upcoming";
+    case "settled":
+      return view.state === "settled";
+    case "won":
+      return !view.locked && view.outcome === "WON";
+    case "lost":
+      return !view.locked && view.outcome === "LOST";
+  }
+}
+
+type Orderable = { id: string; kickoff: Date | null; settledAt?: Date | null; view: SavedView };
+const ms = (d: Date | null | undefined) => (d ? d.getTime() : null);
+
+/** Upcoming: soonest first. Everything else: latest kickoff first, undated last. Ties by id, so pages are stable. */
+export function orderSaved<T extends Orderable>(items: readonly T[], filter: SavedFilter): T[] {
+  const asc = filter === "upcoming";
+  return [...items].sort((a, b) => {
+    const ka = ms(a.kickoff);
+    const kb = ms(b.kickoff);
+    if (ka !== kb) {
+      if (ka == null) return 1;
+      if (kb == null) return -1;
+      return asc ? ka - kb : kb - ka;
+    }
+    return asc ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+  });
+}
+
+/** The overview's "recently settled": settled bookmarks, latest settlement first (kickoff when no settlement time). */
+export function recentlySettled<T extends Orderable>(items: readonly T[], limit: number): T[] {
+  return items
+    .filter((i) => i.view.state === "settled")
+    .sort((a, b) => (ms(b.settledAt) ?? ms(b.kickoff) ?? 0) - (ms(a.settledAt) ?? ms(a.kickoff) ?? 0) || b.id.localeCompare(a.id))
+    .slice(0, limit);
 }

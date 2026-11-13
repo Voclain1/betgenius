@@ -25,7 +25,7 @@ export default async function SavedPredictionsPage({ searchParams }: { searchPar
   const filter = parseSavedFilter(searchParams.filter);
   const page = Math.min(1000, Math.max(1, Math.floor(Number(searchParams.page)) || 1));
   const { session, userId, viewer, canViewMap } = await loadDashboardContext(href(filter, page));
-  const [personal, { items, total, all }] = await Promise.all([getPersonalization(userId), listSaved(userId, viewer, filter, page)]);
+  const [personal, { items, total, all, counts }] = await Promise.all([getPersonalization(userId), listSaved(userId, viewer, filter, page)]);
   const tz = personal.timezone;
   const pages = Math.max(1, Math.ceil(total / SAVED_PAGE_SIZE));
 
@@ -35,7 +35,7 @@ export default async function SavedPredictionsPage({ searchParams }: { searchPar
         <div>
           <h1 className="text-2xl font-black tracking-tight">Saved predictions</h1>
           <p className="text-sm text-gray-400">
-            Each pick is kept exactly as you saved it and settled against the final score. {all > 0 && <span className="tabular-nums">{all} saved.</span>}
+            Each pick is kept exactly as you saved it, and its result is worked out for that pick — even if the prediction is later updated. {all > 0 && <span className="tabular-nums">{all} saved.</span>}
           </p>
         </div>
 
@@ -51,6 +51,7 @@ export default async function SavedPredictionsPage({ searchParams }: { searchPar
                 }`}
               >
                 {FILTER_LABELS[f]}
+                <span className={`ml-1.5 tabular-nums ${f === filter ? "opacity-70" : "text-gray-500"}`}>{counts[f]}</span>
               </Link>
             ))}
           </nav>

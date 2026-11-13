@@ -154,7 +154,16 @@ export function SavedStatus({ item, timezone }: { item: SavedItem; timezone: str
       </span>
     );
   }
-  if (v.locked && v.state === "settled") return <span className="text-[11px] text-gray-500">Settled{v.finalScore ? ` · FT ${v.finalScore}` : ""}</span>;
+  if (v.state === "settled") {
+    // Locked: the result is part of what is paid for. Unlocked with no outcome:
+    // the pick was rewritten into a market the final score alone cannot settle.
+    return (
+      <span className="text-[11px] text-gray-500">
+        {v.locked ? "Settled" : "Settled · saved pick not graded"}
+        {v.finalScore ? ` · FT ${v.finalScore}` : ""}
+      </span>
+    );
+  }
   if (v.state === "upcoming" && item.kickoff) return <span className="text-[11px] tabular-nums text-gray-400">{kickoffInZone(item.kickoff, timezone)}</span>;
   if (v.state === "unavailable") return <span className="text-[11px] text-gray-500">No longer published · result unavailable</span>;
   return <span className="text-[11px] text-gray-400">Awaiting result</span>;

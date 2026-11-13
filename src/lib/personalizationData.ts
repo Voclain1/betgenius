@@ -27,6 +27,10 @@ import {
   isCatalogueLeague,
   isPreferenceMarket,
   rankPersonalized,
+  SAVED_FILTERS,
+  matchesSavedFilter,
+  orderSaved,
+  recentlySettled,
   safeTimeZone,
   savedPredictionView,
   uniqueIds,
@@ -525,6 +529,7 @@ export type SavedItem = {
   leagueApiId: number | null;
   leagueName: string | null;
   kickoff: Date | null;
+  settledAt: Date | null;
   savedAt: Date;
   category: string;
   /** Null when locked: never sent to the page for a reader who cannot view it. */
@@ -564,6 +569,7 @@ export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new
     leagueApiId: s.leagueApiId,
     leagueName: s.leagueName,
     kickoff: live?.kickoff ?? s.kickoff,
+    settledAt: live?.settledAt ?? null,
     savedAt: s.createdAt,
     category,
     market: canView ? s.market : null,
@@ -577,53 +583,44 @@ export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new
 
 export const SAVED_PAGE_SIZE = 20;
 
-function savedWhere(userId: string, filter: SavedFilter, now: Date): Prisma.SavedPredictionWhereInput {
-  switch (filter) {
-    case "upcoming":
-      return { userId, kickoff: { gt: now }, OR: [{ prediction: { is: null } }, { prediction: { outcome: "PENDING" } }] };
-    case "settled":
-      return { userId, prediction: { outcome: { in: ["WON", "LOST", "VOID"] } } };
-    case "won":
-      return { userId, prediction: { outcome: "WON" } };
-    case "lost":
-      return { userId, prediction: { outcome: "LOST" } };
-    default:
-      return { userId };
-  }
+/**
+ * Every bookmark of one user, shaped and settled once.
+ *
+ * Filters, counts, ordering and the overview's highlights all derive from
+ * these SavedView values — the same ones each row displays — rather than from
+ * a SQL condition on the live prediction. A SQL filter on `prediction.outcome`
+ * describes the LIVE pick, which after a rewrite is not the pick the reader
+ * saved, so the list and the row could disagree. Bounded by LIMITS.saved
+ * (500, enforced on save), so this is at most one indexed read per page.
+ */
+async function loadSavedItems(userId: string, viewer: Entitlement, now: Date): Promise<SavedItem[]> {
+  const rows = await prisma.savedPrediction.findMany({
+    where: { userId },
+    include: SAVED_INCLUDE,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: LIMITS.saved,
+  });
+  return rows.map((r) => toSavedItem(r, viewer, now));
 }
 
 export async function listSaved(userId: string, viewer: Entitlement, filter: SavedFilter, page: number, now: Date = new Date()) {
-  const where = savedWhere(userId, filter, now);
-  const [rows, total, counts] = await Promise.all([
-    prisma.savedPrediction.findMany({
-      where,
-      include: SAVED_INCLUDE,
-      orderBy: filter === "upcoming" ? [{ kickoff: "asc" }, { id: "asc" }] : [{ kickoff: "desc" }, { id: "desc" }],
-      skip: (page - 1) * SAVED_PAGE_SIZE,
-      take: SAVED_PAGE_SIZE,
-    }),
-    prisma.savedPrediction.count({ where }),
-    prisma.savedPrediction.count({ where: { userId } }),
-  ]);
-  return { items: rows.map((r) => toSavedItem(r, viewer, now)), total, all: counts };
+  const all = await loadSavedItems(userId, viewer, now);
+  const matching = orderSaved(all.filter((i) => matchesSavedFilter(i.view, filter)), filter);
+  const counts = Object.fromEntries(SAVED_FILTERS.map((f) => [f, all.filter((i) => matchesSavedFilter(i.view, f)).length])) as Record<SavedFilter, number>;
+  return {
+    items: matching.slice((page - 1) * SAVED_PAGE_SIZE, page * SAVED_PAGE_SIZE),
+    total: matching.length,
+    all: all.length,
+    counts,
+  };
 }
 
-/** For the overview: the next few saved picks to play and the latest few to settle. */
+/** For the overview: the next few saved picks to play and the latest few to settle — same views as /dashboard/saved. */
 export async function savedHighlights(userId: string, viewer: Entitlement, now: Date = new Date()) {
-  const [upcoming, settled, total] = await Promise.all([
-    prisma.savedPrediction.findMany({
-      where: savedWhere(userId, "upcoming", now),
-      include: SAVED_INCLUDE,
-      orderBy: [{ kickoff: "asc" }, { id: "asc" }],
-      take: 4,
-    }),
-    prisma.savedPrediction.findMany({
-      where: { userId, prediction: { outcome: { in: ["WON", "LOST", "VOID"] } } },
-      include: SAVED_INCLUDE,
-      orderBy: [{ prediction: { settledAt: { sort: "desc", nulls: "last" } } }, { kickoff: "desc" }],
-      take: 4,
-    }),
-    prisma.savedPrediction.count({ where: { userId } }),
-  ]);
-  return { upcoming: upcoming.map((r) => toSavedItem(r, viewer, now)), settled: settled.map((r) => toSavedItem(r, viewer, now)), total };
+  const all = await loadSavedItems(userId, viewer, now);
+  return {
+    upcoming: orderSaved(all.filter((i) => matchesSavedFilter(i.view, "upcoming")), "upcoming").slice(0, 4),
+    settled: recentlySettled(all, 4),
+    total: all.length,
+  };
 }

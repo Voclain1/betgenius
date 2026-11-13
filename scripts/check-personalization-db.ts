@@ -162,12 +162,25 @@ async function main() {
     await prisma.prediction.update({ where: { id: settled.id }, data: { selection: { value: "AWAY" }, pick: "Away Win", outcome: "LOST" } });
     const rewritten = (await data.listSaved(alice.id, free, "all", 1)).items.find((i) => i.predictionId === settled.id)!;
     eq("rewrite: saved pick shown, change disclosed, saved selection settled from the score", [rewritten.pick, rewritten.view.changedTo, rewritten.view.outcome], ["Home Win", "Away Win", "WON"]);
+    // Regression: filters follow the SAVED selection, not the live row.
+    const wonAfter = await data.listSaved(alice.id, free, "won", 1);
+    const lostAfter = await data.listSaved(alice.id, free, "lost", 1);
+    eq("rewrite: listed under Won (saved pick won)", wonAfter.items.map((i) => i.predictionId), [settled.id]);
+    eq("rewrite: NOT listed under Lost although the live row lost", lostAfter.items.map((i) => i.predictionId).includes(settled.id), false);
+    eq("rewrite: filter counts agree with the rows", [wonAfter.counts.won, wonAfter.counts.lost], [1, 0]);
+    const hl = await data.savedHighlights(alice.id, free, now);
+    eq("rewrite: overview 'recently settled' shows the saved result", hl.settled.find((i) => i.predictionId === settled.id)?.view.outcome, "WON");
 
     console.log("premium after lapse:");
     const vipSave = await data.savePrediction(vip.id, vipToday.id, vipEnt);
     check("VIP can save a VIP pick", vipSave.created);
     const lapsed = (await data.listSaved(vip.id, free, "all", 1)).items[0];
     eq("lapsed subscriber: pick, market, odds, confidence withheld server-side", [lapsed.view.locked, lapsed.pick, lapsed.market, lapsed.odds, lapsed.confidence], [true, null, null, null, null]);
+    await prisma.prediction.update({ where: { id: vipToday.id }, data: { outcome: "WON", finalHomeScore: 1, finalAwayScore: 0 } });
+    const lapsedWon = await data.listSaved(vip.id, free, "won", 1);
+    eq("lapsed subscriber: a won locked pick is not revealed by the Won filter or its count", [lapsedWon.total, lapsedWon.counts.won, lapsedWon.counts.settled], [0, 0, 1]);
+    eq("active subscriber: same pick listed under Won", (await data.listSaved(vip.id, vipEnt, "won", 1)).total, 1);
+    await prisma.prediction.update({ where: { id: vipToday.id }, data: { outcome: "PENDING", finalHomeScore: null, finalAwayScore: null } });
     const active = (await data.listSaved(vip.id, vipEnt, "all", 1)).items[0];
     eq("active subscriber sees it", [active.view.locked, active.pick], [false, "Home Win"]);
 
@@ -179,6 +192,11 @@ async function main() {
     eq("bookmark survives with its snapshot (SetNull)", [!!orphan, orphan?.predictionId, orphan?.pick], [true, null, "Home Win"]);
     const orphanItem = (await data.listSaved(alice.id, free, "all", 1)).items.find((i) => i.id === orphan?.id);
     eq("shown as unavailable, no result invented", [orphanItem?.view.state, orphanItem?.view.outcome], ["unavailable", null]);
+    const upcomingAfterDelete = await data.listSaved(alice.id, free, "upcoming", 1);
+    check("deleted (future kickoff): not listed as upcoming", !upcomingAfterDelete.items.some((i) => i.id === orphan?.id));
+    for (const f of ["settled", "won", "lost"] as const) check(`deleted: not listed under ${f}`, !(await data.listSaved(alice.id, free, f, 1)).items.some((i) => i.id === orphan?.id));
+    check("deleted: still under All", (await data.listSaved(alice.id, free, "all", 1)).items.some((i) => i.id === orphan?.id));
+    check("deleted: not in the overview's upcoming", !(await data.savedHighlights(alice.id, free, now)).upcoming.some((i) => i.id === orphan?.id));
     eq("orphan removable by bookmark id (owner only)", [await data.unsavePrediction(bob.id, { savedId: orphan!.id }), await data.unsavePrediction(alice.id, { savedId: orphan!.id })], [0, 1]);
 
     console.log("dashboard:");

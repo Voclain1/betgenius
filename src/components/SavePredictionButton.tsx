@@ -52,6 +52,7 @@ export function SavePredictionButton({
   withLabel = false,
   onChange,
   className = "",
+  size = "md",
 }: {
   predictionId: string;
   /** Where the control sits, for analytics only (a fixed value, never free text). */
@@ -60,6 +61,8 @@ export function SavePredictionButton({
   withLabel?: boolean;
   onChange?: (saved: boolean) => void;
   className?: string;
+  /** "sm" (32px) for dense rows such as the phone prediction table; "md" (36px) elsewhere. */
+  size?: "sm" | "md";
 }) {
   const session = useContext(SessionContext);
   const status = session?.status ?? "unauthenticated";
@@ -80,7 +83,7 @@ export function SavePredictionButton({
   }, [status, predictionId, initiallySaved]);
 
   const base = `inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-    withLabel ? "min-h-9 border border-brand-border px-3" : "h-9 w-9"
+    withLabel ? "min-h-9 border border-brand-border px-3" : size === "sm" ? "h-8 w-8" : "h-9 w-9"
   } ${className}`;
 
   if (status === "loading") {

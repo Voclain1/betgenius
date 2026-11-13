@@ -28,6 +28,9 @@ import {
   kickoffInZone,
   orderedCompetitions,
   parseSavedFilter,
+  matchesSavedFilter,
+  orderSaved,
+  recentlySettled,
   rankPersonalized,
   safeTimeZone,
   savedPredictionView,
@@ -205,6 +208,45 @@ console.log("saved predictions:");
   const other = savedPredictionView({ ...snap, marketType: "OTHER", selection: null, pick: "Anytime scorer" }, { ...live, marketType: "OTHER", selection: null, pick: "Different", outcome: "LOST", finalHomeScore: 1, finalAwayScore: 1, kickoff: hours(-3) }, true, NOW);
   eq("free-text market changed: left unresolved rather than guessed", other.outcome, null);
 
+  // ---- filters and status come from the SAME view as the row (regression) ----
+  const views = {
+    rewrittenWon: rewritten, // live LOST, saved HOME won 2-0
+    deletedFuture: savedPredictionView({ ...snap, kickoff: hours(48) }, null, true, NOW),
+    lockedWon: locked,
+    upcoming: savedPredictionView(snap, live, true, NOW),
+    awaiting: savedPredictionView(snap, { ...live, kickoff: hours(-1) }, true, NOW),
+  };
+  const under = (f: Parameters<typeof matchesSavedFilter>[1]) => Object.entries(views).filter(([, v]) => matchesSavedFilter(v, f)).map(([k]) => k);
+  eq("Won lists the rewritten pick the reader actually won", under("won"), ["rewrittenWon"]);
+  eq("Lost does NOT list it although the live row lost", under("lost"), []);
+  eq("Settled: the rewritten pick and the locked one (state only)", under("settled"), ["rewrittenWon", "lockedWon"]);
+  eq("Upcoming excludes a deleted prediction even with a future kickoff", under("upcoming"), ["upcoming"]);
+  eq("All lists everything, deleted included", under("all").length, 5);
+  check("locked win never appears under Won (would leak the result)", !matchesSavedFilter(views.lockedWon, "won"));
+
+  const htft = savedPredictionView(
+    { ...snap, marketType: "HT_FT", selection: { ht: "HOME", ft: "HOME" }, pick: "Home/Home" },
+    { ...live, marketType: "HT_FT", selection: { ht: "DRAW", ft: "HOME" }, pick: "Draw/Home", outcome: "WON", finalHomeScore: 1, finalAwayScore: 0, kickoff: hours(-3) },
+    true,
+    NOW,
+  );
+  eq("rewritten half-time market: settled, not graded, never 'awaiting' forever", [htft.state, htft.outcome, matchesSavedFilter(htft, "won"), matchesSavedFilter(htft, "lost")], ["settled", null, false, false]);
+  const voided = savedPredictionView(snap, { ...live, selection: { value: "AWAY" }, pick: "Away Win", outcome: "VOID", kickoff: hours(-3) }, true, NOW);
+  eq("rewritten pick on a voided (scoreless) match is void too", [voided.state, voided.outcome], ["settled", "VOID"]);
+
+  const items = [
+    { id: "a", kickoff: hours(5), view: views.upcoming },
+    { id: "b", kickoff: hours(1), view: views.upcoming },
+    { id: "c", kickoff: null, view: views.deletedFuture },
+    { id: "d", kickoff: hours(-30), settledAt: hours(-1), view: views.rewrittenWon },
+    { id: "e", kickoff: hours(-3), settledAt: hours(-20), view: views.rewrittenWon },
+  ];
+  eq("upcoming order: soonest first", orderSaved(items.slice(0, 2), "upcoming").map((i) => i.id), ["b", "a"]);
+  eq("default order: latest kickoff first, undated last", orderSaved(items, "all").map((i) => i.id), ["a", "b", "e", "d", "c"]);
+  eq("recently settled: by settlement time", recentlySettled(items, 4).map((i) => i.id), ["d", "e"]);
+  const data0 = src("src/lib/personalizationData.ts");
+  check("list/highlights filter in code from the views, not in SQL on the live outcome", !/prediction: \{ outcome/.test(data0) && /matchesSavedFilter\(i\.view, filter\)/.test(data0));
+
   // The data layer drops restricted fields server-side, not in the component.
   const data = src("src/lib/personalizationData.ts");
   check("toSavedItem nulls market/pick/odds/confidence when locked", /market: canView \? s\.market : null/.test(data) && /pick: canView \? s\.pick : null/.test(data) && /odds: canView/.test(data) && /confidence: canView/.test(data));
@@ -291,6 +333,17 @@ console.log("public copy:");
   check("saved page keeps responsible-gambling link", /\/responsible-gambling/.test(src("src/app/dashboard/saved/page.tsx")));
   const parts = src("src/components/personal/DashboardParts.tsx").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   check("confidence is labelled as confidence, not probability", /Confidence \{row\.confidence\}%/.test(parts) && !/>[^<{]*(probability|chance of winning)/i.test(parts));
+}
+
+console.log("prediction table bookmark:");
+{
+  const t = src("src/components/PredictionsTable.tsx");
+  check("no new column: ad colSpan formula unchanged", /const columnCount = 7 \+ \(showOutcome \? 1 : 0\) \+ \(linkRows \? 1 : 0\);/.test(t));
+  check("no new <th>: header still 7 fixed columns + optional two", (t.match(/<th /g) ?? []).length === 9);
+  const lines = t.split("\n").filter((l) => /<SavePredictionButton /.test(l));
+  check("every table bookmark is withheld on locked rows", lines.length >= 4 && lines.every((l) => /\{!p\.locked (&&|\?) <SavePredictionButton /.test(l)), `${lines.length} usages`);
+  check("phone bookmark sits above the row's stretched link", /relative z-10 col-start-3 row-span-3 row-start-1 flex/.test(t));
+  check("phone bookmark uses the compact 32px size", /size="sm"/.test(t) && /size === "sm" \? "h-8 w-8"/.test(src("src/components/SavePredictionButton.tsx")));
 }
 
 console.log("design rules (CLAUDE.md):");

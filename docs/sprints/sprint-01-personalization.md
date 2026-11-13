@@ -68,16 +68,40 @@ invitation on the dashboard instead. Revisitable from Preferences.
 
 ### Saved predictions — `/dashboard/saved`
 Bookmark control on every prediction card (feeds' detailed view, match page,
-free ticket, dashboard) and in the desktop prediction table. Filters
-All / Upcoming / Settled / Won / Lost, 20 per page, remove. Each bookmark keeps a
-**snapshot** of the selection as saved:
-- the saved pick is always what is shown; if the prediction was rewritten the
-  row says "Updated since you saved it — now X";
-- result: the live outcome when the selection is unchanged; after a rewrite the
-  saved selection is settled from the final score with the same resolver
-  auto-settlement uses (`resolveMarket`), or left unresolved for free-text markets;
-- a hard-deleted prediction leaves the bookmark (FK `SET NULL`), shown as
-  "No longer published · result unavailable".
+free ticket, dashboard) and in the prediction table at every width (see
+§2a). Filters All / Upcoming / Settled / Won / Lost with counts, 20 per page,
+remove. Each bookmark keeps a **snapshot** of the selection as saved, and
+**the snapshot decides everything the reader sees**:
+
+| Situation | Shown pick | Result | Status | Listed under |
+|---|---|---|---|---|
+| Unchanged pick | saved | live outcome | upcoming → awaiting → settled | that result |
+| Rewritten, match settled | saved, plus "Updated since you saved it — now X" | saved selection graded from the final score (`resolveMarket`, the auto-settlement resolver) | settled | the **saved** result, never the live row's |
+| Rewritten into a market the score alone cannot grade (HT/FT, free text) | saved + notice | none ("saved pick not graded") | settled once the live row settles | Settled only — never Won/Lost |
+| Rewritten, match void with no score | saved + notice | VOID | settled | Settled |
+| Prediction deleted (FK `SET NULL`) | saved snapshot | none | unavailable | All only — never Upcoming/Settled/Won/Lost |
+| Reader can no longer view the category | teams only; pick/odds/confidence withheld server-side | hidden | state only | never Won/Lost (would reveal the result) |
+
+Implementation: `savedPredictionView` computes one `SavedView` per bookmark;
+`matchesSavedFilter`, `orderSaved` and `recentlySettled` (all pure) derive the
+filters, counts, ordering and the overview's "recently settled" from those
+same values. There is no SQL filter on the live prediction's outcome any more,
+and no denormalised "saved result" column that a separate settlement job would
+have to keep in step. A user has at most 500 bookmarks (enforced on save), so
+this is one bounded, indexed read per page.
+
+### 2a. Bookmark in the prediction tables
+- **≥ 768 px**: in the Kickoff cell.
+- **640–767 px** (Kickoff column hidden): in the Over/Under cell.
+- **< 640 px** (phone grid): a 32 px button stacked above the chevron in the
+  grid's existing third column. No column is added: the ad rows' `colSpan`
+  formula and `<th>` count are unchanged (asserted), and the button sits
+  above the row's stretched link (`relative z-10`), so tapping it saves while
+  tapping the row still opens the match.
+- Measured on iPhone SE / 13 / Pixel 5: **row heights identical** with and
+  without the button (117 px); team-name column 10 px narrower (178 vs 188 px
+  on SE) with no truncation in the sample; no horizontal overflow; keyboard
+  operable (`aria-pressed`, labelled). Never shown on locked rows.
 
 ### Favourites and account
 - `FollowButton` (existing) remains the follow/unfollow control on team, league
@@ -186,13 +210,13 @@ Register `source`, `step` and `personalized` as GA4 custom dimensions if needed.
 
 | Check | Result |
 |---|---|
-| `npm run check:personalization` (pure, in preflight) | **157 passed, 0 failed** |
-| `check-personalization-db.ts` (integration tier, run against a disposable local Postgres 16) | **53 passed, 0 failed** |
+| `npm run check:personalization` (pure, in preflight) | **174 passed, 0 failed** |
+| `check-personalization-db.ts` (integration tier, run against a disposable local Postgres 16) | **65 passed, 0 failed** |
 | `tsc --noEmit` | pass |
 | `next build` (includes lint/type pass) | pass |
 | `npm run check:budgets` | all 73 pages within budget |
 | Render checks touching changed components (`check-prediction-view`, `check-match-render`, `check-match-insights-render`, `check-dashboard-logout`) | pass |
-| `npm run preflight` (full pure tier) | all pass except 3 checks that fail identically on the untouched base commit (`check-house-banners`, `check-goals-category`, `check-sitemap-scoping` — the last asserts a `predictionScope.ts` select this sprint does not touch). `check-db-safety` passes without a local `.env`; it flags any local DB identity, so it failed only on the disposable dev DB. |
+| `npm run preflight` (full pure tier), run on untouched `master` (b3d2fdb, separate worktree) and on this branch, both without a local `.env` | master **79/82**, branch **80/83** (the extra step is `check-personalization`, passing). The same three fail on both with **byte-identical failure lines**: `check-house-banners` (2 banner-slot assertions), `check-goals-category` ("GOALS feed re-filters and keeps display ordering"), `check-sitemap-scoping` (asserts `predictionScope.ts`'s team select excludes `coachJson`). None touches Sprint 01 code; none was modified here. |
 | Browser end-to-end (Playwright, production build, local DB) | login → dashboard; preferences search+save; settled filter; onboarding with Back/Next/Finish and persisted completion (no second redirect); existing-user invitation (no redirect); signed-out save → `/login?callbackUrl=…`; no horizontal overflow on iPhone 13 for dashboard, saved, preferences, onboarding |
 
 Pure suite covers: market list derivation, timezone validation (incl. ICU
@@ -202,6 +226,13 @@ settlement and no-substitution, premium masking, onboarding targeting (new vs
 existing, payment callbacks), access decision order (401 → 403 → 429), rate
 limiter, analytics payload hygiene, "no AI wording" and guarantee-free copy,
 and the CLAUDE.md design rules (no accent stripes, no tinted pills).
+
+Regression tests added in the release-hardening pass: filters for a
+rewritten pick (live LOST, saved WON → listed under Won, not Lost; counts
+agree; overview shows WON); deleted prediction with a future kickoff (not
+Upcoming/Settled/Won/Lost, still under All, not on the overview); a won locked
+pick is invisible to the Won filter and its count; ungradeable rewrite and
+void-without-score; ordering; table bookmark structure.
 
 Integration suite covers: create/update/remove preferences, duplicate
 prevention, invalid ids, user isolation, timezone sync, follow/unfollow team and
@@ -225,33 +256,80 @@ See `docs/sprints/screenshots/`.
 
 ## 10. Known limitations
 
-- **Saving from the phone table view**: on phones the compact table has no
-  bookmark (adding a column would reflow the phone grid and ad rows); phone
-  users save from the Detailed view, match pages or the dashboard.
 - **Upcoming fixtures** depend on the league caches refreshed by the existing
   enrichment cron; a postponement is reflected only after the next refresh.
   Kickoff time, never the cached status, decides what is "upcoming".
-- **Saved filters** Upcoming/Settled/Won/Lost filter on the live outcome; for a
-  rewritten pick whose saved selection settles differently from the live row,
-  the row itself shows the correct saved result but may appear under the live
-  row's filter.
 - **Rate limiter** is in-process (correct for the single VPS server; per
   instance on a multi-instance host). Writes are idempotent and capped regardless.
 - **Notification preferences**: integrated by link and timezone sync only; full
   notification work is a later sprint.
 - No ESLint config exists in the repo (`next lint` offers to create one); the
   build's lint/type pass is what ran.
+- Resolved in the hardening pass: saved filters now follow the saved selection
+  (§2), and the phone table has a bookmark (§2a).
 
 ## Deployment and migration
 
-1. Run **Actions → db-push** on this branch (additive SQL: two tables, indexes,
-   FKs). It prints the plan and refuses anything destructive.
-2. Preflight's schema-sync check then passes; merge.
-3. Deploy as usual. No backfill, no env vars, no secrets.
-4. Optional: register the new GA4 custom dimensions (`source`, `step`, `personalized`).
+### Exactly what changes in the database
+`git diff master -- prisma/schema.prisma` is **70 insertions, 0 deletions**:
+two new models and three back-relation fields (`User.preference`,
+`User.savedPredictions`, `Prediction.savedBy`). Back-relations are Prisma-only
+and produce no SQL. `prisma migrate diff` from master's schema to this one
+yields only:
 
-Rollback: the code can be reverted independently; the two new tables are unused
-by the previous version and can be left in place.
+- `CREATE TABLE "UserPreference"`, `CREATE TABLE "SavedPrediction"`
+- 5 indexes, all on those new tables (2 unique: `UserPreference.userId`,
+  `SavedPrediction(userId, predictionId)`)
+- 3 foreign keys, all *from* the new tables: → `User` (`ON DELETE CASCADE`) ×2,
+  → `Prediction` (`ON DELETE SET NULL`)
+
+No existing table, column, default, index, constraint or relation changes; no
+data is written. Adding a foreign key briefly takes a `SHARE ROW EXCLUSIVE`
+lock on `User` and `Prediction`; because the new tables are empty the
+constraint validates instantly, so the lock is held for milliseconds.
+
+### Which database `db-push` modifies
+The workflow (`.github/workflows/db-push.yml`, manual `workflow_dispatch`
+only) connects with the **repository secrets `DATABASE_URL` and
+`DATABASE_URL_UNPOOLED`** — the same secrets the VPS deploy passes to the
+production build. That is the **production database**:
+- while the repository variable `DB_ON_VPS` is unset: the Neon database those
+  secrets name;
+- when `DB_ON_VPS=true`: the VPS Postgres, reached through an SSH tunnel
+  (`.github/actions/vps-db-tunnel`, runner `localhost:5432` → VPS `127.0.0.1:5433`),
+  with the secrets pointing at `127.0.0.1:5432/betgenius`.
+Secret values are not visible from the repository; confirm the target in
+GitHub → Settings → Secrets and variables before running.
+
+### Its safety checks, in order
+1. `concurrency: db-push` — one run at a time.
+2. **Plan**: `prisma migrate diff --from-schema-datasource` (introspects the
+   live database) `--to-schema-datamodel` (this branch) prints the SQL.
+3. **Additive gate**: the job fails if the plan contains `DROP`, `ALTER COLUMN
+   … TYPE`, `RENAME` or `ALTER TYPE`. This also catches drift: if production
+   had objects the schema lacks, the plan would contain `DROP` and stop.
+4. **Push**: `prisma db push --skip-generate` **without** `--accept-data-loss`,
+   so Prisma itself refuses any change it classifies as data-losing.
+5. **Verify**: `npm run check:schema` confirms the database now matches.
+Known gaps (not changed here — unrelated to this sprint): the plan and the
+push are computed separately (no lock between them), and the grep would not
+flag a non-destructive but locking change such as `SET NOT NULL` on a large
+table. Neither applies to this plan.
+
+### Order of operations (required)
+1. **Before merging**, run Actions → **db-push** on branch
+   `ccr-666ad6e8-0rzntk` and check the printed plan matches the SQL above
+   (two `CREATE TABLE`, five `CREATE INDEX`, three `ADD CONSTRAINT … FOREIGN KEY`).
+2. PR preflight's schema-sync step turns green; merge.
+3. The VPS deploy (on push to `master` when `VPS_DEPLOY_ENABLED`) builds as usual.
+   **Do not merge first**: `check-schema-sync` would fail that build, and if
+   the database were unreachable at build time (that check then only warns)
+   the deployed `/dashboard` would error on the missing tables.
+4. No backfill, env vars or secrets. Optional: GA4 custom dimensions `source`,
+   `step`, `personalized`.
+
+Rollback: revert the code; the two tables are unused by earlier versions and
+can stay. Dropping them later is a manual, deliberate step (db-push refuses it).
 
 ## Integration notes for later sprints
 
