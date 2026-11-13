@@ -17,7 +17,6 @@ export async function loadPaidQualityDiagnostics(days = 90) {
     select: {
       id: true, kickoff: true, marketType: true, leagueApiId: true,
       confidence: true, outcome: true, marketConfirmation: true,
-      aiJob: { select: { model: true } },
     },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
   });
@@ -25,7 +24,7 @@ export async function loadPaidQualityDiagnostics(days = 90) {
     const odds = verifiedEntryPrice(r.marketConfirmation, r.kickoff!);
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
-      leagueApiId: r.leagueApiId, provider: (r.marketConfirmation && typeof r.marketConfirmation === "object" && !Array.isArray(r.marketConfirmation) && typeof (r.marketConfirmation as Record<string, unknown>).provider === "string") ? (r.marketConfirmation as Record<string, unknown>).provider as string : null,
+      leagueApiId: r.leagueApiId, provider: null, // No verified bookmaker identifier is stored with this historical quote.
       odds, priceSource: odds === null ? "missing" : "entry",
       confidence: r.confidence, outcome: r.outcome as "WON" | "LOST" | "VOID",
     };
