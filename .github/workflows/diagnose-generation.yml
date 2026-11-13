@@ -25,6 +25,7 @@ on:
       - scripts/measure-genius.ts
       - scripts/measure-paid-performance.ts
       - scripts/backtest-paid-selection.ts
+      - scripts/fit-calibration.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -179,3 +180,7 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/backtest-paid-selection.ts 90
+      - name: Calibration fit, walk-forward validation, held-out test, value strategies
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/fit-calibration.ts

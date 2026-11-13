@@ -8,6 +8,7 @@ import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
+import { lockedPredictionView } from "@/lib/lockedPrediction";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -51,15 +52,8 @@ export async function GET(req: Request) {
     const teams = { coaches: [], teams: [r.homeTeam, r.awayTeam] };
     return canView
       ? { ...r, reasoning: stripUnsupportedStaff(r.reasoning, teams), matchPreview: r.matchPreview && stripUnsupportedStaff(r.matchPreview, teams) }
-      : {
-          ...r,
-          pick: "LOCKED",
-          reasoning: "Subscribe to unlock this prediction.",
-          matchPreview: null,
-          confidence: null,
-          odds: null,
-          locked: true,
-        };
+      // Allowlist: the fixture, never the pick (see src/lib/lockedPrediction.ts).
+      : lockedPredictionView(r);
   });
 
   return NextResponse.json(shaped);
