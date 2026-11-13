@@ -58,3 +58,20 @@ Release acceptance requires:
 3. Test first publish, stale/missing quote, publish failure, retry, concurrent attempt, and no change to entitlement/redaction.
 4. Re-run CI on the final commit; perform a read-only post-deployment evidence check.
 5. Keep live selection behavior and paid access unchanged. Any activation of market-based filtering requires separate prospective validation and explicit approval.
+
+## Release verification matrix (must pass before merge)
+
+| Gate | Evidence required |
+| --- | --- |
+| TypeScript, preflight, market-quality checks | Green on final PR SHA, not an earlier commit |
+| Subscription, Paystack entitlement, one-time fallback | Green in dedicated PR workflow on final SHA |
+| Publication evidence | First publish writes exactly one snapshot; retry does not replace it |
+| Concurrency | Two competing database writers cannot overwrite each other's publication snapshot; verify against isolated PostgreSQL, not only pure unit tests |
+| Failure recovery | Failed evidence write cannot misreport a successfully published pick; missing evidence is auditable |
+| Content access | FREE/VIP/PREMIUM and expired subscriptions remain correctly gated |
+| Operational rollback | Preserve all paid content and subscription records; revert application commit only if needed; never delete historical evidence |
+| Post-release | Read-only audit of published paid rows, quote timestamps, missing evidence, publication errors and feed counts |
+
+The pure tests for competing snapshot writers demonstrate the decision policy, **not** a real PostgreSQL concurrency execution. The latter remains an explicit release blocker. The publisher's underlying review transition also needs a dedicated race test before claiming full concurrent-publish safety.
+
+Do not interpret CI success as proof of a positive ROI or of actual bookmaker execution prices.
