@@ -654,7 +654,7 @@ export async function autoPublishVipPremiumPrediction(
 ): Promise<{ published: boolean; blocks: PaidPublishBlock[]; ordinaryPaidTagsRemoved: number }> {
   const row = await prisma.prediction.findUnique({
     where: { id: predictionId },
-    include: { categories: true, aiJob: { select: { prompt: true, createdAt: true } } },
+    include: { categories: true, aiJob: { select: { prompt: true, createdAt: true, model: true } } },
   });
   if (!row) return { published: false, blocks: ["NOT_DEDICATED_PAID"], ordinaryPaidTagsRemoved: 0 };
 
