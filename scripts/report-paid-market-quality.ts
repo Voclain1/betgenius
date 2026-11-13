@@ -1,3 +1,4 @@
+import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 /**
  * Read-only VIP Sprint 04 market-quality report.
  *
@@ -39,9 +40,7 @@ async function main() {
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
   });
   const observations: SettledPaidObservation[] = rows.filter(r => r.kickoff).map(r => {
-    const confirmation = r.marketConfirmation as { entryPrice?: unknown } | null;
-    const entry = confirmation?.entryPrice;
-    const odds = typeof entry === "number" && Number.isFinite(entry) && entry > 1 ? entry : null;
+    const odds = verifiedEntryPrice(r.marketConfirmation, r.kickoff!);
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
       leagueApiId: r.leagueApiId, provider: r.aiJob?.model ?? null,
