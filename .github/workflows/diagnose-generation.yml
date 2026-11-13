@@ -23,6 +23,8 @@ on:
       - scripts/measure-vip-premium.ts
       - scripts/measure-football-data.ts
       - scripts/measure-genius.ts
+      - scripts/measure-paid-performance.ts
+      - scripts/backtest-paid-selection.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -144,3 +146,32 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/measure-genius.ts
+
+  paid-performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Paid-tier settled performance, calibration, settlement audit and one day in detail
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-paid-performance.ts 90 2026-11-13
