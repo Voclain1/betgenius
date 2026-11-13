@@ -39,4 +39,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:paid-market-quality
+      # Paid access is a release invariant, not an optional downstream check.
+      - run: npm run check:subscription-entitlement
       - run: npx tsc --noEmit
