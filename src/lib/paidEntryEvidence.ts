@@ -48,3 +48,14 @@ export function auditPaidQuoteEvidence(confirmation: unknown, kickoff: Date) {
     return { usable: false, reason: "MISSING_NAMED_BOOKMAKER" as const };
   return { usable: true, reason: "INDICATIVE_BOOKMAKER_MEDIAN" as const, price };
 }
+
+/** Append-only publication evidence. Existing evidence is never replaced. */
+export function appendPublicationQuoteEvidence(
+  confirmation: unknown,
+  publicationEvidence: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation)) return null;
+  const original = confirmation as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(original, "publicationQuoteEvidence")) return null;
+  return { ...original, publicationQuoteEvidence: { ...publicationEvidence } };
+}
