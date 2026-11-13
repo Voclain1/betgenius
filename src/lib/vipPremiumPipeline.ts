@@ -9,9 +9,15 @@ import {
   compareMarketConfirmed,
   type MarketConfirmedVerdict,
 } from "@/lib/marketConfirmed";
+import { matchKey } from "@/lib/slug";
+import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { assessPaidCuration, pickPrice, usableCurationQuote } from "@/lib/paidSelection";
 import {
   DEDICATED_PAID_PROVENANCES,
   PAID_TIER_CATEGORIES,
+  PREMIUM_CONFIDENCE_FLOOR,
+  VIP_CONFIDENCE_FLOOR,
+  VIP_ROUTE_PROVENANCE,
   PREMIUM_GENERATED_PROVENANCE,
   VIP_GENERATED_PROVENANCE,
   isLegacyPaidTierDay,
@@ -30,6 +36,13 @@ import {
   repeatsExistingPick,
   qualifyVipPremiumTargets,
   readVipPremiumAttempt,
+  attemptKickoffDay,
+  attemptsByKickoffDay,
+  paidCurationWidened,
+  PAID_WIDENED_LEAGUE_IDS,
+  PAID_MAX_MARKET_PROBABILITY,
+  PREMIUM_MARKET_FLOOR,
+  VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
   type OddsSkipReason,
   type OverlayAttempt,
@@ -104,6 +117,18 @@ export {
 export const VIP_PREMIUM_DAILY_QUOTA = 8;
 
 /**
+ * Model calls the pass may make in one Lagos calendar day, whatever days their
+ * fixtures kick off on.
+ *
+ * VIP_PREMIUM_DAILY_QUOTA is now counted per KICKOFF day (attemptKickoffDay in
+ * vipPremiumOverlay.ts), so two days' fixtures could in principle both be
+ * attempted on one calendar day. This bounds that burst. In steady state each
+ * kickoff day still costs at most eight calls, so the daily spend averages what
+ * it did; 12 only lets a day catch up after a quiet one.
+ */
+export const VIP_PREMIUM_DAILY_SPEND_CAP = 12;
+
+/**
  * NOT tightened, on purpose. Agreement is non-monotonic against outcome in the
  * measured data — 0-5pp strikes 72.1% (n=43) while 5-10pp strikes 88.0%
  * (n=25) — so the gap is not the discriminator and narrowing it would trade
@@ -146,8 +171,18 @@ export function vipPremiumQuotaExhausted(generatedToday: number): boolean {
   return vipPremiumQuotaFrom(generatedToday) <= 0;
 }
 
+/** Calls left today under VIP_PREMIUM_DAILY_SPEND_CAP for a known count. Pure. */
+export function vipPremiumSpendFrom(generatedToday: number): number {
+  return Math.max(0, VIP_PREMIUM_DAILY_SPEND_CAP - generatedToday);
+}
+
+/**
+ * What the generation route stands down on: model calls left today under the
+ * spend cap. The per-kickoff-day quota is applied when targets are chosen
+ * (selectVipPremiumTargets) and again at publication.
+ */
 export async function vipPremiumQuotaRemaining(now: Date = new Date()): Promise<number> {
-  return vipPremiumQuotaFrom(await vipPremiumGeneratedToday(now));
+  return vipPremiumSpendFrom(await vipPremiumGeneratedToday(now));
 }
 
 // ── Targeting ────────────────────────────────────────────────────────────────
@@ -196,6 +231,47 @@ export async function loadFixturesAwaitingDedicated(
     openDraftKeys: new Set(drafts.map(paidFixtureKey)),
     now,
   });
+}
+
+/**
+ * Paid curation's market check, loaded: assessPaidCuration's verdict for every
+ * ordinary row on the day that meets the tier's confidence floor, keyed by row
+ * id, for planCuration. Reads FixtureOddsCache only; writes nothing.
+ *
+ * A quote is read only if it was taken before kickoff and is no older than
+ * PAID_CURATION_QUOTE_MAX_AGE_MS; otherwise the row is judged unpriced (a
+ * VIP-route row stays eligible, a widened row does not).
+ */
+export async function loadPaidCurationVerdicts(
+  rows: ReadonlyArray<{ id: string; leagueApiId: number | null; confidence: number; provenance: string | null; marketType: string; selection?: unknown; kickoff: Date | null; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null }>,
+  tier: PaidTier,
+  now: Date = new Date(),
+): Promise<Map<string, boolean>> {
+  const floor = tier === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR;
+  const candidates = rows.filter((r) => r.confidence >= floor && !isDedicated(r.provenance) && !isPaidOnlyProvenance(r.provenance) && r.marketType !== "SAME_GAME_DOUBLE");
+  if (candidates.length === 0) return new Map();
+  const widened = paidCurationWidened(rows);
+  const keyOf = (r: (typeof candidates)[number]) => matchKey(r);
+  const keys = [...new Set(candidates.map(keyOf).filter((k): k is string => !!k))];
+  const cached = keys.length
+    ? await prisma.fixtureOddsCache.findMany({ where: { matchKey: { in: keys } }, select: { matchKey: true, oddsJson: true, fetchedAt: true } })
+    : [];
+  const byKey = new Map(cached.map((c) => [c.matchKey, c]));
+  const out = new Map<string, boolean>();
+  for (const r of candidates) {
+    const q = byKey.get(keyOf(r) ?? "");
+    const price = q && usableCurationQuote(q.fetchedAt, r.kickoff, now) ? pickPrice(q.oddsJson as unknown as FixtureOdds | null, r.marketType, r.selection) : null;
+    const verdict = assessPaidCuration({
+      confidence: r.confidence,
+      vipRoute: r.provenance === VIP_ROUTE_PROVENANCE,
+      widenedScope: widened && PAID_WIDENED_LEAGUE_IDS.includes(r.leagueApiId ?? -1),
+      price,
+      marketFloor: tier === "PREMIUM" ? PREMIUM_MARKET_FLOOR : VIP_MARKET_FLOOR,
+      maxMarketProbability: PAID_MAX_MARKET_PROBABILITY,
+    });
+    out.set(r.id, verdict.eligible);
+  }
+  return out;
 }
 
 export type TargetSelection = {
@@ -300,7 +376,7 @@ export async function selectVipPremiumTargets(
     }
   }
 
-  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit);
+  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used: attemptsByKickoffDay(attempts), quota: VIP_PREMIUM_DAILY_QUOTA });
   return {
     targets: odds.targets,
     considered: plan.considered,
@@ -452,9 +528,11 @@ export async function autoPublishVipPremiumPrediction(
     prisma.fixtureOddsCache.findFirst({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true } }),
     row.aiJob ? loadVipPremiumAttempts(row.aiJob.createdAt) : Promise.resolve([]),
   ]);
-  const jobDay = row.aiJob ? lagosTodayBounds(row.aiJob.createdAt) : null;
-  const attemptNumber = jobDay
-    ? sameDayAttempts.filter((a) => a.createdAt >= jobDay.start && a.createdAt <= row.aiJob!.createdAt).length
+  // This attempt's position among attempts for the same kickoff day, made no
+  // later than it (attemptKickoffDay). Within VIP_PREMIUM_DAILY_QUOTA or held.
+  const own = row.aiJob ? readVipPremiumAttempt(row.aiJob.prompt, row.aiJob.createdAt) : null;
+  const attemptNumber = own
+    ? sameDayAttempts.filter((a) => attemptKickoffDay(a) === attemptKickoffDay(own) && a.createdAt <= own.createdAt).length
     : Infinity;
   const others = onFixture.filter((r) => r.id !== row.id);
 

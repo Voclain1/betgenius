@@ -223,7 +223,10 @@ async function main() {
     eq("overlay: one attempt per fixture", plan([ok], { attempts: [{ fixtureApiId: ok.ledger.fixtureApiId, createdAt: NOW }] }).skipped, { ALREADY_ATTEMPTED: 1 });
     eq("overlay: a fixture whose run threw backs off", plan([ok], { backingOff: new Set([ok.ledger.fixtureApiId]) }).skipped, { BACKING_OFF: 1 });
     eq("overlay: soonest kickoff first", plan([fixture(9, { kickoffIn: 30 }), fixture(10, { kickoffIn: 14 })]).candidates.map((c: Any) => c.fixtureApiId), [9010, 9009]);
-    eq("overlay: reads its attempts from the AIJob prompt", overlay.readVipPremiumAttempt(JSON.stringify({ intent: "VIP_PREMIUM", fixtureApiId: 7 }), NOW), { fixtureApiId: 7, createdAt: NOW });
+    eq("overlay: reads its attempts from the AIJob prompt", overlay.readVipPremiumAttempt(JSON.stringify({ intent: "VIP_PREMIUM", fixtureApiId: 7 }), NOW), { fixtureApiId: 7, createdAt: NOW, kickoff: null });
+    eq("overlay: ...with the fixture's kickoff when the prompt recorded it", overlay.readVipPremiumAttempt(JSON.stringify({ intent: "VIP_PREMIUM", fixtureApiId: 7, kickoff: "2026-10-11T19:45:00.000Z" }), NOW)?.kickoff?.toISOString(), "2026-10-11T19:45:00.000Z");
+    eq("quota: an attempt counts against its fixture's Lagos kickoff day", overlay.attemptKickoffDay({ fixtureApiId: 7, createdAt: NOW, kickoff: new Date("2026-10-11T23:30:00.000Z") }), "2026-10-12");
+    eq("quota: ...or, with no recorded kickoff, the day it was made (the old rule)", overlay.attemptKickoffDay({ fixtureApiId: 7, createdAt: NOW, kickoff: null }), "2026-10-10");
     eq("overlay: ...and ignores any other intent", overlay.readVipPremiumAttempt(JSON.stringify({ intent: "GOALS", fixtureApiId: 7 }), NOW), null);
   }
 
@@ -255,6 +258,22 @@ async function main() {
     eq("odds: stale, thin (under 5 books) and sub-bar quotes are refused with a reason", r.skipped, { NO_QUOTED_MARKET: 1, MARKET_BELOW_BAR: 1, NO_FRESH_QUOTE: 1 });
     eq("odds: freshly priced / qualified counts", [r.freshlyPriced, r.qualified], [4, 2]);
     eq("odds: the limit is respected", overlay.qualifyVipPremiumTargets([a, b], q([[a, fresh(78)], [b, fresh(86)]]), NOW, 1).targets.length, 1);
+
+    // Kickoff-day ordering and quota. NOW is 09:00 Lagos on 10 Oct: +14h is
+    // 23:00 that day, +40h is 01:00 on 12 Oct.
+    const [today, later] = cands([[40, 14], [41, 40]]);
+    const both = q([[today, fresh(76)], [later, fresh(86)]]);
+    eq("odds: the soonest kickoff day is attempted first, even against a stronger market later",
+      overlay.qualifyVipPremiumTargets([later, today], both, NOW, 2).targets.map((t: Any) => t.fixtureApiId), [9040, 9041]);
+    const full = overlay.qualifyVipPremiumTargets([later, today], both, NOW, 2, { used: new Map([["2026-10-10", 8]]), quota: 8 });
+    eq("odds: a kickoff day whose eight attempts are spent takes no more", full.targets.map((t: Any) => t.fixtureApiId), [9041]);
+    eq("odds: ...reported as KICKOFF_DAY_QUOTA", full.skipped, { KICKOFF_DAY_QUOTA: 1 });
+    eq("odds: ...and another day's quota is untouched", overlay.qualifyVipPremiumTargets([later, today], both, NOW, 2, { used: new Map([["2026-10-10", 7]]), quota: 8 }).targets.length, 2);
+    eq("quota: attempts tallied per kickoff day", [...overlay.attemptsByKickoffDay([
+      { fixtureApiId: 1, createdAt: NOW, kickoff: new Date("2026-10-11T19:00:00.000Z") },
+      { fixtureApiId: 2, createdAt: NOW, kickoff: new Date("2026-10-11T12:00:00.000Z") },
+      { fixtureApiId: 3, createdAt: NOW, kickoff: null },
+    ]).entries()].sort(), [["2026-10-10", 1], ["2026-10-11", 2]]);
   }
 
   // ── 3. Floors, gate constants, tiering ─────────────────────────────────
@@ -266,6 +285,7 @@ async function main() {
     eq("gate: VIP market bar 75, PREMIUM market bar 80", [overlay.VIP_MARKET_FLOOR, overlay.PREMIUM_MARKET_FLOOR], [75, 80]);
     eq("quota: 8 attempts a day (raised from 6, Oct 2026)", pipeline.VIP_PREMIUM_DAILY_QUOTA, 8);
     eq("quota: one fixture per run", overlay.VIP_PREMIUM_RUN_LIMIT, 1);
+    eq("quota: at most 12 model calls in one calendar day, whatever days they target", [pipeline.VIP_PREMIUM_DAILY_SPEND_CAP, pipeline.vipPremiumSpendFrom(11), pipeline.vipPremiumSpendFrom(12), pipeline.vipPremiumSpendFrom(20)], [12, 1, 0, 0]);
     eq("tier: market 86 and confidence 84 is PREMIUM", overlay.paidTierFor({ confirmed: true, marketProbability: 86 }, 84), "PREMIUM");
     eq("tier: market 82 but confidence 78 is VIP — PREMIUM's floor holds", overlay.paidTierFor({ confirmed: true, marketProbability: 82 }, 78), "VIP");
     eq("tier: market 77, confidence 88 is VIP — the market separates the tiers", overlay.paidTierFor({ confirmed: true, marketProbability: 77 }, 88), "VIP");

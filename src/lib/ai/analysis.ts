@@ -42,6 +42,28 @@ export type { AIUsage } from "@/lib/ai/providers/types";
 const PROVIDER_CHAIN: AIProvider[] = [makeAnthropicProvider({ effort: "high" }), geminiProvider, groqProvider];
 
 /**
+ * The chain for paid-route generation: the VIP calibration route (core
+ * competitions) and the dedicated VIP/PREMIUM pass. Unchanged unless
+ * PAID_ROUTE_PRIMARY_PROVIDER names another provider in the chain, which is
+ * then tried first and the rest follow in their usual order.
+ *
+ * WHY A SWITCH, AND WHY IT IS OFF. The VIP and PREMIUM floors (75 and 80) were
+ * measured on Gemini's output in Sep–Oct 2026. Since Claude became primary
+ * (31 Oct) the share of ordinary picks at 75%+ fell from about half to about
+ * 6% (scripts/measure-paid-performance.ts, section F3), so far fewer picks
+ * reach the paid floors. On the same rows Claude's error against the market
+ * is no worse than Gemini's (model minus market Brier +0.01 vs +0.02), so this
+ * is a difference of confidence scale, not shown to be one of skill — which
+ * provider leads paid generation is the owner's call, not a default to flip.
+ * Set PAID_ROUTE_PRIMARY_PROVIDER=gemini to try it; unset to roll back.
+ */
+export function paidRouteProviderChain(primary = process.env.PAID_ROUTE_PRIMARY_PROVIDER): AIProvider[] {
+  const want = primary?.trim().toLowerCase();
+  const lead = want ? PROVIDER_CHAIN.find((p) => p.name === want) : undefined;
+  return lead ? [lead, ...PROVIDER_CHAIN.filter((p) => p !== lead)] : PROVIDER_CHAIN;
+}
+
+/**
  * Should the next provider be tried, or is this request simply wrong?
  *
  * Only transient, provider-specific conditions fail over: exhausted retries on
@@ -690,6 +712,8 @@ export type PredictionRequestInput = {
    * evidence supports it. Empty or absent, the prompt is unchanged.
    */
   shortPriceBlock?: string;
+  /** Generated under the VIP calibration route or by the dedicated paid pass: uses paidRouteProviderChain. */
+  paidRoute?: boolean;
 };
 
 /**
@@ -702,7 +726,7 @@ export async function generatePredictionForFixture(input: PredictionRequestInput
   const request = buildPredictionRequest(input);
   const label = request.label;
 
-  const result = await completeWithFallback(request, parsePredictionOutput, PROVIDER_CHAIN);
+  const result = await completeWithFallback(request, parsePredictionOutput, input.paidRoute ? paidRouteProviderChain() : PROVIDER_CHAIN);
   return checkPredictionOutput(d, label, result);
 }
 

@@ -99,6 +99,9 @@
     "check:personalization": "tsx scripts/check-personalization.ts",
     "check:personalization-db": "tsx scripts/check-personalization-db.ts",
     "check:inbox-history-cap": "tsx scripts/check-inbox-history-cap.ts",
+    "check:paid-selection": "tsx scripts/check-paid-selection.ts",
+    "measure:paid-performance": "tsx --env-file=.env scripts/measure-paid-performance.ts",
+    "backtest:paid-selection": "tsx --env-file=.env scripts/backtest-paid-selection.ts",
     "preflight:db": "tsx scripts/preflight.ts --db",
     "preflight:integration": "tsx scripts/preflight.ts --integration"
   },
