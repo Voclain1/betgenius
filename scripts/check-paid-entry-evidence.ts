@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { appendPublicationQuoteEvidence, auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 const kickoff = new Date("2026-11-13T17:00:00Z");
 const good = { entryPrice: 1.88, quoteFetchedAt: "2026-11-13T15:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" };
 assert.equal(verifiedEntryPrice(good, kickoff), 1.88);
@@ -30,4 +30,12 @@ assert.equal(auditPaidQuoteEvidence({ ...published, entryPriceBasis: "UNAVAILABL
 assert.equal(auditPaidQuoteEvidence({ ...published, entryQuoteSources: [{ bookmaker: "", odd: 1.9 }] }, kickoff).usable, false);
 assert.equal(auditPaidQuoteEvidence({ ...published, entryQuoteSources: [{ bookmaker: "Bookmaker A", odd: 0 }] }, kickoff).usable, false);
 assert.equal(auditPaidQuoteEvidence({ ...published, confirmedAt: "2026-11-13T17:01:00Z" }, kickoff).usable, false);
+const frozen = appendPublicationQuoteEvidence(sourced, published);
+assert.ok(frozen);
+assert.deepEqual(frozen.publicationQuoteEvidence, published);
+assert.equal(Object.prototype.hasOwnProperty.call(sourced, "publicationQuoteEvidence"), false);
+assert.equal(appendPublicationQuoteEvidence(frozen, { ...published, entryPrice: 9.99 }), null);
+assert.equal(appendPublicationQuoteEvidence(null, published), null);
+assert.equal(appendPublicationQuoteEvidence([], published), null);
+assert.deepEqual(frozen.entryQuoteSources, sourced.entryQuoteSources);
 console.log("paid entry evidence: all assertions passed");
