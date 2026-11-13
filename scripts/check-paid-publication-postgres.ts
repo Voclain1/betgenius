@@ -1,5 +1,6 @@
 /** Isolated PostgreSQL only. CI supplies a disposable service DB. */
 import { prisma } from "../src/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { publishPaidPredictionAtomically } from "../src/lib/predictions";
 import { auditPublicationQuoteEvidence } from "../src/lib/paidEntryEvidence";
 
@@ -23,7 +24,7 @@ async function main() {
       category: "VIP", market: "Match Winner", pick: "Home",
       confidence: 81, reasoning: "Disposable integration fixture", authorId: user.id,
       homeTeam: "CI Home", awayTeam: "CI Away", kickoff, status: "PENDING_REVIEW",
-      marketConfirmation: confirmation as any,
+      marketConfirmation: confirmation === null ? Prisma.DbNull : confirmation as any,
       categories: { create: [{ category: "VIP" }] },
     }, include: { categories: true },
   });
@@ -53,7 +54,8 @@ async function main() {
       throw new Error("Rolled back publication left a notification");
     console.log("Disposable PostgreSQL concurrency, idempotency, atomic quote and rollback: PASS");
   } finally {
-    await prisma.notificationEvent.deleteMany({ where: { prediction: { authorId: user.id } } }).catch(() => {});
+    const owned = await prisma.prediction.findMany({ where: { authorId: user.id }, select: { id: true } });
+    await prisma.notificationEvent.deleteMany({ where: { predictionId: { in: owned.map(r => r.id) } } });
     await prisma.prediction.deleteMany({ where: { authorId: user.id } });
     await prisma.user.delete({ where: { id: user.id } });
     await prisma.$disconnect();
