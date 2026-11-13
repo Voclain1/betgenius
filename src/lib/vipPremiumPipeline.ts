@@ -710,6 +710,30 @@ export async function autoPublishVipPremiumPrediction(
     throw error;
   }
 
+  // Store the publication gate's observed quote separately from promotion.
+  // Indicative market quotes are not proof of a subscriber's executed odds.
+  const publicationRecord = entryValueRecord(row, (quote?.oddsJson as unknown as FixtureOdds | null) ?? null);
+  const publicationEvidence = {
+    ...publicationRecord,
+    quoteFetchedAt: quote?.fetchedAt?.toISOString() ?? null,
+    confirmedAt: now.toISOString(),
+    evidenceKind: "PUBLICATION_INDICATIVE",
+  };
+  const persisted = await prisma.prediction.findUnique({
+    where: { id: row.id }, select: { status: true, marketConfirmation: true },
+  });
+  if (persisted?.status === "PUBLISHED" && persisted.marketConfirmation &&
+      typeof persisted.marketConfirmation === "object" && !Array.isArray(persisted.marketConfirmation)) {
+    const original = persisted.marketConfirmation as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(original, "publicationQuoteEvidence")) {
+      // Compare-and-set avoids overwriting a snapshot from a concurrent writer.
+      await prisma.prediction.updateMany({
+        where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted.marketConfirmation } },
+        data: { marketConfirmation: { ...original, publicationQuoteEvidence: publicationEvidence } },
+      });
+    }
+  }
+
   // The fixture's one paid pick is now this one.
   const ordinaryPaid = isLegacyPaidTierDay(row.kickoff)
     ? []
