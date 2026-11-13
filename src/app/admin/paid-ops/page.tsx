@@ -46,6 +46,11 @@ export default async function PaidOpsPage() {
           </div>
         ))}
       </dl>
+      <div className="card space-y-2">
+        <h2 className="text-sm font-bold text-gray-100">Shadow integrity · last 24h</h2>
+        <p className="text-xs text-gray-400">{s.integrityLast24h.auditedRuns} audited runs · {s.integrityLast24h.missingAssessments} selections without assessment records. Diagnostics only; no live filtering.</p>
+        <div className="flex flex-wrap gap-2">{Object.entries(s.integrityLast24h.warnings).length ? Object.entries(s.integrityLast24h.warnings).map(([reason, count]) => <span key={reason} className="rounded-lg border border-amber-500/40 px-2 py-1 text-xs text-amber-300">{reason}: {count}</span>) : <span className="text-xs text-gray-400">No integrity warnings recorded in audited runs.</span>}</div>
+      </div>
       {s.shadow.lastSummary && <p className="text-xs text-gray-400">Latest shadow record: {s.shadow.lastSummary}</p>}
 
       <section className="space-y-3">
