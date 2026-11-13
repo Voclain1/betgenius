@@ -100,6 +100,23 @@ export function paidScopeFor(ledger: ReadonlyArray<{ leagueApiId: number | null;
   return { leagueIds: new Set(widened ? PAID_ANY_LEAGUE_IDS : PAID_CORE_LEAGUE_IDS), widened, coreFixtures };
 }
 
+/**
+ * The same thin-day test for ordinary paid curation, from one Lagos day's
+ * published rows rather than the generation ledger: fewer than
+ * PAID_THIN_CORE_MIN distinct core-competition fixtures on the day. Pure.
+ *
+ * WHY. Ordinary picks reach VIP only on the VIP calibration route, which only
+ * core competitions take. On an international-break day there are none: on
+ * 13 Nov 2026 42 singles were published (AFCON qualifiers, Nations League,
+ * Welsh Cup) and not one was a VIP-route pick, so VIP carried only the
+ * dedicated pass's two. The dedicated pass already widens on such days; this
+ * lets curation widen too, behind the market check in assessPaidCuration.
+ */
+export function paidCurationWidened(rows: ReadonlyArray<{ id: string; leagueApiId: number | null; fixtureApiId?: number | null; homeTeamApiId?: number | null; awayTeamApiId?: number | null; kickoff?: Date | null }>): boolean {
+  const core = new Set(rows.filter((r) => PAID_CORE_LEAGUE_IDS.includes(r.leagueApiId ?? -1)).map((r) => paidFixtureKey(r)));
+  return core.size < PAID_THIN_CORE_MIN;
+}
+
 /** Label recorded on AIJob.prompt.intent. It is also how attempts and the daily quota are counted. */
 export const VIP_PREMIUM_INTENT = "VIP_PREMIUM" as const;
 

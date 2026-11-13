@@ -53,7 +53,7 @@ type Row = {
   categories: string[]; finalHomeScore: number | null; finalAwayScore: number | null; manualSettlementOnly: boolean;
   fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; marketConfirmation: any;
   publishedAt: Date | null; createdAt: Date;
-  price: PricedPick | null; entryFair: number | null;
+  price: PricedPick | null; entryFair: number | null; aiJob?: { model: string } | null;
 };
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
@@ -192,7 +192,7 @@ async function main() {
       id: true, kickoff: true, leagueApiId: true, leagueName: true, homeTeam: true, awayTeam: true, marketType: true, selection: true,
       market: true, pick: true, confidence: true, outcome: true, provenance: true, finalHomeScore: true, finalAwayScore: true,
       manualSettlementOnly: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, marketConfirmation: true,
-      publishedAt: true, createdAt: true, categories: { select: { category: true } },
+      publishedAt: true, createdAt: true, categories: { select: { category: true } }, aiJob: { select: { model: true } },
     },
   });
   // Hidden combo legs (a single carrying the SAME_GAME_DOUBLE tag) were never shown as singles.
@@ -298,7 +298,20 @@ async function main() {
   const stale = settledWindow.filter((r) => r.outcome === "PENDING" && r.kickoff.getTime() < now.getTime() - 6 * H);
   console.log(`\nD. Settlement audit: ${auditable.length} auto-settleable rows re-resolved from stored scores; ${mismatches.length} disagree; ${unresolvable} not re-resolvable from full-time score alone (half-time markets).`);
   for (const m of mismatches.slice(0, 25)) console.log(`   ${m}`);
-  console.log(`   Unresolved more than 6h after kickoff: ${stale.length} (${Object.entries(group(stale, (r) => (r.manualSettlementOnly ? "manual-only" : r.marketType))).map(([k, v]) => `${k} ${v.length}`).join(", ") || "none"})`);
+  console.log(`   Unresolved more than 6h after kickoff: ${stale.length} (${[...group(stale, (r) => `${r.manualSettlementOnly ? "manual-only " : ""}${r.marketType}`).entries()].map(([k, v]) => `${k} ${v.length}`).join(", ") || "none"})`);
+
+  // ── F. By generation model and by week ──────────────────────────────────
+  const provider = (r: Row) => (r.aiJob?.model ?? "none").split(":")[0];
+  table("F1. All published singles by generation provider", group(settledWindow, provider));
+  table("F2. VIP-route (core-league) singles by generation provider", group(settledWindow.filter((r) => r.provenance === VIP_ROUTE_PROVENANCE), provider));
+  console.log("\nF3. Confidence distribution of ordinary singles by Lagos ISO week and provider: n, mean conf, share >=75, share >=80");
+  const week = (d: Date) => { const k = lagosDateKey(d); const t = new Date(`${k}T00:00:00Z`); const dow = (t.getUTCDay() + 6) % 7; return lagosDateKey(new Date(t.getTime() - dow * DAY)); };
+  const ord = rows.filter((r) => !isPaidOnlyProvenance(r.provenance) && !(DEDICATED_PAID_PROVENANCES as readonly string[]).includes(r.provenance ?? "") && r.provenance !== "GOALS_GENERATED");
+  for (const [k, rs] of [...group(ord, (r) => `${week(r.kickoff)} ${provider(r)}`).entries()].sort()) {
+    const m = rs.reduce((s, r) => s + r.confidence, 0) / rs.length;
+    const vr = rs.filter((r) => r.provenance === VIP_ROUTE_PROVENANCE);
+    console.log(`   ${k.padEnd(22)} n=${String(rs.length).padStart(4)} mean ${m.toFixed(1)}  >=75 ${pct(rs.filter((r) => r.confidence >= 75).length, rs.length).padStart(6)}  >=80 ${pct(rs.filter((r) => r.confidence >= 80).length, rs.length).padStart(6)} | vip-route n=${vr.length} >=75 ${vr.filter((r) => r.confidence >= 75).length}`);
+  }
 
   // ── E. Daily paid feed counts, and the focus day ─────────────────────────
   console.log("\nE1. Per Lagos kickoff day: published singles / VIP-route conf>=75 / VIP (dedicated+ordinary) / PREMIUM, last 21 days");

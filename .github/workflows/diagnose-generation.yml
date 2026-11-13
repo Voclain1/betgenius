@@ -175,3 +175,7 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/measure-paid-performance.ts 90 2026-11-13
+      - name: Backtest, current vs proposed paid curation (chronological split)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/backtest-paid-selection.ts 90
