@@ -566,7 +566,7 @@ function entryValueRecord(row: { marketType: string; selection: unknown; confide
       estimate: cal?.withMarket != null ? { p: cal.withMarket, se: cal.withMarketSE ?? 0, version: cal.version } : null,
       minEvLower: paidValueMinEvLower(),
     });
-    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: price?.median ?? null, entryBookmakers: price?.bookmakers ?? null, valueAssessment: value };
+    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: executable?.median ?? null, entryBookmakers: executable?.bookmakers ?? null, valueAssessment: value };
   } catch {
     return {};
   }
