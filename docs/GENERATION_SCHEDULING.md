@@ -45,6 +45,24 @@ How the scheduled generation passes are ordered.
 >   category goes through `presentedCategory` (`src/lib/access.ts`), so a Banker or
 >   Today pick that is also in VIP shows as Banker/Today, unlocked, with no VIP chip.
 
+> **Update, 13 Nov 2026: the quota is per kickoff day, and paid curation checks the market.**
+> See `docs/PAID_PREDICTIONS_QUALITY_2026-11-13.md` for the evidence.
+>
+> - **Quota.** `VIP_PREMIUM_DAILY_QUOTA` (8) now counts attempts against the Lagos day
+>   their fixture KICKS OFF (`attemptKickoffDay`), not the day the call was made, and the
+>   soonest kickoff day is attempted first. The route stands down on
+>   `VIP_PREMIUM_DAILY_SPEND_CAP` (12 model calls per calendar day) instead of 8. Before,
+>   the eight were spent in a burst just after midnight on whatever was priced then
+>   (13 Nov: all eight between 00:05 and 02:35 Lagos, four on 14 Nov fixtures), and
+>   the pass stood down for the rest of the day (75 runs on 13 Nov). The schedule is
+>   unchanged.
+> - **Ordinary paid curation.** A VIP-route pick is admitted to VIP/PREMIUM only if a
+>   usable quote (pre-kickoff, under 6h old) does not put the market more than 10pp
+>   from the model; on a thin day (fewer than 3 core fixtures) a widened-scope pick
+>   may be admitted when the market confirms it at 75–87% (80–87% for PREMIUM). The
+>   check is applied at admission only: a pick already in a paid feed is never taken
+>   out because its price moved.
+
 Scheduling for this app lives in **cron-job.org**, not in the repository —
 `vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,
 because this plan's own crons are capped at once per day. Everything else is
