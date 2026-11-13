@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
 import type { FixtureOdds } from "@/lib/odds";
@@ -360,6 +361,7 @@ export async function recordPaidSelectionShadow(input: {
 }): Promise<void> {
   const selected = new Set(input.selectedIds);
   const s = summarisePaidAssessments(input.assessments);
+  const integrity = auditPaidSelectionConcentration(input.assessments, input.selectedIds);
   const artifact = calibrationArtifact();
   try {
     await prisma.jobRun.create({
@@ -374,6 +376,7 @@ export async function recordPaidSelectionShadow(input: {
           calibrationVersion: artifact?.version ?? null,
           calibrationActive: !!artifact?.active,
           summary: s,
+          integrity,
           plan: input.plan,
           candidates: input.assessments.map((a) => ({ ...a, selected: selected.has(a.id) })),
         })),
