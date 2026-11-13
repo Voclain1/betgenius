@@ -375,10 +375,14 @@ async function publicationAndProbe() {
   check("auto-publish is reachable only from the Goals run", callers.length === 1 && callers[0].endsWith("generation/worker.ts"), callers);
   const reviewCallers = walk("src").filter((f) => /applyReviewAction\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
   check(
-    "applyReviewAction is used only by the bulk route and the two gated auto-publishes (Goals, dedicated VIP/PREMIUM)",
-    reviewCallers.length === 3 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$|vipPremiumPipeline\.ts$/.test(f)),
+    "applyReviewAction is used only by the bulk route and the gated Goals auto-publish",
+    reviewCallers.length === 2 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$/.test(f)),
     reviewCallers,
   );
+  // Since Sprint 04 the dedicated VIP/PREMIUM gate publishes through the atomic
+  // paid publication instead, and only from vipPremiumPipeline.
+  const atomicCallers = walk("src").filter((f) => /publishPaidPredictionAtomically\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
+  check("the atomic paid publication is used only by the dedicated VIP/PREMIUM gate", atomicCallers.length === 1 && atomicCallers[0].endsWith("vipPremiumPipeline.ts"), atomicCallers);
   check("generation still persists every row PENDING_REVIEW (the gate publishes afterwards)", /status: "PENDING_REVIEW"/.test(code("src/lib/ai/generate.ts")));
   check("a draft failing the market/confidence gate is never persisted (pickGoalsDraft runs before any create)", code("src/lib/ai/generate.ts").indexOf("pickGoalsDraft(") < code("src/lib/ai/generate.ts").indexOf(PERSIST_CALL));
 
