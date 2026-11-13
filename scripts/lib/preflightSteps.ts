@@ -49,6 +49,7 @@ export const PURE_STEPS = [
   "tsx scripts/check-paid-value-integration.ts",
   "tsx scripts/check-paid-subscriber.ts",
   "tsx scripts/check-adaptive-coverage.ts",
+  "tsx scripts/check-league-coverage-quality.ts",
   "tsx scripts/check-european-clubs.ts",
   "tsx scripts/check-track-record.ts",
   "tsx scripts/check-engagement.ts",

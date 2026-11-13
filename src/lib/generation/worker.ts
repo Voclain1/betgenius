@@ -35,6 +35,7 @@ import { assessCoverage, selectQueuedCandidates } from "@/lib/generation/queue";
 import { PAID_PRIORITY_RESERVE, withPaidPriority } from "@/lib/football/usage";
 import { isProviderOutage, ledgerFailureUpdate } from "@/lib/generation/failurePolicy";
 import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage";
+import { coverageRollout, laneCompetitionIds } from "@/lib/generation/competitionEligibility";
 import type { GenerationTier } from "@/lib/leagues";
 import { GOALS_INTENT, GOALS_PERSISTED_CATEGORIES, GOALS_RUN_LIMIT, type GoalsPlan } from "@/lib/goalsGeneration";
 import { autoPublishGoalsPrediction, backOffGoalsFixture, selectGoalsTargets } from "@/lib/goalsPipeline";
@@ -277,7 +278,9 @@ export async function runGeneration(opts: {
     if (!opts.matchKeys && !opts.leagueApiIds?.length) {
       try {
         const decision = await assessCoverage(opts.now ?? new Date());
-        excludeLeagueApiIds = excludedLeagueIds(decision);
+        // The evaluation lane's competitions stay selectable on healthy days only
+        // when COVERAGE_ROLLOUT=on (generation/evaluationLane.ts).
+        excludeLeagueApiIds = excludedLeagueIds(decision, { laneAllowed: coverageRollout() === "on" ? laneCompetitionIds() : [] });
         coverage = { mode: decision.mode, higherTierCount: decision.higherTierCount, allowedTiers: decision.allowedTiers };
       } catch (error) {
         console.error("[generation] coverage assessment failed; running unscoped", error);

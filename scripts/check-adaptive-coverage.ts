@@ -52,6 +52,7 @@ const db = {
   /** AIJob prompts, read by the European-club lane's slate exclusion. */
   aiJobs: [] as Array<{ prompt: string; createdAt: Date }>,
   leaseFree: true,
+  laneLeaseFree: false,
   cursorHolder: "20",
   quotaRemaining: 5_000,
   lastQueuedWhere: null as any,
@@ -66,6 +67,9 @@ const prismaStub = {
     const sql = strings.join("?");
     if (values[0] === "generation-discovery-cursor") return Promise.resolve([{ holder: db.cursorHolder }]);
     if (values[0] === "generation-fallback-sweep") return Promise.resolve(db.leaseFree ? [{ holder: values[1] }] : []);
+    // Sprint 05 evaluation lane: held by default so the pre-existing scenarios
+    // keep their exact provider-call counts; the lane scenarios free it.
+    if (values[0] === "generation-evaluation-lane") return Promise.resolve(db.laneLeaseFree ? [{ holder: values[1] }] : []);
     throw new Error(`unexpected raw query: ${sql.slice(0, 80)}`);
   },
   appLock: { updateMany: () => Promise.resolve({ count: 1 }) },
@@ -167,6 +171,7 @@ function resetWorld() {
   db.odds = [];
   db.aiJobs = [];
   db.leaseFree = true;
+  db.laneLeaseFree = false;
   db.quotaRemaining = 5_000;
   byDatePayload = {};
   calls.byLeague = 0;
@@ -228,7 +233,8 @@ async function main() {
   eq("mode CORE (core alone is healthy)", d50.mode, "CORE");
   check("not widened, needs nothing", !d50.widened && d50.need === 0 && d50.target === null);
   eq("only CORE+SECONDARY allowed", d50.allowedTiers, ["CORE", "SECONDARY"]);
-  check("every fallback and deep league is excluded from generation", JSON.stringify(excludedLeagueIds(d50)) === JSON.stringify([...FALLBACK, ...DEEP]));
+  const CORE_IDS_FOR_CHECK = new Set<number>([...(require("../src/lib/leagues").leaguesInTiers(["CORE", "SECONDARY"]) as number[])]);
+  check("every fallback and deep league is excluded from generation", [...FALLBACK, ...DEEP, 111].every((id) => excludedLeagueIds(d50).includes(id)) && !excludedLeagueIds(d50).some((id) => [...CORE_IDS_FOR_CHECK].includes(id)), "every fallback/deep league, the registry's DEEP_FALLBACK addition (111) and the global audit's inclusions are excluded; no CORE/SECONDARY league is");
   const plan50 = planFallback(payload(40, 40), d50);
   check("a healthy decision plans zero fallback fixtures even with a full payload", plan50.eligible.FALLBACK.length === 0 && plan50.eligible.DEEP_FALLBACK.length === 0);
   check("narrow reason says so in words", /healthy/.test(d50.reason) && /not scanned or generated/.test(d50.reason), d50.reason);
@@ -359,6 +365,30 @@ async function main() {
   eq("cursor spends exactly its batch (3 per-league calls), as before", calls.byLeague, 3);
   eq("cursor scanned only base-scope leagues", busy.coverage.leaguesScannedByTier.cursor.FALLBACK + busy.coverage.leaguesScannedByTier.cursor.DEEP_FALLBACK, 0);
   eq("no fallback queued", busy.coverage.fallbackSelected, 0);
+  check("the evaluation lane did not run while its lease is held (no extra calls)", busy.coverage.lane?.ran === false && /already ran/.test(busy.coverage.lane?.skippedReason ?? ""), JSON.stringify(busy.coverage.lane));
+
+  console.log("\nevaluation lane, healthy day (Sprint 05):");
+  const laneDay = async (rollout: string) => {
+    resetWorld();
+    process.env.COVERAGE_ROLLOUT = rollout;
+    for (let i = 0; i < 80; i++) db.ledger.push(ledgerRow(i % 2 ? CORE[i % CORE.length] : SECONDARY[i % SECONDARY.length]));
+    db.laneLeaseFree = true;
+    byDatePayload = Object.fromEntries(sweepDates(NOW).map((d) => [d, [...payload(10, 10), fixture(111, { hoursOut: 22 }), fixture(111, { hoursOut: 23 })]]));
+    const r = await queue.discoverGenerationCandidates({ now: NOW, batchSize: 3 });
+    delete process.env.COVERAGE_ROLLOUT;
+    return r;
+  };
+  const shadowLane = await laneDay("shadow");
+  check("shadow: the lane runs on a healthy day", shadowLane.coverage.lane?.ran === true, JSON.stringify(shadowLane.coverage.lane));
+  check("shadow: at most EVALUATION_LANE.MAX_DATES by-date calls and nothing else", calls.byDate <= 2 && shadowLane.coverage.lane?.providerCalls === calls.byDate, `${calls.byDate}`);
+  {
+    const sl = shadowLane.coverage.lane?.shortlist ?? [];
+    const laneIds = new Set((require("../src/lib/generation/competitionEligibility").laneCompetitionIds() as number[]));
+    check("shadow: one shortlisted fixture per lane competition; other fallback leagues ignored", sl.length >= 1 && sl.some((x) => x.leagueApiId === 111) && sl.every((x) => laneIds.has(x.leagueApiId)) && new Set(sl.map((x) => x.leagueApiId)).size === sl.length, JSON.stringify(sl));
+  }
+  check("shadow: nothing queued", (shadowLane.coverage.lane?.queued ?? 0) === 0 && shadowLane.candidatesQueued === 0, `${shadowLane.candidatesQueued}`);
+  const offLane = await laneDay("off");
+  check("off: the lane does not run and makes no calls", offLane.coverage.lane?.ran === false && calls.byDate === 0, JSON.stringify(offLane.coverage.lane));
   check("summary reads as healthy", /healthy/.test(busy.summary) && /no fallback work/.test(busy.summary), busy.summary);
   check("narrow reason recorded, no widened reason", !!busy.coverage.narrowReason && busy.coverage.widenedReason === null);
 

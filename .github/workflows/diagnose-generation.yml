@@ -27,6 +27,11 @@ on:
       - scripts/backtest-paid-selection.ts
       - scripts/fit-calibration.ts
       - scripts/verify-paid-production.ts
+      - scripts/measure-league-coverage.ts
+      - scripts/research-league-coverage.ts
+      - scripts/research-global-competitions.ts
+      - scripts/research-paid-policy.ts
+      - scripts/validate-paid-candidate-quality.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -189,3 +194,65 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/verify-paid-production.ts
+
+  # Sprint 05: where fixtures leave the pipeline, per competition (Wales in
+  # detail), and what the provider itself lists for Wales. The database part is
+  # read-only as above. The provider probe spends at most 40 api-football calls
+  # (hard cap in the script) and touches no database.
+  league-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Coverage funnel by competition, discovery decisions, Wales
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-league-coverage.ts 45
+      - name: Provider key (masked)
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          read_env() { printf '%s\n' "$PROD_ENV_FILE" | grep -E "^$1=" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+          K=$(read_env API_FOOTBALL_KEY)
+          if [ -z "$K" ]; then echo "::warning::API_FOOTBALL_KEY not found in PROD_ENV_FILE; provider probe skipped"; exit 0; fi
+          echo "::add-mask::$K"
+          echo "API_FOOTBALL_KEY=$K" >> "$GITHUB_ENV"
+          H=$(read_env API_FOOTBALL_HOST)
+          [ -z "$H" ] || echo "API_FOOTBALL_HOST=$H" >> "$GITHUB_ENV"
+      - name: Provider probe, Welsh competitions and uncatalogued fixtures
+        if: env.API_FOOTBALL_KEY != ''
+        run: npx tsx scripts/research-league-coverage.ts
+      - name: Global competition audit (every uncatalogued competition with fixtures, <= 90 calls)
+        if: env.API_FOOTBALL_KEY != ''
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/research-global-competitions.ts
+      - name: Candidate-quality shadow validation (chronological)
+        if: hashFiles('scripts/validate-paid-candidate-quality.ts') != ''
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/validate-paid-candidate-quality.ts 120
+      - name: VIP/PREMIUM policy research (development period, untouched final holdout)
+        if: hashFiles('scripts/research-paid-policy.ts') != ''
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/research-paid-policy.ts 150
