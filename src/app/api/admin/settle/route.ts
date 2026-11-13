@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/access";
 import { settleFinishedPredictions } from "@/lib/settleFinished";
 import { reconcileUpcomingKickoffs } from "@/lib/kickoffReconcile";
 import { curateAutomaticTips } from "@/lib/geniusCuration";
+import { sendPaidOpsAlerts } from "@/lib/paidOpsAlert";
 import { settleSameGameDoubles } from "@/lib/sameGameDoubleAssembly";
 import { JOB_SETTLE, withJobRun } from "@/lib/jobRuns";
 
@@ -60,6 +61,8 @@ function summariseSettlement(r: Awaited<ReturnType<typeof runSettlement>>): stri
 async function runSettlement(req: Request) {
   const url = new URL(req.url);
   const curation = await curateAutomaticTips();
+  // Paid-feed operational alerts (opt-in by PAID_OPS_ALERT_EMAIL; never throws).
+  const paidOpsAlerts = await sendPaidOpsAlerts();
   // Raised from 15/30. Settlement has to keep pace with whatever publication
   // rate the reviewer sustains, and at up to 100 predictions a day a daily run
   // of 15 would fall permanently and increasingly behind.
@@ -89,6 +92,7 @@ async function runSettlement(req: Request) {
     // could not distinguish a small run from a small batch.
     limit,
     curation,
+    paidOpsAlerts,
     checked,
     settled: results.filter((r) => ["WON", "LOST", "VOID"].includes(r.result)).length,
     abandoned: results.filter((r) => r.result === "abandoned").length,

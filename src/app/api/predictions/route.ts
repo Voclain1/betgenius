@@ -8,7 +8,11 @@ import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
-import { lockedPredictionView } from "@/lib/lockedPrediction";
+import { lockedPredictionView, rowViewable } from "@/lib/lockedPrediction";
+import { NOT_PAID_ONLY } from "@/lib/paidOnly";
+
+// The answer depends on who is asking: never cached by a shared cache or CDN.
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -28,6 +32,9 @@ export async function GET(req: Request) {
         ? {
             kickoff: { gte: today.start, lt: today.end },
             ...(category === "TODAY" ? {} : { categories: { some: { category } } }),
+            // Paid-only picks belong to VIP and Premium alone, exactly as the
+            // feed pages decide it (categoryFeedWhere).
+            ...(category === "VIP" || category === "PREMIUM" ? {} : NOT_PAID_ONLY),
           }
         : {}),
     },
@@ -48,7 +55,9 @@ export async function GET(req: Request) {
     // Gate on the requested category page when one is set; otherwise a row is
     // visible if it's unlocked under ANY of its assigned categories.
     const gateCategory = category ?? r.categories.find((c) => canViewCategory(c.category as PredictionCategory, tier, status, role))?.category ?? presentedCategory(r.category, r.categories);
-    const canView = canViewCategory(gateCategory as PredictionCategory, tier, status, role);
+    // Decided by the row as well as the feed: a paid-only pick needs paid access
+    // whatever feed it was requested through (src/lib/lockedPrediction.ts).
+    const canView = rowViewable(r, canViewCategory(gateCategory as PredictionCategory, tier, status, role), (c) => canViewCategory(c as PredictionCategory, tier, status, role));
     const teams = { coaches: [], teams: [r.homeTeam, r.awayTeam] };
     return canView
       ? { ...r, reasoning: stripUnsupportedStaff(r.reasoning, teams), matchPreview: r.matchPreview && stripUnsupportedStaff(r.matchPreview, teams) }
@@ -56,5 +65,5 @@ export async function GET(req: Request) {
       : lockedPredictionView(r);
   });
 
-  return NextResponse.json(shaped);
+  return NextResponse.json(shaped, { headers: { "Cache-Control": "private, no-store" } });
 }

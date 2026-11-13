@@ -110,6 +110,8 @@ stub("../src/lib/football/usage", {
   getUsageSnapshot: () => Promise.resolve({ remaining: db.quotaRemaining }),
   hasBudget: () => Promise.resolve(true),
   recordCall: () => Promise.resolve(),
+  PAID_PRIORITY_RESERVE: 300,
+  withPaidPriority: (fn: () => Promise<unknown>) => fn(),
 });
 stub("../src/lib/football/api-football", {
   getFixturesByDate: (date: string) => { calls.byDate++; return Promise.resolve(date in byDatePayload ? byDatePayload[date] : []); },

@@ -174,7 +174,7 @@ async function main() {
   eq("fallback: a poisoned artifact does make assessment throw (so the guard is load-bearing)", brokenAssess, "threw");
 
   const src = readFileSync(join(__dirname, "../src/lib/geniusCuration.ts"), "utf8");
-  check("wiring: curation takes verdicts and ordering from the decision", /planCuration\(category, rows, paidClaimed, awaiting, decision\?\.verdicts, decision\?\.ordering\)/.test(src));
+  check("wiring: curation takes verdicts and ordering from the decision", /planCuration\(category, rows, paidClaimed, awaiting, decision\?\.verdicts, decision\?\.ordering,/.test(src));
   check("wiring: the shadow log is written only when the mode is not current", /decision\.effective\.mode !== "current"/.test(src));
   const pipe = readFileSync(join(__dirname, "../src/lib/vipPremiumPipeline.ts"), "utf8");
   check("wiring: current mode assesses with no artifact (exactly #175)", /effective\.mode === "current"[\s\S]{0,200}assessPaidCandidates\(rows, tier, now, null\)/.test(pipe));

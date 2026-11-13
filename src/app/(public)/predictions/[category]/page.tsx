@@ -34,6 +34,8 @@ import { PaidFeedCover, PaidResultsCover } from "@/components/PaidFeedCover";
 import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { firstResultsDay } from "@/lib/feedResults";
 import { MarketChips } from "@/components/MarketChips";
+import { loadPaidCardDetails, getPaidPerformance } from "@/lib/paidFeedData";
+import { PaidFeedIntro, PaidPerformancePanel } from "@/components/PaidPerformancePanel";
 
 const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
@@ -141,6 +143,13 @@ export default async function CategoryPage(
   // (PaidResultsCover).
   const paidFeed = cat === "VIP" || cat === "PREMIUM";
   const paidCovered = paidFeed && !canView;
+  // Subscriber-only detail, loaded only AFTER the entitlement decision above
+  // and only for a reader who can view the feed: status, price and its
+  // provenance, publication time, the reason a pick is here, and the record.
+  const paidTier = cat === "PREMIUM" ? "PREMIUM" : "VIP";
+  const [paidDetails, paidPerformance] = paidFeed && canView
+    ? await Promise.all([loadPaidCardDetails(rows, paidTier), getPaidPerformance(paidTier)])
+    : [null, null];
   const lockReason = needsRegistration
     ? "Sign up free to unlock this tip and full reasoning."
     : "Subscribe to VIP or Premium to unlock this tip and full reasoning.";
@@ -151,7 +160,7 @@ export default async function CategoryPage(
     canView
       // showOutcomes is the ONLY day-dependent branch here. The gating below is
       // identical on all three days by construction — there is no second path.
-      ? { ...r, category: cat, outcome: showOutcomes ? r.outcome : null }
+      ? { ...r, category: cat, outcome: showOutcomes ? r.outcome : null, paid: paidDetails?.get(r.id) ?? null }
       : {
           ...r,
           category: cat,
@@ -313,13 +322,14 @@ export default async function CategoryPage(
         ) : (
         <PredictionViewSwitch
           tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
-          intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}
+          intro={cat === "BANKER" ? <BankerPredictionsIntro /> : paidFeed ? <PaidFeedIntro tier={cat === "PREMIUM" ? "Premium" : "VIP"} /> : null}
           detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
         />
         )
       )}
 
+      {paidPerformance && <PaidPerformancePanel tier={cat === "PREMIUM" ? "Premium" : "VIP"} perf={paidPerformance} />}
       {cat === "BANKER" && <BankerPredictionsEvidence record={record} />}
       {cat === "TODAY" && <TodayPredictionsEvidence day={day} />}
 

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { leaguePriorityRank } from "@/lib/leagues";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
@@ -114,6 +115,8 @@ export async function getHeroSlides(now: Date = new Date()): Promise<HeroSlideDa
       awayTeam: { not: null },
       kickoff: { gte: today.start, lt: today.end },
       categories: { some: { category: { in: ["FEATURED", "GENIUS"] } } },
+      // A public slot: never a paid-only pick, whatever tags it carries.
+      ...NOT_PAID_ONLY,
     },
     select: {
       id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true,

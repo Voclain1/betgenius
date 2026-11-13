@@ -126,6 +126,8 @@ stub("../src/lib/football/usage", {
   getUsageSnapshot: () => Promise.resolve({ remaining: db.quotaRemaining }),
   hasBudget: () => Promise.resolve(true),
   recordCall: () => Promise.resolve(),
+  PAID_PRIORITY_RESERVE: 300,
+  withPaidPriority: (fn: () => Promise<unknown>) => fn(),
 });
 stub("../src/lib/football/api-football", {
   resolveSeason: () => { calls.resolveSeason++; return Promise.resolve(2026); },

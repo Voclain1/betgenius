@@ -586,7 +586,8 @@ export type PaidPublishBlock =
   | "CONFLICTING_DEDICATED_PICK" // another live dedicated paid row is on the fixture
   | "REPEATS_EXISTING_PICK" // the same selection is already live on the fixture as a non-paid pick
   | "OVER_DAILY_QUOTA"
-  | "KICKED_OFF"; // the match started before publication could complete
+  | "KICKED_OFF" // the match started before publication could complete
+  | "TOO_CLOSE_TO_KICKOFF"; // under PAID_MIN_PUBLISH_LEAD_MS to kickoff
 
 export type PaidPublishRow = {
   provenance: string | null;
@@ -672,6 +673,17 @@ export function paidPublishFixture(
     withinDailyQuota,
   };
 }
+
+/**
+ * No pick is added to a paid feed, or auto-published into one, less than this
+ * before kickoff. A pick a subscriber receives as the match starts cannot be
+ * acted on, and one added after kickoff would enter the record with part of
+ * the match already played. Ordinary curation runs with settlement every three
+ * hours over the whole Lagos day and used to add tags with no kickoff check at
+ * all; dedicated picks are published a median 24h ahead, so this rarely binds
+ * for them.
+ */
+export const PAID_MIN_PUBLISH_LEAD_MS = 60 * 60_000;
 
 /** Provenances only this pass stamps (MARKET_CONFIRMED is the retired pass's, never auto-published). */
 export const DEDICATED_GENERATED_PROVENANCES = PAID_ONLY_PROVENANCES;

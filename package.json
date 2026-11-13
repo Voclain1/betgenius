@@ -102,6 +102,8 @@
     "check:paid-selection": "tsx scripts/check-paid-selection.ts",
     "check:calibration-value": "tsx scripts/check-calibration-value.ts",
     "check:paid-value-integration": "tsx scripts/check-paid-value-integration.ts",
+    "check:paid-subscriber": "tsx scripts/check-paid-subscriber.ts",
+    "verify:paid-production": "tsx --env-file=.env scripts/verify-paid-production.ts",
     "fit:calibration": "tsx --env-file=.env scripts/fit-calibration.ts",
     "measure:paid-performance": "tsx --env-file=.env scripts/measure-paid-performance.ts",
     "backtest:paid-selection": "tsx --env-file=.env scripts/backtest-paid-selection.ts",

@@ -352,6 +352,8 @@ export type CurationPlan = {
   marketDisagreeExcluded: number;
   /** Paid tiers: non-VIP-route rows admitted on a thin day because the market confirmed them. */
   widenedAdmitted: number;
+  /** Paid tiers: rows at the floor not admitted because kickoff was under the minimum lead (or past). */
+  kickoffExcluded: number;
 };
 
 /**
@@ -393,10 +395,19 @@ export function planCuration(
    * protected rows included. Absent, ordering is exactly as before.
    */
   paidOrdering?: { rank: ReadonlyMap<string, number>; perMarketCap: number },
+  /**
+   * Paid tiers: with `now`, an UNTAGGED row kicking off less than
+   * `minLeadMs` after now is not admitted (PAID_MIN_PUBLISH_LEAD_MS). A row
+   * already in the feed is unaffected. Absent, no kickoff check (pure callers).
+   */
+  timing?: { now: Date; minLeadMs: number },
 ): CurationPlan {
   const rule = CURATION_RULES[category];
   const tagged = new Set(rows.filter((r) => r.categories.includes(category)).map((r) => r.id));
   let marketDisagreeExcluded = 0;
+  let kickoffExcluded = 0;
+  const tooLate = (r: CurationRow) =>
+    !!rule.paid && !!timing && !tagged.has(r.id) && !!r.kickoff && r.kickoff.getTime() - timing.now.getTime() < timing.minLeadMs;
   let widenedAdmitted = 0;
 
   // Dedicated-pass picks already IN this feed are fixed points: they keep their
@@ -500,7 +511,11 @@ export function planCuration(
   const open = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r));
   const doublesExcluded = open.filter((r) => !isPaidEligible(r)).length;
   const routeExcluded = open.filter((r) => isPaidEligible(r) && !hasRequiredRoute(r)).length;
-  let curatable = open.filter((r) => hasRequiredRoute(r) && isPaidEligible(r));
+  let curatable = open.filter((r) => hasRequiredRoute(r) && isPaidEligible(r)).filter((r) => {
+    if (!tooLate(r)) return true;
+    if (r.confidence >= rule.floor) kickoffExcluded++;
+    return false;
+  });
 
   // One paid pick per fixture. The representative is the fixture's best row in
   // the same editorial ranking selection uses, so it is deterministic (ties
@@ -587,6 +602,7 @@ export function planCuration(
     awaitingDedicatedExcluded,
     marketDisagreeExcluded,
     widenedAdmitted,
+    kickoffExcluded,
   };
 }
 
@@ -660,7 +676,7 @@ async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) 
     : new Set<string>();
   const pipeline = CURATION_RULES[category].paid ? await import("@/lib/vipPremiumPipeline") : null;
   const decision = pipeline ? await pipeline.loadPaidCurationDecision(rows, category === "PREMIUM" ? "PREMIUM" : "VIP", now) : null;
-  const plan = planCuration(category, rows, paidClaimed, awaiting, decision?.verdicts, decision?.ordering);
+  const plan = planCuration(category, rows, paidClaimed, awaiting, decision?.verdicts, decision?.ordering, pipeline ? { now, minLeadMs: pipeline.PAID_MIN_PUBLISH_LEAD_MS } : undefined);
   await prisma.$transaction([
     ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category })), skipDuplicates: true })] : []),
     ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category } })] : []),

@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { MARKET_TYPES, type MarketType } from "@/lib/markets";
 import { lagosDateKey } from "@/lib/lagosDate";
 
@@ -174,7 +175,10 @@ export const getTrackRecordForMonth = cache(async (key: string): Promise<MonthTr
     prisma.prediction.groupBy({ by: ["marketType", "outcome"], where, _count: { _all: true } }),
     grouped({ marketType: "OVER_UNDER", AND: [{ selection: { path: ["line"], equals: 2.5 } }, { selection: { path: ["direction"], equals: "OVER" } }] }),
     prisma.prediction.findMany({
-      where,
+      // The pick-level table is public; paid-only (dedicated VIP / Premium)
+      // picks are members-only even once settled, as their feed results are
+      // (MEMBERS_ONLY_RESULTS). Their outcomes still count in every total above.
+      where: { ...where, ...NOT_PAID_ONLY },
       orderBy: { settledAt: "desc" },
       take: 12,
       select: { id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, market: true, pick: true, outcome: true, category: true, kickoff: true, settledAt: true },
