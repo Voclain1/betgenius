@@ -16,6 +16,7 @@ export function verifiedEntryPrice(
     !quoted || !Number.isFinite(quoted.getTime()) ||
     !confirmed || !Number.isFinite(confirmed.getTime()) ||
     quoted.getTime() > confirmed.getTime() ||
+    confirmed.getTime() - quoted.getTime() > 6 * 60 * 60 * 1000 ||
     confirmed.getTime() >= kickoff.getTime()) return null;
   return price;
 }
