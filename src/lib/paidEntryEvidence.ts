@@ -20,3 +20,31 @@ export function verifiedEntryPrice(
     confirmed.getTime() >= kickoff.getTime()) return null;
   return price;
 }
+
+/**
+ * Quote metadata is useful for retrospective price coverage, but never
+ * establishes an actual subscriber fill. Reject derived prices, missing
+ * bookmaker attribution, malformed timestamps and post-kickoff evidence.
+ */
+export function auditPaidQuoteEvidence(confirmation: unknown, kickoff: Date) {
+  const c = confirmation && typeof confirmation === "object" ? confirmation as Record<string, unknown> : null;
+  if (!c) return { usable: false, reason: "MISSING_CONFIRMATION" as const };
+  if (c.entryPriceBasis !== "BOOKMAKER_MEDIAN_INDICATIVE")
+    return { usable: false, reason: "NO_DIRECT_BOOKMAKER_QUOTE" as const };
+  const price = verifiedEntryPrice(c, kickoff);
+  if (price === null) return { usable: false, reason: "INVALID_PRICE_OR_TIMESTAMPS" as const };
+  const market = c.entryQuoteSelection;
+  if (!market || typeof market !== "object" ||
+      typeof (market as Record<string, unknown>).market !== "string" ||
+      typeof (market as Record<string, unknown>).value !== "string")
+    return { usable: false, reason: "MISSING_SELECTION" as const };
+  const count = c.entryBookmakers;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1)
+    return { usable: false, reason: "MISSING_BOOKMAKER_COUNT" as const };
+  const sources = c.entryQuoteSources;
+  if (!Array.isArray(sources) || sources.length === 0 ||
+      !sources.some(q => q && typeof q.bookmaker === "string" && q.bookmaker.trim() &&
+        typeof q.odd === "number" && Number.isFinite(q.odd) && q.odd > 1))
+    return { usable: false, reason: "MISSING_NAMED_BOOKMAKER" as const };
+  return { usable: true, reason: "INDICATIVE_BOOKMAKER_MEDIAN" as const, price };
+}
