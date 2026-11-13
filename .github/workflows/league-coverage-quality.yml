@@ -1,0 +1,59 @@
+# Sprint 05: league coverage, fair discovery and the shadow candidate-quality
+# layer, plus the suites that guard what those changes sit next to: discovery,
+# generation, paid curation, paid access and payments. No database, no network.
+name: league-coverage-quality
+on:
+  pull_request:
+    paths:
+      - 'src/lib/generation/**'
+      - 'src/lib/leagues.ts'
+      - 'src/lib/cupConfig.ts'
+      - 'src/lib/paidCandidateQuality.ts'
+      - 'src/lib/paidPolicyValidation.ts'
+      - 'src/lib/coverageDiagnostics.ts'
+      - 'src/lib/vipPremiumPipeline.ts'
+      - 'src/lib/geniusCuration.ts'
+      - 'src/app/admin/paid-ops/page.tsx'
+      - 'scripts/check-league-coverage-quality.ts'
+      - 'scripts/check-adaptive-coverage.ts'
+      - 'package.json'
+      - '.github/workflows/league-coverage-quality.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Unresolvable on purpose: these suites must never reach a database.
+      DATABASE_URL: postgresql://ci:ci@db.invalid:5432/none
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@db.invalid:5432/none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - name: Sprint 05 coverage and candidate-quality suite
+        run: npm run check:league-coverage-quality
+      - name: Discovery, coverage and generation (unchanged behaviour)
+        run: |
+          npm run check:adaptive-coverage
+          npm run check:european-clubs
+          npx tsx scripts/check-generation.ts
+      - name: Paid curation, shadow log and overlay
+        run: |
+          npm run check:vip-premium-overlay
+          npm run check:paid-selection
+          npm run check:paid-value-integration
+          npm run check:paid-market-quality
+      - name: Paid access, subscriptions and payments
+        run: |
+          npm run check:paid-subscriber
+          npm run check:paid-render
+          npm run check:subscription-entitlement
+          npm run check:paystack-entitlement
+          npm run check:onetime-fallback

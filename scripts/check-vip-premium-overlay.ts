@@ -130,6 +130,16 @@ stub("../src/lib/predictions", {
     if (r) r.status = "PUBLISHED";
     return r;
   },
+  // Sprint 04's atomic paid publication: recorded the same way, so the tests
+  // still prove a dedicated pick is published through the shared transition.
+  KickoffPassedError: class KickoffPassedError extends Error {},
+  publishPaidPredictionAtomically: async (row: Any, actorId: string) => {
+    writes.push(`review:PUBLISH:${row.id}:${actorId}`);
+    const r = db.byId.get(row.id);
+    if (!r || r.status === "PUBLISHED") return false;
+    r.status = "PUBLISHED";
+    return true;
+  },
 });
 stub("../src/lib/football/usage", { getUsageSnapshot: async () => ({ remaining: 5000 }), PAID_PRIORITY_RESERVE: 300, withPaidPriority: (fn: () => Promise<unknown>) => fn() });
 const generated: Any[] = [];
@@ -707,13 +717,13 @@ async function main() {
 
     const pipelineOnly = code("src/lib/vipPremiumPipeline.ts");
     const auto = pipelineOnly.slice(pipelineOnly.indexOf("export async function autoPublishVipPremiumPrediction"), pipelineOnly.indexOf("export async function applyVipPremiumGate"));
-    check("publish: goes through applyReviewAction, only after the full verdict passes",
-      /if \(!publish\) return/.test(auto) && /await applyReviewAction\(row, "PUBLISH", actorId\)/.test(auto) && auto.indexOf("paidAutoPublishVerdict(") < auto.indexOf("applyReviewAction("));
+    check("publish: goes through the atomic paid publication, only after the full verdict passes",
+      /if \(!publish\) return/.test(auto) && /await publishPaidPredictionAtomically\(row, actorId, publicationEvidence\)/.test(auto) && auto.indexOf("paidAutoPublishVerdict(") < auto.indexOf("publishPaidPredictionAtomically("));
     check("publish: never a direct status write", !/status: "PUBLISHED"\s*[,}]/.test(auto.replace(/where: \{[^}]*\}/g, "")) && !/publishedAt/.test(auto));
-    check("publish: the ordinary paid tags are stripped only after publication", auto.indexOf("applyReviewAction(") < auto.indexOf("predictionCategoryLink.deleteMany"));
+    check("publish: the ordinary paid tags are stripped only after publication", auto.indexOf("publishPaidPredictionAtomically(") < auto.indexOf("predictionCategoryLink.deleteMany"));
     check("route: the paid run publishes as its author", /applyVipPremiumGate\(\{ actorId: authorId \}\)/.test(branch));
-    check("ordinary generation never auto-publishes", !/autoPublish|applyReviewAction|"PUBLISH"/.test(ordinaryRun) && !/applyReviewAction|autoPublish/.test(gen));
-    check("the overlay run itself publishes nothing — only the gate does", !/autoPublish|applyReviewAction/.test(paidRun));
+    check("ordinary generation never auto-publishes", !/autoPublish|applyReviewAction|"PUBLISH"/.test(ordinaryRun) && !/applyReviewAction|autoPublish|publishPaidPredictionAtomically/.test(gen));
+    check("the overlay run itself publishes nothing — only the gate does", !/autoPublish|applyReviewAction|publishPaidPredictionAtomically/.test(paidRun));
   }
 
   console.log(`\n  ${passed} passed, ${failures.length} failed`);
