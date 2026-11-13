@@ -1,4 +1,4 @@
-import { appendPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
+import { publicationSnapshotDecision } from "@/lib/paidEntryEvidence";
 import { prisma } from "@/lib/prisma";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
@@ -727,22 +727,19 @@ export async function autoPublishVipPremiumPrediction(
     const persisted = await prisma.prediction.findUnique({
       where: { id: row.id }, select: { status: true, marketConfirmation: true },
     });
-    if (persisted?.status === "PUBLISHED" && persisted.marketConfirmation &&
-        typeof persisted.marketConfirmation === "object" && !Array.isArray(persisted.marketConfirmation)) {
-      const original = persisted.marketConfirmation as Record<string, unknown>;
-      const next = appendPublicationQuoteEvidence(original, publicationEvidence);
-      if (next) {
-        // Compare-and-set prevents a concurrent writer replacing an earlier
-        // publication snapshot. A zero count means a concurrent update won.
-        const saved = await prisma.prediction.updateMany({
-          where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted.marketConfirmation } },
-          data: { marketConfirmation: next },
-        });
-        if (saved.count === 0) {
-          console.warn("[vip-publication-evidence] concurrent snapshot update; audit required", { predictionId: row.id });
-        }
+    const decision = publicationSnapshotDecision(
+      persisted?.status ?? "MISSING", persisted?.marketConfirmation, publicationEvidence,
+    );
+    if (decision.kind === "APPEND" && decision.next) {
+      // Database compare-and-set: only the first writer may append.
+      const saved = await prisma.prediction.updateMany({
+        where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted!.marketConfirmation! } },
+        data: { marketConfirmation: decision.next },
+      });
+      if (saved.count === 0) {
+        console.warn("[vip-publication-evidence] concurrent snapshot update; audit required", { predictionId: row.id });
       }
-    } else {
+    } else if (decision.kind === "SKIP_MISSING_CONFIRMATION") {
       console.warn("[vip-publication-evidence] published row has no confirmation snapshot", { predictionId: row.id });
     }
   } catch (error) {
