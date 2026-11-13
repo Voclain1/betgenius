@@ -587,6 +587,7 @@ export type PaidPublishBlock =
   | "REPEATS_EXISTING_PICK" // the same selection is already live on the fixture as a non-paid pick
   | "OVER_DAILY_QUOTA"
   | "KICKED_OFF" // the match started before publication could complete
+  | "CONCURRENT_OR_STALE_PUBLISH" // another worker claimed the row or the draft changed
   | "TOO_CLOSE_TO_KICKOFF"; // under PAID_MIN_PUBLISH_LEAD_MS to kickoff
 
 export type PaidPublishRow = {
