@@ -43,7 +43,7 @@ export type PolicyWindow = {
 };
 export type PolicyResult = { policy: PolicyName; tier: QualityTier; training: PolicyWindow; holdout: PolicyWindow; all: PolicyWindow };
 
-function windowStats(rows: readonly ValidationRow[]): PolicyWindow {
+export function windowStats(rows: readonly ValidationRow[]): PolicyWindow {
   const decided = rows.filter((r) => r.outcome !== "VOID");
   const wins = decided.filter((r) => r.outcome === "WON").length;
   const priced = rows.filter((r) => r.odds != null && r.odds > 1);
