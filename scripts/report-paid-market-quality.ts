@@ -1,4 +1,4 @@
-import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { auditPublicationQuoteEvidence } from "../src/lib/paidEntryEvidence";
 import { assessPaidEvidenceReadiness } from "../src/lib/paidEvidenceGate";
 import { evaluateShadowSegmentPolicy } from "../src/lib/paidHoldoutPolicy";
 /**
@@ -7,7 +7,7 @@ import { evaluateShadowSegmentPolicy } from "../src/lib/paidHoldoutPolicy";
  * Run with an explicitly read-only PostgreSQL role:
  * REQUIRE_READ_ONLY=1 npx tsx --env-file=.env scripts/report-paid-market-quality.ts
  *
- * Historical entry odds are used ONLY when frozen at publication. Cached
+ * Only attributed publication-time indicative odds are eligible. Cached
  * closing odds are intentionally not reconstructed as entry odds.
  */
 export {};
@@ -41,7 +41,8 @@ async function main() {
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
   });
   const observations: SettledPaidObservation[] = rows.filter(r => r.kickoff).map(r => {
-    const odds = verifiedEntryPrice(r.marketConfirmation, r.kickoff!);
+    const publicationAudit = auditPublicationQuoteEvidence(r.marketConfirmation, r.kickoff!);
+    const odds = publicationAudit.usable ? publicationAudit.price : null;
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
       leagueApiId: r.leagueApiId, provider: null, // No verified bookmaker identifier is stored with this historical quote.
@@ -54,11 +55,17 @@ async function main() {
     generatedAt: now.toISOString(),
     windowDays: days,
     selection: "published VIP or Premium, settled, kickoff in past",
-    pricePolicy: "frozen entry price only; never substitute closing or post-kickoff odds",
+    pricePolicy: "named-bookmaker indicative publication snapshot only; never substitute promotion, closing or post-kickoff odds; not an executed fill",
     selectionPolicy: "diagnostic only; no live rules activated",
     observations: observations.length,
-    entryPriced: observations.filter(r => r.priceSource === "entry").length,
-    missingEntryPrice: observations.filter(r => r.priceSource === "missing").length,
+    publicationEvidencePriced: observations.filter(r => r.priceSource === "entry").length,
+    missingPublicationEvidence: observations.filter(r => r.priceSource === "missing").length,
+    publicationEvidenceReasons: rows.reduce<Record<string, number>>((counts, r) => {
+      if (!r.kickoff) return counts;
+      const reason = auditPublicationQuoteEvidence(r.marketConfirmation, r.kickoff).reason;
+      counts[reason] = (counts[reason] ?? 0) + 1;
+      return counts;
+    }, {}),
     dimensions: Object.fromEntries(dimensions.map(d => [d, segmentPaidPerformance(observations, d)])),
     chronologicalHoldout: Object.fromEntries(dimensions.map(d => { const result = chronologicalHoldout(observations, d); return [d, { ...result, warnings: validationWarnings(result) }]; })),
     shadowPolicyComparisons: Object.fromEntries(dimensions.map(d => [d, evaluateShadowSegmentPolicy(observations, d)])),
