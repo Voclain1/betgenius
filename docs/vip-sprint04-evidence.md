@@ -15,9 +15,9 @@ This PR is diagnostic-first. It must not change paid subscription entitlements, 
 - [ ] CI on final PR head succeeds.
 - [ ] Read-only production audit run with a restricted DB role; capture sample counts, quote coverage and validation warnings.
 - [ ] Check the actual source and timestamp of every historical entry price. The optional marketConfirmation.entryPrice field is not by itself evidence that an executable quote was frozen at publication.
-- [ ] Validate whether generation model is the intended dimension. It is not a bookmaker provider; bookmaker-provider comparisons require real bookmaker provenance.
+- [x] Stop labeling generation-model providers as bookmaker providers. Historical bookmaker identity remains unknown; provider segments must not be used for decisions until a bookmaker identifier is actually persisted.
 - [ ] Wire safeguards into the real paid-selection flow only after compatibility and shadow-mode verification.
-- [ ] Compare baseline versus candidate on a strictly later holdout, with sufficient samples and no look-ahead.
+- [x] Implement training-only segment selection and strictly later holdout comparison with regression checks against holdout outcome leakage.\n- [ ] Execute this comparison against verified production observations with sufficient samples, settlement timing and price provenance.
 - [ ] Verify paid entitlement access, paid-content redaction, and subscription regressions.
 - [ ] Verify production performance and query volume of the admin diagnostics page.
 - [ ] Record rollback and confirm no live feature flags were activated.
