@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendPublicationQuoteEvidence, auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { appendPublicationQuoteEvidence, publicationSnapshotDecision, auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 const kickoff = new Date("2026-11-13T17:00:00Z");
 const good = { entryPrice: 1.88, quoteFetchedAt: "2026-11-13T15:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" };
 assert.equal(verifiedEntryPrice(good, kickoff), 1.88);
@@ -38,4 +38,18 @@ assert.equal(appendPublicationQuoteEvidence(frozen, { ...published, entryPrice: 
 assert.equal(appendPublicationQuoteEvidence(null, published), null);
 assert.equal(appendPublicationQuoteEvidence([], published), null);
 assert.deepEqual(frozen.entryQuoteSources, sourced.entryQuoteSources);
+const first = publicationSnapshotDecision("PUBLISHED", sourced, published);
+assert.equal(first.kind, "APPEND");
+assert.ok(first.next);
+assert.equal(publicationSnapshotDecision("PENDING_REVIEW", sourced, published).kind, "SKIP_NOT_PUBLISHED");
+assert.equal(publicationSnapshotDecision("PUBLISHED", null, published).kind, "SKIP_MISSING_CONFIRMATION");
+assert.equal(publicationSnapshotDecision("PUBLISHED", first.next, { ...published, entryPrice: 99 }).kind, "SKIP_ALREADY_RECORDED");
+const concurrentA = publicationSnapshotDecision("PUBLISHED", sourced, published);
+const concurrentB = publicationSnapshotDecision("PUBLISHED", sourced, { ...published, entryPrice: 2.11 });
+assert.equal(concurrentA.kind, "APPEND");
+assert.equal(concurrentB.kind, "APPEND");
+assert.notDeepEqual(concurrentA.next, concurrentB.next);
+// Both writers must compare-and-set the same original JSON. After A wins,
+// B must re-read and skip; an unconditional JSON update would lose evidence.
+assert.equal(publicationSnapshotDecision("PUBLISHED", concurrentA.next, concurrentB.next!).kind, "SKIP_ALREADY_RECORDED");
 console.log("paid entry evidence: all assertions passed");
