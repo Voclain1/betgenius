@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendPublicationQuoteEvidence, publicationSnapshotDecision, auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { appendPublicationQuoteEvidence, publicationSnapshotDecision, auditPublicationQuoteEvidence, auditPaidQuoteEvidence, verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 const kickoff = new Date("2026-11-13T17:00:00Z");
 const good = { entryPrice: 1.88, quoteFetchedAt: "2026-11-13T15:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" };
 assert.equal(verifiedEntryPrice(good, kickoff), 1.88);
@@ -52,4 +52,9 @@ assert.notDeepEqual(concurrentA.next, concurrentB.next);
 // Both writers must compare-and-set the same original JSON. After A wins,
 // B must re-read and skip; an unconditional JSON update would lose evidence.
 assert.equal(publicationSnapshotDecision("PUBLISHED", concurrentA.next, concurrentB.next!).kind, "SKIP_ALREADY_RECORDED");
+assert.equal(auditPublicationQuoteEvidence(sourced, kickoff).reason, "MISSING_PUBLICATION_SNAPSHOT");
+assert.equal(auditPublicationQuoteEvidence(null, kickoff).reason, "MISSING_CONFIRMATION");
+assert.equal(auditPublicationQuoteEvidence({ ...sourced, publicationQuoteEvidence: { ...published, evidenceKind: "PUBLICATION_INDICATIVE" } }, kickoff).usable, true);
+assert.equal(auditPublicationQuoteEvidence({ ...sourced, publicationQuoteEvidence: { ...published, evidenceKind: "UNKNOWN" } }, kickoff).reason, "INVALID_PUBLICATION_KIND");
+assert.equal(auditPublicationQuoteEvidence({ ...sourced, publicationQuoteEvidence: { ...published, evidenceKind: "PUBLICATION_INDICATIVE", entryQuoteSources: [] } }, kickoff).usable, false);
 console.log("paid entry evidence: all assertions passed");
