@@ -41,4 +41,6 @@ jobs:
       - run: npm run check:paid-market-quality
       # Paid access is a release invariant, not an optional downstream check.
       - run: npm run check:subscription-entitlement
+      - run: npm run check:paystack-entitlement
+      - run: npm run check:onetime-fallback
       - run: npx tsc --noEmit
