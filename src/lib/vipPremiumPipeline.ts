@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { applyReviewAction, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
-import type { FixtureOdds } from "@/lib/odds";
+import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
 import {
@@ -559,6 +559,11 @@ function entryValueRecord(row: { marketType: string; selection: unknown; confide
     const artifact = calibrationArtifact();
     const price = odds ? pickPrice(odds, row.marketType, row.selection) : null;
     const executable = price && !price.derived ? price : null;
+    const mapped = toBookmakerSelection(row.marketType, row.selection);
+    const sourceSelection = odds && mapped ? findSelection(odds, mapped.market, mapped.value) : null;
+    const namedQuotes = executable && sourceSelection?.quotes?.length
+      ? sourceSelection.quotes.filter(q => q.bookmaker && Number.isFinite(q.odd) && q.odd > 1).slice(0, 5)
+      : [];
     const cal = artifact && executable?.fair != null ? applyCalibration(artifact, { provider, marketType: row.marketType, rawConfidence: row.confidence, marketProbability: executable.fair }) : null;
     const pDraw = odds ? (devigProbability(odds, "Match Winner", "Draw")?.probability ?? null) : null;
     const value = assessValue({
@@ -566,7 +571,7 @@ function entryValueRecord(row: { marketType: string; selection: unknown; confide
       estimate: cal?.withMarket != null ? { p: cal.withMarket, se: cal.withMarketSE ?? 0, version: cal.version } : null,
       minEvLower: paidValueMinEvLower(),
     });
-    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: executable?.median ?? null, entryBookmakers: executable?.bookmakers ?? null, valueAssessment: value };
+    return { provider, model: row.aiJob?.model ?? null, calibrationVersion: artifact?.version ?? null, calibrationActive: !!artifact?.active, entryPrice: executable?.median ?? null, entryBookmakers: executable?.bookmakers ?? null, entryPriceBasis: executable ? "BOOKMAKER_MEDIAN_INDICATIVE" : "UNAVAILABLE", entryQuoteSelection: mapped ? { market: mapped.market, value: mapped.value } : null, entryQuoteSources: namedQuotes, entryBestBookmaker: executable ? sourceSelection?.bestBookmaker ?? null : null, entryBestPrice: executable ? sourceSelection?.best ?? null : null, valueAssessment: value };
   } catch {
     return {};
   }
