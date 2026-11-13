@@ -30,6 +30,7 @@ const react = require("react");
 if (typeof react.cache !== "function") react.cache = (fn: unknown) => fn;
 
 import { LEAGUE_CATALOGUE } from "../src/lib/leagues";
+import { isNonSeniorSide } from "../src/lib/generation/coverage";
 import { auditCompetitions, auditLine, decideEligibility, summariseAudit, WOMENS_TEAM_NAME, type CompetitionEvidence } from "../src/lib/generation/globalCompetitionAudit";
 
 type Env<T> = { errors: unknown; results: number; response: T };
@@ -126,6 +127,10 @@ async function main() {
         const all = [...forward, ...backward].filter((f) => f.league.id === id);
         return all.length ? all.filter((f) => WOMENS_TEAM_NAME.test(f.teams.home.name ?? "") && WOMENS_TEAM_NAME.test(f.teams.away.name ?? "")).length / all.length : 0;
       })(),
+      nonSeniorTeamShare: (() => {
+        const all = [...forward, ...backward].filter((f) => f.league.id === id);
+        return all.length ? all.filter((f) => isNonSeniorSide(f.teams.home.name ?? "", null) || isNonSeniorSide(f.teams.away.name ?? "", null)).length / all.length : 0;
+      })(),
       _sample: up[0]?.fixture.id ?? null,
     });
   }
@@ -145,7 +150,7 @@ async function main() {
 
   const existing = await existingPredictions([...auditIds]).catch((e) => { console.log(`existing-coverage read skipped: ${e.message}`); return new Map<number, number>(); });
   const rows = auditCompetitions([...evidence.values()].map(({ _sample, ...e }) => ({ ...e, existingPredictions: existing.get(e.id) ?? 0 })), asOf);
-  console.log("AUDIT_FORMAT id|region|country|name|type|season|current|seasonEnd|odds|standings|fixtureStats|upcoming|finished|finishedWithScore|finishedWithHalfTime|sampledBookmakers|existingPredictions|womensTeamShare|category|decision|reasons");
+  console.log("AUDIT_FORMAT id|region|country|name|type|season|current|seasonEnd|odds|standings|fixtureStats|upcoming|finished|finishedWithScore|finishedWithHalfTime|sampledBookmakers|existingPredictions|womensTeamShare|category|decision|reasons|nonSeniorTeamShare");
   for (const r of rows) console.log(`AUDIT ${auditLine(r)}`);
   const s = summariseAudit(rows);
   console.log(`\nSUMMARY ${JSON.stringify(s)}`);

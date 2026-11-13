@@ -34,7 +34,7 @@
  */
 
 import type { FixtureRow } from "@/lib/football/api-football";
-import { COMPETITION_REGISTRY, CURRENT_RULES, fairOrder, type EligibilityRules } from "@/lib/generation/competitionEligibility";
+import { COMPETITION_REGISTRY, CURRENT_RULES, GLOBAL_INCLUDED_IDS, fairOrder, type EligibilityRules } from "@/lib/generation/competitionEligibility";
 import {
   GENERATION_TIER_ORDER,
   generationTierOf,
@@ -173,13 +173,18 @@ export function decideCoverage(counts: TierCounts, policy = COVERAGE_POLICY): Co
 }
 
 /** League ids ordinary generation must NOT take right now: every tier outside the decision's scope. */
-export function excludedLeagueIds(decision: Pick<CoverageDecision, "allowedTiers">): number[] {
+export function excludedLeagueIds(decision: Pick<CoverageDecision, "allowedTiers">, opts: { laneAllowed?: readonly number[] } = {}): number[] {
   const out = GENERATION_TIER_ORDER.filter((t) => !decision.allowedTiers.includes(t));
-  // Registry additions (competitionEligibility.ts) are excluded by the same
-  // rule, so a fixture queued under COVERAGE_ROLLOUT=on is not generated once
-  // its tier is out of scope again.
-  const added = COMPETITION_REGISTRY.flatMap((e) => (e.proposal.action === "ADD" && out.includes(e.proposal.tier) ? [e.id] : []));
-  return [...leaguesInTiers(out), ...added];
+  // Registry and global-audit additions (competitionEligibility.ts) are
+  // excluded by the same rule, so a fixture queued under COVERAGE_ROLLOUT=on is
+  // not generated once its tier is out of scope again, UNLESS the evaluation
+  // lane is on and admitted it (opts.laneAllowed).
+  const added = [
+    ...COMPETITION_REGISTRY.flatMap((e) => (e.proposal.action === "ADD" && out.includes(e.proposal.tier) ? [e.id] : [])),
+    ...(out.includes("DEEP_FALLBACK") ? GLOBAL_INCLUDED_IDS : []),
+  ];
+  const lane = new Set(opts.laneAllowed ?? []);
+  return [...new Set([...leaguesInTiers(out), ...added])].filter((id) => !lane.has(id));
 }
 
 /**

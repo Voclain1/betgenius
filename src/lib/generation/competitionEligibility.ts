@@ -1,5 +1,7 @@
 import { generationTierOf, leaguePriorityRank, type GenerationTier } from "@/lib/leagues";
 import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
+import { auditCompetitions, type AuditRow } from "@/lib/generation/globalCompetitionAudit";
+import { GLOBAL_AUDIT } from "@/lib/generation/globalCompetitionEvidence";
 
 /**
  * Sprint 05: competition eligibility that is configured, evidenced and rolled
@@ -85,6 +87,29 @@ export const COMPETITION_REGISTRY: readonly CompetitionEntry[] = [
 ];
 
 const byId = new Map(COMPETITION_REGISTRY.map((e) => [e.id, e]));
+
+/**
+ * The global audit (globalCompetitionAudit.ts), recomputed from the stored
+ * provider evidence with the fixed rules, so the decision can never drift
+ * from the evidence it cites. Hand-curated registry entries above take
+ * precedence for their ids.
+ */
+export const GLOBAL_AUDIT_ROWS: readonly AuditRow[] = auditCompetitions(GLOBAL_AUDIT.rows, GLOBAL_AUDIT.asOf);
+const auditById = new Map(GLOBAL_AUDIT_ROWS.map((r) => [r.id, r]));
+export const globalAuditRow = (id: number | null | undefined) => (id == null ? undefined : auditById.get(id));
+export const GLOBAL_INCLUDED_IDS: readonly number[] = GLOBAL_AUDIT_ROWS
+  .filter((r) => r.decision === "INCLUDE" && !byId.has(r.id) && !generationTierOf(r.id))
+  .map((r) => r.id);
+
+/**
+ * Competitions the bounded evaluation lane (evaluationLane.ts) may look at on
+ * a healthy day: registry additions and priced cups, plus every global-audit
+ * INCLUDE. Nothing else.
+ */
+export function laneCompetitionIds(): number[] {
+  const reg = COMPETITION_REGISTRY.filter((e) => e.proposal.action === "ADD" || e.proposal.action === "CUP_ODDS_SUPPORTED").map((e) => e.id);
+  return [...new Set([...reg, ...GLOBAL_INCLUDED_IDS])];
+}
 export const registryEntry = (id: number | null | undefined) => (id == null ? undefined : byId.get(id));
 
 /** The rule set discovery applies. "current" is the catalogue exactly as before Sprint 05. */
@@ -116,7 +141,8 @@ export const PROPOSED_RULES: EligibilityRules = {
     const live = generationTierOf(id);
     if (live) return live;
     const e = registryEntry(id);
-    return e?.proposal.action === "ADD" ? e.proposal.tier : null;
+    if (e?.proposal.action === "ADD") return e.proposal.tier;
+    return id != null && GLOBAL_INCLUDED_IDS.includes(id) ? "DEEP_FALLBACK" : null;
   },
   cupPriced: (id) => registryEntry(id)?.proposal.action === "CUP_ODDS_SUPPORTED" || CURRENT_RULES.cupPriced(id),
   perCompetitionCap: FAIR_PER_COMPETITION_CAP,

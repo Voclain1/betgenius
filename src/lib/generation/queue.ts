@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { lagosDateKey } from "@/lib/lagosDate";
+import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { LEAGUE_CATALOGUE, generationTierOf, leaguePriorityRank, leaguesInTiers, normalizeLeagueName, type GenerationTier } from "@/lib/leagues";
 import { candidatesFromFixtures, selectCandidates, type Candidate } from "@/lib/generation/selector";
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { matchKey } from "@/lib/slug";
 import { laneFixtureIds } from "@/lib/europeanClubsPipeline";
-import { CURRENT_RULES, PROPOSED_RULES, coverageRollout, liveRules, type CoverageRollout } from "@/lib/generation/competitionEligibility";
+import { CURRENT_RULES, PROPOSED_RULES, coverageRollout, laneCompetitionIds, liveRules, type CoverageRollout } from "@/lib/generation/competitionEligibility";
+import { EVALUATION_LANE, EVALUATION_LANE_LEASE_KEY, laneAllowance, planEvaluationLane } from "@/lib/generation/evaluationLane";
+import { MIN_BOOKMAKERS } from "@/lib/odds";
 import {
   COVERAGE_POLICY,
   coverageHorizon,
@@ -70,6 +72,8 @@ export type CoverageReport = {
   };
   /** Why the scope widened, or null when it did not. */
   widenedReason: string | null;
+  /** Sprint 05: the bounded evaluation lane on healthy days (evaluationLane.ts). */
+  lane?: LaneReport;
   /** Why it stayed at CORE+SECONDARY, or null when it widened. */
   narrowReason: string | null;
 };
@@ -163,12 +167,12 @@ export async function assessCoverage(now: Date = new Date()): Promise<CoverageDe
  * often discovery is poked, the sweep's provider calls happen at most once per
  * SWEEP_INTERVAL_MINUTES. Returns the holder token, or null when held.
  */
-async function acquireSweepLease(now: Date): Promise<string | null> {
+async function acquireSweepLease(now: Date, key: string = SWEEP_LEASE_KEY, minutes: number = COVERAGE_POLICY.SWEEP_INTERVAL_MINUTES): Promise<string | null> {
   const holder = `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
-  const expiresAt = new Date(now.getTime() + COVERAGE_POLICY.SWEEP_INTERVAL_MINUTES * 60_000);
+  const expiresAt = new Date(now.getTime() + minutes * 60_000);
   const rows = await prisma.$queryRaw<Array<{ holder: string }>>`
     INSERT INTO "AppLock" ("key", "holder", "acquiredAt", "expiresAt")
-    VALUES (${SWEEP_LEASE_KEY}, ${holder}, ${now}, ${expiresAt})
+    VALUES (${key}, ${holder}, ${now}, ${expiresAt})
     ON CONFLICT ("key") DO UPDATE
       SET "holder" = EXCLUDED."holder", "acquiredAt" = EXCLUDED."acquiredAt", "expiresAt" = EXCLUDED."expiresAt"
       WHERE "AppLock"."expiresAt" <= ${now}
@@ -332,6 +336,15 @@ export async function discoverGenerationCandidates(opts: {
     }
   }
 
+  let lane: LaneReport | undefined;
+  if (!decision.widened) {
+    lane = await runEvaluationLane(now, startedAt, budgetMs).catch((error): LaneReport => ({
+      rollout: coverageRollout(), ran: false, skippedReason: `lane failed: ${String(error?.message ?? error).slice(0, 160)}`, providerCalls: 0,
+    }));
+    candidatesQueued += lane.queued ?? 0;
+    sweepCalls += lane.providerCalls;
+  }
+
   const coverage: CoverageReport = {
     mode: decision.mode,
     horizonHours: Math.round((coverageHorizon(now).until.getTime() - now.getTime()) / 3_600_000),
@@ -346,6 +359,7 @@ export async function discoverGenerationCandidates(opts: {
     leaguesScannedByTier: { cursor: cursorByTier, sweep: sweepByTier },
     providerCalls: { cursor: cursorCalls, sweep: sweepCalls, total: cursorCalls + sweepCalls },
     sweep,
+    lane,
     widenedReason: decision.widened ? decision.reason : null,
     narrowReason: decision.widened ? null : decision.reason,
   };
@@ -475,4 +489,88 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
       || a.matchKey.localeCompare(b.matchKey);
   });
   return candidates.slice(0, opts.limit);
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 05: bounded evaluation lane (healthy days only)
+// ---------------------------------------------------------------------------
+
+export type LaneReport = {
+  rollout: CoverageRollout;
+  ran: boolean;
+  skippedReason?: string;
+  providerCalls: number;
+  dates?: string[];
+  considered?: number;
+  rejected?: Partial<Record<GateRejection, number>>;
+  /** Gate-passing fixtures, one per competition (league id -> fixture ids). */
+  shortlist?: Array<{ leagueApiId: number; fixtureApiId: number; kickoff: string }>;
+  pricedFromCache?: number;
+  oddsChecked?: number;
+  priced?: number;
+  queued?: number;
+  queuedToday?: number;
+};
+
+/**
+ * One evaluation-lane pass. Shadow records; on queues. See evaluationLane.ts
+ * for the rules and budget. Never runs on a widened day: the thin-day sweep
+ * already covers fallback tiers then.
+ */
+export async function runEvaluationLane(now: Date, startedAt = Date.now(), budgetMs = DISCOVERY_BUDGET_MS): Promise<LaneReport> {
+  const rollout = coverageRollout();
+  const base: LaneReport = { rollout, ran: false, providerCalls: 0 };
+  if (rollout === "off") return { ...base, skippedReason: "COVERAGE_ROLLOUT=off" };
+  if (Date.now() - startedAt >= budgetMs - SWEEP_START_RESERVE_MS) return { ...base, skippedReason: "processing budget reached" };
+  const usage = await getUsageSnapshot().catch(() => null);
+  if (usage && usage.remaining < EVALUATION_LANE.MIN_QUOTA_REMAINING) return { ...base, skippedReason: `quota headroom too low (${usage.remaining} left)` };
+  const holder = await acquireSweepLease(now, EVALUATION_LANE_LEASE_KEY, EVALUATION_LANE.INTERVAL_MINUTES);
+  if (!holder) return { ...base, skippedReason: `already ran within ${EVALUATION_LANE.INTERVAL_MINUTES} minutes` };
+
+  const dates = sweepDates(now).slice(0, EVALUATION_LANE.MAX_DATES);
+  const rows: FixtureRow[] = [];
+  let calls = 0;
+  for (const d of dates) {
+    const day = await getFixturesByDate(d);
+    calls++;
+    if (day) rows.push(...day);
+  }
+  const laneIds = new Set(laneCompetitionIds());
+  const keyOf = (r: FixtureRow) => matchKey({ homeTeamApiId: r.teams?.home?.id, awayTeamApiId: r.teams?.away?.id, kickoff: r.fixture?.date });
+  const keys = rows.filter((r) => laneIds.has(r.league?.id)).map(keyOf).filter((k): k is string => !!k);
+  const cached = keys.length ? await prisma.fixtureOddsCache.findMany({ where: { matchKey: { in: keys } }, select: { matchKey: true, bookmakerCount: true, fetchedAt: true } }) : [];
+  const odds = new Map<string, OddsKnowledge>(cached.map((o) => [o.matchKey, { bookmakerCount: o.bookmakerCount, fetchedAt: o.fetchedAt }]));
+  const plan = planEvaluationLane(rows, odds, keyOf, now, laneIds);
+  const report: LaneReport = {
+    ...base, ran: true, dates, considered: plan.considered, rejected: plan.rejected, pricedFromCache: plan.pricedFromCache,
+    shortlist: plan.shortlist.map((r) => ({ leagueApiId: r.league.id, fixtureApiId: r.fixture.id, kickoff: r.fixture.date })),
+  };
+  if (rollout !== "on") return { ...report, providerCalls: calls };
+
+  const dayStart = lagosDayBounds(0, now).start;
+  const queuedToday = await prisma.generationAttempt.count({ where: { createdAt: { gte: dayStart }, leagueApiId: { in: [...laneIds] } } });
+  const allowance = laneAllowance(queuedToday);
+  if (allowance <= 0) return { ...report, providerCalls: calls, queuedToday, queued: 0, skippedReason: "daily lane cap reached" };
+
+  // A bookmaker quote of at least MIN_BOOKMAKERS is REQUIRED here.
+  const { refreshOddsCache } = await import("@/lib/enrichment");
+  const priced: FixtureRow[] = [];
+  let checked = 0;
+  for (const r of plan.shortlist) {
+    if (priced.length >= allowance || checked >= EVALUATION_LANE.MAX_ODDS_SAMPLES) break;
+    const k = keyOf(r);
+    if (!k) continue;
+    let books = odds.get(k)?.bookmakerCount ?? null;
+    if (books == null || books < MIN_BOOKMAKERS) {
+      await refreshOddsCache({ matchKey: k, fixtureApiId: r.fixture.id, kickoff: new Date(r.fixture.date), kind: "candidate" });
+      checked++;
+      calls++;
+      books = (await prisma.fixtureOddsCache.findUnique({ where: { matchKey: k }, select: { bookmakerCount: true } }))?.bookmakerCount ?? null;
+    }
+    if ((books ?? 0) >= MIN_BOOKMAKERS) priced.push(r);
+  }
+  const built = await candidatesFromFixtures(priced, { now, limit: priced.length });
+  const fresh = built.candidates.filter((c) => built.newToLedger.has(c.matchKey)).slice(0, allowance);
+  const queued = await queueCandidates(fresh);
+  return { ...report, providerCalls: calls, oddsChecked: checked, priced: priced.length, queued, queuedToday };
 }

@@ -45,6 +45,12 @@ export type CompetitionEvidence = {
    * NAME carries no marker (e.g. a "Super League"), from the data, not memory.
    */
   womensTeamShare?: number;
+  /**
+   * Share of the probe's fixtures with a reserve, youth or B side, by the same
+   * team-name rule the fallback gate applies (isNonSeniorSide). A competition
+   * made of such sides is a reserve competition whatever its name says.
+   */
+  nonSeniorTeamShare?: number;
 };
 
 export type EligibilityDecision = "INCLUDE" | "WATCH" | "EXCLUDE";
@@ -75,8 +81,9 @@ const WOMENS = /\b(Women|Womens|Women's|Feminin[ao]?|Femenin[ao]?|Femenil|Frauen
  */
 const REGIONAL = /\b(Oberliga|Regionalliga|Landesliga|Verbandsliga|Tercera|Group \d+|Groupe \d+|Grupo \d+|Gruppe|Divizie [A-Z]|Third League -|4\. liga|5\. liga|III Liga|IV Liga|Non League|Amateur|Regional|Serie D|Derde Divisie|Tweede Divisie|Division \d+ -|Liga Premier Serie B)\b/i;
 
-export function categoryOf(e: Pick<CompetitionEvidence, "name"> & { womensTeamShare?: number }): CompetitionCategory {
+export function categoryOf(e: Pick<CompetitionEvidence, "name"> & { womensTeamShare?: number; nonSeniorTeamShare?: number }): CompetitionCategory {
   if (YOUTH.test(e.name)) return "youth";
+  if ((e.nonSeniorTeamShare ?? 0) >= 0.5 && (e.womensTeamShare ?? 0) < 0.5) return "reserve";
   if (FRIENDLY.test(e.name)) return "friendly";
   if (WOMENS.test(e.name) || (e.womensTeamShare ?? 0) >= 0.5) return "womens";
   if (RESERVE.test(e.name)) return "reserve";
@@ -160,5 +167,19 @@ export const WOMENS_TEAM_NAME = /(?:\sW|\sWomen|\sFemenil|\sFeminino|\sFemenino|
 export function auditLine(r: AuditRow): string {
   return [r.id, r.region, r.country, r.name.replace(/\|/g, "/"), r.type, r.season ?? "", r.current ? 1 : 0, r.seasonEnd ?? "",
     r.coverage.odds ? 1 : 0, r.coverage.standings ? 1 : 0, r.coverage.fixtureStats ? 1 : 0, r.upcoming, r.finished, r.finishedWithScore, r.finishedWithHalfTime,
-    r.sampledBookmakers.join(","), r.existingPredictions, (r.womensTeamShare ?? 0).toFixed(2), r.category, r.decision, r.reasons.join(",")].join("|");
+    r.sampledBookmakers.join(","), r.existingPredictions, (r.womensTeamShare ?? 0).toFixed(2), r.category, r.decision, r.reasons.join(","),
+    (r.nonSeniorTeamShare ?? 0).toFixed(2)].join("|");
+}
+
+/** Inverse of auditLine for the evidence fields (decision fields are recomputed, never trusted). */
+export function parseAuditLine(line: string): CompetitionEvidence {
+  const f = line.split("|");
+  const num = (x: string) => (x === "" ? null : Number(x));
+  return {
+    id: Number(f[0]), country: f[2], name: f[3], type: f[4], season: num(f[5]), current: f[6] === "1", seasonStart: null, seasonEnd: f[7] || null,
+    coverage: { odds: f[8] === "1", standings: f[9] === "1", fixtureStats: f[10] === "1", events: false, lineups: false },
+    upcoming: Number(f[11]), finished: Number(f[12]), finishedWithScore: Number(f[13]), finishedWithHalfTime: Number(f[14]),
+    sampledBookmakers: f[15] ? f[15].split(",").map(Number) : [], existingPredictions: Number(f[16]),
+    womensTeamShare: Number(f[17]), nonSeniorTeamShare: f[21] != null ? Number(f[21]) : undefined,
+  };
 }
