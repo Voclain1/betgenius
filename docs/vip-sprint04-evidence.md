@@ -12,14 +12,14 @@ This PR is diagnostic-first. It must not change paid subscription entitlements, 
 
 ## Verification checklist
 - [x] GitHub preflight and dedicated market-quality CI succeeded on earlier commits.
-- [ ] CI on final PR head succeeds.
+- [x] CI on reviewed head `3ea0856266ff093308caebfbc700da833033d9cd` succeeded (preflight; paid-market-quality unit and disposable PostgreSQL publication jobs). Recheck if this PR changes.
 - [ ] Read-only production audit run with a restricted DB role; capture sample counts, quote coverage and validation warnings.
 - [ ] Check the actual source and timestamp of every historical entry price. The optional marketConfirmation.entryPrice field is not by itself evidence that an executable quote was frozen at publication.
 - [x] Stop labeling generation-model providers as bookmaker providers. Historical bookmaker identity remains unknown; provider segments must not be used for decisions until a bookmaker identifier is actually persisted.
 - [ ] Wire safeguards into the real paid-selection flow only after compatibility and shadow-mode verification.
 - [x] Implement training-only segment selection and strictly later holdout comparison with regression checks against holdout outcome leakage.
 - [ ] Execute this comparison against verified production observations with sufficient samples, settlement timing and price provenance.
-- [ ] Verify paid entitlement access, paid-content redaction, and subscription regressions.
+- [x] Subscription, Paystack and one-time fallback regression scripts passed in the dedicated workflow. Paid-content redaction is covered by existing preflight checks; manual post-deployment verification remains open.
 - [ ] Verify production performance and query volume of the admin diagnostics page.
 - [ ] Record rollback and confirm no live feature flags were activated.
 
@@ -48,16 +48,15 @@ An initial audit was completed in a verified `BEGIN READ ONLY` PostgreSQL transa
 - The generation-model provider is not a bookmaker. Only explicit named bookmaker quotes are usable as bookmaker attribution.
 - Forward-looking quote evidence records the indicative median, selection, named bookmaker samples, and timestamps when available. This is **not** evidence of a subscriber's actual filled price.
 
-## Publication-time blocker — must resolve before 100/100
+## Publication-time implementation — verified in isolated PostgreSQL
 
-The current implementation freezes `marketConfirmation` at **promotion**, while the automatic publisher rechecks a newer quote before publication. The later quote is not yet stored as a separate immutable publication snapshot. A retry may also occur after a previously held publication. Until this is implemented and tested, do **not** describe the promotion quote as a verified publication-time entry price.
+The VIP/Premium auto-publisher now uses a dedicated transaction in `publishPaidPredictionAtomically`. A conditional status update claims the row, then the same transaction writes publication status, an append-only publication-time indicative quote snapshot, and the notification event. Concurrent attempts and retries cannot publish the same row twice. The shared manual-review and Goals publishing function is unchanged.
 
-Release acceptance requires:
-1. Store promotion and publication evidence separately without overwriting either snapshot, including on retries and failed publishes.
-2. Record the quote source, selection, named bookmaker, observation time, and missing-evidence reason. Never synthesize a bookmaker fill.
-3. Test first publish, stale/missing quote, publish failure, retry, concurrent attempt, and no change to entitlement/redaction.
-4. Re-run CI on the final commit; perform a read-only post-deployment evidence check.
-5. Keep live selection behavior and paid access unchanged. Any activation of market-based filtering requires separate prospective validation and explicit approval.
+The `postgres-publication` GitHub Actions job provisions a disposable PostgreSQL 16 service and verifies four concurrent attempts produce one publication and one event, retries do not republish, and missing confirmation rolls back status and notifications. Both it and the existing unit job passed at `3ea0856`.
+
+These tests verify transaction safety, not historical ROI, bookmaker execution, or the safety of turning on value-based selection. The paid-selection mode stays shadow-only. Cleanup after a successful publish remains a separate operation; it must not be misrepresented as part of the atomic publication transaction.
+
+**Remaining operational gates:** run the read-only evidence report using a restricted database role, validate the admin diagnostics page and query performance in the target environment, and verify post-deployment feed counts and access after an explicitly approved release. No production write or deploy is authorized by this document.
 
 ## Release verification matrix (must pass before merge)
 
@@ -72,6 +71,6 @@ Release acceptance requires:
 | Operational rollback | Preserve all paid content and subscription records; revert application commit only if needed; never delete historical evidence |
 | Post-release | Read-only audit of published paid rows, quote timestamps, missing evidence, publication errors and feed counts |
 
-The pure tests for competing snapshot writers demonstrate the decision policy, **not** a real PostgreSQL concurrency execution. The latter remains an explicit release blocker. The publisher's underlying review transition also needs a dedicated race test before claiming full concurrent-publish safety.
+The pure snapshot tests supplement the dedicated PostgreSQL race/rollback test. Re-run both jobs on any later commit; a green result is required before release.
 
 Do not interpret CI success as proof of a positive ROI or of actual bookmaker execution prices.
