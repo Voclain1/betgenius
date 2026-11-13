@@ -42,7 +42,7 @@ async function main() {
   });
   const observations: SettledPaidObservation[] = rows.filter(r => r.kickoff).map(r => {
     const publicationAudit = auditPublicationQuoteEvidence(r.marketConfirmation, r.kickoff!);
-    const odds = publicationAudit.usable ? publicationAudit.price : null;
+    const odds = publicationAudit.usable && 'price' in publicationAudit ? publicationAudit.price ?? null : null;
     return {
       id: r.id, kickoff: r.kickoff!, marketType: r.marketType,
       leagueApiId: r.leagueApiId, provider: null, // No verified bookmaker identifier is stored with this historical quote.
