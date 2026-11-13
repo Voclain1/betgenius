@@ -147,7 +147,13 @@ const dashboard = read("src/app/dashboard/page.tsx");
 check("the dashboard mounts it", dashboard.includes("<SignupUpsellModal"));
 // Eligibility is decided server-side; a client that decided its own would
 // believe anyone with devtools.
-check("createdAt comes from the database, not the session", /prisma\.user\.findUnique[\s\S]{0,120}createdAt/.test(dashboard));
+// The dashboard reads the User row through the shared loader (Sprint 01), so
+// the query lives there; the page must take createdAt from that row.
+const dashboardContext = read("src/lib/dashboardContext.ts");
+check(
+  "createdAt comes from the database, not the session",
+  /prisma\.user\.findUnique[\s\S]{0,120}createdAt/.test(dashboardContext) && /loadDashboardContext\(/.test(dashboard) && /createdAt=\{account\.createdAt\.toISOString\(\)\}/.test(dashboard),
+);
 check("paid status comes from the resolved entitlement", /paid=\{hasActivePaidAccess\(sub\)\}/.test(dashboard));
 // And nobody is force-redirected to /pricing.
 check("no redirect to /pricing was added", !/redirect\(["']\/pricing/.test(dashboard));

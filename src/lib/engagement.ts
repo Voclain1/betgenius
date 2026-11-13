@@ -59,7 +59,31 @@ export type EngagementEvent =
   | "prediction_reasoning_open"
   | "prediction_view_change"
   | "track_record_day_open"
-  | "track_record_more_days";
+  | "track_record_more_days"
+  // Sprint 01 personalization. Parameters are counts and fixed enums only —
+  // never a team, competition or user name (see PERSONALIZATION_EVENTS).
+  | PersonalizationEvent;
+
+/**
+ * Personalization events (docs/sprints/sprint-01-personalization.md). Sent
+ * through trackEngagement, so they share the consent-moded GA4 tag and carry
+ * page_template like everything else. Allowed parameters per event are
+ * listed so scripts/check-personalization.ts can assert no call site adds
+ * free text.
+ */
+export const PERSONALIZATION_EVENTS = {
+  dashboard_view: ["personalized"],
+  onboarding_start: [],
+  onboarding_complete: ["teams", "leagues", "markets"],
+  onboarding_skip: ["step"],
+  favourite_team_add: ["source"],
+  favourite_league_add: ["source"],
+  prediction_save: ["source"],
+  prediction_unsave: ["source"],
+  preferences_update: ["teams", "leagues", "markets", "timezone_changed"],
+  preferences_reset: [],
+} as const satisfies Record<string, readonly string[]>;
+export type PersonalizationEvent = keyof typeof PERSONALIZATION_EVENTS;
 
 /** The field metrics SEO-109 asks for. Others Next reports (FCP, TTFB, hydration timings) are not sent. */
 export const FIELD_METRICS = ["LCP", "INP", "CLS"] as const;

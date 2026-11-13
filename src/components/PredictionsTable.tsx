@@ -1,4 +1,5 @@
 import { kickoffLabel, footballDay } from "@/lib/footballTime";
+import { SavePredictionButton } from "@/components/SavePredictionButton";
 import { Fragment } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
@@ -194,19 +195,40 @@ export function PredictionsTable({
                 {/* Masked with the pick: the line is generated from the pick
                     itself ("Over 2.5"), so showing it on a locked row would
                     hand over the tip the lock is withholding. */}
-                <td className="hidden px-3 py-3 sm:table-cell">{p.locked ? "—" : p.overUnder ?? "—"}</td>
+                <td className="hidden px-3 py-3 sm:table-cell">
+                  {/* 640-767px only: the kickoff cell (which carries the save
+                      control from md up) is hidden there, so it sits here. */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span>{p.locked ? "—" : p.overUnder ?? "—"}</span>
+                    {!p.locked && <SavePredictionButton predictionId={p.id} source="card" size="sm" className="-my-2 hidden shrink-0 sm:inline-flex md:hidden" />}
+                  </div>
+                </td>
                 <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
-                  {kickoff ? kickoffLabel(kickoff) : "—"}
+                  {/* The save control rides in this cell rather than a new
+                      column, so the column count, the ad rows and the phone
+                      grid are unchanged. Never on a locked row. */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span>{kickoff ? kickoffLabel(kickoff) : "—"}</span>
+                    {!p.locked && <SavePredictionButton predictionId={p.id} source="card" className="-my-2 shrink-0" />}
+                  </div>
                 </td>
                 {/* Phone, without the arrow column: a chevron that says the row opens. */}
-                {!linkRows && matchHref && (
-                  <td aria-hidden className="col-start-3 row-span-3 row-start-1 text-gray-500 sm:hidden">
-                    <ChevronRight className="h-4 w-4" />
+                {/* Phone, without the arrow column: the save control on top and a
+                    chevron that says the row opens, in the one column the grid
+                    already has — no new column, so the phone layout and the ad
+                    rows' colSpan are unchanged. The button sits above the
+                    row's stretched link (relative z-10) so a tap on it saves
+                    rather than navigates. */}
+                {!linkRows && (matchHref || !p.locked) && (
+                  <td className="relative z-10 col-start-3 row-span-3 row-start-1 flex h-full flex-col items-center justify-between gap-1 text-gray-500 sm:hidden">
+                    {!p.locked ? <SavePredictionButton predictionId={p.id} source="card" size="sm" className="-mr-1.5 -mt-1" /> : <span />}
+                    {matchHref && <ChevronRight aria-hidden className="pointer-events-none h-4 w-4" />}
                   </td>
                 )}
                 {linkRows && (
-                  <td className="relative z-10 col-start-3 row-span-3 row-start-1 text-right sm:static sm:px-3 sm:py-3">
+                  <td className="relative z-10 col-start-3 row-span-3 row-start-1 flex h-full flex-col items-end justify-between gap-1 text-right sm:static sm:table-cell sm:px-3 sm:py-3">
+                    {!p.locked && <SavePredictionButton predictionId={p.id} source="card" size="sm" className="-mr-0.5 -mt-1 sm:hidden" />}
                     {matchHref && (
                       <Link
                         href={matchHref}

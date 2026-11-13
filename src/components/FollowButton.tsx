@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { trackEngagement } from "@/lib/engagement";
 
 export type FollowTargetType = "TEAM" | "LEAGUE" | "PREDICTION" | "CATEGORY";
 
@@ -93,6 +94,9 @@ export function FollowButton({
         body: JSON.stringify({ targetType, targetKey, label }),
       });
       if (r.ok) {
+        if (!following && (targetType === "TEAM" || targetType === "LEAGUE")) {
+          trackEngagement(targetType === "TEAM" ? "favourite_team_add" : "favourite_league_add", { source: "follow_button" });
+        }
         setFollowing(!following);
         followsRequest = null;
       } else {

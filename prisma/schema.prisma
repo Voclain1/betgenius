@@ -67,6 +67,8 @@ model User {
   emailPreference EmailPreference?
   emailMessages   EmailMessage[]
   manualPayments  ManualPayment[]
+  preference      UserPreference?
+  savedPredictions SavedPrediction[]
 }
 
 // OAuth provider links (Google, etc.) — required by @auth/prisma-adapter for
@@ -392,6 +394,7 @@ model Prediction {
   fixture              Fixture?                 @relation(fields: [fixtureId], references: [id])
   category             String // primary category — kept in sync with `categories[0]` for backward compat
   categories           PredictionCategoryLink[]
+  savedBy              SavedPrediction[]
   leagueApiId          Int? // API-Football league id — see src/lib/leagues.ts for the known list
   leagueName           String?
   homeTeam             String? // free-text match info — not tied to the Fixture ingestion table
@@ -577,6 +580,73 @@ model PredictionCategoryLink {
 
   @@unique([predictionId, category])
   @@index([category])
+}
+
+// Personalization settings that are not follows (Sprint 01,
+// docs/sprints/sprint-01-personalization.md).
+//
+// Favourite teams and competitions are NOT stored here: they are UserFollow
+// rows (TEAM / LEAGUE, keyed by provider id), the same rows notification
+// fan-out already matches on. A second favourites table would let "my teams"
+// on the dashboard and "my teams" for alerts drift apart.
+//
+// No row = never personalised. The row is created on the first save, skip or
+// completion of onboarding, which is also how the dashboard tells a brand-new
+// account from one that has already been offered the setup flow.
+model UserPreference {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // MarketType values from src/lib/markets.ts, restricted to PREFERENCE_MARKETS
+  // in src/lib/personalization.ts. Empty = no market preference.
+  preferredMarkets      String[]  @default([])
+  // IANA identifier. Display only; NotificationPreference.timezone (quiet
+  // hours) is kept in step when that row exists.
+  timezone              String    @default("Africa/Lagos")
+  onboardingCompletedAt DateTime?
+  onboardingSkippedAt   DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+// A bookmarked prediction, with a snapshot of the selection AS SAVED.
+//
+// The snapshot is the point: a prediction can be rewritten before kickoff, and
+// the reader's bookmark must keep showing what they saved rather than silently
+// becoming the new pick. Display compares the snapshot with the live row and
+// says so when they differ.
+//
+// predictionId is nullable with SetNull so a hard-deleted prediction leaves the
+// bookmark (and its snapshot) intact rather than erasing the user's record.
+// Postgres treats NULLs as distinct, so the unique key still prevents a second
+// bookmark of a live prediction while allowing several orphaned ones.
+model SavedPrediction {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  predictionId  String?
+  prediction    Prediction? @relation(fields: [predictionId], references: [id], onDelete: SetNull)
+  // ---- snapshot at save time ----
+  category      String
+  marketType    String
+  selection     Json?
+  market        String
+  pick          String
+  odds          Float?
+  confidence    Int?
+  homeTeam      String?
+  awayTeam      String?
+  homeTeamApiId Int?
+  awayTeamApiId Int?
+  leagueApiId   Int?
+  leagueName    String?
+  kickoff       DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@unique([userId, predictionId])
+  @@index([userId, kickoff])
+  @@index([userId, createdAt])
+  @@index([predictionId])
 }
 
 model AIJob {

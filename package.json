@@ -96,6 +96,8 @@
     "research:womens-coverage": "tsx --env-file=.env scripts/research-womens-coverage.ts",
     "research:womens-odds": "tsx --env-file=.env scripts/research-womens-odds-depth.ts",
     "check:leg-compatibility": "tsx scripts/check-leg-compatibility.ts",
+    "check:personalization": "tsx scripts/check-personalization.ts",
+    "check:personalization-db": "tsx scripts/check-personalization-db.ts",
     "check:inbox-history-cap": "tsx scripts/check-inbox-history-cap.ts",
     "preflight:db": "tsx scripts/preflight.ts --db",
     "preflight:integration": "tsx scripts/preflight.ts --integration"
