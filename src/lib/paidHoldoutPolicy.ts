@@ -66,6 +66,7 @@ export function evaluateShadowSegmentPolicy(
   const candidateUncertainty = paidReturnUncertainty(candidate);
   const warnings = [...split.warnings];
   if (baselineUncertainty.coverage < 0.8 || candidateUncertainty.coverage < 0.8) warnings.push("LOW_OR_BIASED_ENTRY_PRICE_COVERAGE");
+  if (candidateUncertainty.fixtureDays < 10) warnings.push("CANDIDATE_TEMPORALLY_CONCENTRATED");
   if (candidateUncertainty.lower95Pct === null || candidateUncertainty.lower95Pct <= 0) warnings.push("POSITIVE_RETURN_NOT_STATISTICALLY_SUPPORTED");
   if (!chosen.size) warnings.push("NO_TRAINING_SEGMENT_QUALIFIED");
   if (holdout.length < (options.minValidation ?? 30)) warnings.push("INSUFFICIENT_HOLDOUT");
