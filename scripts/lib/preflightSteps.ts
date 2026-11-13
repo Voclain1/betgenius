@@ -92,6 +92,7 @@ export const PURE_STEPS = [
   `${RENDER} scripts/check-match-insights-render.tsx`,
   `${RENDER} scripts/check-match-render.tsx`,
   `${RENDER} scripts/check-prediction-view.tsx`,
+  `${RENDER} scripts/check-paid-render.tsx`,
   `${RENDER} scripts/check-prediction-timeline.tsx`,
   "tsx scripts/check-preloader.ts",
   "tsx scripts/check-personalization.ts",

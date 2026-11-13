@@ -68,7 +68,8 @@ check("banker hub: explains that days can have no selection", bankerGuide.includ
 const bankerFeed = categoryPage.slice(categoryPage.indexOf("<PredictionViewSwitch"));
 check("banker hub: intro appears before the ad-enabled feed",
   categoryPage.includes("<PredictionViewSwitch") &&
-    bankerFeed.includes('intro={cat === "BANKER" ? <BankerPredictionsIntro /> : null}') &&
+    // The paid feeds take the same slot for their subscriber intro; Banker's is unchanged.
+    bankerFeed.includes('intro={cat === "BANKER" ? <BankerPredictionsIntro /> : paidFeed ? <PaidFeedIntro tier={cat === "PREMIUM" ? "Premium" : "VIP"} /> : null}') &&
     bankerFeed.indexOf("<BankerPredictionsIntro") < bankerFeed.indexOf("<CategoryPredictionsList"));
 check("banker hub: evidence appears after the ad-enabled feed",
   categoryPage.indexOf("<BankerPredictionsEvidence") > categoryPage.lastIndexOf("<CategoryPredictionsList"));
