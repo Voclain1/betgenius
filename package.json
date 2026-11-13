@@ -107,7 +107,7 @@
     "verify:paid-production": "tsx --env-file=.env scripts/verify-paid-production.ts",
     "fit:calibration": "tsx --env-file=.env scripts/fit-calibration.ts",
     "measure:paid-performance": "tsx --env-file=.env scripts/measure-paid-performance.ts",
-    "check:paid-market-quality": "tsx scripts/check-paid-market-quality.ts && tsx scripts/check-paid-chronological-validation.ts && tsx scripts/check-paid-integrity-guards.ts && tsx scripts/check-paid-entry-evidence.ts",
+    "check:paid-market-quality": "tsx scripts/check-paid-market-quality.ts && tsx scripts/check-paid-chronological-validation.ts && tsx scripts/check-paid-integrity-guards.ts && tsx scripts/check-paid-entry-evidence.ts && tsx scripts/check-paid-shadow-integrity.ts",
     "report:paid-market-quality": "tsx --env-file=.env scripts/report-paid-market-quality.ts",
     "backtest:paid-selection": "tsx --env-file=.env scripts/backtest-paid-selection.ts",
     "preflight:db": "tsx scripts/preflight.ts --db",
