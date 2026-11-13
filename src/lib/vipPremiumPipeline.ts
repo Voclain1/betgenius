@@ -720,20 +720,35 @@ export async function autoPublishVipPremiumPrediction(
     confirmedAt: now.toISOString(),
     evidenceKind: "PUBLICATION_INDICATIVE",
   };
-  const persisted = await prisma.prediction.findUnique({
-    where: { id: row.id }, select: { status: true, marketConfirmation: true },
-  });
-  if (persisted?.status === "PUBLISHED" && persisted.marketConfirmation &&
-      typeof persisted.marketConfirmation === "object" && !Array.isArray(persisted.marketConfirmation)) {
-    const original = persisted.marketConfirmation as Record<string, unknown>;
-    const next = appendPublicationQuoteEvidence(original, publicationEvidence);
-    if (next) {
-      // Compare-and-set avoids overwriting a snapshot from a concurrent writer.
-      await prisma.prediction.updateMany({
-        where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted.marketConfirmation } },
-        data: { marketConfirmation: next },
-      });
+  // Publication has already committed at this point. An evidence-storage
+  // outage must not misreport the pick as unpublished or skip fixture cleanup.
+  // Missing evidence remains explicitly missing in the audit; never invent it.
+  try {
+    const persisted = await prisma.prediction.findUnique({
+      where: { id: row.id }, select: { status: true, marketConfirmation: true },
+    });
+    if (persisted?.status === "PUBLISHED" && persisted.marketConfirmation &&
+        typeof persisted.marketConfirmation === "object" && !Array.isArray(persisted.marketConfirmation)) {
+      const original = persisted.marketConfirmation as Record<string, unknown>;
+      const next = appendPublicationQuoteEvidence(original, publicationEvidence);
+      if (next) {
+        // Compare-and-set prevents a concurrent writer replacing an earlier
+        // publication snapshot. A zero count means a concurrent update won.
+        const saved = await prisma.prediction.updateMany({
+          where: { id: row.id, status: "PUBLISHED", marketConfirmation: { equals: persisted.marketConfirmation } },
+          data: { marketConfirmation: next },
+        });
+        if (saved.count === 0) {
+          console.warn("[vip-publication-evidence] concurrent snapshot update; audit required", { predictionId: row.id });
+        }
+      }
+    } else {
+      console.warn("[vip-publication-evidence] published row has no confirmation snapshot", { predictionId: row.id });
     }
+  } catch (error) {
+    console.error("[vip-publication-evidence] snapshot persistence failed after publication", {
+      predictionId: row.id, error,
+    });
   }
 
   // The fixture's one paid pick is now this one.
