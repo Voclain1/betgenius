@@ -8,4 +8,6 @@ assert.equal(verifiedEntryPrice({ ...good, confirmedAt: "2026-11-13T18:00:00Z" }
 assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-13T16:00:00Z", confirmedAt: "2026-11-13T15:05:00Z" }, kickoff), null);
 assert.equal(verifiedEntryPrice({ ...good, entryPrice: 1 }, kickoff), null);
 assert.equal(verifiedEntryPrice({}, kickoff), null);
+assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-12T08:00:00Z" }, kickoff), null);
+assert.equal(verifiedEntryPrice({ ...good, quoteFetchedAt: "2026-11-13T09:05:00Z" }, kickoff), null);
 console.log("paid entry evidence: all assertions passed");
