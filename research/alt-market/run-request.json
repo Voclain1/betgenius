@@ -1,0 +1,5 @@
+{
+  "job": "baseline",
+  "days": 30,
+  "note": "Sprint 10 Phase 2: read-only baseline. No model or provider calls."
+}

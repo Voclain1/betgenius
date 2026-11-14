@@ -1,12 +1,19 @@
-# VIP/Premium Sprint 10: alternative-market research. EXPLICITLY INVOKED ONLY:
-# no schedule, no push or pull_request trigger, so nothing here can run on its
-# own or recur. Every database session is forced read-only and verified by the
-# scripts (REQUIRE_READ_ONLY). Nothing is published or written to production.
+# VIP/Premium Sprint 10: alternative-market research. EXPLICITLY INVOKED ONLY.
+#
+# Two ways to start it, both deliberate:
+#   - workflow_dispatch (once this file is on the default branch), or
+#   - committing research/alt-market/run-request.json on the Sprint 10 branch
+#     (GitHub only dispatches workflows that exist on the default branch, so
+#     before merge a committed request is the explicit, reviewable trigger).
+# There is no schedule and no pull_request trigger: nothing here recurs.
+#
+# Every database session is forced read-only and verified by the scripts
+# (REQUIRE_READ_ONLY). Nothing is published or written to production.
 #
 #   job=baseline    read-only historical baseline (no provider or model calls)
 #   job=experiment  the pre-registered shadow experiment (src/lib/altMarketResearch.ts):
-#                   at most 30 model requests, $0.30, cache-only football data.
-#                   Requires confirm=RUN-ALT-MARKET-S10.
+#                   at most 30 model requests and $0.30 in total, cache-only
+#                   football data. Requires confirm=RUN-ALT-MARKET-S10.
 #   job=settle      read-only settlement of recorded observations
 
 name: alt-market-research
@@ -23,13 +30,43 @@ on:
       days:
         description: "baseline look-back in days"
         default: "30"
+  push:
+    branches: ["ccr-0ae2ea72-2ta0dr-sprint10"]
+    paths: ["research/alt-market/run-request.json"]
 
 permissions:
   contents: read
 
 jobs:
+  request:
+    runs-on: ubuntu-latest
+    outputs:
+      job: ${{ steps.r.outputs.job }}
+      confirm: ${{ steps.r.outputs.confirm }}
+      days: ${{ steps.r.outputs.days }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        env:
+          IN_JOB: ${{ github.event.inputs.job }}
+          IN_CONFIRM: ${{ github.event.inputs.confirm }}
+          IN_DAYS: ${{ github.event.inputs.days }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            f=research/alt-market/run-request.json
+            job=$(node -e 'console.log(require("./'"$f"'").job||"")')
+            confirm=$(node -e 'console.log(require("./'"$f"'").confirm||"")')
+            days=$(node -e 'console.log(require("./'"$f"'").days||30)')
+          else
+            job="$IN_JOB"; confirm="$IN_CONFIRM"; days="${IN_DAYS:-30}"
+          fi
+          case "$job" in baseline|experiment|settle) ;; *) echo "::error::unknown job '$job'"; exit 1;; esac
+          echo "job=$job" >> "$GITHUB_OUTPUT"; echo "confirm=$confirm" >> "$GITHUB_OUTPUT"; echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "requested: job=$job days=$days confirm=${confirm:+(set)}"
+
   baseline:
-    if: github.event.inputs.job == 'baseline'
+    needs: request
+    if: needs.request.outputs.job == 'baseline'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -55,4 +92,4 @@ jobs:
       - name: Alternative-market baseline (read-only)
         env:
           REQUIRE_READ_ONLY: "1"
-        run: npx tsx scripts/measure-alt-market-baseline.ts "${{ github.event.inputs.days || '30' }}"
+        run: npx tsx scripts/measure-alt-market-baseline.ts "${{ needs.request.outputs.days }}"
