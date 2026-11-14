@@ -9,6 +9,8 @@
 export const HOME_CATEGORY_LINKS: { label: string; href: string }[] = [
   { label: "Banker Tips", href: "/predictions/banker" },
   { label: "Today's Tips", href: "/predictions/today" },
+  { label: "Genius Tips", href: "/predictions/genius" },
+  { label: "Featured Tips", href: "/predictions/featured" },
   { label: "Premium Tips", href: "/predictions/premium" },
   { label: "VIP Tips", href: "/predictions/vip" },
   { label: "Goals Tips", href: "/predictions/goals" },

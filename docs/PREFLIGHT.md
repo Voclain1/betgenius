@@ -107,3 +107,5 @@ The `verify-*` scripts guard themselves: they run only against `127.0.0.1:55432/
 The Sprint 05 odds checks (`check-odds-presentation`, `-render`, `-browser`) are pure or component-level: they need no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.
 
 The Sprint 06 checks (`check-return-experience`, `-render`, `-browser`) are pure or component-level: no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.
+
+The Sprint 07 homepage checks: `check-homepage-experience` and `-render` are pure/render tier (no database or site). `check-homepage-experience-browser` measures the real homepage, so it reads `BASE_URL` and skips (exit 0) when that is unset; run it with `BASE_URL=http://localhost:3000` against `next start`. It reads one public page and writes nothing.

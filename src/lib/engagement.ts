@@ -63,7 +63,8 @@ export type EngagementEvent =
   | "track_record_more_days"
   // Sprint 01 personalization. Parameters are counts and fixed enums only —
   // never a team, competition or user name (see PERSONALIZATION_EVENTS).
-  | PersonalizationEvent;
+  | PersonalizationEvent
+  | HomepageEvent;
 
 /**
  * Personalization events (docs/sprints/sprint-01-personalization.md). Sent
@@ -97,6 +98,16 @@ export type PersonalizationEvent = keyof typeof PERSONALIZATION_EVENTS;
 export function trackAccountShortcut(target: ShortcutTarget, surface: ShortcutSurface): void {
   trackEngagement("account_shortcut", { target, surface });
 }
+
+/**
+ * Homepage events (Sprint 07). One event: which homepage link was opened and
+ * from where. `target` and `placement` are the fixed lists in
+ * src/lib/homeLinks.ts. It describes a click, not a conversion.
+ */
+export const HOMEPAGE_EVENTS = {
+  home_click: ["target", "placement"],
+} as const satisfies Record<string, readonly string[]>;
+export type HomepageEvent = keyof typeof HOMEPAGE_EVENTS;
 
 /** The field metrics SEO-109 asks for. Others Next reports (FCP, TTFB, hydration timings) are not sent. */
 export const FIELD_METRICS = ["LCP", "INP", "CLS"] as const;

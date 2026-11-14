@@ -44,6 +44,9 @@ import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdNativeCard, AdRectangle } 
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { SectionHead } from "@/components/TeamProfile";
 import { LinkTile } from "@/components/LinkTile";
+import { HomeLink } from "@/components/HomeLink";
+import { HomeAccountLine, HomeUpgradeButton } from "@/components/HomeAccountActions";
+import { homeTargetFor } from "@/lib/homeLinks";
 import { DayCompetitions } from "@/components/DayCompetitions";
 import { selectDayCompetitions } from "@/lib/dayCompetitions";
 import { TopMatches, type TopMatchCard } from "@/components/TopMatches";
@@ -250,7 +253,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     return canView ? { ...r, category, outcome, locked: false } : { ...r, category, outcome, pick: "LOCKED", confidence: null, locked: true };
   });
 
-  const ARROW = "whitespace-nowrap text-sm font-semibold text-brand hover:underline";
+  const ARROW = "inline-flex min-h-9 items-center whitespace-nowrap text-sm font-semibold text-brand hover:underline";
+  // A single scrolling line below sm, wrapping from sm up. The negative margin lets the pills run to the card edge.
+  const PILL_ROW = "-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0";
 
   return (
     <div className="space-y-12">
@@ -308,18 +313,22 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <div className="mt-4">
                 <AnswerSummary text={homeSummary({ day, ...slate })} />
               </div>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
+              {/* The actions come straight after the answer, before the supporting
+                  sentence: on a phone the two paragraphs used to fill the first
+                  screen and the buttons sat below them. */}
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <HomeLink target="today" placement="hero" href="/predictions/today" className="btn btn-primary">Today&apos;s tips</HomeLink>
+                <HomeUpgradeButton />
+                <DiscoveryEntry />
+              </div>
+              <HomeAccountLine />
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-400 md:text-base">
                 {/* The markets named here are the ones actually published — see
                     the marketType mix in the corpus — so the line reinforces
                     what a reader searches for without promising a market this
                     site has never produced. */}
                 Data-driven football predictions across every major league — banker picks, match winner, double chance, over/under and combo bets — each with a confidence rating and the reasoning behind it.
               </p>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
-                <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
-                <DiscoveryEntry />
-              </div>
             </div>
             {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
           </div>
@@ -330,19 +339,23 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           longer runs. The groups are told apart by a label and a rule, and the
           longer-run links by their brand outline, so the row can keep growing
           without one list of look-alike buttons. */}
-      <nav aria-label="Prediction categories" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+      <nav aria-label="Prediction categories" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
+            {/* One scrolling line on a phone (a wrapped block of pills took ~290px
+                and pushed the first pick two screens down); wraps from sm. */}
+            <div className={PILL_ROW}>
               {HOME_CATEGORY_LINKS.map((c) => (
-                <Link
+                <HomeLink
                   key={c.href}
+                  target={homeTargetFor(c.href) ?? "today"}
+                  placement="category_nav"
                   href={c.href}
-                  className="rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+                  className="shrink-0 whitespace-nowrap rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
                 >
                   {c.label}
-                </Link>
+                </HomeLink>
               ))}
             </div>
             {/* Today's tips by market, directly under the Today buttons: one
@@ -352,17 +365,19 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           </div>
         </div>
         <span aria-hidden className="h-px w-full bg-brand-border lg:h-8 lg:w-px" />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Longer runs</span>
-          <div className="flex flex-wrap gap-2">
+          <div className={PILL_ROW}>
             {HOME_PERIOD_LINKS.map((c) => (
-              <Link
+              <HomeLink
                 key={c.href}
+                target={homeTargetFor(c.href) ?? "weekend"}
+                placement="category_nav"
                 href={c.href}
-                className="rounded-full border border-brand px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-on-brand"
+                className="shrink-0 whitespace-nowrap rounded-full border border-brand px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-on-brand"
               >
                 {c.label}
-              </Link>
+              </HomeLink>
             ))}
           </div>
         </div>
@@ -512,7 +527,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       <AdRectangle />
 
       <PremiumPanel kicker="Tools" title="More from BetGenius" id="home-tools" bare>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <LinkTile href="/match-insights" kicker="Research" title="Match insights" desc="Form, head-to-head and the evidence behind each match." />
           <LinkTile href="/livescores" kicker="Live" title="Livescores" desc="In-play scores across every major league." />
           <LinkTile href="/bet-builder" kicker="Build" title="Bet builder" desc="Combine picks into a clear selection list." />
           <LinkTile href="/statspad" kicker="Stats" title="StatsPad" desc="Attack, defence, form and goal difference leaders by league." />

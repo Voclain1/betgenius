@@ -25,6 +25,7 @@ any other free text.
 | `saved_view` | A signed-in reader opens their saved predictions (Sprint 06) | `filter` (`all`, `upcoming`, `settled`, `won`, `lost`), `page_template` |
 | `following_view` | A signed-in reader opens their Following feed (Sprint 06) | `follows` (`0`, `1_5`, `6_plus`), `page_template` |
 | `account_shortcut` | A signed-in reader uses a shortcut to saved, following, upcoming or favourites (Sprint 06) | `target` (`upcoming`, `saved`, `favourites`, `following`, `preferences`), `surface` (`jump_row`, `account_menu`, `sidebar`), `page_template` |
+| `home_click` | A reader opens a tracked homepage link: the hero buttons, a category button, the account line or a tool tile (Sprint 07) | `target` (`today`, `banker`, `genius`, `featured`, `premium`, `vip`, `goals`, `multi_bet`, `weekend`, `midweek`, `pricing`, `register`, `dashboard`, `saved`, `match_insights`, `livescores`, `bet_builder`, `statspad`, …), `placement` (`hero`, `category_nav`, `account_line`, `section`, `tools`), `page_template` |
 
 `page_template` is the kind of page, not its URL: `home`, `predictions_hub`,
 `category_feed`, `match`, `league`, `cup`, `team`, `h2h`, `guides_hub`,
@@ -37,7 +38,7 @@ individual URLs.
 1. GA4 → Admin → Custom definitions → **Create custom dimension**, scope
    **Event**, once for each of: `page_template`, `metric_rating`,
    `feed_category`, `view`, and (Sprint 06) `filter`, `follows`, `target`,
-   `surface`. Sprint 06's reading guide is in
+   `surface`, and (Sprint 07) `placement`. Sprint 06's reading guide is in
    `docs/sprints/sprint-06-user-retention.md`.
 2. Optionally create a custom metric, scope **Event**, for `metric_value`
    (unit: milliseconds; standard for CLS).

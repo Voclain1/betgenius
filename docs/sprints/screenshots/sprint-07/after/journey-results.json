@@ -1,0 +1,62 @@
+[
+ {
+  "label": "signed out: Go VIP and the 'Join free' line",
+  "pass": true,
+  "detail": "Save picks and follow teams with a free account. Join free"
+ },
+ {
+  "label": "clicking Join free reports target=register placement=account_line only",
+  "pass": true,
+  "detail": "[{\"name\":\"home_click\",\"params\":{\"target\":\"register\",\"placement\":\"account_line\",\"page_template\":\"home\"}}]"
+ },
+ {
+  "label": "free reader: Welcome back with dashboard and saved links, Go VIP still offered",
+  "pass": true,
+  "detail": "Welcome back My dashboard Saved predictions"
+ },
+ {
+  "label": "the line keeps its height when the session resolves (≥ 36px, no jump)",
+  "pass": true,
+  "detail": "52"
+ },
+ {
+  "label": "saved link click reports target=saved placement=account_line",
+  "pass": true,
+  "detail": "[{\"name\":\"home_click\",\"params\":{\"target\":\"saved\",\"placement\":\"account_line\",\"page_template\":\"home\"}}]"
+ },
+ {
+  "label": "active VIP reader: no Go VIP, Welcome back with their links",
+  "pass": true,
+  "detail": "Welcome back My dashboard Saved predictions"
+ },
+ {
+  "label": "homepage load sends no home_click (only clicks do)",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "a category pill click reports target=genius placement=category_nav",
+  "pass": true,
+  "detail": "[{\"name\":\"home_click\",\"params\":{\"target\":\"genius\",\"placement\":\"category_nav\",\"page_template\":\"home\"}}]"
+ },
+ {
+  "label": "no event carries a name, email, team, id or pick",
+  "pass": true,
+  "detail": "[{\"name\":\"LCP\",\"params\":{\"value\":216,\"metric_value\":216,\"metric_id\":\"v3-1794674811451-1480820584249\",\"metric_rating\":\"good\",\"page_template\":\"home\",\"non_interaction\":true}},{\"name\":\"home_click\",\"params"
+ },
+ {
+  "label": "the VIP-only match (Newcastle v Aston Villa) is not on the free homepage",
+  "pass": true,
+  "detail": "0"
+ },
+ {
+  "label": "signed out 320px: no sideways overflow",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "signed out 1440px: no sideways overflow",
+  "pass": true,
+  "detail": ""
+ }
+]

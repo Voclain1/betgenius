@@ -338,6 +338,8 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   const want = [
     ["Banker Tips", "/predictions/banker"],
     ["Today's Tips", "/predictions/today"],
+    ["Genius Tips", "/predictions/genius"],
+    ["Featured Tips", "/predictions/featured"],
     ["Premium Tips", "/predictions/premium"],
     ["VIP Tips", "/predictions/vip"],
     ["Goals Tips", "/predictions/goals"],
