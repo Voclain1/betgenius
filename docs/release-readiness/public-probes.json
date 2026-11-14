@@ -1,0 +1,36 @@
+{
+  "sampledAtUTC": "2026-11-14T19:39:09.149092+00:00",
+  "checks": [
+    {
+      "path": "/api/health",
+      "status": 200,
+      "finalUrl": "https://www.betgenius.ng/api/health",
+      "cacheControl": "no-store",
+      "response": "{\"ok\":true}"
+    },
+    {
+      "path": "/robots.txt",
+      "status": 200,
+      "finalUrl": "https://www.betgenius.ng/robots.txt",
+      "cacheControl": "public, max-age=14400, must-revalidate",
+      "body": "User-Agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /api\nDisallow: /ads\n\nUser-Agent: meta-externalagent\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /api\nDisallow: /ads\nCrawl-delay: 10\n\nSitemap: https://www.betgenius.ng/sitemap.xml\n"
+    },
+    {
+      "path": "/sitemap.xml",
+      "status": 200,
+      "finalUrl": "https://www.betgenius.ng/sitemap.xml",
+      "cacheControl": "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"><sitemap><loc>https://www.betgenius.ng/sitemaps/static.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/categories.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/leagues.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/cups.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/teams.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/matches.xml</loc></sitemap><sitemap><loc>https://www.betgenius.ng/sitemaps/h2h.xml</loc></sitemap></sitemapindex>"
+    },
+    {
+      "path": "/pricing",
+      "status": 200,
+      "finalUrl": "https://www.betgenius.ng/pricing",
+      "cacheControl": "s-maxage=31536000, stale-while-revalidate",
+      "canonical": [
+        "https://www.betgenius.ng/pricing"
+      ],
+      "noindex": false
+    }
+  ]
+}

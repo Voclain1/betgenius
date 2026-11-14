@@ -1,4 +1,5 @@
 "use client";
+import { checkoutAnalytics } from "@/lib/checkoutAnalytics";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
@@ -70,7 +71,7 @@ export default function Pricing() {
   // own price.
   // One method: straight to it, as before. Several: ask which.
   const choose = (tier: PaidTier) => {
-    if (!data?.user) return (window.location.href = "/login");
+    if (!data?.user) return (window.location.href = `/login?callbackUrl=${encodeURIComponent(`/pricing#plan-${tier.toLowerCase()}`)}`);
     setErr(null);
     if (methods.length <= 1) return void pay(tier, methods[0] ?? "PAYSTACK");
     setChoosing(tier);
@@ -89,12 +90,7 @@ export default function Pricing() {
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Failed to start checkout");
-      trackEvent("begin_checkout", {
-        currency: "NGN",
-        value: PLAN_PRICING[tier].ngn,
-        payment_type: method.toLowerCase(),
-        items: [{ item_id: tier, item_name: `BetGenius ${tier}`, price: PLAN_PRICING[tier].ngn, quantity: 1 }],
-      });
+      trackEvent("begin_checkout", checkoutAnalytics(tier, method));
       if (manual) router.push(`/pay/${j.id}`);
       else window.location.href = j.authorization_url;
     } catch (e: any) {
@@ -104,7 +100,7 @@ export default function Pricing() {
   };
 
   const subscribe = async (tier: PaidTier) => {
-    if (!data?.user) return (window.location.href = "/login");
+    if (!data?.user) return (window.location.href = `/login?callbackUrl=${encodeURIComponent(`/pricing#plan-${tier.toLowerCase()}`)}`);
     setBusy(tier);
     setErr(null);
     try {
@@ -143,7 +139,7 @@ export default function Pricing() {
         {tiers.map((t) => {
           const price = PLAN_PRICING[t.id];
           return (
-            <div key={t.id} className={`card border-2 ${t.color}`}>
+            <div key={t.id} id={`plan-${t.id.toLowerCase()}`} className={`scroll-mt-24 card border-2 ${t.color}`}>
               <div className={`flex items-center gap-2 text-xl font-semibold ${t.accent}`}>
                 <span aria-hidden="true">{t.glyph}</span>
                 {t.name}

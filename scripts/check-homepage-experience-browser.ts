@@ -44,7 +44,7 @@ const MEASURE = `(() => {
   var navLinks = nav ? Array.prototype.slice.call(nav.querySelectorAll("a")).filter(vis) : [];
   var pillRows = nav ? Array.prototype.slice.call(nav.querySelectorAll("div")).filter(function (d) { return getComputedStyle(d).overflowX === "auto" || /sm:flex-wrap/.test(d.className); }) : [];
   var tiles = ["/match-insights", "/livescores", "/bet-builder", "/statspad"].map(function (h) { return Array.prototype.slice.call(document.querySelectorAll('main a.group[href="' + h + '"]')).filter(vis)[0]; }).filter(Boolean);
-  var arrows = ["View all →", "All leagues →"].map(function (t) { var e = byText("main a", t); return e ? [t, Math.round(e.getBoundingClientRect().height)] : [t, 0]; });
+  var arrows = (document.getElementById("home-competitions") ? ["View all →", "All leagues →"] : ["View all →"]).map(function (t) { var e = byText("main a", t); return e ? [t, Math.round(e.getBoundingClientRect().height)] : [t, 0]; });
   return {
     page: document.documentElement.scrollWidth, vw: vw, vh: vh,
     h1s: document.querySelectorAll("h1").length,
@@ -115,7 +115,7 @@ async function main() {
       if (width < 640) check("the pill rows are single lines (≤ 48px each), not a wrapped block", m.rowHeights.length >= 2 && m.rowHeights.every((h: number) => h <= 48), `rows ${m.rowHeights.join("/")}, nav ${m.navHeight}px`);
       else check("the pills wrap and fit from sm up", m.rowHeights.every((h: number) => h <= 96), `rows ${m.rowHeights.join("/")}`);
       check("four tool tiles, including match research, all inside the viewport", m.tiles.length === 4 && m.tiles.some((t: any[]) => t[0] === "/match-insights") && m.tiles.every((t: any[]) => t[2] <= width), JSON.stringify(m.tiles));
-      check("'View all →' and 'All leagues →' are at least 36px tall", m.arrows.every((a: any[]) => a[1] >= 36), JSON.stringify(m.arrows));
+      check("visible section links are at least 36px tall (competitions are omitted on empty days)", m.arrows.every((a: any[]) => a[1] >= 36), JSON.stringify(m.arrows));
       check("no copy says AI", !m.hasAi);
       await ctx.close();
     }

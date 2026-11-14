@@ -228,3 +228,16 @@ bytes). Not measured: query timing at production data volume.
 
 Ready for review. Merges cleanly into `master`; the discovery engine's own
 regression checks pass. Not merged or deployed.
+
+## 14. Latest-master integration (PR #196)
+
+Integrated master `82584396ecb5049347e691096b4232e5e1c7b9db` into this PR's existing branch. Git found no textual merge conflicts, including in `package.json`. The merged manifest retains all 152 script commands verbatim from the union of both branches. All #193 discovery implementation files remain identical to its prior head; #196's authentication, checkout, analytics and release-readiness implementation/documents remain identical to master.
+
+Two test reconciliations were necessary:
+
+- The database-safety positive control now pins all seven integration writers, adding discovery search to the six retained from #196. No guard is removed or bypassed.
+- The empty-team database fixture assertion previously expected six anonymous same-day results. There are five: one additional row is VIP-only and another is on the next Lagos day. It now asserts the exact five public fixtures and separately checks six for VIP, strengthening the access boundary rather than requiring a private-row leak.
+
+The existing discovery CI workflow now also runs #193's search unit, render, guarded database and real-browser tests. All #196 checks remain. The guarded search test runs before other integration suites leave activity records, against the disposable CI PostgreSQL service; its normal-host identity is the existing `postgres` deployment host, with no connection to that host.
+
+Local validation: TypeScript; production build; all 76 page budgets; search unit 42, render 25 and database 34 assertions; search browser 73 checks at 320/375/414/768/1440px (the current empty day skips its data-dependent card tap); populated Sprint 08 browser 122 and Sprint 09 browser 131 assertions; registration failure/success 58 and confirmation 24 assertions; release-readiness 90 assertions; database safety, paid-subscriber (87), subscription/Paystack entitlement, payment reliability and analytics regressions. All passed. The full release browser sweep is also run in CI. Synthetic fixtures only; no production data modifications, provider calls, deployment or PR merge. PR #194 is untouched. Final CI links and merge readiness are recorded in PR #193.

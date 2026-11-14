@@ -124,7 +124,12 @@ async function main() {
     check("team + market narrows", one(await names({ d_team: "arsenal", d_market: "OVER_UNDER" }), "Arsenal|Chelsea") && (await names({ d_team: "arsenal", d_market: "BTTS" })).length === 0);
     check("team + competition narrows", one(await names({ d_team: `arsenal`, d_competition: String(api) }), "Arsenal|Chelsea") && (await names({ d_team: "arsenal", d_competition: String(api + 1) })).length === 0);
     check("23:30 Lagos belongs to the day, 00:30 the next day belongs to the next", one(await names({ d_team: `lateedge ${tag}` }), "Lateedge|Eveningfc") && (await names({ d_team: `earlyedge ${tag}` })).length === 0 && one(await names({ d_team: `earlyedge ${tag}` }, ANONYMOUS, nextDay), "Earlyedge|Midnightfc") && (await names({ d_team: `lateedge ${tag}` }, ANONYMOUS, nextDay)).length === 0);
-    check("an empty box applies no team filter", (await names({ d_team: "" })).length >= 6);
+    // Five public fixtures are on this Lagos day: the VIP row is private and
+    // Earlyedge belongs to tomorrow. Pin exact fixtures, not a count that
+    // would require leaking the VIP row in an otherwise empty database.
+    const emptyPublic = await names({ d_team: "", d_competition: String(api) });
+    check("an empty box applies no team filter and preserves public access", emptyPublic.sort().join() === ["Fenerbahçe|Beşiktaş", "Real Madrid|Barcelona", "Real Sociedad|Atlético Madrid", "Arsenal|Chelsea", "Lateedge|Eveningfc"].sort().join());
+    check("an empty box includes the private fixture only for VIP", (await names({ d_team: "", d_competition: String(api) }, vip)).length === 6 && !emptyPublic.some((name) => name.includes("Privatespor")));
     check("the prefilter returns null for an empty box and [] for symbols only", (await teamSearchIds("", q({}).bounds)) === null && (await teamSearchIds("%%", q({}).bounds))!.length === 0);
   } finally {
     await prisma.prediction.deleteMany({ where: { id: { in: ids } } });

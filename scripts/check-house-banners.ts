@@ -45,14 +45,14 @@ console.log("\n3. The slot");
 const slot = read("src/components/ads/TopBanner.tsx");
 check("draws into the slot under the header, not in the page", /createPortal\(content, slot\)/.test(slot) && /<span hidden data-top-banner-page \/>/.test(slot));
 const css = read("src/app/globals.css");
-check("the slot's height is reserved before paint, and zero once closed", /html:not\(\[data-top-banner-closed\]\) body:has\(\[data-top-banner-page\]\) \.top-banner-slot \{\s*height: min\(25vw, 140px\);/.test(css) && /\.top-banner-slot \{\s*position: relative;\s*height: 0;/.test(css) && /height: 90px;/.test(css));
+check("the slot's height is reserved before paint, and zero once closed", /html:not\(\[data-top-banner-closed\]\) body:has\(\[data-top-banner-page\]\) \.top-banner-slot \{\s*height: 54px;/.test(css) && /html\[data-top-banner-house\][^{]+\{\s*height: min\(25vw, 140px\);/.test(css) && /\.top-banner-slot \{\s*position: relative;\s*height: 0;/.test(css) && /height: 90px;/.test(css));
 const root = read("src/app/layout.tsx");
 check("a banner closed earlier in the visit is collapsed before first paint", /__html: TOP_BANNER_INIT_SCRIPT/.test(root));
 check("falls back to the network leaderboard pair", /<AdFrame id="leaderboard" \/>/.test(slot) && /<AdFrame id="mobileBanner" \/>/.test(slot));
 check("paid banners and network ads carry the Ad tag; paid links are rel=sponsored", /\{isAd && <span>Ad<\/span>\}/.test(slot) && /"sponsored noopener"/.test(slot));
 check("clicks pass through the counting route", /href=\{`\/api\/banners\/\$\{banner\.id\}\/click`\}/.test(slot));
 check("a view is counted once, when half on screen", /threshold: 0\.5/.test(slot) && /sendBeacon/.test(slot));
-check("closing hangs below the banner and removes it for the visit", /absolute left-4 top-full/.test(slot) && /sessionStorage\.setItem\(TOP_BANNER_CLOSED_KEY/.test(slot) && /setAttribute\(TOP_BANNER_CLOSED_ATTR/.test(slot));
+check("closing hangs below the banner and removes it for the visit", /absolute right-4 top-full/.test(slot) && /sessionStorage\.setItem\(TOP_BANNER_CLOSED_KEY/.test(slot) && /setAttribute\(TOP_BANNER_CLOSED_ATTR/.test(slot));
 
 console.log("\n4. Placement");
 const mounts = [
