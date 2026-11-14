@@ -111,6 +111,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-return-experience.ts",
   `${RENDER} scripts/check-return-experience-render.tsx`,
   `${RENDER} scripts/check-return-experience-browser.tsx`,
+  "tsx scripts/check-homepage-experience.ts",
+  `${RENDER} scripts/check-homepage-experience-render.tsx`,
+  "tsx scripts/check-homepage-experience-browser.ts",
   "tsc --noEmit -p tsconfig.json",
 ];
 
