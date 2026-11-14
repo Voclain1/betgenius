@@ -1,3 +1,5 @@
+import { recordReliability } from "@/lib/reliabilityStore";
+import { captureReliabilityPrice } from "@/lib/reliabilityPrice";
 import { prisma } from "@/lib/prisma";
 import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
 import { paidQualityPolicyMode } from "@/lib/paidQualityPolicy";
@@ -309,6 +311,7 @@ export async function assessPaidCandidates(
       rule: { eligible: verdict.eligible, tag: verdict.eligible ? verdict.basis : verdict.reason },
       value,
       quoteAgeMinutes: usable && q?.fetchedAt ? Math.round((now.getTime() - q.fetchedAt.getTime()) / 60_000) : null,
+      reliabilityPrice: captureReliabilityPrice(q, r.marketType, r.selection),
     };
   });
 }
@@ -364,6 +367,11 @@ export async function recordPaidSelectionShadow(input: {
   rows?: ReadonlyArray<{ id: string; kickoff: Date | null; selection?: unknown }>;
   now?: Date;
 }): Promise<void> {
+  if (input.rows) {
+    try { await recordReliability({tier:input.category, assessments:input.assessments, rows:input.rows,
+      selectedIds:input.selectedIds, now:input.now ?? new Date()}); }
+    catch(error) { console.error("[reliability] observer failed",error); }
+  }
   const selected = new Set(input.selectedIds);
   // Shadow-only candidate-quality decisions (paidCandidateQuality.ts). Never
   // read by curation; a failure here only loses the extra record.
