@@ -323,6 +323,21 @@ async function main() {
     console.log(`  ${g.padEnd(12)} ${xs.filter((x) => x.goalsInBand).length} of ${xs.length}`);
   }
   console.log("  (What the model would have drafted on them is unknown: no attempt was made. Counted only to size the pool.)");
+  // ── L. Late core discoveries (spare-quota reservation risk) ─────────────
+  console.log("\n== L. Core fixtures that entered the ledger after their day's first widened fixture could have been admitted (kickoff - 48h) ==");
+  let lateDays = 0, lateFx = 0, lateAttemptable = 0, lateLopsided = 0, daysChecked = 0;
+  for (const day of [...new Set(all.map((x) => x.day))].sort()) {
+    const wide = all.filter((x) => x.day === day && x.succeeded && x.group === "PAID_WIDENED");
+    const core = all.filter((x) => x.day === day && x.group === "PAID_CORE" && x.ledgerCreated);
+    if (!wide.length || !core.length) continue;
+    daysChecked++;
+    const firstAdmit = Math.min(...wide.map((x) => x.kickoff.getTime())) - 48 * H;
+    const late = core.filter((c) => c.ledgerCreated!.getTime() > firstAdmit);
+    const attemptable = late.filter((c) => c.kickoff.getTime() - 12 * H > c.ledgerCreated!.getTime());
+    if (late.length) { lateDays++; lateFx += late.length; lateAttemptable += attemptable.length; lateLopsided += attemptable.filter((c) => (c.closingHeadline ?? 0) >= 75).length; }
+    if (attemptable.length) console.log(`  ${day} core ${core.length} late ${late.length} still attemptable when discovered ${attemptable.length} (lopsided at close ${attemptable.filter((c) => (c.closingHeadline ?? 0) >= 75).length}) | discovered ${attemptable.map((c) => `${((c.kickoff.getTime() - c.ledgerCreated!.getTime()) / H).toFixed(0)}h out`).join(", ")}`);
+  }
+  console.log(`  days with widened and core fixtures ${daysChecked}; days with a late core discovery ${lateDays}; late core fixtures ${lateFx}, still attemptable ${lateAttemptable}, of which lopsided at close ${lateLopsided}`);
 }
 
 main()

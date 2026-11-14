@@ -30,9 +30,19 @@ async function main() {
       },
     },
   });
+  // Kickoff: 15:00 Lagos (14:00 UTC) on Lagos's tomorrow. It used to be
+  // now + 24h, which on a seed run between 23:00 and 05:00 UTC lands on
+  // different calendar days in Lagos (the manifest date) and New York (the
+  // seeded member's stored timezone, which discovery rightly uses), so the
+  // "Followed teams include entitled markets" assertion failed by clock time.
+  // 14:00 UTC is the same date in both zones and always Lagos's "tomorrow".
   const now = new Date(),
     published = new Date(+now - 1800000),
-    kickoff = new Date(+now + 86400000);
+    lagosTomorrow = new Date(
+      `${new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(now)}T14:00:00Z`,
+    );
+  lagosTomorrow.setUTCDate(lagosTomorrow.getUTCDate() + 1);
+  const kickoff = lagosTomorrow;
   const league = await prisma.league.create({
     data: {
       apiId: 1918000000,

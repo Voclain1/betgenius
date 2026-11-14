@@ -539,10 +539,20 @@ export function spareQuotaSlotsByDay(input: {
 }): Map<string, number> {
   const reserved = new Map<string, number>();
   const earliest = input.now.getTime() + GENERATE_FROM_HOURS * 3_600_000;
+  // One reservation per real fixture: a rescheduled fixture can hold two ledger
+  // rows (matchKey carries the UTC day) under one provider id. The later
+  // kickoff wins; rows without an id are each reserved (conservative).
+  const latest = new Map<number, number>();
+  const counted = new Set<number>();
+  for (const r of input.coreLedger) if (r.fixtureApiId != null) latest.set(r.fixtureApiId, Math.max(latest.get(r.fixtureApiId) ?? 0, r.kickoff.getTime()));
   for (const r of input.coreLedger) {
     if (!PAID_CORE_LEAGUE_IDS.includes(r.leagueApiId ?? -1) || r.status === "ABANDONED") continue;
     if (r.kickoff.getTime() < earliest) continue; // can no longer be attempted
     if (r.fixtureApiId != null && input.attempted.has(r.fixtureApiId)) continue; // already counted in `used`
+    if (r.fixtureApiId != null) {
+      if (latest.get(r.fixtureApiId) !== r.kickoff.getTime() || counted.has(r.fixtureApiId)) continue; // superseded or repeated row
+      counted.add(r.fixtureApiId);
+    }
     const d = lagosDateKey(r.kickoff);
     reserved.set(d, (reserved.get(d) ?? 0) + 1);
   }

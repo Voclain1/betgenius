@@ -185,6 +185,24 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
   check("7 scope groups", scopeGroup(CORE) === "PAID_CORE" && scopeGroup(WIDE) === "PAID_WIDENED" && scopeGroup(OUTSIDE) === "OUTSIDE" && scopeGroup(null) === "OUTSIDE");
 }
 
+// ── 8. Reservation edge cases (Phase 0 of Sprint 10) ─────────────────────
+{
+  const at = (iso: string) => new Date(iso);
+  const now = at("2026-11-05T08:00:00Z");
+  const row = (id: number | null, kickoff: string, status = "SUCCEEDED") => ({ fixtureApiId: id, leagueApiId: CORE, kickoff: at(kickoff), status });
+  const slots = (rows: ReturnType<typeof row>[], days: string[], used = new Map<string, number>(), attempted = new Set<number>()) =>
+    spareQuotaSlotsByDay({ days, coreLedger: rows, attempted, used, quota: 8, now });
+  check("8 a repeated ledger row for one fixture is reserved once", slots([row(1, "2026-11-06T15:00:00Z"), row(1, "2026-11-06T15:00:00Z")], ["2026-11-06"]).get("2026-11-06") === 7);
+  check("8 a rescheduled fixture reserves only its latest kickoff day", (() => { const m = slots([row(2, "2026-11-06T15:00:00Z"), row(2, "2026-11-07T15:00:00Z")], ["2026-11-06", "2026-11-07"]); return m.get("2026-11-06") === 8 && m.get("2026-11-07") === 7; })());
+  check("8 rows without a provider id are each reserved (conservative)", slots([row(null, "2026-11-06T15:00:00Z"), row(null, "2026-11-06T16:00:00Z")], ["2026-11-06"]).get("2026-11-06") === 6);
+  check("8 a 23:30 UTC kickoff counts on the next Lagos day", (() => { const m = slots([row(3, "2026-11-06T23:30:00Z")], ["2026-11-06", "2026-11-07"]); return m.get("2026-11-06") === 8 && m.get("2026-11-07") === 7; })());
+  check("8 exactly 12h before kickoff is still attemptable, so reserved", slots([row(4, "2026-11-05T20:00:00Z")], ["2026-11-05"]).get("2026-11-05") === 7);
+  check("8 one minute inside 12h is no longer reserved", slots([row(5, "2026-11-05T19:59:00Z")], ["2026-11-05"]).get("2026-11-05") === 8);
+  check("8 PENDING and FAILED rows are reserved, ABANDONED are not", slots([row(6, "2026-11-06T15:00:00Z", "PENDING"), row(7, "2026-11-06T16:00:00Z", "FAILED"), row(8, "2026-11-06T17:00:00Z", "ABANDONED")], ["2026-11-06"]).get("2026-11-06") === 6);
+  check("8 an attempt on a reserved fixture is counted once (in used, not reserved)", slots([row(9, "2026-11-06T15:00:00Z")], ["2026-11-06"], new Map([["2026-11-06", 1]]), new Set([9])).get("2026-11-06") === 7);
+  check("8 limitation pinned: a core fixture not yet in the ledger is not reserved", slots([], ["2026-11-06"]).get("2026-11-06") === 8);
+}
+
 console.log(`${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.log(`  FAIL ${f}`);
 if (failures.length) process.exitCode = 1;
