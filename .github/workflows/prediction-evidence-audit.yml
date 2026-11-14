@@ -9,7 +9,7 @@ on:
       scope:
         description: Read-only audit scope
         type: choice
-        options: [evidence, operations]
+        options: [evidence, operations, integrity]
         default: evidence
       provider:
         description: Bounded read-only fixture verification (maximum five calls)
@@ -19,7 +19,7 @@ permissions:
   contents: read
 jobs:
   audit:
-    if: (github.event_name == 'workflow_dispatch' && inputs.scope != 'operations') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'workflow_dispatch' && inputs.scope == 'evidence') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -41,7 +41,7 @@ jobs:
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
 
   operations-investigation:
-    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'operations'
+    if: github.event_name == 'workflow_dispatch' && (inputs.scope == 'operations' || inputs.scope == 'integrity')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -64,7 +64,8 @@ jobs:
           K=$(printf '%s\n' "$PROD_ENV_FILE" | sed -n 's/^API_FOOTBALL_KEY=//p' | head -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
           if [ -n "$K" ]; then echo "::add-mask::$K"; echo "API_FOOTBALL_KEY=$K" >> "$GITHUB_ENV"; fi
       - name: Bounded read-only operations investigation
-        run: npx tsx scripts/investigate-prediction-operations.ts
+        run: |
+          if [ "${{ inputs.scope }}" = "integrity" ]; then npx tsx scripts/audit-odds-integrity.ts; else npx tsx scripts/investigate-prediction-operations.ts; fi
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
