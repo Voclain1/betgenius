@@ -1,3 +1,4 @@
+import { reliabilityControls } from "@/lib/reliabilitySnapshot";
 import { recordReliability } from "@/lib/reliabilityStore";
 import { captureReliabilityPrice } from "@/lib/reliabilityPrice";
 import { prisma } from "@/lib/prisma";
@@ -329,22 +330,34 @@ export async function loadPaidCurationVerdicts(rows: ReadonlyArray<PaidCandidate
 export async function loadPaidCurationDecision(rows: ReadonlyArray<PaidCandidateRow>, tier: PaidTier, now: Date = new Date(), artifact: CalibrationArtifact | null = calibrationArtifact()) {
   const effective = effectivePaidSelection();
   if (effective.mode === "current") {
-    return { effective, assessments: [] as PaidCandidateAssessment[], ...combinePaidDecisions(await assessPaidCandidates(rows, tier, now, null), "current") };
+    const baselineAssessments = await assessPaidCandidates(rows, tier, now, null);
+    return {
+      effective, assessments: [] as PaidCandidateAssessment[],
+      researchAssessments: reliabilityControls().diagnostics ? baselineAssessments : undefined,
+      ...combinePaidDecisions(baselineAssessments, "current"),
+    };
   }
   try {
     const assessments = await assessPaidCandidates(rows, tier, now, artifact);
     const decision = combinePaidDecisions(assessments, effective.live);
-    return { effective: { ...effective, fallback: effective.fallback ?? decision.fallback }, assessments, ...decision };
+    return { effective: { ...effective, fallback: effective.fallback ?? decision.fallback }, assessments, researchAssessments: reliabilityControls().diagnostics ? assessments : undefined, ...decision };
   } catch (error) {
     // Assessment must never be able to break live curation: fall back to the
     // #175 rule exactly as current mode computes it, and say so in the log.
     console.error("[paid-selection] value assessment failed; using the #175 rule", error);
+    const baselineAssessments = await assessPaidCandidates(rows, tier, now, null);
     return {
       effective: { ...effective, live: "current" as const, fallback: "ASSESSMENT_FAILED" },
       assessments: [] as PaidCandidateAssessment[],
-      ...combinePaidDecisions(await assessPaidCandidates(rows, tier, now, null), "current"),
+      researchAssessments: reliabilityControls().diagnostics ? baselineAssessments : undefined,
+      ...combinePaidDecisions(baselineAssessments, "current"),
     };
   }
+}
+
+/** Current-mode reliability is independent of the legacy paid-selection shadow log. */
+export function shouldRecordPaidSelection(mode: ReturnType<typeof effectivePaidSelection>["mode"]): boolean {
+  return mode !== "current" || reliabilityControls().diagnostics;
 }
 
 /** Shadow log job name. One row per paid curation run, mode shadow or value. */
@@ -361,6 +374,8 @@ export async function recordPaidSelectionShadow(input: {
   day: string;
   effective: ReturnType<typeof effectivePaidSelection>;
   assessments: readonly PaidCandidateAssessment[];
+  /** Research-only assessment channel; never used by planCuration. */
+  researchAssessments?: readonly PaidCandidateAssessment[];
   selectedIds: readonly string[];
   plan: Record<string, unknown>;
   /** Sprint 05: the curation rows, so the shadow quality layer can read kickoff and selection. Optional. */
@@ -368,10 +383,12 @@ export async function recordPaidSelectionShadow(input: {
   now?: Date;
 }): Promise<void> {
   if (input.rows) {
-    try { await recordReliability({tier:input.category, assessments:input.assessments, rows:input.rows,
+    try { await recordReliability({tier:input.category, assessments:input.researchAssessments ?? input.assessments, rows:input.rows,
       selectedIds:input.selectedIds, now:input.now ?? new Date()}); }
     catch(error) { console.error("[reliability] observer failed",error); }
   }
+  // Preserve current mode's lack of legacy shadow logging; only the independent observer runs.
+  if (input.effective.mode === "current") return;
   const selected = new Set(input.selectedIds);
   // Shadow-only candidate-quality decisions (paidCandidateQuality.ts). Never
   // read by curation; a failure here only loses the extra record.

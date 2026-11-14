@@ -240,9 +240,14 @@ New independent controls:
 
 No flag enables Sprint 06 live behavior. Existing `COVERAGE_ROLLOUT`,
 `PAID_QUALITY_POLICY`, `PAID_SELECTION_MODE` retain their exact meanings.
-The observer follows the existing paid shadow-hook invocation; if that hook is
-not called (e.g. selection `current` skips logging), this observer cannot invent
-missing snapshots. Monitor gaps before evaluating a cohort.
+The observer runs after paid category changes commit in current, shadow and
+value modes whenever diagnostics are enabled. Current mode reuses its existing
+cache-only, artifact-free baseline assessments in a separate `researchAssessments`
+channel; live verdicts/ordering and the legacy empty `assessments` channel remain
+unchanged. Current mode still writes no legacy `paid-selection-shadow` record.
+There are no extra bookmaker requests or duplicate cache reads. Missing records
+from before this correction cannot be reconstructed; monitor collection gaps
+before evaluating a cohort.
 
 Each run handles <=500 candidates. Idempotent bulk insert plus <=500 expired-row
 lookup/deletion runs in a separate transaction (2-second timeout, 500ms maximum
@@ -287,3 +292,41 @@ Recommendation: review the infrastructure with the baseline unchanged; do not
 activate any new prediction policy. Resolve/acknowledge the documented master
 preflight failures through the normal release process, and require passing PR
 CI before merging. A successful build cannot substitute for future evidence.
+
+
+## Current-mode collection correction (PR #180 follow-up)
+
+Independent review identified a release-blocking observation gap: current mode
+computed baseline assessments but discarded them, and `curateCategory` skipped
+the entire observation hook. Both gates are corrected in this PR. A separate
+research-only assessment channel reuses the original cache read, including rejected
+at-floor candidates, without adding any input to live selection or ranking.
+The hook runs only when the independent diagnostic control permits it (or the
+existing shadow/value mode calls for its legacy log), after category writes
+commit. Storage/observation errors remain caught and cannot undo category writes.
+No new calibration artifact, admission policy or publication behavior is enabled.
+
+`check-current-reliability-postgres.ts` exercises the actual `curateVipTips` and
+`curatePremiumTips` entry points against disposable PostgreSQL, rather than
+calling the snapshot builder alone. It verifies:
+
+- exact full curation-plan and persisted-category parity with observation off/on;
+- one existing cache read per nonempty tier, zero provider network calls;
+- nonempty named-quote snapshots for selected candidates, rule-rejected candidates
+  and fixture-rejected candidates whose admission rule itself passed;
+- the different VIP/PREMIUM floors, no fabricated sub-floor observations;
+- empty tables and nonempty tables with no eligible candidates;
+- sequential/concurrent retries and immutable first decisions even when later
+  selected ids or research confidence change;
+- observer outages after successful category commits for both tiers;
+- unchanged current-mode legacy logging and the diagnostic off switch.
+
+The new integration suite runs in the existing prediction-reliability CI job,
+after the original publication and snapshot integration tests. Historical
+current-mode gaps stay missing, never backfilled from later quotes/outcomes.
+
+Local follow-up verification: all 12 targeted regression suites and TypeScript
+pass, together with the new current-mode PostgreSQL test and the existing
+immutable-snapshot and atomic-publication PostgreSQL tests. The deliberately
+injected observer exceptions in the integration logs are expected assertions of
+failure isolation. PR CI is rerun on the correction commit.

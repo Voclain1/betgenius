@@ -169,13 +169,13 @@ async function main() {
   const healthy = await pipeline.loadPaidCurationDecision([cand("fresh", 10)], "VIP", NOW);
   check("fallback: ...and a healthy run is shadow with assessments", healthy.effective.mode === "shadow" && healthy.effective.fallback === null && healthy.assessments.length === 1, healthy.effective);
   const pipeSrc = readFileSync(join(__dirname, "../src/lib/vipPremiumPipeline.ts"), "utf8");
-  check("fallback: an assessment failure falls back to the #175 rule and is labelled", /fallback: "ASSESSMENT_FAILED"/.test(pipeSrc) && /assessPaidCandidates\(rows, tier, now, null\), "current"\)/.test(pipeSrc));
+  check("fallback: an assessment failure falls back to the #175 rule and is labelled", /fallback: "ASSESSMENT_FAILED"/.test(pipeSrc) && /combinePaidDecisions\(baselineAssessments, "current"\)/.test(pipeSrc));
   const brokenAssess = await pipeline.assessPaidCandidates([cand("fresh", 10)], "VIP", NOW, { ...CALIBRATION_ARTIFACT, modelOnly: null }).then(() => "no-throw", () => "threw");
   eq("fallback: a poisoned artifact does make assessment throw (so the guard is load-bearing)", brokenAssess, "threw");
 
   const src = readFileSync(join(__dirname, "../src/lib/geniusCuration.ts"), "utf8");
   check("wiring: curation takes verdicts and ordering from the decision", /planCuration\(category, rows, paidClaimed, awaiting, decision\?\.verdicts, decision\?\.ordering,/.test(src));
-  check("wiring: the shadow log is written only when the mode is not current", /decision\.effective\.mode !== "current"/.test(src));
+  check("wiring: observation uses the independent reliability gate", /pipeline\.shouldRecordPaidSelection\(decision\.effective\.mode\)/.test(src));
   const pipe = readFileSync(join(__dirname, "../src/lib/vipPremiumPipeline.ts"), "utf8");
   check("wiring: current mode assesses with no artifact (exactly #175)", /effective\.mode === "current"[\s\S]{0,200}assessPaidCandidates\(rows, tier, now, null\)/.test(pipe));
   check("wiring: dedicated picks freeze a value record at promotion", /\.\.\.entryValueRecord\(winner\.row, odds\)/.test(pipe));
