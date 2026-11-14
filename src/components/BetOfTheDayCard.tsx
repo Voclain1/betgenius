@@ -7,6 +7,8 @@ import type { BetOfTheDayView } from "@/lib/betOfTheDay";
 import { betOfTheDayState, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { Prose } from "@/components/Prose";
 import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
+import { OddsFigure } from "@/components/OddsFigure";
+import { validOdds } from "@/lib/oddsFormat";
 
 /**
  * The Bet of the Day pick, with its bookmaker price.
@@ -85,7 +87,10 @@ export function BetOfTheDayCard({
   /** Team crests, when the caller has them. Initials stand in otherwise. */
   crests?: { home?: string | null; away?: string | null };
 }) {
-  const { row, gate, oddsFetchedAt } = data;
+  const { row, oddsFetchedAt } = data;
+  // A gate whose price is not a valid decimal quote is treated as no price: the
+  // "Price not available yet" state, never a broken number.
+  const gate = data.gate && validOdds(data.gate.price) !== null ? data.gate : null;
   const state = stateProp ?? betOfTheDayState(row);
   const live = inactive === undefined ? state === "LIVE" : !inactive;
   const settled = row.outcome !== "PENDING";
@@ -145,9 +150,9 @@ export function BetOfTheDayCard({
                 <div className="text-base font-black leading-none text-gray-300">In play</div>
                 <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Status</div>
               </>
-            ) : gate?.price != null ? (
+            ) : gate ? (
               <>
-                <div className="text-3xl font-black leading-none tabular-nums text-gray-100">{gate.price.toFixed(2)}</div>
+                <OddsFigure value={gate.price} className="block text-3xl font-black leading-none tabular-nums text-gray-100" />
                 <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">Odds</div>
               </>
             ) : (
@@ -163,7 +168,7 @@ export function BetOfTheDayCard({
             {row.confidence}% <span className="font-semibold text-gray-500">confidence</span>
           </span>
         </div>
-        {live && gate?.price != null && (
+        {live && gate && (
           <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[11px] text-gray-500">
             <span>
               Best of {gate.bookmakers} bookmaker{gate.bookmakers === 1 ? "" : "s"}

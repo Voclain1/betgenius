@@ -4,6 +4,7 @@ import { resolveMarket, type MarketType, type Selection } from "@/lib/markets";
 import { publishedDoubleLegIds } from "@/lib/sameGameDoubleAssembly";
 import { createNotificationEvent, settlementEventKey } from "@/lib/notifications";
 import { matchSlug } from "@/lib/slug";
+import { captureFixtureResults } from "@/lib/fixtureResultCapture";
 
 /**
  * Settling finished picks: find published picks whose match should be over,
@@ -98,6 +99,10 @@ export async function settleFinishedPredictions(limit: number, predictionIds?: r
   const prefetched = await prefetchFixturesById(
     candidates.map((c) => c.fixtureApiId).filter((id): id is number => id != null),
   );
+
+  // The same rows also carry the result record (scores, and events/statistics
+  // when present). Stored for the match page at no extra call; never throws.
+  await captureFixtureResults(prefetched.values());
 
   const results: SettleResult[] = [];
   let kickoffsReconciled = 0;

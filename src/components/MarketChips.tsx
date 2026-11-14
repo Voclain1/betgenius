@@ -21,7 +21,7 @@ export function MarketChips({ active, className = "" }: { active?: MarketHubKey;
             href={m.href}
             prefetch={false}
             aria-current={on ? "page" : undefined}
-            className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${
+            className={`inline-flex min-h-9 shrink-0 items-center rounded-full border px-3 py-1 text-[11px] font-semibold transition sm:min-h-8 sm:text-xs ${
               on ? "border-brand bg-brand text-on-brand" : "border-brand-border text-gray-300 hover:border-brand hover:text-brand"
             }`}
           >

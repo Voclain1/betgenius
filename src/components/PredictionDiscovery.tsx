@@ -1,3 +1,4 @@
+import { OddsFigure } from "./OddsFigure";
 import Link from "next/link";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import {
@@ -142,7 +143,7 @@ export function DiscoveryFilters({
               className={`${control} mt-1`}
             >
               <option value="upcoming">Upcoming only</option>
-              <option value="live">Cached live status</option>
+              <option value="live">Started / awaiting result</option>
               <option value="finished">Finished</option>
               <option value="all">All statuses</option>
             </select>
@@ -386,9 +387,9 @@ export async function PredictionDiscovery({
                       <p className="mt-1 text-xs text-gray-400">
                         {stamp(p.kickoff)} ·{" "}
                         {p.phase === "started"
-                          ? "Started · status unavailable"
+                          ? (p.statusLabel ?? "Started · result unconfirmed")
                           : p.phase === "live"
-                            ? "Cached live status"
+                            ? "Started / awaiting result"
                             : p.phase === "unavailable"
                               ? "Schedule / status review"
                               : p.phase}
@@ -406,7 +407,8 @@ export async function PredictionDiscovery({
                     <p className="text-xs leading-relaxed text-gray-400">
                       {p.quote ? (
                         <>
-                          {p.quote.decimal.toFixed(2)} · {p.quote.bookmaker} ·{" "}
+                          <OddsFigure value={p.quote.decimal} /> ·{" "}
+                          {p.quote.bookmaker} ·{" "}
                           {p.quote.kind === "archived"
                             ? "archived quote"
                             : "cached quote"}

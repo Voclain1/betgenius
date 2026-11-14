@@ -38,6 +38,8 @@ These checks insert their own rows and delete them afterwards:
 - `check-vip-premium-gate` (it also upserts `FixtureOddsCache` rows)
 - `check-betofday-targeting` (it also upserts `FixtureOddsCache` rows)
 - `check-personalization-db` (users, predictions, follows, preferences, saved predictions and one league/team cache row; Sprint 01)
+- `check-match-centre-db` (two FixtureDetailCache rows, to test result capture; Sprint 02)
+- `check-prediction-experience-db` (four FixtureDetailCache rows, to test the provider status lookup; Sprint 03)
 
 They never run against Production. The repository holds no fingerprint of any real database, not even a hash. Every comparison is made at runtime, against the database identities the machine running the checks actually has.
 
@@ -99,3 +101,7 @@ are the build-time guard that keeps them from drifting.
 ## Scripts outside the tiers
 
 The `verify-*` scripts guard themselves: they run only against `127.0.0.1:55432/betgenius_feature_test`. Several other `check-*`, `research-*` and `measure-*` scripts read or write the live database and are not in any tier. Examples are `check-bet-of-the-day*`, `check-doubles-quota`, `check-double-settlement`, `check-market-confirmed-curation` and `check-combo-date-gating`. Run them deliberately, never as part of a routine check. Before adding any of them to a tier, apply the rules above.
+
+`check-category-navigation-browser` (Sprint 04) opens the Tips menu and phone drawer on a running site, so it reads `BASE_URL` and skips (exit 0) when that is unset. CI and `npm run preflight` therefore run it only where a site is up; run it locally with `BASE_URL=http://localhost:3000` against `next start`. It only reads public pages.
+
+The Sprint 05 odds checks (`check-odds-presentation`, `-render`, `-browser`) are pure or component-level: they need no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.

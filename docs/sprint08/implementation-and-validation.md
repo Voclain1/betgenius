@@ -1,6 +1,6 @@
 # Sprint 08 — Prediction discovery and match intelligence
 
-Base: `ff11995d6df8fe7b89f4dfefc62cd3e478820be8`, including merged PR #183. Delivery: [PR #184](https://github.com/Voclain1/betgenius/pull/184), branch `feat/sprint08-discovery`. The delivery message and PR record identify the final SHA and CI runs. No merge or deployment is authorized by this work.
+Started from `ff11995d6df8fe7b89f4dfefc62cd3e478820be8`, including PR #183; integrated latest master `0609bc9` with merged PRs #186–#188 before final validation. Delivery: [PR #184](https://github.com/Voclain1/betgenius/pull/184), branch `feat/sprint08-discovery`. The delivery message and PR record identify the final SHA and CI runs. No merge or deployment is authorized by this work.
 
 ## Repository audit and features reused
 
@@ -24,9 +24,9 @@ Controls support date, competition, either team name, market, kickoff window, ma
 
 A member's stored timezone controls discovery's calendar-day boundaries and kickoff windows. Anonymous readers use Africa/Lagos. Existing category day tabs retain their Lagos-day semantics; finder dates are separately labeled in the reader's timezone. Exact calendar days, UTC+14, fractional offsets and 23/25-hour DST days are tested. Anonymous requests for an interest filter fall back to accessible browsing with a sign-in explanation. Members without matches get an honest empty state and links to existing preferences/saved pages.
 
-The finder returns 12 rows per page, from at most 300 candidates for the selected day. SQL applies access, category, date, competition, team, market and interest filters before the cap. Stored fixture status, local kickoff windows and quote eligibility are assessed against bounded cache reads before paging. Truncation is explicit; it is not presented as a whole-database total. Dates are limited to 31 days on either side of the current date. Competition controls reuse the existing catalogue and supplement it with accessible published results; unlisted selected identifiers retain a neutral label rather than inventing a competition name.
+The finder returns 12 rows per page, from at most 300 candidates for the selected day. SQL applies access, category, date, competition, team, market and interest filters before the cap. Stored native fixture status and identity-checked captured Match Centre results, local kickoff windows and quote eligibility are assessed against bounded cache reads before paging. Truncation is explicit; it is not presented as a whole-database total. Dates are limited to 31 days on either side of the current date. Competition controls reuse the existing catalogue and supplement it with accessible published results; unlisted selected identifiers retain a neutral label rather than inventing a competition name.
 
-Match status is based on stored data, not a live polling promise. Known final/cancelled/live states override an upcoming prediction schedule. Conflicting fixture team/competition identity or kickoff suppresses the upcoming classification and price. An elapsed kickoff with no final evidence is "Started · status unavailable", never automatically "finished". Without a native fixture cache, upcoming rows are labeled as a stored schedule.
+Match status is based on stored data, not a live polling promise. Terminal final/cancelled states override an upcoming prediction schedule. Discovery reuses the newer shared row-status rules: cached live codes are not a live claim; the started/awaiting filter uses the clock and confirmed end states. Conflicting fixture team/competition identity or kickoff suppresses the upcoming classification and price. An elapsed kickoff without final evidence is labeled Kicked off or Awaiting result, never automatically finished. Without a native fixture cache, upcoming rows are labeled as a stored schedule.
 
 ## Match evidence and explanations
 
@@ -46,7 +46,7 @@ Market comparison shows only readable published selections. Each supported marke
 - FREE/registration-gated Banker/VIP/PREMIUM access remains server-resolved. Saved filtering rechecks current entitlement, including after a subscription lapses. Ordinary free picks cross-posted to paid categories keep the existing free visibility rules; dedicated paid provenance never bypasses its tier through a public tag.
 - Public search excludes paid-only and registration-gated-only rows even for members; the server finder supports a member's entitled searches. Public metadata and structured descriptions continue using anonymously readable picks, even on authenticated visits. Locked match cards now use the existing allowlist rather than retaining private properties in a spread.
 - Forms carry filter values, never a user ID or entitlement. Personal results are request-specific, without a shared user-data cache. Existing prediction/save API private/no-store behavior is tested.
-- Canonical routes remain unchanged. Discovery filter states are `noindex, follow`, canonical to the existing clean index/category day URL. Existing match evidence-gated indexing and breadcrumb/SportsEvent markup remain intact.
+- Canonical routes remain unchanged. Discovery filter states are `noindex, follow`, canonical to the existing clean index/category day URL. The newer shared odds figure, category-navigation taxonomy and Match Centre panels are retained. Existing match evidence-gated indexing and breadcrumb/SportsEvent markup remain intact.
 - Match and editorial-evidence reads are capped at 60 rows per exact slug with the same deterministic cutoff. Market comparison renders at most 12 readable selections; all retained published cards remain below it. Public search candidates are capped at 1,000.
 
 ## Actual interface previews
@@ -87,7 +87,7 @@ Open the discovery date and match URL in `work/sprint08-preview.json`. In a seco
 
 ## Validation and performance
 
-New coverage: **91 pure/render assertions**, **81 PostgreSQL assertions**, **99 browser assertions**, and the actual Chromium suite at 1440/390/320 pixels. Existing regressions cover publication atomicity, concurrency and rollback; paid access/entitlements/payments; current-mode Sprint 06 immutable observations, selected/rejected candidates, empty sets, retries and observer failures; operations/read-only recovery; and match/SEO behavior. The consolidated local run contains 36 suites; all pass after correcting the stale assertion described below. TypeScript and the production build pass.
+New coverage: **91 pure/render assertions**, **83 PostgreSQL assertions**, **99 browser assertions**, and the actual Chromium suite at 1440/390/320 pixels. Existing regressions cover publication atomicity, concurrency and rollback; paid access/entitlements/payments; current-mode Sprint 06 immutable observations, selected/rejected candidates, empty sets, retries and observer failures; operations/read-only recovery; and match/SEO behavior. The consolidated local run contains 36 suites; all pass after correcting the stale assertion described below. TypeScript and the production build pass.
 
 The sitemap scope suite had one pre-existing failing assertion on untouched base `ff11995`: it forbade `coachJson` despite the established match staff-claim checks requiring that narrow cache field and its fetch timestamp. The assertion now requires those fields while continuing to forbid squad/stats blobs. This does not expand the production query; **all 280 sitemap assertions pass**.
 

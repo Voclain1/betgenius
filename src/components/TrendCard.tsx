@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import type { TrendCard as TrendCardData } from "@/lib/topTrends";
 import type { TrendTone } from "@/lib/trendCards";
+import { OddsFigure } from "@/components/OddsFigure";
+import { validOdds } from "@/lib/oddsFormat";
 
 /** The badge's figure in its tone's colour, on the card itself: no coloured block behind status text. */
 const TONE_TEXT: Record<TrendTone, string> = {
@@ -48,12 +50,12 @@ export function TrendCard({ card }: { card: TrendCardData }) {
           )}
           <p className="text-xs text-gray-500">{card.kickoff}</p>
         </div>
-        {card.price && (
+        {validOdds(card.price?.odds) !== null && card.price && (
           <p className="text-sm leading-7 text-gray-300" title="The bet this trend describes, at the best price from at least five bookmakers">
             {/* Non-breaking, so the last word of the bet wraps together with its price. */}
             {card.price.label}{" "}
             <span className="whitespace-nowrap">
-              @ <span className="rounded-lg bg-brand-bg px-2 py-0.5 font-black tabular-nums text-gray-100 ring-1 ring-brand-border">{card.price.odds.toFixed(2)}</span>
+              @ <OddsFigure value={card.price.odds} className="rounded-lg bg-brand-bg px-2 py-0.5 font-black tabular-nums text-gray-100 ring-1 ring-brand-border" />
             </span>
           </p>
         )}

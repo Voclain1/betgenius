@@ -7,7 +7,7 @@ import { teamCrestUrl } from "@/lib/leagues";
 import { leagueSlug, teamSlug } from "@/lib/slug";
 
 
-const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4" };
+const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4", 5: "grid-cols-2 sm:grid-cols-5", 6: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" };
 
 function Side({ name, teamApiId }: { name: string; teamApiId: number | null }) {
   return (
@@ -39,6 +39,10 @@ export function MatchMasthead({
   referee,
   finalScore,
   follow,
+  statusCode,
+  halftime,
+  localKickoff,
+  season,
   children,
 }: {
   homeTeam: string;
@@ -58,11 +62,21 @@ export function MatchMasthead({
   follow?: React.ReactNode;
   /** Follow buttons and attribution, under the facts. */
   children?: React.ReactNode;
+  /** Provider status from the cached result record (see MatchScoreClock). */
+  statusCode?: string | null;
+  halftime?: { home: number; away: number } | null;
+  /** Kickoff in the signed-in reader's own timezone, when it is not WAT ("Sat 16:00 GMT"). */
+  localKickoff?: string | null;
+  /** "2026/27", from the cached table's season. */
+  season?: string | null;
 }) {
   const facts: [string, string][] = [];
   if (round) facts.push(["Round", round]);
   if (venue) facts.push(["Venue", city ? `${venue}, ${city}` : venue]);
   if (referee) facts.push(["Referee", referee]);
+  if (season) facts.push(["Season", season]);
+  if (halftime) facts.push(["Half-time", `${halftime.home}-${halftime.away}`]);
+  if (localKickoff) facts.push(["Your time", localKickoff]);
 
   const league = (
     <>
@@ -105,6 +119,7 @@ export function MatchMasthead({
             timeZoneLabel="WAT"
             dayLabel={footballDate(kickoff, { weekday: "short", day: "numeric", month: "short" }).replace(",", "")}
             finalScore={finalScore}
+            statusCode={statusCode}
           />
           <Side name={awayTeam} teamApiId={awayTeamApiId} />
         </div>
@@ -125,7 +140,7 @@ export function MatchMasthead({
 
       {/* Hairlines from a 1px gap over the border colour, so a wrapped 2x2 grid is ruled both ways. */}
       {facts.length > 0 && (
-      <dl className={`relative grid gap-px border-t border-brand-border bg-brand-border ${FACT_COLS[facts.length] ?? FACT_COLS[4]}`}>
+      <dl className={`relative grid gap-px border-t border-brand-border bg-brand-border ${FACT_COLS[facts.length] ?? FACT_COLS[6]}`}>
         {facts.map(([label, value]) => (
           <div key={label} className="min-w-0 bg-brand-card px-3 py-3.5 text-center">
             <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">{label}</dt>

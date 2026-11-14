@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { classifyStatus, isIrregular, statusLabel } from "@/lib/matchStatus";
+import { clockPhase } from "@/lib/predictionStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 /** Matches the shared snapshot's fastest refresh (LIVE_POLICY.MIN_REFRESH_SECONDS). */
@@ -30,6 +31,7 @@ export function MatchScoreClock({
   timeZoneLabel,
   dayLabel,
   finalScore,
+  statusCode,
 }: {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
@@ -40,8 +42,19 @@ export function MatchScoreClock({
   /** "SAT 10 OCT", formatted on the server in Lagos time. */
   dayLabel: string;
   finalScore?: { home: number; away: number } | null;
+  /**
+   * The provider status from the server's cached result record. Lets a
+   * postponed or cancelled fixture say so on first paint instead of showing
+   * a plain kickoff time until (or unless) the client lookup answers. A live
+   * client fixture always takes precedence.
+   */
+  statusCode?: string | null;
 }) {
   const [fixture, setFixture] = useState<FixtureRow | null>(null);
+  // Read once at render (no timer). Used only to word a kicked-off match that
+  // has no live data and no score; server and browser can differ by seconds at
+  // a threshold, which the label element suppresses.
+  const [now] = useState(() => new Date());
 
   useEffect(() => {
     // Nothing to look up before kickoff: the clock is already right.
@@ -77,7 +90,7 @@ export function MatchScoreClock({
     };
   }, [homeTeamApiId, awayTeamApiId, kickoff]);
 
-  const code = fixture?.fixture.status.short;
+  const code = fixture?.fixture.status.short ?? statusCode ?? undefined;
   const group = code ? classifyStatus(code) : null;
   const irregular = code ? isIrregular(code) : false;
 
@@ -103,6 +116,7 @@ export function MatchScoreClock({
   }
 
   const small = "whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.16em]";
+  const phase = clockPhase(kickoff, now);
 
   if (!score) {
     return (
@@ -111,6 +125,14 @@ export function MatchScoreClock({
         <div className={`mt-1.5 text-gray-400 ${small}`}>{dayLabel}</div>
         {timeZoneLabel && <div className={`mt-1 text-gray-500 ${small}`}>{timeZoneLabel}</div>}
         {irregular && code && <div className={`mt-1 text-amber-400 ${small}`}>{statusLabel(code)}</div>}
+        {/* Kicked off, but no live data and no stored score: say so rather than
+            leaving the kickoff time looking like a match still to come. A live
+            lookup that finds the match replaces this. */}
+        {!irregular && (phase === "started" || phase === "awaiting") && (
+          <div className="mx-auto mt-1 max-w-[7rem] text-[11px] font-bold uppercase leading-tight tracking-[0.16em] text-gray-500" suppressHydrationWarning>
+            {phase === "started" ? "Kicked off" : "Awaiting result"}
+          </div>
+        )}
       </div>
     );
   }

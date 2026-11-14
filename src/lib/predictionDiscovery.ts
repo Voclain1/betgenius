@@ -1,3 +1,4 @@
+import { rowStatus } from "./predictionStatus";
 import { MARKET_TYPES } from "./markets";
 import { safeTimeZone, zonedDateKey, zonedDayBounds } from "./personalization";
 
@@ -122,18 +123,28 @@ export function discoveryPhase(
   kickoff: Date,
   outcome: string,
   fixtureStatus?: string | null,
+  now = new Date(),
 ) {
-  if (["FT", "AET", "PEN"].includes(fixtureStatus ?? "")) return "finished";
+  const status = rowStatus({
+    kickoff,
+    outcome,
+    statusCode: fixtureStatus,
+    now,
+  });
+  if (status.kind === "final") return "finished";
   if (
-    ["PST", "CANC", "ABD", "AWD", "WO", "SUSP", "INT"].includes(
-      fixtureStatus ?? "",
-    ) ||
-    outcome === "VOID"
+    [
+      "void",
+      "postponed",
+      "cancelled",
+      "abandoned",
+      "suspended",
+      "awarded",
+    ].includes(status.kind)
   )
     return "unavailable";
-  if (["1H", "HT", "2H", "ET", "BT", "P", "LIVE"].includes(fixtureStatus ?? ""))
-    return "live";
-  return null; // caller resolves elapsed versus scheduled using its shared clock
+  if (status.kind === "started" || status.kind === "awaiting") return "started";
+  return null;
 }
 export function matchesDiscoveryTime(
   kickoff: Date,

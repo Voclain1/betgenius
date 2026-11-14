@@ -1,3 +1,5 @@
+import { readFixtureResult } from "./matchCentre";
+import { rowStatus, trustedStatusCode } from "./predictionStatus";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { canViewCategory, presentedCategory } from "./access";
@@ -150,7 +152,7 @@ export async function loadDiscovery(
       ),
     );
   const keys = rows.map((r) => matchKey(r)).filter((k): k is string => !!k);
-  const [odds, fixtures] = await Promise.all([
+  const [odds, fixtures, results] = await Promise.all([
     prisma.fixtureOddsCache.findMany({
       where: { matchKey: { in: keys } },
       take: DISCOVERY_LIMIT,
@@ -179,7 +181,19 @@ export async function loadDiscovery(
         league: { select: { apiId: true } },
       },
     }),
+    prisma.fixtureDetailCache.findMany({
+      where: { matchKey: { in: keys } },
+      take: DISCOVERY_LIMIT,
+      select: {
+        matchKey: true,
+        fixtureApiId: true,
+        homeTeamApiId: true,
+        awayTeamApiId: true,
+        detailJson: true,
+      },
+    }),
   ]);
+  const capturedByKey = new Map(results.map((r) => [r.matchKey, r]));
   const quoteByKey = new Map(odds.map((q) => [q.matchKey, q])),
     fixtureById = new Map(fixtures.map((q) => [q.apiId, q]));
   const eligible = category === "GOALS" ? goalsFeedRows(rows) : rows;
@@ -201,22 +215,35 @@ export async function loadDiscovery(
     const disagreement =
       !!fixture &&
       (!verified || Math.abs(+fixture.kickoff - +r.kickoff) > 60000);
+    const resultCache = capturedByKey.get(matchKey(r) ?? "");
+    const captured =
+      resultCache &&
+      resultCache.fixtureApiId != null &&
+      (r.fixtureApiId == null || resultCache.fixtureApiId === r.fixtureApiId) &&
+      resultCache.homeTeamApiId === r.homeTeamApiId &&
+      resultCache.awayTeamApiId === r.awayTeamApiId
+        ? readFixtureResult(
+            (resultCache.detailJson as any)?.result,
+            resultCache.fixtureApiId,
+          )
+        : null;
+    const statusCode =
+      trustedStatusCode(captured?.status) ?? (verified ? fixture.status : null);
     const phase = disagreement
       ? "unavailable"
-      : (discoveryPhase(
-          r.kickoff,
-          r.outcome,
-          verified ? fixture.status : null,
-        ) ??
+      : (discoveryPhase(r.kickoff, r.outcome, statusCode, now) ??
         (r.kickoff > now && r.outcome === "PENDING"
           ? "upcoming"
           : r.outcome !== "PENDING"
             ? "finished"
             : "started"));
-    if (f.state !== "all" && phase !== f.state) return [];
+    if (
+      f.state !== "all" &&
+      phase !== (f.state === "live" ? "started" : f.state)
+    )
+      return [];
     const quote =
       disagreement ||
-      phase === "live" ||
       phase === "unavailable" ||
       phase === "started" ||
       (phase === "finished" && r.kickoff > now)
@@ -239,7 +266,13 @@ export async function loadDiscovery(
         pick: r.pick,
         confidence: r.confidence,
         phase,
-        statusVerified: !!verified,
+        statusVerified: !!verified || !!captured,
+        statusLabel: rowStatus({
+          kickoff: r.kickoff,
+          outcome: r.outcome,
+          statusCode,
+          now,
+        }).label,
         href: `/predictions/match/${slug}`,
         quote,
       },

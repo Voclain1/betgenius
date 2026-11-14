@@ -17,7 +17,7 @@ import { categoryFeedWhere } from "@/lib/categoryPredictions";
 import { isFixtureTaken, takeFixture } from "@/lib/fixtureIdentity";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { upcomingTeamIds, type LeagueUpcomingFixture } from "@/lib/enrichment";
-import { matchSlug } from "@/lib/slug";
+import { matchKey, matchSlug } from "@/lib/slug";
 import {
   DEFAULT_TIMEZONE,
   LIMITS,
@@ -324,6 +324,42 @@ const PICK_SELECT = {
 export type DashboardPick = Prisma.PredictionGetPayload<{ select: typeof PICK_SELECT }> & {
   presented: PredictionCategory;
   href: string | null;
+  /** Provider status from the captured result record (Sprint 02), when one exists. See loadStatusCodes. */
+  statusCode: string | null;
+};
+
+type StatusKey = { homeTeamApiId?: number | null; awayTeamApiId?: number | null; kickoff?: Date | null };
+
+/**
+ * Provider status codes for fixtures, keyed by matchKey, from the result record
+ * Sprint 02 captures into FixtureDetailCache.detailJson.result.
+ *
+ * ONE indexed read, no provider call. A record only counts when it is for the
+ * SAME fixture the cache row is for (result.fixtureApiId = the row's
+ * fixtureApiId), so a rescheduled match cannot inherit another game's status.
+ * The codes are presentation input only — src/lib/predictionStatus.ts decides
+ * which ones to believe. Failure is not an error: the label then comes from the
+ * clock alone, exactly as before this existed.
+ */
+export async function loadStatusCodes(fixtures: StatusKey[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const keys = Array.from(new Set(fixtures.map((f) => matchKey(f)).filter((k): k is string => !!k)));
+  if (!keys.length) return out;
+  try {
+    const rows = await prisma.$queryRaw<{ matchKey: string; status: string | null }[]>`
+      SELECT "matchKey",
+             CASE WHEN "detailJson"#>>'{result,fixtureApiId}' = "fixtureApiId"::text THEN "detailJson"#>>'{result,status}' END AS status
+      FROM "FixtureDetailCache" WHERE "matchKey" = ANY(${keys})`;
+    for (const r of rows) if (r.status) out.set(r.matchKey, r.status);
+  } catch (e) {
+    console.error("[personalization] status lookup skipped:", e instanceof Error ? e.message : e);
+  }
+  return out;
+}
+
+const statusOf = (codes: Map<string, string>, f: StatusKey): string | null => {
+  const k = matchKey(f);
+  return k ? (codes.get(k) ?? null) : null;
 };
 
 /**
@@ -345,9 +381,12 @@ export async function todaysPicks(viewer: Entitlement, timezone: string, now: Da
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     take: 150,
   });
-  return rows
+  const viewable = rows
     .map((r) => ({ ...r, presented: presentedCategory(r.category, r.categories), href: matchHref(r) }))
     .filter((r) => canViewCategory(r.presented, viewer.tier, viewer.status, viewer.role));
+  // Status is looked up only for rows the reader can already see.
+  const codes = await loadStatusCodes(viewable);
+  return viewable.map((r) => ({ ...r, statusCode: statusOf(codes, r) }));
 }
 
 function matchHref(r: { homeTeam: string | null; awayTeam: string | null; kickoff: Date | null }): string | null {
@@ -539,6 +578,8 @@ export type SavedItem = {
   confidence: number | null;
   href: string | null;
   view: SavedView;
+  /** Provider status from the captured result record, when one exists (a public fact, not part of the pick). */
+  statusCode: string | null;
 };
 
 /**
@@ -548,7 +589,7 @@ export type SavedItem = {
  * pick, odds or confidence at all — they are dropped here, server-side, so
  * nothing restricted reaches the client.
  */
-export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new Date()): SavedItem {
+export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new Date(), statusCode: string | null = null): SavedItem {
   const live = s.prediction;
   const category = live ? presentedCategory(live.category, live.categories) : (s.category as PredictionCategory);
   const canView = canViewCategory(category, viewer.tier, viewer.status, viewer.role);
@@ -557,6 +598,7 @@ export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new
     live ? { status: live.status, marketType: live.marketType, selection: live.selection, pick: live.pick, outcome: live.outcome, finalHomeScore: live.finalHomeScore, finalAwayScore: live.finalAwayScore, kickoff: live.kickoff } : null,
     canView,
     now,
+    statusCode,
   );
   const href = live ? matchHref({ homeTeam: live.homeTeam, awayTeam: live.awayTeam, kickoff: live.kickoff }) : null;
   return {
@@ -571,6 +613,7 @@ export function toSavedItem(s: SavedRecord, viewer: Entitlement, now: Date = new
     kickoff: live?.kickoff ?? s.kickoff,
     settledAt: live?.settledAt ?? null,
     savedAt: s.createdAt,
+    statusCode,
     category,
     market: canView ? s.market : null,
     pick: canView ? s.pick : null,
@@ -600,7 +643,8 @@ async function loadSavedItems(userId: string, viewer: Entitlement, now: Date): P
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: LIMITS.saved,
   });
-  return rows.map((r) => toSavedItem(r, viewer, now));
+  const codes = await loadStatusCodes(rows.map((r) => ({ homeTeamApiId: r.homeTeamApiId, awayTeamApiId: r.awayTeamApiId, kickoff: r.prediction?.kickoff ?? r.kickoff })));
+  return rows.map((r) => toSavedItem(r, viewer, now, statusOf(codes, { homeTeamApiId: r.homeTeamApiId, awayTeamApiId: r.awayTeamApiId, kickoff: r.prediction?.kickoff ?? r.kickoff })));
 }
 
 export async function listSaved(userId: string, viewer: Entitlement, filter: SavedFilter, page: number, now: Date = new Date()) {

@@ -15,6 +15,8 @@ import { OUTCOME_STYLES } from "@/lib/outcomeStyles";
 import { textTone } from "@/lib/tone";
 import { SavePredictionButton } from "@/components/SavePredictionButton";
 import type { PaidCardDetail } from "@/lib/paidFeedData";
+import { OddsFigure } from "@/components/OddsFigure";
+import { validOdds } from "@/lib/oddsFormat";
 
 export type PredictionRow = {
   id: string;
@@ -249,12 +251,18 @@ const STATUS_TONE: Record<string, string> = {
 
 const PRICE_LABEL: Record<string, string> = {
   entry: "Price when published",
-  current: "Price now",
-  closing: "Closing price",
+  // Neither claims more than the data says. "current" is the latest cached
+  // quote from before kickoff, with its own timestamp beside it; nothing
+  // establishes that it is live now, so it is not called "now". "closing" is
+  // the last cached quote before kickoff, which need not be the closing line.
+  current: "Latest quote",
+  closing: "Last quote before kickoff",
 };
 
 /** Status, price and its provenance, publication time and the reason the pick is in the feed. */
-function PaidDetails({ paid }: { paid: PaidCardDetail }) {
+function PaidDetails({ paid: raw }: { paid: PaidCardDetail }) {
+  // A price that is not a valid decimal quote is shown as unavailable, never as a number.
+  const paid = raw.price && validOdds(raw.price.odds) === null ? { ...raw, price: null } : raw;
   return (
     <div className="space-y-3 text-sm">
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
@@ -269,7 +277,7 @@ function PaidDetails({ paid }: { paid: PaidCardDetail }) {
           <dd className="mt-0.5 font-black tabular-nums text-gray-100">
             {paid.price ? (
               <>
-                {paid.price.odds.toFixed(2)}
+                <OddsFigure value={paid.price.odds} />
                 <span className="ml-1 text-xs font-semibold text-gray-500">
                   median{paid.price.bookmakers ? ` of ${paid.price.bookmakers} books` : ""}{paid.price.at && paid.price.kind !== "entry" ? ` · ${kickoffLabel(paid.price.at)}` : ""}
                 </span>

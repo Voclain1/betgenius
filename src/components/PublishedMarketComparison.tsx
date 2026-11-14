@@ -1,3 +1,5 @@
+import { OddsFigure } from "./OddsFigure";
+import { formatOdds } from "@/lib/oddsFormat";
 import { PremiumPanel } from "./PremiumPanel";
 import {
   MARKET_MEANINGS,
@@ -142,11 +144,12 @@ export function PublishedMarketComparison({
                     <dd className="mt-1 text-gray-400">
                       {entry ? (
                         <>
-                          {entry.median.toFixed(2)} · observed {stamp(entry.at)}
+                          <OddsFigure value={entry.median} /> · observed{" "}
+                          {stamp(entry.at)}
                           <br />
                           Named sources:{" "}
                           {entry.sources
-                            .map((q) => `${q.bookmaker} ${q.odd.toFixed(2)}`)
+                            .map((q) => `${q.bookmaker} ${formatOdds(q.odd)}`)
                             .join("; ")}
                         </>
                       ) : (
@@ -163,7 +166,8 @@ export function PublishedMarketComparison({
                     <dd className="mt-1 text-gray-400">
                       {current ? (
                         <>
-                          {current.decimal.toFixed(2)} · {current.bookmaker}
+                          <OddsFigure value={current.decimal} /> ·{" "}
+                          {current.bookmaker}
                           <br />
                           {current.timeBasis === "provider"
                             ? "Provider quote"

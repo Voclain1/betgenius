@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Lock } from "lucide-react";
 import { catStyles } from "@/components/PredictionCard";
 import { textTone } from "@/lib/tone";
+import { OddsFigure } from "@/components/OddsFigure";
+import { validOdds } from "@/lib/oddsFormat";
 import { BookmakerJoinButton, type BookmakerOption } from "@/components/BookmakerJoinButton";
 
 export type ComboLegView = {
@@ -35,7 +37,7 @@ export function ComboCard({
 }) {
   // Only a curated accumulator has real prices to show. A hand-built Multi Bet
   // stores the legacy placeholder, so it renders exactly as it always has.
-  const isTiered = combo.oddsTier != null && combo.legs.every((l) => typeof l.odds === "number" && l.odds > 1);
+  const isTiered = combo.oddsTier != null && combo.legs.every((l) => validOdds(l.odds) !== null);
   const product = isTiered ? combo.legs.reduce((p, l) => p * (l.odds as number), 1) : null;
   // The market's own price restated as a percentage, overround included. NOT a
   // confidence: no joint probability is computed or displayed anywhere here,
@@ -60,9 +62,9 @@ export function ComboCard({
         <>
           {product !== null && (
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-2xl bg-brand-bg/70 px-4 py-3 ring-1 ring-brand-border">
-              <span className="text-3xl font-black tabular-nums text-brand">&times;{product.toFixed(2)}</span>
+              <OddsFigure value={product} lead="×" className="text-3xl font-black tabular-nums text-brand" />
               <span className="text-xs text-gray-400">
-                combined odds from {combo.legs.length} legs, at best available prices
+                combined odds from {combo.legs.length} legs, at the prices when this multi bet was built
               </span>
               {/* The counterweight to the multiple. Labelled as the MARKET's
                   number, because that is exactly what it is — the books'
@@ -81,7 +83,7 @@ export function ComboCard({
                   <div className="truncate text-gray-400">{l.market} — {l.pick}</div>
                 </div>
                 {isTiered && (
-                  <span className="shrink-0 text-sm font-black tabular-nums text-gray-100">{(l.odds as number).toFixed(2)}</span>
+                  <OddsFigure value={l.odds} className="shrink-0 text-sm font-black tabular-nums text-gray-100" />
                 )}
               </li>
             ))}

@@ -7,6 +7,7 @@
 // PUBLISHED predictions, not the whole football universe — mirrors the
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
+import { captureFixtureResults } from "@/lib/fixtureResultCapture";
 import { Prisma } from "@prisma/client";
 import { ODDS_NEAR_KICKOFF_WINDOW_MS } from "./oddsCadence";
 export { ODDS_NEAR_KICKOFF_WINDOW_MS } from "./oddsCadence";
@@ -616,6 +617,13 @@ export async function refreshFixtureDetailsForDay(
       prisma.$executeRaw`UPDATE "FixtureDetailCache" SET "detailJson"=COALESCE("detailJson",'{}'::jsonb) || ${JSON.stringify(detail)}::jsonb WHERE "matchKey"=${t.matchKey}`,
     ]);
     results.push({ matchKey: t.matchKey, result: "ok" });
+  }
+
+  // Status and half-time/full-time scores from the same slate — no extra call.
+  // After the detail rows above so each target's fixtureApiId is already set.
+  if (slate?.length) {
+    const ids = new Set(targets.map((t) => slate!.find((f) => f.teams.home.id === t.homeTeamApiId && f.teams.away.id === t.awayTeamApiId)?.fixture.id).filter(Boolean));
+    await captureFixtureResults(slate.filter((f) => ids.has(f.fixture.id)), now);
   }
 
   return results;

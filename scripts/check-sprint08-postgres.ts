@@ -326,6 +326,37 @@ async function main() {
       ).items.map((p) => p.id),
       [savedPick.id],
     );
+    await prisma.fixtureDetailCache.create({
+      data: {
+        matchKey: key,
+        fixtureApiId: publicPick.fixtureApiId! + 1,
+        homeTeamApiId: publicPick.homeTeamApiId!,
+        awayTeamApiId: publicPick.awayTeamApiId!,
+        kickoffDay: kickoff.toISOString().slice(0, 10),
+        detailJson: {
+          result: {
+            fixtureApiId: publicPick.fixtureApiId,
+            status: "FT",
+            capturedAt: now.toISOString(),
+          },
+        },
+      },
+    });
+    ok(
+      (
+        await loadDiscovery(f(), ANONYMOUS, undefined, undefined, now)
+      ).items.some((p) => p.id === publicPick.id),
+    );
+    await prisma.fixtureDetailCache.update({
+      where: { matchKey: key },
+      data: { fixtureApiId: publicPick.fixtureApiId },
+    });
+    ok(
+      !(
+        await loadDiscovery(f(), ANONYMOUS, undefined, undefined, now)
+      ).items.some((p) => p.id === publicPick.id),
+    );
+    await prisma.fixtureDetailCache.delete({ where: { matchKey: key } });
     // Native final status beats a future prediction kickoff; mismatched team mapping is never trusted.
     const league = await prisma.league.create({
       data: {
@@ -454,6 +485,9 @@ async function main() {
   } finally {
     await prisma.savedPrediction.deleteMany({ where: { userId: user.id } });
     await prisma.prediction.deleteMany({ where: { authorId: user.id } });
+    await prisma.fixtureDetailCache.deleteMany({
+      where: { matchKey: { in: keys } },
+    });
     await prisma.fixtureOddsCache.deleteMany({
       where: { matchKey: { in: keys } },
     });

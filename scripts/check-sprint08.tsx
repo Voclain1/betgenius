@@ -105,7 +105,7 @@ for (const state of ["FT", "AET", "PEN"])
 for (const state of ["CANC", "PST", "ABD"])
   eq(discoveryPhase(kickoff, "PENDING", state), "unavailable");
 for (const state of ["1H", "HT", "2H", "LIVE"])
-  eq(discoveryPhase(kickoff, "PENDING", state), "live");
+  eq(discoveryPhase(kickoff, "PENDING", state, now), null);
 eq(discoveryPhase(kickoff, "VOID", "NS"), "unavailable");
 eq(
   matchesDiscoveryTime(

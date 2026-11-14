@@ -97,6 +97,17 @@ export const PURE_STEPS = [
   `${RENDER} scripts/check-prediction-timeline.tsx`,
   "tsx scripts/check-preloader.ts",
   "tsx scripts/check-personalization.ts",
+  "tsx scripts/check-match-centre.ts",
+  `${RENDER} scripts/check-match-centre-render.tsx`,
+  "tsx scripts/check-prediction-experience.ts",
+  `${RENDER} scripts/check-prediction-experience-render.tsx`,
+  `${RENDER} scripts/check-prediction-experience-browser.tsx`,
+  "tsx scripts/check-category-navigation.ts",
+  `${RENDER} scripts/check-category-navigation-render.tsx`,
+  "tsx scripts/check-category-navigation-browser.ts",
+  "tsx scripts/check-odds-presentation.ts",
+  `${RENDER} scripts/check-odds-presentation-render.tsx`,
+  `${RENDER} scripts/check-odds-presentation-browser.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 
@@ -115,5 +126,7 @@ export const INTEGRATION_STEPS = [
   "tsx scripts/check-vip-premium-gate.ts",
   "tsx scripts/check-betofday-targeting.ts",
   "tsx scripts/check-personalization-db.ts",
+  "tsx scripts/check-match-centre-db.ts",
+  "tsx scripts/check-prediction-experience-db.ts",
 ];
 

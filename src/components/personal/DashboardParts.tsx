@@ -6,6 +6,8 @@ import { LeagueBadge } from "@/components/LeagueBadge";
 import { SavePredictionButton } from "@/components/SavePredictionButton";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { kickoffInZone, shortDateInZone, timeInZone, type MatchReason, type UpcomingFixture } from "@/lib/personalization";
+import { rowStatus } from "@/lib/predictionStatus";
+import { OddsFigure } from "@/components/OddsFigure";
 import type { DashboardPick, SavedItem } from "@/lib/personalizationData";
 
 /** Section heading with an optional trailing link. Same weight across every dashboard section. */
@@ -70,6 +72,32 @@ function Teams({ home, away, homeId, awayId, href }: { home: string | null; away
  * and pick, the site's confidence figure (labelled as such, not as a
  * probability), why it is here, and the save control.
  */
+/**
+ * What this pick's match is doing, in one short run: nothing for an ordinary
+ * upcoming match; "FT 2–1 · Won" once settled; "Kicked off", "Awaiting result"
+ * or "Postponed" otherwise. The result is shown only because the row passed the
+ * viewer's access check when it was loaded. Wording and rules:
+ * src/lib/predictionStatus.ts.
+ */
+function PickStatus({ row }: { row: DashboardPick }) {
+  const finalScore = row.finalHomeScore != null && row.finalAwayScore != null ? { home: row.finalHomeScore, away: row.finalAwayScore } : null;
+  const status = rowStatus({ statusCode: row.statusCode, kickoff: row.kickoff, outcome: row.outcome, finalScore });
+  if (!status.label) return null;
+  const outcome = row.outcome === "WON" || row.outcome === "LOST" || row.outcome === "VOID" ? row.outcome : null;
+  return (
+    <span className={`shrink-0 text-[11px] font-semibold ${status.tone === "warn" ? "text-amber-400" : "text-gray-500"}`}>
+      {status.kind === "final" ? (
+        <>
+          <span className="tabular-nums">FT{finalScore ? ` ${finalScore.home}–${finalScore.away}` : ""}</span>
+          {outcome && <span className={`ml-1.5 font-black uppercase tracking-[0.1em] ${OUTCOME_TEXT[outcome]}`}>{outcome}</span>}
+        </>
+      ) : (
+        status.label
+      )}
+    </span>
+  );
+}
+
 export function PickRow({ row, reasons, timezone }: { row: DashboardPick; reasons: MatchReason[]; timezone: string }) {
   return (
     <li className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] sm:items-center">
@@ -77,6 +105,7 @@ export function PickRow({ row, reasons, timezone }: { row: DashboardPick; reason
         <div className="flex min-w-0 items-center gap-2 text-xs text-gray-400">
           <span className="min-w-0 truncate"><LeagueBadge leagueApiId={row.leagueApiId} leagueName={row.leagueName} size={14} /></span>
           <span className="shrink-0 tabular-nums">{row.kickoff ? timeInZone(row.kickoff, timezone) : ""}</span>
+          <PickStatus row={row} />
         </div>
         <Teams home={row.homeTeam} away={row.awayTeam} homeId={row.homeTeamApiId} awayId={row.awayTeamApiId} href={row.href} />
       </div>
@@ -85,8 +114,9 @@ export function PickRow({ row, reasons, timezone }: { row: DashboardPick; reason
         <div className="truncate text-sm font-black text-brand">{row.pick}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
           <span>Confidence {row.confidence}%</span>
-          {row.odds != null && <span className="tabular-nums">@ {row.odds.toFixed(2)}</span>}
-          <span>{categoryChipLabel(row.presented)}</span>
+          <OddsFigure value={row.odds} lead="Odds " className="tabular-nums" />
+          {/* "Today" says nothing on a list of today's picks; the others (Banker, Genius, Featured, Bet of the Day, VIP, Premium, Goals, Combo Bet) do. */}
+          {row.presented !== "TODAY" && <span>{categoryChipLabel(row.presented)}</span>}
         </div>
         {reasons.length > 0 && (
           <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-brand">{reasons.map((r) => REASON_LABEL[r]).join(" · ")}</div>
@@ -164,6 +194,12 @@ export function SavedStatus({ item, timezone }: { item: SavedItem; timezone: str
       </span>
     );
   }
+  // Postponed, cancelled, abandoned or suspended: no result is coming, and the
+  // pick is neither upcoming nor awaiting one.
+  if (v.state === "unplayed") {
+    const status = rowStatus({ statusCode: item.statusCode, kickoff: item.kickoff });
+    return <span className="text-[11px] font-semibold text-amber-400">{status.label ?? "Not played"}</span>;
+  }
   if (v.state === "upcoming" && item.kickoff) return <span className="text-[11px] tabular-nums text-gray-400">{kickoffInZone(item.kickoff, timezone)}</span>;
   if (v.state === "unavailable") return <span className="text-[11px] text-gray-500">No longer published · result unavailable</span>;
   return <span className="text-[11px] text-gray-400">Awaiting result</span>;
@@ -186,7 +222,7 @@ export function SavedRow({ item, timezone, actions }: { item: SavedItem; timezon
           <div>
             <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">{item.market}</span>{" "}
             <span className="text-sm font-black text-brand">{item.pick}</span>
-            {item.odds != null && <span className="ml-2 text-[11px] tabular-nums text-gray-500">@ {item.odds.toFixed(2)}</span>}
+            <OddsFigure value={item.odds} lead="Odds " tail="when saved" className="ml-2 text-[11px] tabular-nums text-gray-500" />
             {item.view.changedTo && (
               <p className="mt-1 text-[11px] text-amber-300">Updated since you saved it — now {item.view.changedTo}. Your saved pick is shown and settled as saved.</p>
             )}
