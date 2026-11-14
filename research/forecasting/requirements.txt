@@ -1,0 +1,8 @@
+# Research-only dependencies for research/forecasting/bgforecast.
+# Not used by the Next.js application, its build, or any deployment.
+# Pinned so a run is reproducible; see docs/research/XGBOOST_RESEARCH_ENGINE.md.
+xgboost==3.0.5
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.16.3
+pytest==8.4.2

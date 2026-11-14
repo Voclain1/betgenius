@@ -11,6 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
     "check:schema": "tsx scripts/check-schema-sync.ts",
+    "check:research-extract": "tsx research/forecasting/extract/check-extract-core.ts",
+    "research:extract": "node --max-old-space-size=384 --import tsx research/forecasting/extract/extract.ts",
     "check:paystack-entitlement": "tsx scripts/check-paystack-entitlement.ts",
     "check:subscription-entitlement": "tsx scripts/check-subscription-entitlement.ts",
     "check:onetime-fallback": "tsx scripts/check-onetime-fallback.ts",
