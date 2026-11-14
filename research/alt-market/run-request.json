@@ -1,5 +1,5 @@
 {
-  "job": "baseline",
-  "days": 30,
-  "note": "Sprint 10 Phase 2: read-only baseline. No model or provider calls."
+  "job": "experiment",
+  "confirm": "RUN-ALT-MARKET-S10",
+  "note": "Sprint 10 Phase 4: first invocation of the pre-registered experiment (spec alt-market-s10-v1, committed in 5660862). Hard caps: 30 evaluations, 30 model requests, 40 api-football requests, 0.30 USD, cumulative."
 }
