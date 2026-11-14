@@ -1,3 +1,7 @@
+import { MatchEvidenceGuide } from "@/components/MatchEvidenceGuide";
+import { PublishedMarketComparison } from "@/components/PublishedMarketComparison";
+import { identityDigest } from "@/lib/predictionExplanation";
+import { lockedPredictionView, rowViewable } from "@/lib/lockedPrediction";
 import { MatchLineupsBody } from "@/components/MatchLineups";
 import { LineupsNewsTabs } from "@/components/LineupsNewsTabs";
 import { MatchOddsPanel } from "@/components/MatchOddsPanel";
@@ -64,7 +68,7 @@ async function loadMatch(slug: string) {
     getH2HMeetings(match.homeTeamApiId, match.awayTeamApiId),
   ]);
 
-  const publicRow = rows.find((r) => canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined)) ?? null;
+  const publicRow = rows.find((r) => rowViewable(r, canViewCategory(presentedCategory(r.category, r.categories), undefined, undefined, undefined), c => canViewCategory(c as PredictionCategory, undefined, undefined, undefined))) ?? null;
 
   const evidence = assessMatchEvidence({
     homeDigest: digests.home,
@@ -157,7 +161,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const editorialById = new Map(editorialRows.map(r => [r.id, r.aiJob]));
   const shaped = rows.map((row) => {
     const r = { ...row, category: presentedCategory(row.category, row.categories) };
-    const canView = canViewCategory(r.category, viewer.tier, viewer.status, viewer.role);
+    const canView = rowViewable(r, canViewCategory(r.category, viewer.tier, viewer.status, viewer.role), c => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role));
     const digest = parseStoredContext(editorialById.get(r.id)?.context);
     // A sentence that contradicts the evidence is dropped and the rest of the
     // prose kept: a stale manager name (checked against the current coaches),
@@ -183,7 +187,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     };
     return canView
       ? cleaned
-      : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
+      : { ...lockedPredictionView(r), reasoning: "Subscribe to unlock this tip and full reasoning.", overUnder: null, locked: true } as unknown as typeof cleaned & { locked: true };
   });
 
   // The one preview worth showing at the top: the highest-confidence row the
@@ -207,10 +211,18 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // api-football call happens on this page.
   const { home: currentHomeDigest, away: currentAwayDigest, standings } = digests!;
   const highlightedJob = topRow ? editorialById.get(topRow.id) : null;
-  const original = parseStoredContext(highlightedJob?.context);
-  const homeDigest = original?.teams.home ?? currentHomeDigest;
-  const awayDigest = original?.teams.away ?? currentAwayDigest;
+  const candidateContext = parseStoredContext(highlightedJob?.context);
+  const original = candidateContext && highlightedJob && topRow?.publishedAt && highlightedJob.createdAt <= topRow.publishedAt && highlightedJob.createdAt <= new Date() && highlightedJob.createdAt < match.kickoff &&
+    identityDigest(candidateContext.teams.home, match.homeTeamApiId) && identityDigest(candidateContext.teams.away, match.awayTeamApiId) ? candidateContext : null;
+  const homeDigest = identityDigest(original?.teams.home ?? currentHomeDigest, match.homeTeamApiId);
+  const awayDigest = identityDigest(original?.teams.away ?? currentAwayDigest, match.awayTeamApiId);
   const evidenceMeetings = original ? original.h2h?.meetings ?? [] : h2hMeetings;
+  const comparisonContexts = new Map(shaped.filter(r => !("locked" in r && r.locked)).map(r => {
+    const job = editorialById.get(r.id);
+    const context = parseStoredContext(job?.context);
+    const valid = context && job && r.publishedAt && job.createdAt <= r.publishedAt && job.createdAt <= new Date() && job.createdAt < match.kickoff && identityDigest(context.teams.home, match.homeTeamApiId) && identityDigest(context.teams.away, match.awayTeamApiId);
+    return [r.id, { home: identityDigest(valid ? context.teams.home : currentHomeDigest, match.homeTeamApiId), away: identityDigest(valid ? context.teams.away : currentAwayDigest, match.awayTeamApiId), recordedAt: valid ? job.createdAt : null }];
+  }));
   const hasForm = !!(homeDigest?.last5.length || awayDigest?.last5.length);
   const hasNews = teamNewsState(currentHomeDigest).kind !== "unavailable" || teamNewsState(currentAwayDigest).kind !== "unavailable";
   const hasStats = !isMatchFactsEmpty(buildMatchFacts(homeDigest, awayDigest));
@@ -220,7 +232,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   ]);
   const stamp = (date: Date | null | undefined) => date ? date.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "not available";
   const sections = [
-    ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
+    ...(topRow ? [{ id: "verdict", label: "Verdict" }, { id: "evidence-guide", label: "Evidence guide" }] : []),
+    { id: "market-comparison", label: "Compare markets" },
     ...(preview ? [{ id: "preview", label: "Preview" }] : []),
     ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
     ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
@@ -338,6 +351,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         />
       )}
 
+      {topRow && <MatchEvidenceGuide marketType={topRow.marketType} selection={topRow.selection} market={topRow.market} pick={topRow.pick} kickoff={match.kickoff} home={homeDigest} away={awayDigest} recordedAt={original && highlightedJob ? highlightedJob.createdAt : null} homeFetchedAt={homeCache?.fetchedAt ?? null} awayFetchedAt={awayCache?.fetchedAt ?? null} />}
+
       {preview && (
         <PremiumPanel kicker="Preview" title="Match preview" id="preview">
           <Prose text={preview} />
@@ -423,6 +438,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       <AdHalfBanner />
 
       <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
+
+      <PublishedMarketComparison rows={shaped.filter(r => !("locked" in r && r.locked))} cache={oddsCache} contexts={comparisonContexts} confirmations={new Map(editorialRows.map(r => [r.id, r.marketConfirmation]))} />
 
       <MatchTrackRecord leagueApiId={match.leagueApiId} leagueName={match.leagueName} />
 

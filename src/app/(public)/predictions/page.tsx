@@ -1,3 +1,5 @@
+import { PredictionDiscovery } from "@/components/PredictionDiscovery";
+import { hasDiscoveryFilters, type DiscoveryParams } from "@/lib/predictionDiscovery";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { LinkTile } from "@/components/LinkTile";
@@ -7,12 +9,16 @@ import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 import { MARKET_HUBS } from "@/lib/marketHubs";
 import { cupById } from "@/lib/cupConfig";
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   title: "Football Predictions & Betting Tips",
   description: "Browse today's football predictions by category, with confidence ratings, match reasoning and a public record of settled results.",
   // Self-canonical, like the category feeds this page links to.
   alternates: { canonical: "/predictions" },
 };
+
+export function generateMetadata({ searchParams = {} }: { searchParams?: DiscoveryParams }): Metadata {
+  return { ...baseMetadata, ...(hasDiscoveryFilters(searchParams) ? { robots: { index: false, follow: true } } : {}) };
+}
 
 // Descriptions come from CATEGORY_BLURBS, the single copy of this copy — the
 // feeds' own answer paragraphs quote the same strings, so a card here and the
@@ -50,7 +56,7 @@ const competitionLinks = [
   }),
 ];
 
-export default function PredictionsIndex() {
+export default function PredictionsIndex({ searchParams = {} }: { searchParams?: DiscoveryParams }) {
   return (
     <div className="space-y-10">
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Predictions", path: "/predictions" }])} />
@@ -67,6 +73,8 @@ export default function PredictionsIndex() {
         }
         stats={[]}
       />
+
+      <PredictionDiscovery params={searchParams} />
 
       <PremiumPanel kicker="Categories" title="Browse predictions by category" id="prediction-categories" bare>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

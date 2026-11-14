@@ -31,7 +31,7 @@ export function FeedDayTabs({ basePath, active }: { basePath: string; active: Fe
             key={day}
             href={dayHref(basePath, day)}
             aria-current={isActive ? "page" : undefined}
-            className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
+            className={`inline-flex min-h-11 items-center rounded-xl px-4 py-2 text-sm font-bold transition ${
               isActive ? "bg-brand text-on-brand" : "text-gray-400 hover:text-gray-100"
             }`}
           >
