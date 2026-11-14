@@ -1,6 +1,6 @@
 # Sprint 08 — Prediction discovery and match intelligence
 
-Base: `ff11995d6df8fe7b89f4dfefc62cd3e478820be8`, including merged PR #183. Delivery is one branch, `feat/sprint08-discovery`, and one PR. The delivery message and PR record identify the final SHA and CI runs. No merge or deployment is authorized by this work.
+Base: `ff11995d6df8fe7b89f4dfefc62cd3e478820be8`, including merged PR #183. Delivery: [PR #184](https://github.com/Voclain1/betgenius/pull/184), branch `feat/sprint08-discovery`. The delivery message and PR record identify the final SHA and CI runs. No merge or deployment is authorized by this work.
 
 ## Repository audit and features reused
 
@@ -59,8 +59,8 @@ All screenshots are from the actual production-mode local app in Chromium, using
 | Shared discovery | [1440 px](screenshots/desktop-discovery.png) | [390 px](screenshots/mobile-discovery.png) |
 | Refined category | [1440 px](screenshots/desktop-category.png) | [390 px](screenshots/mobile-category.png) |
 | Match verdict / navigation | [1440 px](screenshots/desktop-match.png) | [390 px](screenshots/mobile-match.png) |
-| Evidence guide | [Desktop panel](screenshots/desktop-evidence.png) | [Phone panel](screenshots/mobile-evidence.png) |
-| Market comparison | [Desktop panel](screenshots/desktop-markets.png) | [Phone panel](screenshots/mobile-markets.png) |
+| Evidence guide | [Desktop view](screenshots/desktop-evidence.png) | [Phone view](screenshots/mobile-evidence.png) |
+| Market comparison | [Desktop view](screenshots/desktop-markets.png) | [Phone view](screenshots/mobile-markets.png) |
 | Authenticated saved filter | — | [390 px](screenshots/mobile-saved.png) |
 
 The browser suite also verifies a 320-pixel viewport, zero document overflow, real GET submissions, anonymous/private HTML and flight boundaries, structured-data JSON, missing evidence/quotes, authenticated timezone/favourites, and the existing save API. The full synthetic screenshots/logs are also uploaded by the `prediction-discovery` CI workflow.

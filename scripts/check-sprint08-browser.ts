@@ -59,28 +59,21 @@ async function main() {
     ok(response?.status() === 200, `HTTP 200 for ${path}`);
     const reject = page.getByRole("button", { name: "Reject", exact: true });
     if (await reject.isVisible()) await reject.click();
+    const closeAd = page.getByRole("button", { name: "Close ad", exact: true });
+    if (await closeAd.isVisible()) await closeAd.click();
     await checkLayout(page);
   }
   const discovery = `/predictions?d_date=${manifest.date}`;
   const snapshots: string[] = [];
   async function shot(page: any, name: string, anchor?: string) {
-    if (name.endsWith("-evidence") || name.endsWith("-markets")) {
-      const id = name.endsWith("-evidence")
-        ? "evidence-guide"
-        : "market-comparison";
+    if (anchor)
       await page
-        .locator(`section[aria-labelledby="${id}"]`)
-        .screenshot({ path: `${folder}/${name}.png`, animations: "disabled" });
-    } else {
-      if (anchor)
-        await page
-          .locator(anchor)
-          .evaluate((el: HTMLElement) => el.scrollIntoView({ block: "start" }));
-      await page.screenshot({
-        path: `${folder}/${name}.png`,
-        animations: "disabled",
-      });
-    }
+        .locator(anchor)
+        .evaluate((el: HTMLElement) => el.scrollIntoView({ block: "start" }));
+    await page.screenshot({
+      path: `${folder}/${name}.png`,
+      animations: "disabled",
+    });
     snapshots.push(`${name}.png`);
   }
   try {
@@ -122,9 +115,22 @@ async function main() {
       await form.locator('[name="d_team"]').fill("Preview Athletic 6");
       await form.locator('[name="d_market"]').selectOption("BTTS");
       await Promise.all([
-        page.waitForNavigation({ waitUntil: "networkidle" }),
+        page.waitForURL(
+          (url: URL) =>
+            url.searchParams.get("d_market") === "BTTS" &&
+            url.searchParams.get("d_team") === "Preview Athletic 6",
+          { waitUntil: "domcontentloaded", timeout: 60000 },
+        ),
         form.getByRole("button", { name: "Find predictions" }).click(),
       ]);
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector("#discover")
+            ?.textContent?.includes("1 matching"),
+        null,
+        { timeout: 60000 },
+      );
       ok(
         (await page.locator("#discover").innerText()).includes("1 matching"),
         "Team + market form submission",
