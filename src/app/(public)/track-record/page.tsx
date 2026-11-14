@@ -1,50 +1,93 @@
+import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+import {
+  getSettledTotals,
+  getRecordStartKey,
+  closedMonthsSince,
+  monthLabel,
+} from "@/lib/trackRecord";
 import type { Metadata } from "next";
-import { closedMonthsSince, getMonthTrackRecord, getRecordStartKey, getSettledTotals, monthLabel, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
-import { TrackRecordView } from "@/components/TrackRecordView";
-import { CategoryMasthead } from "@/components/CategoryMasthead";
-
-export const revalidate = 300;
-
-export async function generateMetadata(): Promise<Metadata> {
-  // Indexability follows the all-time sample (a grouped count, never shown),
-  // so the page does not drop out of the index every time a month begins.
+import { cache } from "react";
+import Link from "next/link";
+import { ANONYMOUS } from "@/lib/entitlement";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
+import { loadPerformance } from "@/lib/performanceData";
+import {
+  performanceFilter,
+  performanceSummary,
+} from "@/lib/performanceTransparency";
+import { PerformanceDashboard } from "@/components/PerformanceDashboard";
+export const dynamic = "force-dynamic";
+const publicRecord = cache(async () =>
+  loadPerformance(performanceFilter({}), ANONYMOUS),
+);
+export async function generateMetadata({
+  searchParams = {},
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}): Promise<Metadata> {
   const totals = await getSettledTotals();
-  if (totals.total < MIN_SETTLED_SAMPLE_SIZE) {
-    return {
-      title: "Football Prediction Track Record",
-      description: "Our real settled prediction results, published transparently once there's a fair sample size to judge.",
-      alternates: { canonical: "/track-record" },
-      robots: { index: false, follow: true },
-    };
-  }
-
-  const data = await getMonthTrackRecord();
-  const rate = data.headline.decided >= MIN_SETTLED_SAMPLE_SIZE && data.headline.rate != null
-    ? `${Math.round(data.headline.rate * 100)}% win rate in ${data.monthLabel}. `
-    : "";
+  const viewer = await getViewerEntitlement();
   return {
-    title: "Football Prediction Track Record",
-    description: `${rate}Every settled BetGenius prediction this month, win or lose, by category and market.`,
+    title: "Football Prediction Performance & Track Record",
+    description:
+      "Inspect recorded outcomes, verified samples, historical predictions and publication-price evidence. Transparent methods and explicit limitations.",
     alternates: { canonical: "/track-record" },
+    robots:
+      viewer.userId || Object.keys(searchParams).length || totals.total < 20
+        ? { index: false, follow: true }
+        : undefined,
   };
 }
-
-export default async function TrackRecordPage() {
-  const totals = await getSettledTotals();
-
-  if (totals.total < MIN_SETTLED_SAMPLE_SIZE) {
-    return (
-      <div className="space-y-8">
-        <CategoryMasthead kicker="Public record" title="Track record" blurb="Every settled prediction, wins and losses alike, published once there is a fair sample to judge." stats={[]} />
-        <div className="rounded-3xl border border-brand-border bg-brand-card p-6">
-          <p className="text-lg font-black text-gray-100">Not enough data yet</p>
-          <p className="mt-2 text-sm text-gray-400">We only publish real numbers once there&apos;s a meaningful sample to judge fairly. Check back soon.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const [data, startKey] = await Promise.all([getMonthTrackRecord(), getRecordStartKey()]);
-  const pastMonths = closedMonthsSince(startKey).map((key) => ({ key, label: monthLabel(key) }));
-  return <TrackRecordView data={data} pastMonths={pastMonths} />;
+export default async function TrackRecordPage({
+  searchParams = {},
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const viewer = await getViewerEntitlement(),
+    filter = performanceFilter(searchParams);
+  const data =
+    !viewer.userId && Object.keys(searchParams).length === 0
+      ? await publicRecord()
+      : await loadPerformance(filter, viewer);
+  const archive = closedMonthsSince(await getRecordStartKey()).slice(0, 12);
+  return (
+    <>
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: "Home", path: "/" },
+          { name: "Track record", path: "/track-record" },
+        ])}
+      />
+      <PerformanceDashboard
+        rows={data.rows}
+        filter={filter}
+        truncated={data.truncated}
+        start={data.bounds.start}
+        end={data.bounds.end}
+        signedIn={!!viewer.userId}
+      />
+      <details className="mt-8 border-t border-brand-border pt-2">
+        <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">
+          Earlier monthly reports
+        </summary>
+        <nav aria-label="Monthly reports" className="flex flex-wrap gap-3">
+          {archive.map((key) => (
+            <Link
+              key={key}
+              href={`/track-record/${key}`}
+              className="inline-flex min-h-11 items-center text-xs text-brand"
+            >
+              {monthLabel(key)}
+            </Link>
+          ))}
+        </nav>
+        <Link
+          href="/methodology"
+          className="inline-flex min-h-11 items-center text-xs text-gray-400"
+        >
+          Read the methodology →
+        </Link>
+      </details>
+    </>
+  );
 }

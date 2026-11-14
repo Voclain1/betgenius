@@ -34,6 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:sprint08
+      - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-sprint09.tsx
       - run: npm run check:match-centre
       - run: npm run check:match-centre-render
       - run: npm run check:prediction-experience
@@ -48,7 +49,9 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx prisma db push --skip-generate
       - run: npx tsx scripts/check-sprint08-postgres.ts
+      - run: npx tsx scripts/check-sprint09-postgres.ts
       - run: npx tsx scripts/preview-sprint08.ts
+      - run: npx tsx scripts/preview-sprint09.ts
       - run: npm run build > work/s08-build.log 2>&1
       - run: npm run check:budgets
       - name: Install browser driver
@@ -65,11 +68,13 @@ jobs:
           exit 1
       - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npm run check:category-navigation-browser
       - run: npm run check:sprint08-browser
+      - run: npx tsx scripts/check-sprint09-browser.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: sprint08-synthetic-browser-preview
           path: |
             work/sprint08-screenshots
+            work/sprint09-screenshots
             work/s08-build.log
             work/s08-server.log
