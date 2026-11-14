@@ -101,13 +101,19 @@ export function settlementVerified(r: PerformanceRow, now = new Date()) {
   )
     return false;
   if (!isValidSelection(r.marketType as MarketType, r.selection)) return false;
+  // Legacy totals allow quarter lines, but the stored three-state outcome cannot prove partial returns.
+  if (
+    r.marketType === "OVER_UNDER" &&
+    !Number.isInteger((r.selection as { line: number }).line * 2)
+  )
+    return false;
   return (
     resolveMarket(
       r.marketType as MarketType,
       r.selection as Selection,
       r.finalHomeScore!,
       r.finalAwayScore!,
-    ) === r.outcome
+    ) === r.outcome && historyPrice(r) !== null
   );
 }
 export function indicativeReturn(

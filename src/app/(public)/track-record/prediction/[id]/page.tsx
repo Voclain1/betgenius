@@ -56,7 +56,7 @@ export default async function PredictionHistory({
         <p className="mt-2 text-sm">
           {row.outcome} ·{" "}
           {verified
-            ? "Final-score verification agrees"
+            ? "Publication-selection and final-score verification agree"
             : "Independent settlement verification unavailable"}
         </p>
         <p className="mt-1 text-xs text-gray-400">

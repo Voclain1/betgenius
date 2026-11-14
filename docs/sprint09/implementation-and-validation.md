@@ -10,7 +10,7 @@ Reused capabilities include the existing market settlement resolver, minimum 20-
 
 ## Product and hierarchy
 
-The dashboard shows published records, recorded settlements, score-verified decided records and score-verified win rate in one compact ruled overview. The team search has one row; period/category/market/competition/outcome filters use native GET controls inside a disclosure. Ranges cover the current partial calendar month and the preceding 0/2/5/11 months. Exact dates and viewer scope are displayed.
+The dashboard shows published records, recorded settlements, verified decided records and verified win rate in one compact ruled overview. The team search has one row; period/category/market/competition/outcome filters use native GET controls inside a disclosure. Ranges cover the current partial calendar month and the preceding 0/2/5/11 months. Exact dates and viewer scope are displayed.
 
 Monthly history uses restrained horizontal bars with textual rates and sample sizes; insufficient samples show decided counts rather than a fabricated percentage. Category and market comparisons contain only populated groups, with one row per group. Competition comparison, calculation methods and archives are expandable. Results are paginated at 20 records, newest kickoff first, linking to `/track-record/prediction/<id>` and then the existing match page when a slug is available.
 
@@ -27,9 +27,9 @@ The cohort is **currently accessible PUBLISHED rows both published and kicked of
 | Published records | Distinct prediction IDs in the accessible filtered cohort. Category cross-post links do not multiply records. |
 | Recorded settled | Stored WON + LOST + VOID outcomes, irrespective of independent verification. |
 | Other | Outcomes outside WON/LOST/VOID/PENDING, including unsupported partial-result codes. |
-| Score-verified | Stable fixture identity; valid publication before kickoff; settlement at/after kickoff and no later than the report; nonnegative integer final scores; valid structured selection; stored outcome agrees with the existing market resolver. Unsupported markets or incomplete evidence are excluded. |
-| Score-verified decided | Verified WON + LOST. Verified VOID is not in the rate denominator. |
-| Score-verified win rate | Verified wins / verified wins and losses; displayed only with at least 20 decided records. This verifies arithmetic against the **currently stored** selection, not an unavailable original-selection ledger. It is not a profitability measure. |
+| Verified | Stable fixture identity; valid publication before kickoff; settlement at/after kickoff and no later than the report; nonnegative integer final scores; valid structured selection; stored outcome agrees with the existing market resolver; matching immutable publication-selection evidence is required. Unsupported markets or incomplete evidence are excluded. |
+| Verified decided | Verified WON + LOST. Verified VOID is not in the rate denominator. |
+| Verified win rate | Verified wins / verified wins and losses; displayed only with at least 20 decided records. This requires both publication evidence anchoring the structured selection and agreement with stored final scores. It does not reconstruct a complete original-version ledger or establish profitability. The price-evidence coverage is selective, so this is not an unbiased estimate for all published predictions. |
 | Category comparison | Current stored primary category, not historical category membership or current cross-post tags. |
 | Monthly history | Kickoff month in Africa/Lagos, not settlement month. |
 | Longest win/loss run | Consecutive verified W/L records ordered by kickoff then ID. Void, pending, duplicate or unverifiable records break the run. Different markets on one match remain correlated observations; this is not a subscriber betting sequence. |
@@ -44,7 +44,7 @@ This is an indicative flat-stake illustration, **not verified executed betting R
 - Distinct named bookmaker sources, an exact matching source count, and a recomputed source median agreeing with the stored entry price.
 - No substitution from `Prediction.odds`, later caches, promotion observations or prospective research snapshots.
 
-One unit is staked per eligible record. Net return is decimal−1 for a win, −1 for a loss, 0 for a void. ROI is total net units divided by eligible unit stakes, including refunded void stakes in the stated denominator. At least 20 eligible records are required to display ROI; eligible/excluded counts and observed net units remain explicit. No reliable partial-settlement ledger exists, so half/partial/unknown outcomes are excluded rather than assigned invented returns. Score-free cancellation voids remain recorded outcomes but cannot be independently verified for this illustration.
+One unit is staked per eligible record. Net return is decimal−1 for a win, −1 for a loss, 0 for a void. ROI is total net units divided by eligible unit stakes, including refunded void stakes in the stated denominator. At least 20 eligible records are required to display ROI; eligible/excluded counts and observed net units remain explicit. No reliable partial-settlement ledger exists, so half/partial/unknown outcomes and quarter-line totals (even legacy WON/LOST rows) are excluded rather than assigned invented returns. Score-free cancellation voids remain recorded outcomes but cannot be independently verified for this illustration.
 
 ## Database, access and SEO
 
@@ -56,7 +56,7 @@ The root is dynamic, with no shared personal-data cache; anonymous data is dedup
 
 ## Validation
 
-New coverage: **88 calculation/evidence/integrity/render assertions**, **38 real PostgreSQL assertions**, and **113 actual-browser assertions** at 1440/390/320px. PostgreSQL coverage creates a real 5,001-row bucket, tests active VIP/PREMIUM, registered-free, anonymous and expired access, checks immutable rows, and cleans up its own fixtures. Browser coverage verifies public HTML/flight/structured-data boundaries, generic paid-ID 404s, subscriber access, stale paid tokens with an expired database subscription, no-store private responses, canonical/noindex, GET search, missing-price/empty/insufficient states, version limitations and zero horizontal overflow.
+New coverage: **98 calculation/evidence/integrity/render assertions**, **38 real PostgreSQL assertions**, and **113 actual-browser assertions** at 1440/390/320px. PostgreSQL coverage creates a real 5,001-row bucket, tests active VIP/PREMIUM, registered-free, anonymous and expired access, checks immutable rows, and cleans up its own fixtures. Browser coverage verifies public HTML/flight/structured-data boundaries, generic paid-ID 404s, subscriber access, stale paid tokens with an expired database subscription, no-store private responses, canonical/noindex, GET search, missing-price/empty/insufficient states, version limitations and zero horizontal overflow.
 
 All 44 existing non-browser regression suites pass, including Sprint 04–08 operational/publication/reliability/payment protections and their PostgreSQL suites. The Sprint 08 PostgreSQL suite was rerun in a fresh disposable schema: mixing preview rows into its unfiltered 60-row API fixture would crowd out its test IDs. Its 83 assertions remain unchanged. The existing track-record suite passes 71 checks; its two page-wiring assertions now require bounded entitlement-aware history and retained archive links. Existing arithmetic/archive assertions are retained.
 
@@ -102,6 +102,6 @@ Open `/track-record`; record IDs are in `work/sprint09-preview.json`. The guarde
 
 ## Limits and review recommendation
 
-There is no complete original-publication or settlement-correction ledger; original selections, published versions, executions, partial returns, historical category membership and missing prices cannot be recreated. The report distinguishes current-record score checks from those missing guarantees. Rates, run lengths and indicative returns are cohort statistics, not match-independent inference, a subscriber strategy or future promises. Query truncation, sampling thresholds and excluded records remain visible.
+There is no complete original-publication or settlement-correction ledger; original selections, published versions, executions, partial returns, historical category membership and missing prices cannot be recreated. The report requires publication evidence as well as score checks before reporting a verified rate and distinguishes that narrow observation from a complete version ledger. Rates, run lengths and indicative returns are cohort statistics, not match-independent inference, a subscriber strategy or future promises. Query truncation, sampling thresholds and excluded records remain visible.
 
 The implementation is ready for review once final CI is green. Review the screenshots and these evidence limits before deciding on design approval or any separately authorized merge/deployment. Do not merge or deploy as part of Sprint 09.

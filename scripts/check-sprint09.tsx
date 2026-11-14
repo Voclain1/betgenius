@@ -1,3 +1,4 @@
+import { toBookmakerSelection } from "../src/lib/odds";
 const react = require("react");
 react.cache ??= (fn: unknown) => fn;
 import assert from "node:assert/strict";
@@ -152,8 +153,17 @@ eq(
       {
         ...base,
         outcome: "VOID",
-        marketType: "DRAW_NO_BET",
-        selection: { value: "HOME" },
+        marketConfirmation: {
+          publicationQuoteEvidence: {
+            ...snap,
+            entryQuoteSelection: toBookmakerSelection("OVER_UNDER", {
+              line: 2,
+              direction: "OVER",
+            }),
+          },
+        },
+        marketType: "OVER_UNDER",
+        selection: { line: 2, direction: "OVER" },
         finalHomeScore: 1,
         finalAwayScore: 1,
       },
@@ -206,6 +216,35 @@ eq(
 );
 eq(settlementVerified({ ...base, fixtureApiId: 0 }, now), false);
 eq(historyPrice({ ...base, fixtureApiId: -1 }), null);
+eq(settlementVerified({ ...base, marketConfirmation: null }, now), false);
+eq(
+  performanceSummary([{ ...base, marketConfirmation: null }], now)
+    .recordedSettled,
+  1,
+);
+eq(performanceSummary([{ ...base, marketConfirmation: null }], now).decided, 0);
+eq(settlementVerified({ ...base, rewriteCount: 1 }, now), false);
+for (const line of [2.25, 2.75, Infinity]) {
+  const quarter = {
+    ...base,
+    marketType: "OVER_UNDER",
+    selection: { line, direction: "OVER" },
+    outcome: "LOST",
+    finalHomeScore: 1,
+    finalAwayScore: 1,
+    marketConfirmation: {
+      publicationQuoteEvidence: {
+        ...snap,
+        entryQuoteSelection: toBookmakerSelection("OVER_UNDER", {
+          line,
+          direction: "OVER",
+        }),
+      },
+    },
+  };
+  eq(settlementVerified(quarter, now), false);
+  eq(performanceSummary([quarter], now).eligible, 0);
+}
 const html = renderToStaticMarkup(
   <PerformanceDashboard
     rows={rows}

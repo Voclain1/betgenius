@@ -110,10 +110,7 @@ async function main() {
         !html.includes("PRIVATE_S09"),
         "No private selection in public HTML/flight",
       );
-      ok(
-        html.includes("Score-verified win rate"),
-        "Explicit verification scope",
-      );
+      ok(html.includes("Verified win rate"), "Explicit verification scope");
       ok(
         (
           await p.locator('link[rel="canonical"]').getAttribute("href")

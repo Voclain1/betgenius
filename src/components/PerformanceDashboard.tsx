@@ -226,8 +226,8 @@ export function PerformanceDashboard({
         {[
           ["Published records", summary.published],
           ["Recorded settled", summary.recordedSettled],
-          ["Score-verified decided", summary.decided],
-          ["Score-verified win rate", pct(summary.rate)],
+          ["Verified decided", summary.decided],
+          ["Verified win rate", pct(summary.rate)],
         ].map(([label, value]) => (
           <div key={String(label)}>
             <dt className="text-xs text-gray-400">{label}</dt>
@@ -241,9 +241,9 @@ export function PerformanceDashboard({
         Recorded: {summary.counts.WON} won · {summary.counts.LOST} lost ·{" "}
         {summary.counts.VOID} void · {summary.counts.PENDING} pending ·{" "}
         {summary.other} other. {summary.unverified} settled records lack
-        independent verification or have duplicates. Score-verified win rate is
-        verified wins ÷ verified wins and losses; it does not establish
-        profitability.
+        publication evidence, independent verification or have duplicates.
+        Verified win rate requires matching publication-selection evidence and
+        final-score agreement. It does not establish profitability.
       </p>
       {!filtered.length ? (
         <p role="status" className="py-5 text-sm text-gray-400">
@@ -335,14 +335,18 @@ export function PerformanceDashboard({
           </p>
           <p>
             Verified outcomes require pre-kickoff publication, a valid
-            settlement timestamp after kickoff and no later than this report,
-            valid nonnegative final scores, and agreement between the current
-            stored structured selection and the existing market resolver. This
-            checks settlement arithmetic, not an unavailable immutable
-            original-selection ledger. Unsupported, partial, manually voided
-            without scores, missing or contradictory records remain visible but
-            are excluded from verified rates and returns. At least 20 verified
-            wins/losses are required to display a rate.
+            settlement timestamp after kickoff and no later than this report, a
+            matching immutable publication-selection observation, valid
+            nonnegative final scores, and agreement between the current stored
+            structured selection and the existing market resolver. The
+            publication observation anchors the supported structured selection;
+            it is not a complete original-version ledger. Price-observation
+            coverage is selective, so this verified sample is not an unbiased
+            estimate for every published record. Unsupported, partial,
+            quarter-line totals, manually voided without scores, missing or
+            contradictory records remain visible but are excluded from verified
+            rates and returns. At least 20 verified wins/losses are required to
+            display a rate.
           </p>
           <p>
             Different rows for the same identified fixture and market type are
