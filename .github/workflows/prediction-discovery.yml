@@ -34,6 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:sprint08
+      - run: npm run check:sprint09-copy
       - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-sprint09.tsx
       - run: npm run check:match-centre
       - run: npm run check:match-centre-render

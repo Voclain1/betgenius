@@ -1,3 +1,4 @@
+import { resultLabel } from "@/lib/performanceCopy";
 import Link from "next/link";
 import { MARKET_LABELS, CATEGORY_LABELS } from "@/lib/performanceLabels";
 import {
@@ -10,7 +11,7 @@ import {
 } from "@/lib/performanceTransparency";
 const number = (n: number) => n.toLocaleString("en-NG");
 const pct = (n: number | null) =>
-  n == null ? "Insufficient sample" : `${(n * 100).toFixed(1)}%`;
+  n == null ? "Not enough results yet" : `${(n * 100).toFixed(1)}%`;
 const date = (d: Date | null) =>
   d
     ? d.toLocaleString("en-GB", {
@@ -87,10 +88,10 @@ export function PerformanceDashboard({
                   ? CATEGORY_LABELS[s.label]
                   : dimension === "marketType"
                     ? MARKET_LABELS[s.label]
-                    : null) ?? s.label}
+                    : null) ?? (dimension === "leagueName" ? s.label : "Other")}
                 <span className="mt-1 block text-xs text-gray-400">
-                  {s.won} won · {s.lost} lost · {s.verified} verified /{" "}
-                  {s.published} records
+                  {s.won} won · {s.lost} lost · {s.verified} checked /{" "}
+                  {s.published} predictions
                 </span>
               </div>
               <span className="text-right text-xs font-semibold text-gray-300">
@@ -105,19 +106,51 @@ export function PerformanceDashboard({
     <div className="space-y-7">
       <header>
         <p className="text-[11px] font-bold uppercase tracking-[.18em] text-brand">
-          Public record
+          Track Record
         </p>
         <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-4xl">
-          Performance, in context
+          Prediction Results
         </h1>
         <p className="mt-2 text-sm text-gray-400">
-          Published predictions. Recorded outcomes. Evidence you can inspect.
+          See how past predictions finished and compare results over time.
         </p>
       </header>
+
+      <p className="text-xs leading-relaxed text-gray-400">
+        {start.toLocaleDateString("en-GB", { timeZone: "Africa/Lagos" })}–
+        {end.toLocaleDateString("en-GB", { timeZone: "Africa/Lagos" })} · West
+        Africa Time ·{" "}
+        {signedIn ? "Predictions included in your plan" : "Public predictions"}.{" "}
+        {truncated &&
+          "Showing the first 5,000 predictions in this period. Choose a shorter period to see more recent results."}
+      </p>
+      <dl className="grid grid-cols-2 gap-x-5 gap-y-5 border-b border-brand-border pb-5 sm:grid-cols-4">
+        {[
+          ["Win Rate", pct(summary.rate)],
+          ["Checked wins & losses", summary.decided],
+          ["Predictions", summary.published],
+          ["Finished results", summary.recordedSettled],
+        ].map(([label, value]) => (
+          <div key={String(label)}>
+            <dt className="text-xs text-gray-400">{label}</dt>
+            <dd className="mt-1 text-xl font-bold tabular-nums sm:text-2xl">
+              {typeof value === "number" ? number(value) : value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-xs leading-relaxed text-gray-400">
+        All results: {summary.counts.WON} won · {summary.counts.LOST} lost ·{" "}
+        {summary.counts.VOID} void · {summary.counts.PENDING} pending ·{" "}
+        {summary.other} need review. Win Rate uses only predictions whose
+        published choice and final score we can check. {summary.unverified}{" "}
+        finished results are left out because checks are incomplete or entries
+        overlap. A high win rate does not guarantee a profit.
+      </p>
       <form
         method="get"
         action="/track-record"
-        aria-label="Filter historical performance"
+        aria-label="Filter past predictions"
         className="space-y-3 border-y border-brand-border py-3"
       >
         <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
@@ -136,7 +169,7 @@ export function PerformanceDashboard({
         </div>
         <details>
           <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-gray-300">
-            Period & filters
+            Dates & filters
           </summary>
           <div className="grid min-w-0 gap-3 py-3 sm:grid-cols-3">
             {(
@@ -146,22 +179,22 @@ export function PerformanceDashboard({
                   "Period",
                   [1, 3, 6, 12].map((n) => [
                     String(n),
-                    `${n} calendar month${n === 1 ? "" : "s"}`,
+                    `${n} month${n === 1 ? "" : "s"}`,
                   ]),
                 ],
                 [
                   "category",
-                  "Primary category",
+                  "Category",
                   [...new Set(rows.map((r) => r.category))]
                     .sort()
-                    .map((v) => [v, CATEGORY_LABELS[v] ?? v]),
+                    .map((v) => [v, CATEGORY_LABELS[v] ?? "Other category"]),
                 ],
                 [
                   "market",
                   "Market",
                   [...new Set(rows.map((r) => r.marketType))]
                     .sort()
-                    .map((v) => [v, MARKET_LABELS[v] ?? v]),
+                    .map((v) => [v, MARKET_LABELS[v] ?? "Other market"]),
                 ],
                 [
                   "league",
@@ -178,10 +211,10 @@ export function PerformanceDashboard({
                 ],
                 [
                   "outcome",
-                  "Recorded outcome",
+                  "Result",
                   ["WON", "LOST", "VOID", "PENDING", "OTHER"].map((v) => [
                     v,
-                    v,
+                    resultLabel(v),
                   ]),
                 ],
               ] as Array<[keyof PerformanceFilter, string, string[][]]>
@@ -211,53 +244,19 @@ export function PerformanceDashboard({
           </Link>
         </details>
       </form>
-      <p className="text-xs leading-relaxed text-gray-400">
-        {start.toLocaleDateString("en-GB", { timeZone: "Africa/Lagos" })}–
-        {end.toLocaleDateString("en-GB", { timeZone: "Africa/Lagos" })} ·
-        Africa/Lagos ·{" "}
-        {signedIn
-          ? "Your currently accessible records"
-          : "Publicly readable records only"}
-        .{" "}
-        {truncated &&
-          "Limited to the earliest 5,000 records in this window. These are sample totals; narrow the period."}
-      </p>
-      <dl className="grid grid-cols-2 gap-x-5 gap-y-5 border-b border-brand-border pb-5 sm:grid-cols-4">
-        {[
-          ["Published records", summary.published],
-          ["Recorded settled", summary.recordedSettled],
-          ["Verified decided", summary.decided],
-          ["Verified win rate", pct(summary.rate)],
-        ].map(([label, value]) => (
-          <div key={String(label)}>
-            <dt className="text-xs text-gray-400">{label}</dt>
-            <dd className="mt-1 text-xl font-bold tabular-nums sm:text-2xl">
-              {typeof value === "number" ? number(value) : value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="text-xs leading-relaxed text-gray-400">
-        Recorded: {summary.counts.WON} won · {summary.counts.LOST} lost ·{" "}
-        {summary.counts.VOID} void · {summary.counts.PENDING} pending ·{" "}
-        {summary.other} other. {summary.unverified} settled records lack
-        publication evidence, independent verification or have duplicates.
-        Verified win rate requires matching publication-selection evidence and
-        final-score agreement. It does not establish profitability.
-      </p>
       {!filtered.length ? (
         <p role="status" className="py-5 text-sm text-gray-400">
-          No published records match this period and these filters.
+          No past predictions found. Try another team, date or filter.
         </p>
       ) : (
         <>
           <section aria-labelledby="monthly-history">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 id="monthly-history" className="text-base font-bold">
-                Monthly history
+                Monthly Performance
               </h2>
               <span className="text-xs text-gray-400">
-                Kickoff month · minimum 20 decided
+                By match month · 20 checked wins or losses needed
               </span>
             </div>
             <div className="mt-4 space-y-3">
@@ -278,25 +277,25 @@ export function PerformanceDashboard({
                   </div>
                   <span className="text-right text-gray-400">
                     {s.rate == null
-                      ? `${s.decided} decided`
-                      : `${pct(s.rate)} · n=${s.decided}`}
+                      ? `${s.decided} checked`
+                      : `${pct(s.rate)} · ${s.decided} checked`}
                   </span>
                 </div>
               ))}
             </div>
           </section>
           <div className="grid gap-6 lg:grid-cols-2">
-            {comparisons("category", "By primary category")}
-            {comparisons("marketType", "By market")}
+            {comparisons("category", "Results by Category")}
+            {comparisons("marketType", "Results by Market")}
           </div>
           <details className="border-y border-brand-border py-2">
             <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">
-              By competition
+              Results by League
             </summary>
-            {comparisons("leagueName", "Competition comparison")}
+            {comparisons("leagueName", "Results by League")}
             <p className="text-xs text-gray-400">
-              Up to 20 competitions, by number of records. Use the competition
-              filter to inspect another.
+              Showing up to 20 leagues with the most predictions. Choose a
+              league in the filters to see another.
             </p>
           </details>
         </>
@@ -306,77 +305,75 @@ export function PerformanceDashboard({
         className="border-y border-brand-border py-4"
       >
         <h2 id="indicative-returns" className="text-base font-bold">
-          Publication-price illustration
+          Estimated Returns
         </h2>
         <p className="mt-2 text-sm font-semibold">
           {summary.eligible >= 20
-            ? `${pct(summary.roi)} indicative ROI`
-            : "Insufficient qualifying price evidence"}
+            ? `${pct(summary.roi)} estimated return`
+            : "Not enough confirmed past odds"}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-gray-400">
-          {summary.eligible} eligible · {summary.excluded} excluded ·{" "}
-          {summary.net.toFixed(2)} net units in the eligible sample. Flat 1-unit
-          stakes using verified publication-time indicative median prices; no
-          current-price substitution. This is not executed betting performance
-          or subscriber earnings.
+          Based on {summary.eligible} predictions with confirmed past odds;{" "}
+          {summary.excluded} left out. Estimated profit or loss:{" "}
+          {summary.net.toFixed(2)} points, assuming 1 point on each included
+          prediction. These are calculations using recorded odds, not real bets
+          or anyone’s earnings.
         </p>
       </section>
       <details className="border-b border-brand-border pb-3">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">
-          Calculation methods & evidence limits
+          How Results Are Calculated
         </summary>
         <div className="space-y-3 text-xs leading-relaxed text-gray-400">
           <p>
-            Counts cover currently readable records published and kicked off in
-            the selected window, up to 5,000 rows. Filters apply to this bounded
-            cohort. Category comparisons use the currently stored primary
-            category, not historical category membership or cross-posted tags.
-            Months use kickoff in Africa/Lagos; they are not settlement months.
+            Win Rate is checked wins divided by checked wins and losses. Voids
+            do not count towards it. We show a rate only after 20 checked wins
+            or losses.
           </p>
           <p>
-            Verified outcomes require pre-kickoff publication, a valid
-            settlement timestamp after kickoff and no later than this report, a
-            matching immutable publication-selection observation, valid
-            nonnegative final scores, and agreement between the current stored
-            structured selection and the existing market resolver. The
-            publication observation anchors the supported structured selection;
-            it is not a complete original-version ledger. Price-observation
-            coverage is selective, so this verified sample is not an unbiased
-            estimate for every published record. Unsupported, partial,
-            quarter-line totals, manually voided without scores, missing or
-            contradictory records remain visible but are excluded from verified
-            rates and returns. At least 20 verified wins/losses are required to
-            display a rate.
+            To include a result, we need a matching choice and odds recorded
+            around publication, a publication time before kickoff, and a final
+            score that agrees with the result. Without these checks, it stays in
+            All results but is left out of Win Rate and Estimated Returns. This
+            checked group may not represent every prediction we publish.
           </p>
           <p>
-            Different rows for the same identified fixture and market type are
-            excluded from verification and returns, including differing
-            selections: we do not choose a favourable version. Different markets
-            from one fixture remain correlated observations, not independent
-            matches. Records without stable fixture identity are not eligible
-            for the return illustration.
+            The dates cover predictions published and played during your chosen
+            period, using West Africa Time. Categories use the prediction’s
+            current category, which may differ from its category when first
+            published. Monthly figures use the match date.
           </p>
           <p>
-            One unit is staked per eligible record: win = decimal price minus
-            one, loss = −1, void = 0. ROI = net units ÷ eligible stakes. Partial
-            returns are excluded because no reliable partial-settlement ledger
-            is stored. Rewritten records and missing, mismatched, derived or
-            later prices are excluded. A quote observation does not prove an
-            executable offer.
+            If the same match and market appear more than once, we leave those
+            entries out of checked figures rather than choose between them.
+            Different markets from one match can still appear separately. We
+            also leave out results we cannot confirm, including bets with
+            part-wins or part-losses and quarter-goal lines.
           </p>
           <p>
-            Publication timestamps and stored selections are distinct from
-            immutable original-selection evidence. Draft revisions are not a
-            publication-version ledger; settlement edits have no complete
-            correction history. We do not reconstruct either. Individual records
-            state these limitations. Historical reporting is separate from
-            prospective reliability research.
+            Estimated Returns assumes a 1-point bet on each included prediction,
+            using confirmed odds recorded at publication. A win adds the odds
+            minus 1 point; a loss subtracts 1 point; a void returns the stake,
+            with no profit or loss. The return percentage is total profit or
+            loss divided by all points staked, including voids. At least 20
+            included predictions are needed to show a percentage.
           </p>
           <p>
-            Longest verified winning run: {summary.winStreak}; losing run:{" "}
-            {summary.lossStreak}. Ordered by kickoff then record ID; void,
-            pending, duplicate and unverifiable records break a run. These are
-            observed record sequences, not subscriber betting strategies.
+            We never fill gaps with today’s odds. Missing or conflicting odds,
+            changed predictions and incomplete results are left out. Recorded
+            odds do not prove that a bookmaker would have accepted your bet at
+            that price.
+          </p>
+          <p>
+            A complete history of earlier published choices and later result
+            changes is not available. Each prediction page explains what can be
+            checked. These past results do not predict future success.
+          </p>
+          <p>
+            Longest checked winning run: {summary.winStreak}; losing run:{" "}
+            {summary.lossStreak}. Runs follow match kickoff order. A void,
+            pending result, repeated entry or incomplete check ends a run. These
+            are sequences of predictions, not a betting strategy.
           </p>
         </div>
       </details>
@@ -387,10 +384,10 @@ export function PerformanceDashboard({
       >
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 id="history-heading" className="text-lg font-bold">
-            Historical results
+            Past Predictions
           </h2>
           <span className="text-xs text-gray-400">
-            {filtered.length} records · newest kickoff first
+            {filtered.length} predictions · latest matches first
           </span>
         </div>
         <div className="mt-3 divide-y divide-brand-border">
@@ -401,8 +398,7 @@ export function PerformanceDashboard({
             >
               <div className="min-w-0">
                 <p className="text-[11px] text-gray-400">
-                  {r.leagueName ?? "Competition unavailable"} ·{" "}
-                  {date(r.kickoff)}
+                  {r.leagueName ?? "League not listed"} · {date(r.kickoff)}
                 </p>
                 <h3 className="mt-1 break-words text-sm font-bold">
                   <Link
@@ -417,18 +413,18 @@ export function PerformanceDashboard({
                 </p>
                 <p className="mt-1 text-[11px] text-gray-400">
                   {historyPrice(r)
-                    ? `Publication observation ${historyPrice(r)!.median.toFixed(2)}`
-                    : "Publication price unavailable"}
+                    ? `Odds at publication ${historyPrice(r)!.median.toFixed(2)}`
+                    : "Past odds not available"}
                 </p>
               </div>
               <span className="text-xs font-semibold text-gray-300">
-                {r.outcome}
+                {resultLabel(r.outcome)}
               </span>
             </article>
           ))}
         </div>
         <nav
-          aria-label="History pagination"
+          aria-label="Past predictions pages"
           className="mt-3 flex min-h-11 items-center justify-between gap-3 text-sm"
         >
           {page > 1 ? (
@@ -454,7 +450,7 @@ export function PerformanceDashboard({
         href="/predictions"
         className="inline-flex min-h-11 items-center text-sm font-semibold text-brand"
       >
-        Browse current predictions →
+        See today’s predictions →
       </Link>
     </div>
   );

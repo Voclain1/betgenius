@@ -256,16 +256,16 @@ const html = renderToStaticMarkup(
   />,
 );
 for (const text of [
-  "Performance, in context",
-  "Historical results",
-  "Calculation methods",
+  "Prediction Results",
+  "Past Predictions",
+  "How Results Are Calculated",
   "12 won",
   "8 lost",
-  "20 eligible",
-  "not executed",
-  "By market",
-  "By primary category",
-  "Monthly history",
+  "20 predictions with confirmed past odds",
+  "not real bets",
+  "Results by Market",
+  "Results by Category",
+  "Monthly Performance",
 ])
   ok(html.includes(text));
 ok(!/\bAI(?:-assisted)?\b/.test(html));
@@ -282,8 +282,8 @@ const empty = renderToStaticMarkup(
     signedIn={false}
   />,
 );
-ok(empty.includes("No published records"));
-ok(empty.includes("Insufficient qualifying"));
+ok(empty.includes("No past predictions"));
+ok(empty.includes("Not enough confirmed"));
 ok(empty.includes("5,000"));
 console.log(
   `Sprint 09: ${checks} calculation, evidence, integrity and render assertions passed`,

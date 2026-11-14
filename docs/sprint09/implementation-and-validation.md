@@ -1,5 +1,7 @@
 # Sprint 09 — performance transparency
 
+**Visitor-copy revision:** See [copy-revision.md](copy-revision.md) for the current plain-language interface, terminology audit, before/after screenshots and production-copy QA. The technical calculation descriptions below are internal documentation.
+
 Base: `1978bde1a632c4d30d5b7c01df45ed7cd091a065`, latest master including merged Sprint 08 PR #184. Branch: `feat/sprint09-performance`. The delivery PR records its final SHA and CI results. **No merge, deployment, production write, policy activation or visual approval is part of this work.**
 
 ## Existing capabilities reused

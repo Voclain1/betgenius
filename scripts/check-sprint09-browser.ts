@@ -110,7 +110,16 @@ async function main() {
         !html.includes("PRIVATE_S09"),
         "No private selection in public HTML/flight",
       );
-      ok(html.includes("Verified win rate"), "Explicit verification scope");
+      ok(html.includes("Win Rate"), "Explicit verification scope");
+      const order = await p.evaluate(() => ({
+        rate: [...document.querySelectorAll("dt")]
+          .find((e) => e.textContent === "Win Rate")!
+          .getBoundingClientRect().top,
+        search: document
+          .querySelector('form[aria-label="Filter past predictions"]')!
+          .getBoundingClientRect().top,
+      }));
+      ok(order.rate < order.search, "Key figures precede search controls");
       ok(
         (
           await p.locator('link[rel="canonical"]').getAttribute("href")
@@ -128,32 +137,50 @@ async function main() {
         await shot(
           p,
           `${width}-breakdowns`,
-          'section[aria-label="By primary category"]',
+          'section[aria-label="Results by Category"]',
         );
         await shot(p, `${width}-history`, "#history");
       }
-      const method = p.getByText("Calculation methods & evidence limits", {
+      const method = p.getByText("How Results Are Calculated", {
         exact: true,
       });
       await method.click();
       await layout(p);
       ok(
         (await p.locator("body").innerText()).includes(
-          "Partial returns are excluded",
+          "part-wins or part-losses",
         ),
         "Partial-return limits disclosed",
+      );
+      ok(
+        (await p.locator("body").innerText()).includes("quarter-goal lines"),
+        "Quarter-line exclusions remain clear",
       );
       if (width !== 320)
         await shot(p, `${width}-methodology`, "#indicative-returns");
       await visit(p, `/track-record/prediction/${m.publicId}`);
       ok(
-        (await p.locator("body").innerText()).includes(
-          "Recorded published selection",
-        ),
+        await p.getByText("Won", { exact: true }).isVisible(),
+        "Result uses ordinary football language",
+      );
+      ok(
+        (await p.locator("body").innerText()).includes("Final score 2–1"),
+        "Final score shown",
+      );
+      ok(
+        await p.getByText("Published", { exact: true }).isVisible(),
+        "Publication date labeled clearly",
+      );
+      ok(
+        await p.getByText("Odds at Publication", { exact: true }).isVisible(),
+        "Historical odds labeled clearly",
+      );
+      ok(
+        (await p.locator("body").innerText()).includes("Our prediction"),
         "Stored selection labeled",
       );
       await p
-        .getByText("Publication evidence & version history", { exact: true })
+        .getByText("About this prediction record", { exact: true })
         .click();
       ok(
         (await p.locator("body").innerText()).includes("not available"),
@@ -168,17 +195,17 @@ async function main() {
       ok(!(await p.content()).includes("PRIVATE_S09"), "404 payload safe");
       await visit(p, `/track-record/prediction/${m.missingId}`);
       ok(
-        (await p.locator("body").innerText()).includes("Unavailable"),
+        (await p.locator("body").innerText()).includes("Not available"),
         "Missing price explicit",
       );
       await p
-        .getByText("Publication evidence & version history", { exact: true })
+        .getByText("About this prediction record", { exact: true })
         .click();
       if (width !== 320) await shot(p, `${width}-missing-price`);
       await visit(p, "/track-record?team=NO_SYNTHETIC_MATCH");
       ok(
         (await p.locator("body").innerText()).includes(
-          "No published records match",
+          "No past predictions found",
         ),
         "Empty filter",
       );
@@ -192,7 +219,7 @@ async function main() {
       await visit(p, "/track-record?team=Synthetic%20History%20Home%2042");
       ok(
         (await p.locator("body").innerText()).includes(
-          "Insufficient qualifying price evidence",
+          "Not enough confirmed past odds",
         ),
         "Insufficient sample",
       );

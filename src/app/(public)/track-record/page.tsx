@@ -28,9 +28,9 @@ export async function generateMetadata({
   const totals = await getSettledTotals();
   const viewer = await getViewerEntitlement();
   return {
-    title: "Football Prediction Performance & Track Record",
+    title: "Prediction Results & Win Rate",
     description:
-      "Inspect recorded outcomes, verified samples, historical predictions and publication-price evidence. Transparent methods and explicit limitations.",
+      "Browse past football predictions, wins, losses and monthly results. See how win rates and estimated returns are calculated.",
     alternates: { canonical: "/track-record" },
     robots:
       viewer.userId || Object.keys(searchParams).length || totals.total < 20
@@ -68,7 +68,7 @@ export default async function TrackRecordPage({
       />
       <details className="mt-8 border-t border-brand-border pt-2">
         <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">
-          Earlier monthly reports
+          Previous Monthly Results
         </summary>
         <nav aria-label="Monthly reports" className="flex flex-wrap gap-3">
           {archive.map((key) => (
@@ -85,7 +85,7 @@ export default async function TrackRecordPage({
           href="/methodology"
           className="inline-flex min-h-11 items-center text-xs text-gray-400"
         >
-          Read the methodology →
+          How our predictions work →
         </Link>
       </details>
     </>

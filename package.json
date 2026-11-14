@@ -137,7 +137,8 @@
     "check:sprint08-browser": "tsx scripts/check-sprint08-browser.ts",
     "check:sprint09": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-sprint09.tsx",
     "check:sprint09-postgres": "tsx scripts/check-sprint09-postgres.ts",
-    "check:sprint09-browser": "tsx scripts/check-sprint09-browser.ts"
+    "check:sprint09-browser": "tsx scripts/check-sprint09-browser.ts",
+    "check:sprint09-copy": "tsx scripts/check-sprint09-copy.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
