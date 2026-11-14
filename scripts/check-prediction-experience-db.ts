@@ -12,6 +12,8 @@
  */
 export {};
 
+// personalizationData reaches modules that call React cache(); make it a pass-through outside Next.
+import "./lib/reactCacheShim";
 import { assertIntegrationDatabase } from "./lib/dbSafety";
 
 let passed = 0;

@@ -91,7 +91,7 @@ No new copy uses "AI", and none implies a guaranteed result.
 | `check-prediction-experience` (status, labels, saved state, boundary) | pure | 119 pass |
 | `check-prediction-experience-render` (table, cell, clock, dashboard, locked masking) | render | 60 pass |
 | `check-prediction-experience-browser` (Chromium, 320/375/414/768/1440) | render + browser | pass |
-| `check-prediction-experience-db` (status lookup, own rows only) | integration | **not run here** (see below) |
+| `check-prediction-experience-db` (status lookup, own rows only) | integration | 9 pass (disposable Postgres) |
 | `check-prediction-view` (relative kickoff fixed) | render | 141 pass |
 | `tsc --noEmit`, `next build` | | clean |
 
@@ -105,10 +105,13 @@ are the same four as on `master` in this environment — `check-house-banners`,
 fails here only because a local `.env` database identity is present (it also
 fails on `master` with that `.env`).
 
-The integration check was written and type-checked but not executed: creating
-the isolated second database it requires was declined by the environment's
-safety classifier. Run `npm run preflight:integration` against a disposable
-database before merge.
+The integration check ran against a throwaway local Postgres (separate
+instance, no real data) through the integration guard: 9 pass. The other five
+integration checks also pass (30, 30, 7, 65 and 9). Run one at a time,
+because `check-tier-provenance` (reliability-owned, untouched) writes `JobRun`
+rows that the guard then reads as a live scheduler and refuses later steps, so
+`npm run preflight:integration` as a single command stops after its first step
+on a fresh database that has an admin user.
 
 ## 6. Performance
 
