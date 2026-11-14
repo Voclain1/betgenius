@@ -39,6 +39,7 @@ These checks insert their own rows and delete them afterwards:
 - `check-betofday-targeting` (it also upserts `FixtureOddsCache` rows)
 - `check-personalization-db` (users, predictions, follows, preferences, saved predictions and one league/team cache row; Sprint 01)
 - `check-match-centre-db` (two FixtureDetailCache rows, to test result capture; Sprint 02)
+- `check-prediction-experience-db` (four FixtureDetailCache rows, to test the provider status lookup; Sprint 03)
 
 They never run against Production. The repository holds no fingerprint of any real database, not even a hash. Every comparison is made at runtime, against the database identities the machine running the checks actually has.
 

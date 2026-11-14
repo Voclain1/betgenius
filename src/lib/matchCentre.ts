@@ -21,7 +21,7 @@
  * - These are historical observations. Nothing here is a probability.
  */
 import { verifiedHistory, type InsightScope } from "@/lib/insights";
-import { classifyStatus, isIrregular, statusLabel } from "@/lib/matchStatus";
+import { statusLabel } from "@/lib/matchStatus";
 import type { H2HMeeting } from "@/lib/h2h";
 import type { LeagueStandingRow } from "@/lib/enrichment";
 
@@ -485,45 +485,11 @@ export function tableSentence(ctx: TableContext, homeTeam: string, awayTeam: str
 }
 
 // ---------------------------------------------------------------------------
-// Match state
+// Match state — implemented in src/lib/matchState.ts (kept small for client use)
 // ---------------------------------------------------------------------------
 
-export type MatchState = "scheduled" | "live" | "finished" | "postponed" | "cancelled" | "abandoned" | "awarded" | "suspended" | "unknown";
-
-const IRREGULAR_STATE: Record<string, MatchState> = { PST: "postponed", CANC: "cancelled", ABD: "abandoned", AWD: "awarded", WO: "awarded", SUSP: "suspended", INT: "suspended" };
-
-/**
- * What the page may say about the fixture. A provider status code, when we
- * hold one, decides it — a stored final score alone never makes a postponed
- * or abandoned fixture "finished". Without a code, a settled final score
- * means finished, a future kickoff means scheduled, and a past kickoff with
- * nothing else is "unknown" rather than a guess at live.
- */
-export function matchState(input: { statusShort?: string | null; finalScore?: { home: number; away: number } | null; kickoff: Date; now?: Date }): MatchState {
-  const code = input.statusShort ?? null;
-  if (code) {
-    if (IRREGULAR_STATE[code]) return IRREGULAR_STATE[code];
-    if (isIrregular(code)) return "cancelled";
-    const group = classifyStatus(code);
-    if (group === "live") return "live";
-    if (group === "upcoming") return (input.now ?? new Date()) < input.kickoff ? "scheduled" : "unknown";
-    return "finished";
-  }
-  if (input.finalScore) return "finished";
-  return (input.now ?? new Date()) < input.kickoff ? "scheduled" : "unknown";
-}
-
-export const MATCH_STATE_LABEL: Record<MatchState, string> = {
-  scheduled: "Scheduled",
-  live: "In play",
-  finished: "Full time",
-  postponed: "Postponed",
-  cancelled: "Cancelled",
-  abandoned: "Abandoned",
-  awarded: "Result awarded",
-  suspended: "Suspended",
-  unknown: "Result pending",
-};
+export { matchState, MATCH_STATE_LABEL, type MatchState } from "@/lib/matchState";
+import type { MatchState } from "@/lib/matchState";
 
 // ---------------------------------------------------------------------------
 // Completed-match record (stored in FixtureDetailCache.detailJson.result)

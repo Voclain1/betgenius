@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { classifyStatus, statusLabel } from "@/lib/matchStatus";
+import { rowStatus } from "@/lib/predictionStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
 /**
@@ -134,6 +135,7 @@ export function ScoreCell({
   size = "sm",
   hideWhenEmpty = false,
   emptyClassName = "",
+  statusCode,
 }: {
   homeTeamApiId?: number | null;
   awayTeamApiId?: number | null;
@@ -148,8 +150,19 @@ export function ScoreCell({
   hideWhenEmpty?: boolean;
   /** Extra classes on the before-kickoff dash, e.g. to show it only on wider screens. */
   emptyClassName?: string;
+  /**
+   * Provider status from the captured result record, when the caller has one
+   * (Sprint 03). Only end states are believed — see src/lib/predictionStatus.ts.
+   * No loader supplies it on the public feeds yet; the dashboard and saved
+   * list do. Without it the label comes from the clock alone.
+   */
+  statusCode?: string | null;
 }) {
   const live = useLive(homeTeamApiId, awayTeamApiId, kickoff);
+  // Read once at render. Server and browser can differ by a few seconds, which
+  // only matters exactly at a threshold; the label element suppresses that
+  // one-off hydration difference rather than polling.
+  const [now] = useState(() => new Date());
   const right = align === "right";
   const wrap = `space-y-0.5 ${right ? "text-right" : ""}`;
   const score = (h: number | null | undefined, a: number | null | undefined, tone: string) => (
@@ -190,6 +203,19 @@ export function ScoreCell({
       <div className={wrap}>
         {label("FT", "text-gray-500")}
         {score(live.home, live.away, "text-gray-200")}
+      </div>
+    );
+  }
+  // No live data and no stored score. Say what is actually known instead of
+  // leaving a started, postponed or finished-but-unsettled match looking like
+  // an upcoming one. An ordinary upcoming match has no label and is unchanged.
+  const status = rowStatus({ statusCode, kickoff, now });
+  if (status.label) {
+    return (
+      <div className={wrap} suppressHydrationWarning>
+        <div className={`text-[10px] font-black uppercase leading-tight tracking-[0.12em] ${right ? "max-w-[6.5rem]" : "whitespace-nowrap"} ${status.tone === "warn" ? "text-amber-400" : "text-gray-500"}`} suppressHydrationWarning>
+          {status.label}
+        </div>
       </div>
     );
   }

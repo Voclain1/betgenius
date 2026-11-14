@@ -1,4 +1,4 @@
-import { kickoffLabel, footballDay } from "@/lib/footballTime";
+import { kickoffLabel, footballDate } from "@/lib/footballTime";
 import { SavePredictionButton } from "@/components/SavePredictionButton";
 import { Fragment } from "react";
 import Link from "next/link";
@@ -36,6 +36,12 @@ export type PredictionTableRow = {
   /** The match's final score, stored when the tip settles. */
   finalHomeScore?: number | null;
   finalAwayScore?: number | null;
+  /**
+   * Provider status short code for the fixture, when a loader has one from the
+   * captured result record (Sprint 03). Optional and additive: rows without it
+   * render as before, with a status word from the clock alone.
+   */
+  matchStatus?: string | null;
   fixture?: {
     kickoff: string | Date;
     league: { name: string };
@@ -43,6 +49,27 @@ export type PredictionTableRow = {
     awayTeam: { name: string };
   } | null;
 };
+
+/**
+ * Kickoff as a machine-readable `<time>`, set as two short lines: the time, then
+ * the date and zone. One line of "Sat 08:36 WAT" wrapped to three in the
+ * narrow column, and carried a weekday with no date, which on a team or league
+ * page (several weeks of fixtures in one list) does not say which Saturday.
+ */
+function KickoffStack({ at }: { at: string | Date }) {
+  const d = new Date(at);
+  if (!Number.isFinite(d.getTime())) return <span>—</span>;
+  const time = footballDate(d, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const day = footballDate(d, { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <time dateTime={d.toISOString()} title={kickoffLabel(d)} className="block whitespace-nowrap leading-tight">
+      <span className="block font-bold tabular-nums text-gray-200">
+        {time} <span className="text-[11px] font-semibold text-gray-500">WAT</span>
+      </span>
+      <span className="block text-[11px] font-semibold text-gray-500">{day}</span>
+    </time>
+  );
+}
 
 /**
  * `ads` is OPT-IN and defaults to nothing.
@@ -119,7 +146,9 @@ export function PredictionsTable({
             const slug = home ? matchSlug({ homeTeam: home, awayTeam: away, kickoff }) : null;
             const matchHref = slug ? `/predictions/match/${slug}` : null;
             const visual = getLeagueVisual(p.leagueApiId);
-            const when = kickoff ? kickoffLabel(kickoff) : null;
+            // The date is included: a weekday alone is ambiguous in a list that spans weeks.
+            const whenDate = kickoff ? new Date(kickoff) : null;
+            const when = whenDate && Number.isFinite(whenDate.getTime()) ? `${footballDate(whenDate, { weekday: "short", day: "numeric", month: "short" })} ${footballDate(whenDate, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })} WAT` : null;
             return (
               <Fragment key={p.id}>
               <tr className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-2xl bg-brand-card px-3.5 py-2.5 ring-1 ring-brand-border transition active:ring-brand/60 sm:static sm:table-row sm:rounded-none sm:bg-transparent sm:p-0 sm:ring-0 sm:hover:bg-brand-bg/40">
@@ -130,7 +159,7 @@ export function PredictionsTable({
                     <img src={visual.src} alt="" width={12} height={12} loading="lazy" className="shrink-0 rounded-sm object-contain" />
                   )}
                   <span className="truncate">{visual?.name ?? leagueName ?? "—"}</span>
-                  {when && <span className="shrink-0">· {when}</span>}
+                  {when && whenDate && <time dateTime={whenDate.toISOString()} className="shrink-0">· {when}</time>}
                 </td>
                 <td className="hidden px-3 py-3 sm:table-cell">
                   {leagueName ? (
@@ -180,6 +209,7 @@ export function PredictionsTable({
                     kickoff={kickoff}
                     finalHomeScore={p.finalHomeScore}
                     finalAwayScore={p.finalAwayScore}
+                    statusCode={p.matchStatus}
                     emptyClassName="hidden sm:inline"
                   />
                 </td>
@@ -203,13 +233,13 @@ export function PredictionsTable({
                     {!p.locked && <SavePredictionButton predictionId={p.id} source="card" size="sm" className="-my-2 hidden shrink-0 sm:inline-flex md:hidden" />}
                   </div>
                 </td>
-                <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? `${p.confidence}%` : "—"}</td>
+                <td className="col-start-2 row-start-1 text-right text-xs font-black tabular-nums text-gray-100 sm:hidden md:table-cell md:px-3 md:py-3 md:text-sm">{p.confidence != null ? <><span className="sr-only">Confidence </span>{p.confidence}%</> : "—"}</td>
                 <td className="hidden px-3 py-3 text-gray-400 md:table-cell">
                   {/* The save control rides in this cell rather than a new
                       column, so the column count, the ad rows and the phone
                       grid are unchanged. Never on a locked row. */}
                   <div className="flex items-center justify-between gap-1">
-                    <span>{kickoff ? kickoffLabel(kickoff) : "—"}</span>
+                    {kickoff ? <KickoffStack at={kickoff} /> : <span>—</span>}
                     {!p.locked && <SavePredictionButton predictionId={p.id} source="card" className="-my-2 shrink-0" />}
                   </div>
                 </td>

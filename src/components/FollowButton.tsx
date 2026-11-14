@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Check, Plus } from "lucide-react";
 import { trackEngagement } from "@/lib/engagement";
 
 export type FollowTargetType = "TEAM" | "LEAGUE" | "PREDICTION" | "CATEGORY";
@@ -72,14 +73,25 @@ export function FollowButton({
   }, [status, targetType, targetKey, initiallyFollowing]);
 
   const shown = short !== undefined ? (short ? ` ${short}` : "") : subject ? ` ${subject}` : "";
-  const cls = `btn btn-ghost text-xs${short !== undefined ? " whitespace-nowrap rounded-full px-3 py-1.5" : ""}`;
+  // A bare crest-and-"Follow" chip (short="") cannot say WHICH team or
+  // competition when three sit in a row, and without the crest (slow image,
+  // screen reader) says nothing. With a subject, such a chip now names it.
+  const nameChip = short === "" && !!subject;
+  const cls = `btn btn-ghost text-xs${short !== undefined ? " min-h-9 whitespace-nowrap rounded-full px-3 py-1.5" : ""}`;
   const named = short !== undefined && subject ? { "aria-label": `Follow ${subject}` } : {};
 
   if (status !== "authenticated") {
     return (
       <Link className={cls} href={`/login?callbackUrl=${encodeURIComponent(path)}`} title={subject ? `Follow ${subject}` : undefined} {...named}>
         {icon}
-        Follow{short !== undefined ? shown : subject ? ` ${subject}` : compact ? "" : " this"}
+        {nameChip ? (
+          <>
+            <span className="max-w-[11rem] truncate">{subject}</span>
+            <Plus size={12} aria-hidden />
+          </>
+        ) : (
+          <>Follow{short !== undefined ? shown : subject ? ` ${subject}` : compact ? "" : " this"}</>
+        )}
       </Link>
     );
   }
@@ -112,13 +124,20 @@ export function FollowButton({
   return (
     <button type="button" className={cls} disabled={pending} aria-pressed={following} title={error || (subject ? `Follow ${subject}` : undefined)} onClick={toggle} {...named}>
       {icon}
-      {pending
-        ? "Saving…"
-        : error
-          ? "Retry"
-          : following
-            ? `Following${shown} ✓`
-            : `Follow${shown}`}
+      {pending ? (
+        "Saving…"
+      ) : error ? (
+        "Retry"
+      ) : nameChip ? (
+        <>
+          <span className="max-w-[11rem] truncate">{subject}</span>
+          {following ? <Check size={12} aria-hidden /> : <Plus size={12} aria-hidden />}
+        </>
+      ) : following ? (
+        `Following${shown} ✓`
+      ) : (
+        `Follow${shown}`
+      )}
     </button>
   );
 }

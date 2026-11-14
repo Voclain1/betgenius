@@ -206,6 +206,8 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
             <Link href="/admin" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Admin</Link>
           )}
           <Link href="/dashboard" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
+          {/* Saved predictions were reachable only through the dashboard's own sidebar. */}
+          <Link href="/dashboard/saved" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Saved predictions</Link>
           <Link href="/following" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
           {/* Detaches this browser's push subscription before signing out, so
               the next person to sign in here is not sent the previous user's
@@ -247,6 +249,7 @@ function AccountMenu({ isAdmin }: { isAdmin: boolean }) {
             <Link href="/admin" prefetch={false} onClick={close} className={MENU_ITEM}>Admin</Link>
           )}
           <Link href="/dashboard" prefetch={false} onClick={close} className={MENU_ITEM}>Dashboard</Link>
+          <Link href="/dashboard/saved" prefetch={false} onClick={close} className={MENU_ITEM}>Saved predictions</Link>
           <Link href="/following" prefetch={false} onClick={close} className={MENU_ITEM}>Following</Link>
           <div className="mx-3 my-1 border-t border-brand-border" />
           <LogoutButton className={MENU_ITEM} onBeforeLogout={close} />

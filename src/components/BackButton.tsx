@@ -97,7 +97,7 @@ export function BackButton() {
       // but still a ~36px tall tap target. mb-3 lives here rather than on a
       // wrapper in the layout so that when this returns null the gap
       // disappears with it and the heading keeps its original position.
-      className="mb-3 inline-flex items-center gap-1 rounded-lg border border-brand-border py-1.5 pl-1.5 pr-3 text-sm text-gray-300 transition hover:bg-brand-card md:hidden"
+      className="mb-3 inline-flex min-h-10 items-center gap-1 rounded-lg border border-brand-border py-1.5 pl-1.5 pr-3 text-sm text-gray-300 transition hover:bg-brand-card md:hidden"
     >
       <ChevronLeft size={18} />
       Back

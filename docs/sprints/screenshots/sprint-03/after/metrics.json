@@ -1,0 +1,668 @@
+{
+ "home@320": {
+  "overflow": true,
+  "scrollW": 390,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 4,
+  "rowMedianH": 137,
+  "smallTargets": 20,
+  "smallSample": [
+   "Sign in to save this pre(32x32)",
+   "Open the prediction for (28x28)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)"
+  ],
+  "tinyText": 31,
+  "h1": "Football Predictions Today — Including Today's Banker",
+  "pageH": 17232
+ },
+ "home@375": {
+  "overflow": true,
+  "scrollW": 390,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 4,
+  "rowMedianH": 117,
+  "smallTargets": 21,
+  "smallSample": [
+   "Sign in to save this pre(32x32)",
+   "Open the prediction for (28x28)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)"
+  ],
+  "tinyText": 33,
+  "h1": "Football Predictions Today — Including Today's Banker",
+  "pageH": 15158
+ },
+ "home@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 4,
+  "rowMedianH": 117,
+  "smallTargets": 21,
+  "smallSample": [
+   "Sign in to save this pre(32x32)",
+   "Open the prediction for (28x28)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)"
+  ],
+  "tinyText": 33,
+  "h1": "Football Predictions Today — Including Today's Banker",
+  "pageH": 14235
+ },
+ "home@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 4,
+  "rowMedianH": 125,
+  "smallTargets": 19,
+  "smallSample": [
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)",
+   "Over 2.5(76x32)"
+  ],
+  "tinyText": 32,
+  "h1": "Football Predictions Today — Including Today's Banker",
+  "pageH": 10173
+ },
+ "home@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 4,
+  "rowMedianH": 81,
+  "smallTargets": 20,
+  "smallSample": [
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)",
+   "Over 2.5(76x32)"
+  ],
+  "tinyText": 32,
+  "h1": "Football Predictions Today — Including Today's Banker",
+  "pageH": 8607
+ },
+ "today@320": {
+  "overflow": false,
+  "scrollW": 320,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 15,
+  "rowMedianH": 117,
+  "smallTargets": 33,
+  "smallSample": [
+   "Follow this(95x34)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)",
+   "Over 1.5 Goals(101x17)"
+  ],
+  "tinyText": 49,
+  "h1": "Football predictions today",
+  "pageH": 8162
+ },
+ "today@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 15,
+  "rowMedianH": 117,
+  "smallTargets": 34,
+  "smallSample": [
+   "Follow this(95x34)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)",
+   "Over 1.5 Goals(101x17)"
+  ],
+  "tinyText": 55,
+  "h1": "Football predictions today",
+  "pageH": 7480
+ },
+ "today@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 15,
+  "rowMedianH": 117,
+  "smallTargets": 34,
+  "smallSample": [
+   "Follow this(95x34)",
+   "BTTS Yes(66x17)",
+   "Sign in to save this pre(32x32)",
+   "Over 1.5 Goals(101x17)"
+  ],
+  "tinyText": 55,
+  "h1": "Football predictions today",
+  "pageH": 7122
+ },
+ "today@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 15,
+  "rowMedianH": 105,
+  "smallTargets": 15,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)"
+  ],
+  "tinyText": 21,
+  "h1": "Football predictions today",
+  "pageH": 5275
+ },
+ "today@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 15,
+  "rowMedianH": 81,
+  "smallTargets": 19,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)"
+  ],
+  "tinyText": 21,
+  "h1": "Football predictions today",
+  "pageH": 4369
+ },
+ "genius@320": {
+  "overflow": false,
+  "scrollW": 320,
+  "cards": 2,
+  "cardMedianH": 613,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 9,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Bundesliga(87x20)",
+   "Full prediction(117x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 10,
+  "h1": "Genius tips",
+  "pageH": 3617
+ },
+ "genius@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 2,
+  "cardMedianH": 518,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 9,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Bundesliga(87x20)",
+   "Full prediction(117x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 10,
+  "h1": "Genius tips",
+  "pageH": 3407
+ },
+ "genius@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 2,
+  "cardMedianH": 495,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 9,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Bundesliga(87x20)",
+   "Full prediction(117x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 10,
+  "h1": "Genius tips",
+  "pageH": 3310
+ },
+ "genius@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 2,
+  "cardMedianH": 518,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 9,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)"
+  ],
+  "tinyText": 10,
+  "h1": "Genius tips",
+  "pageH": 2445
+ },
+ "genius@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 2,
+  "cardMedianH": 628,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 12,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Straight Wins(105x32)",
+   "Double Chance(115x32)",
+   "BTTS(57x32)"
+  ],
+  "tinyText": 10,
+  "h1": "Genius tips",
+  "pageH": 2021
+ },
+ "banker@320": {
+  "overflow": false,
+  "scrollW": 320,
+  "cards": 2,
+  "cardMedianH": 408,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 7,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Serie A(65x20)",
+   "Premier League(114x20)",
+   "Today(69x32)"
+  ],
+  "tinyText": 7,
+  "h1": "Banker predictions today",
+  "pageH": 6977
+ },
+ "banker@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 2,
+  "cardMedianH": 408,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 7,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Serie A(65x20)",
+   "Premier League(114x20)",
+   "Today(100x32)"
+  ],
+  "tinyText": 7,
+  "h1": "Banker predictions today",
+  "pageH": 6332
+ },
+ "banker@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 2,
+  "cardMedianH": 360,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 7,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Serie A(65x20)",
+   "Premier League(114x20)",
+   "Today(113x32)"
+  ],
+  "tinyText": 7,
+  "h1": "Banker predictions today",
+  "pageH": 6057
+ },
+ "banker@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 2,
+  "cardMedianH": 383,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 3,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Serie A(65x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 6,
+  "h1": "Banker predictions today",
+  "pageH": 4404
+ },
+ "banker@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 2,
+  "cardMedianH": 408,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 6,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Serie A(65x20)",
+   "Premier League(114x20)",
+   "Today(99x32)"
+  ],
+  "tinyText": 6,
+  "h1": "Banker predictions today",
+  "pageH": 3799
+ },
+ "vip@320": {
+  "overflow": false,
+  "scrollW": 320,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 5,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Today(69x32)",
+   "Tomorrow(91x32)",
+   "Weekend(86x32)"
+  ],
+  "tinyText": 1,
+  "h1": "VIP tips",
+  "pageH": 2574
+ },
+ "vip@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 5,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Today(100x32)",
+   "Tomorrow(100x32)",
+   "Weekend(100x32)"
+  ],
+  "tinyText": 1,
+  "h1": "VIP tips",
+  "pageH": 2486
+ },
+ "vip@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 5,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Today(113x32)",
+   "Tomorrow(113x32)",
+   "Weekend(113x32)"
+  ],
+  "tinyText": 1,
+  "h1": "VIP tips",
+  "pageH": 2443
+ },
+ "vip@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 1,
+  "smallSample": [
+   "Follow this(95x34)"
+  ],
+  "tinyText": 0,
+  "h1": "VIP tips",
+  "pageH": 2034
+ },
+ "vip@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 4,
+  "smallSample": [
+   "Follow this(95x34)",
+   "Today(99x32)",
+   "Tomorrow(99x32)",
+   "Weekend(99x32)"
+  ],
+  "tinyText": 0,
+  "h1": "VIP tips",
+  "pageH": 1500
+ },
+ "match@320": {
+  "overflow": false,
+  "scrollW": 320,
+  "cards": 1,
+  "cardMedianH": 406,
+  "rows": 27,
+  "rowMedianH": 30,
+  "smallTargets": 24,
+  "smallSample": [
+   "Arsenal(92x29)",
+   "Chelsea(95x29)",
+   "Editorial policy(83x15)",
+   "Verdict(68x32)"
+  ],
+  "tinyText": 83,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 9104
+ },
+ "match@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 1,
+  "cardMedianH": 346,
+  "rows": 27,
+  "rowMedianH": 30,
+  "smallTargets": 24,
+  "smallSample": [
+   "Arsenal(92x29)",
+   "Chelsea(95x29)",
+   "Editorial policy(83x15)",
+   "Verdict(68x32)"
+  ],
+  "tinyText": 83,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 8558
+ },
+ "match@414": {
+  "overflow": false,
+  "scrollW": 414,
+  "cards": 1,
+  "cardMedianH": 324,
+  "rows": 27,
+  "rowMedianH": 29,
+  "smallTargets": 23,
+  "smallSample": [
+   "Arsenal(92x29)",
+   "Chelsea(95x29)",
+   "Verdict(68x32)",
+   "Form & goals(101x32)"
+  ],
+  "tinyText": 83,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 8352
+ },
+ "match@768": {
+  "overflow": false,
+  "scrollW": 768,
+  "cards": 1,
+  "cardMedianH": 345,
+  "rows": 27,
+  "rowMedianH": 29,
+  "smallTargets": 17,
+  "smallSample": [
+   "Editorial policy(83x15)",
+   "Verdict(68x32)",
+   "Form & goals(101x32)",
+   "Lineups(72x32)"
+  ],
+  "tinyText": 89,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 7027
+ },
+ "match@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 1,
+  "cardMedianH": 406,
+  "rows": 27,
+  "rowMedianH": 29,
+  "smallTargets": 20,
+  "smallSample": [
+   "Editorial policy(83x15)",
+   "Verdict(68x32)",
+   "Form & goals(101x32)",
+   "Lineups(72x32)"
+  ],
+  "tinyText": 90,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 6464
+ },
+ "dashboard-free@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 2,
+  "smallSample": [
+   "All of today(83x16)",
+   "Add(40x16)"
+  ],
+  "tinyText": 15,
+  "h1": "Good morning, Chidi",
+  "pageH": 2647
+ },
+ "dashboard-free@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 2,
+  "smallSample": [
+   "All of today(83x16)",
+   "Add(40x16)"
+  ],
+  "tinyText": 8,
+  "h1": "Good morning, Chidi",
+  "pageH": 1322
+ },
+ "saved-free@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 0,
+  "smallSample": [],
+  "tinyText": 0,
+  "h1": "Saved predictions",
+  "pageH": 800
+ },
+ "saved-free@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 0,
+  "cardMedianH": 0,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 0,
+  "smallSample": [],
+  "tinyText": 0,
+  "h1": "Saved predictions",
+  "pageH": 1000
+ },
+ "match-vip@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 1,
+  "cardMedianH": 346,
+  "rows": 27,
+  "rowMedianH": 30,
+  "smallTargets": 24,
+  "smallSample": [
+   "Arsenal(92x29)",
+   "Chelsea(95x29)",
+   "Editorial policy(83x15)",
+   "Verdict(68x32)"
+  ],
+  "tinyText": 85,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 8514
+ },
+ "match-vip@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 1,
+  "cardMedianH": 406,
+  "rows": 27,
+  "rowMedianH": 29,
+  "smallTargets": 20,
+  "smallSample": [
+   "Editorial policy(83x15)",
+   "Verdict(68x32)",
+   "Form & goals(101x32)",
+   "Lineups(72x32)"
+  ],
+  "tinyText": 92,
+  "h1": "Arsenal vs Chelsea prediction",
+  "pageH": 6464
+ },
+ "vip-vip@375": {
+  "overflow": false,
+  "scrollW": 375,
+  "cards": 2,
+  "cardMedianH": 676,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 9,
+  "smallSample": [
+   "Follow(71x34)",
+   "Serie A(65x20)",
+   "Full prediction(117x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 23,
+  "h1": "VIP tips",
+  "pageH": 5359
+ },
+ "vip-vip@1440": {
+  "overflow": false,
+  "scrollW": 1440,
+  "cards": 2,
+  "cardMedianH": 722,
+  "rows": 0,
+  "rowMedianH": 0,
+  "smallTargets": 8,
+  "smallSample": [
+   "Follow(71x34)",
+   "Serie A(65x20)",
+   "Full prediction(117x20)",
+   "Premier League(114x20)"
+  ],
+  "tinyText": 22,
+  "h1": "VIP tips",
+  "pageH": 3242
+ }
+}
