@@ -15,7 +15,7 @@ export function scopeGroup(leagueApiId: number | null | undefined): ScopeGroup {
 
 /** Per kickoff day: how the dedicated pass's recorded scope treated that day's covered widened-scope fixtures. */
 export function kickoffDayScope() {
-  return { fixtures: 0, everInScope: 0, neverInScope: 0, neverInScopeLopsided: 0, noRunInWindow: 0, attempted: 0 };
+  return { fixtures: 0, everInScope: 0, neverInScope: 0, neverInScopeLopsided: 0, neverInScopeLopsidedAdmissible: 0, noRunInWindow: 0, attempted: 0 };
 }
 
 /**

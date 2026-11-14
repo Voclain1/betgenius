@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   PAID_CORE_LEAGUE_IDS, PAID_WIDENED_LEAGUE_IDS, PAID_ANY_LEAGUE_IDS, planVipPremiumCandidates, qualifyVipPremiumTargets, spareQuotaSlotsByDay,
-  spareQuotaWideningMode, vipPremiumOddsToWarm, VIP_MARKET_FLOOR, PREMIUM_MARKET_FLOOR, PAID_MAX_MARKET_PROBABILITY,
+  spareQuotaWideningMode, vipPremiumOddsToWarm, lagosDayEnd, SPARE_QUOTA_DAY_END_LEAD_MS, VIP_MARKET_FLOOR, PREMIUM_MARKET_FLOOR, PAID_MAX_MARKET_PROBABILITY,
   type OverlayQuote,
 } from "../src/lib/vipPremiumOverlay";
 import { MC_MAX_GAP_PP, MC_MIN_BOOKMAKERS, MC_MIN_MODEL_CONFIDENCE } from "../src/lib/marketConfirmed";
@@ -90,7 +90,7 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
 {
   // A healthy window: 4 core fixtures, so paidScopeFor does not widen.
   const core = [fx(1, CORE, 20), fx(2, CORE, 21), fx(3, CORE, 22), fx(4, CORE, 23)];
-  const wide = fx(10, WIDE, 22);
+  const wide = fx(10, WIDE, 13);
   const outside = fx(11, OUTSIDE, 22);
   const wideNoSlot = fx(12, WIDE, 40);
   const all = [...core, wide, outside, wideNoSlot];
@@ -126,8 +126,8 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
 
 // ── 4. Qualification and warming ─────────────────────────────────────────
 {
-  const day = lagosDateKey(new Date(NOW.getTime() + 22 * H));
-  const w1 = fx(30, WIDE, 22), w2 = fx(31, WIDE, 22.5), w3 = fx(32, WIDE, 23), c1 = fx(33, CORE, 21);
+  const day = lagosDateKey(new Date(NOW.getTime() + 13 * H));
+  const w1 = fx(30, WIDE, 12.5), w2 = fx(31, WIDE, 13), w3 = fx(32, WIDE, 13.5), c1 = fx(33, CORE, 21);
   const cand = (f: ReturnType<typeof fx>, spare: boolean) => ({ matchKey: f.key, fixtureApiId: f.fixtureApiId, leagueApiId: f.ledger.leagueApiId, leagueName: null, homeTeam: "H", awayTeam: "A", homeTeamApiId: 1, awayTeamApiId: 2, kickoff: f.kickoff, round: null, ...(spare ? { viaSpareQuota: true as const } : {}) });
   const cands = [cand(c1, false), cand(w1, true), cand(w2, true), cand(w3, true)];
   const quotes = new Map(cands.map((c) => [c.matchKey, fresh(80)]));
@@ -189,12 +189,14 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
 {
   // Late discovery guard: spare slots apply only inside 24h of kickoff.
   const core = [fx(91, CORE, 20), fx(92, CORE, 21), fx(93, CORE, 22), fx(94, CORE, 23)];
-  const far = fx(95, WIDE, 30), near = fx(96, WIDE, 23.5);
-  const all8 = [...core, far, near];
-  const slots8 = new Map([[lagosDateKey(far.kickoff), 3], [lagosDateKey(near.kickoff), 3]]);
+  const far = fx(95, WIDE, 30), near = fx(96, WIDE, 13), early = fx(97, WIDE, 23.5);
+  const all8 = [...core, far, near, early];
+  const slots8 = new Map([[lagosDateKey(far.kickoff), 3], [lagosDateKey(near.kickoff), 3], [lagosDateKey(early.kickoff), 3]]);
   const p8 = planVipPremiumCandidates({ ledger: all8.map((f) => f.ledger), rows: all8.map((f) => f.row), attempts: [], now: NOW, spareQuota: { mode: "on", slots: slots8 } });
   check("8 a widened fixture more than 24h out is not admitted on spare quota (its day's core may not be discovered yet)", !p8.candidates.some((c) => c.matchKey === far.key) && !p8.spareQuota!.eligible.some((c) => c.matchKey === far.key));
-  check("8 inside 24h it is admitted", p8.candidates.some((c) => c.matchKey === near.key && c.viaSpareQuota));
+  check("8 inside 24h, with its Lagos day ending within 30h, it is admitted", p8.candidates.some((c) => c.matchKey === near.key && c.viaSpareQuota));
+  check("8 inside 24h but its Lagos day ends more than 30h away (an early fixture of a later day): not admitted", lagosDayEnd(early.kickoff) - NOW.getTime() > SPARE_QUOTA_DAY_END_LEAD_MS && !p8.candidates.some((c) => c.matchKey === early.key));
+  check("8 Lagos day end is 23:00 UTC of the Lagos date", lagosDayEnd(new Date("2026-11-06T23:30:00Z")) === Date.parse("2026-11-07T23:00:00Z") && lagosDayEnd(new Date("2026-11-06T22:30:00Z")) === Date.parse("2026-11-06T23:00:00Z"));
 }
 {
   const at = (iso: string) => new Date(iso);

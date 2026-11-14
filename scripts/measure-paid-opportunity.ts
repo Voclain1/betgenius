@@ -210,6 +210,8 @@ async function main() {
     else s.neverInScope++;
     if (x.attempted) s.attempted++;
     if (!inWindow.some((r) => r.widened) && inWindow.length > 0 && (x.closingHeadline ?? 0) >= 75) s.neverInScopeLopsided++;
+    // Admissible under the spare-quota bounds: kickoff at or after 06:00 Lagos (day end - 18h).
+    if (!inWindow.some((r) => r.widened) && inWindow.length > 0 && (x.closingHeadline ?? 0) >= 75 && x.kickoff.getTime() >= Date.parse(`${x.day}T23:00:00.000Z`) - 18 * H) s.neverInScopeLopsidedAdmissible++;
     dayScope.set(x.day, s);
   }
   console.log("  day        core  widenedFx  everInScope  neverInScope (lopsided>=75 closing)  noRunInWindow  attempted  VIP  verdict");
@@ -293,11 +295,11 @@ async function main() {
   for (const day of [...dayScope.keys()].sort()) {
     const s = dayScope.get(day)!;
     const core = all.filter((x) => x.day === day && x.succeeded && x.group === "PAID_CORE");
-    if (core.length < PAID_THIN_CORE_MIN || s.neverInScopeLopsided === 0) continue;
-    const slots = spareQuotaSlots({ quota: VIP_PREMIUM_DAILY_QUOTA, attemptsUsed: perDay.get(day) ?? 0, coreUnattempted: core.filter((x) => !x.attempted).length, widenedLopsidedOutOfScope: s.neverInScopeLopsided });
+    if (core.length < PAID_THIN_CORE_MIN || s.neverInScopeLopsidedAdmissible === 0) continue;
+    const slots = spareQuotaSlots({ quota: VIP_PREMIUM_DAILY_QUOTA, attemptsUsed: perDay.get(day) ?? 0, coreUnattempted: core.filter((x) => !x.attempted).length, widenedLopsidedOutOfScope: s.neverInScopeLopsidedAdmissible });
     if (!slots) continue;
     slotsTotal += slots;
-    console.log(`  ${day} core ${core.length} attempts ${perDay.get(day) ?? 0} core never attempted ${core.filter((x) => !x.attempted).length} widened lopsided out of scope ${s.neverInScopeLopsided} -> slots ${slots} VIP that day ${all.filter((x) => x.day === day && x.vip).length}`);
+    console.log(`  ${day} core ${core.length} attempts ${perDay.get(day) ?? 0} core never attempted ${core.filter((x) => !x.attempted).length} widened lopsided out of scope and admissible ${s.neverInScopeLopsidedAdmissible} (all ${s.neverInScopeLopsided}) -> slots ${slots} VIP that day ${all.filter((x) => x.day === day && x.vip).length}`);
   }
   console.log(`  total slots ${slotsTotal}; at the widened-scope conversion seen on thin days (${(100 * rate).toFixed(0)}% of ${promotedWidened.length} attempts) ~ ${(slotsTotal * rate).toFixed(1)} promotions over the window (upper bound: lopsidedness read at the closing quote)`);
   // ── J. Opportunity-loss table by competition ────────────────────────────
@@ -324,7 +326,7 @@ async function main() {
   }
   console.log("  (What the model would have drafted on them is unknown: no attempt was made. Counted only to size the pool.)");
   // ── L. Late core discoveries (spare-quota reservation risk) ─────────────
-  console.log("\n== L. Core fixtures that entered the ledger after their day's first widened fixture could have been admitted under the spare-quota rule (kickoff - 24h) ==");
+  console.log("\n== L. Core fixtures that entered the ledger after their day's first widened fixture could have been admitted under the spare-quota rule (kickoff - 24h, and Lagos day end - 30h) ==");
   let lateDays = 0, lateFx = 0, lateAttemptable = 0, lateLopsided = 0, daysChecked = 0;
   for (const day of [...new Set(all.map((x) => x.day))].sort()) {
     const wide = all.filter((x) => x.day === day && x.succeeded && x.group === "PAID_WIDENED");
@@ -333,7 +335,12 @@ async function main() {
     daysChecked++;
     // The earliest a spare-quota widened fixture can be admitted: 24h before its
     // kickoff (the rule's VIP_PREMIUM_WARM_WITHIN_MS bound).
-    const firstAdmit = Math.min(...wide.map((x) => x.kickoff.getTime())) - 24 * H;
+    // and once the Lagos day's end is within 30h (SPARE_QUOTA_DAY_END_LEAD_MS).
+    // Widened fixtures that can never be admitted under both bounds are skipped.
+    const dayEnd = Date.parse(`${day}T23:00:00.000Z`);
+    const admits = wide.map((x) => Math.max(x.kickoff.getTime() - 24 * H, dayEnd - 30 * H)).filter((t, i) => t <= wide[i].kickoff.getTime() - 12 * H);
+    if (!admits.length) continue;
+    const firstAdmit = Math.min(...admits);
     const late = core.filter((c) => c.ledgerCreated!.getTime() > firstAdmit);
     const attemptable = late.filter((c) => c.kickoff.getTime() - 12 * H > Math.max(c.ledgerCreated!.getTime(), firstAdmit));
     if (late.length) { lateDays++; lateFx += late.length; lateAttemptable += attemptable.length; lateLopsided += attemptable.filter((c) => (c.closingHeadline ?? 0) >= 75).length; }

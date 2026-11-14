@@ -333,9 +333,16 @@ export function planVipPremiumCandidates(input: {
       // already in the ledger and reserved (measured: scripts/
       // measure-paid-opportunity.ts section L). Earlier than that a later core
       // fixture of the day might not be discovered yet.
+      // ...and only once the END of its Lagos day is within
+      // SPARE_QUOTA_DAY_END_LEAD_MS: core fixtures are discovered at least 37h
+      // before kickoff (measured), so 30h before the day ends every core
+      // fixture of that day is in the ledger. Without this, an overnight
+      // widened fixture (Brazil, the Americas: ~00:00-02:00 Lagos) could be
+      // admitted before that evening's core fixtures were discovered.
       viaSpare = spareMode !== "off"
         && PAID_WIDENED_LEAGUE_IDS.includes(l.leagueApiId ?? -1)
         && l.kickoff.getTime() - input.now.getTime() <= VIP_PREMIUM_WARM_WITHIN_MS
+        && lagosDayEnd(l.kickoff) - input.now.getTime() <= SPARE_QUOTA_DAY_END_LEAD_MS
         && (input.spareQuota!.slots.get(lagosDateKey(l.kickoff)) ?? 0) > 0;
       // Counted exactly as before under shadow, so every existing counter is unchanged.
       if (!viaSpare || spareMode === "shadow") skip("OUT_OF_SCOPE");
@@ -524,6 +531,14 @@ export function qualifyVipPremiumTargets(
  * off     nothing computed.
  */
 export type SpareQuotaMode = "off" | "shadow" | "on";
+
+/** Spare slots of a Lagos day are offered only once its end is this close. See planVipPremiumCandidates. */
+export const SPARE_QUOTA_DAY_END_LEAD_MS = 30 * 3_600_000;
+
+/** End of the Lagos (UTC+1, no DST) calendar day a kickoff falls on, in ms. */
+export function lagosDayEnd(kickoff: Date): number {
+  return Date.parse(`${lagosDateKey(kickoff)}T23:00:00.000Z`);
+}
 
 export function spareQuotaWideningMode(env: Record<string, string | undefined> = process.env): SpareQuotaMode {
   const v = (env.PAID_SPARE_QUOTA_WIDENING ?? "").trim().toLowerCase();
