@@ -1,0 +1,132 @@
+[
+ {
+  "label": "signed-out /dashboard redirects to sign-in with a way back",
+  "pass": true,
+  "detail": "307 /api/auth/signin?callbackUrl=%2Fdashboard"
+ },
+ {
+  "label": "signed-out /dashboard/saved redirects to sign-in with a way back",
+  "pass": true,
+  "detail": "307 /api/auth/signin?callbackUrl=%2Fdashboard%2Fsaved"
+ },
+ {
+  "label": "signed-out /following redirects to sign-in with a way back",
+  "pass": true,
+  "detail": "307 /login?callbackUrl=%2Ffollowing"
+ },
+ {
+  "label": "new account lands in the setup flow, not an empty dashboard",
+  "pass": true,
+  "detail": "http://localhost:3000/dashboard/welcome"
+ },
+ {
+  "label": "new account: Following explains itself and offers 'Choose teams and competitions'",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "new account: no feed rows, no invented content",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "free user: a followed VIP pick is locked on Following (no pick text)",
+  "pass": true,
+  "detail": "Locked selection. Following does not change subscription access."
+ },
+ {
+  "label": "free user: a saved VIP pick shows 'upgrade to view' with no market, pick or price",
+  "pass": true,
+  "detail": "Saved predictions | Saved predictions |  | Each pick is kept exactly as you saved it, and its result is worked out for that pick — even if the prediction is later updated. 2 saved. |  | All | 2 | Upcoming | 1 | Settled | 1 | Won | 1 | Lost | 0 | Premier League | Sat 22:43 WAT | Newcastle | Aston Villa | VIP pick — | upgrade to view | Premie"
+ },
+ {
+  "label": "free user: the jump row shows the real counts only",
+  "pass": true,
+  "detail": "[\"Upcoming 2\",\"Saved 2\",\"Favourites 3\",\"Following\"]"
+ },
+ {
+  "label": "returning user: the jump row lists Upcoming, Saved 5, Favourites 3, Following",
+  "pass": true,
+  "detail": "[{\"t\":\"Upcoming 7\",\"h\":\"#upcoming\",\"minH\":36},{\"t\":\"Saved 5\",\"h\":\"#saved\",\"minH\":36},{\"t\":\"Favourites 3\",\"h\":\"#favourites\",\"minH\":36},{\"t\":\"Following\",\"h\":\"/following\",\"minH\":36}]"
+ },
+ {
+  "label": "jump links are at least 36px tall",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "tapping Saved brings the Saved section into view (was ~1,226px down)",
+  "pass": true,
+  "detail": "{\"hash\":\"#saved\",\"top\":64,\"vh\":800}"
+ },
+ {
+  "label": "dashboard_view fired once, with a 0/1 flag only",
+  "pass": true,
+  "detail": "[{\"name\":\"dashboard_view\",\"params\":{\"personalized\":1,\"page_template\":\"dashboard\"}}]"
+ },
+ {
+  "label": "the shortcut sent two fixed words (+ page_template)",
+  "pass": true,
+  "detail": "[{\"name\":\"account_shortcut\",\"params\":{\"target\":\"saved\",\"surface\":\"jump_row\",\"page_template\":\"dashboard\"}}]"
+ },
+ {
+  "label": "closed phone sidebar: nothing focusable behind it",
+  "pass": true,
+  "detail": 0
+ },
+ {
+  "label": "opened sidebar offers Saved predictions and Following",
+  "pass": true,
+  "detail": "My dashboard, Saved predictions, Following, Preferences"
+ },
+ {
+  "label": "sidebar Following click reported as surface 'sidebar'",
+  "pass": true,
+  "detail": "[{\"name\":\"account_shortcut\",\"params\":{\"target\":\"saved\",\"surface\":\"jump_row\",\"page_template\":\"dashboard\"}},{\"name\":\"account_shortcut\",\"params\":{\"target\":\"following\",\"surface\":\"sidebar\",\"page_template\":\"dashboard\"}}]"
+ },
+ {
+  "label": "following_view carries a bucket, not a count",
+  "pass": true,
+  "detail": "[{\"name\":\"following_view\",\"params\":{\"follows\":\"1_5\",\"page_template\":\"other\"}}]"
+ },
+ {
+  "label": "Following shows kickoff in the saved timezone with a clock label",
+  "pass": true,
+  "detail": "Premier League · Mon 18:43 WAT"
+ },
+ {
+  "label": "Following shows a recorded result for an allowed reader",
+  "pass": true,
+  "detail": "WONFT 1-3"
+ },
+ {
+  "label": "Following past-kickoff match with no result says so",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "saved list: settled rows say when they settled; saved price labelled",
+  "pass": true,
+  "detail": "WONFT 1–3settled 13 Nov"
+ },
+ {
+  "label": "saved_view fired once with the filter key",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "saved list: no sideways overflow at 375 (was 437px wide)",
+  "pass": true,
+  "detail": ""
+ },
+ {
+  "label": "no analytics event carries a name, email, team, id or pick",
+  "pass": true,
+  "detail": "[{\"name\":\"dashboard_view\",\"params\":{\"personalized\":1,\"page_template\":\"dashboard\"}},{\"name\":\"LCP\",\"params\":{\"value\":180,\"metric_value\":180,\"metric_id\":\"v3-1794672339355-9499163316371\",\"metric_rating\":\"good\",\"page_template\":\"dashboard\",\"non_interaction\":true}},{\"name\":\"account_shortcut\",\"params\":{\"tar"
+ },
+ {
+  "label": "desktop: the jump row is hidden (sections are side by side)",
+  "pass": true,
+  "detail": ""
+ }
+]

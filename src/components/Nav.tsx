@@ -15,6 +15,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { LogoutButton } from "@/components/LogoutButton";
 import { TIP_GROUPS, isCurrentPath, onTipsPage, type NavLink } from "@/lib/predictionNav";
 import { lockScroll } from "@/lib/scrollLock";
+import { trackAccountShortcut } from "@/lib/engagement";
 
 /**
  * The Tips menu's groups, and which link is the current page, live in
@@ -180,8 +181,8 @@ function AuthActions({ isAdmin, user, onNavigate, className, ...rest }: { isAdmi
           )}
           <Link href="/dashboard" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Account</Link>
           {/* Saved predictions were reachable only through the dashboard's own sidebar. */}
-          <Link href="/dashboard/saved" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Saved predictions</Link>
-          <Link href="/following" prefetch={false} onClick={onNavigate} className="btn btn-ghost text-sm">Following</Link>
+          <Link href="/dashboard/saved" prefetch={false} onClick={() => { trackAccountShortcut("saved", "account_menu"); onNavigate?.(); }} className="btn btn-ghost text-sm">Saved predictions</Link>
+          <Link href="/following" prefetch={false} onClick={() => { trackAccountShortcut("following", "account_menu"); onNavigate?.(); }} className="btn btn-ghost text-sm">Following</Link>
           {/* Detaches this browser's push subscription before signing out, so
               the next person to sign in here is not sent the previous user's
               notifications. Shared with DashboardShell — see src/lib/logout.ts. */}
@@ -222,8 +223,8 @@ function AccountMenu({ isAdmin }: { isAdmin: boolean }) {
             <Link href="/admin" prefetch={false} onClick={close} className={MENU_ITEM}>Admin</Link>
           )}
           <Link href="/dashboard" prefetch={false} onClick={close} className={MENU_ITEM}>Dashboard</Link>
-          <Link href="/dashboard/saved" prefetch={false} onClick={close} className={MENU_ITEM}>Saved predictions</Link>
-          <Link href="/following" prefetch={false} onClick={close} className={MENU_ITEM}>Following</Link>
+          <Link href="/dashboard/saved" prefetch={false} onClick={() => { trackAccountShortcut("saved", "account_menu"); close(); }} className={MENU_ITEM}>Saved predictions</Link>
+          <Link href="/following" prefetch={false} onClick={() => { trackAccountShortcut("following", "account_menu"); close(); }} className={MENU_ITEM}>Following</Link>
           <div className="mx-3 my-1 border-t border-brand-border" />
           <LogoutButton className={MENU_ITEM} onBeforeLogout={close} />
         </div>
@@ -341,7 +342,7 @@ export function Nav() {
             data-web-only
             aria-label="Get the app"
             title="Get the app"
-            className="btn btn-ghost h-9 w-9 justify-center p-0"
+            className="btn btn-ghost h-9 w-9 justify-center p-0 max-[359px]:hidden"
           >
             {/* Icon only: the label cost ~75px the bar does not have even at
                 its full 1280px. The drawer's entry keeps the words. */}
@@ -375,7 +376,7 @@ export function Nav() {
             // every width, so the drawer is the only way to reach Standings,
             // StatsPad, Multi Bets, pricing and the legal pages — hence the
             // app-shell override, which re-shows it above md.
-            className="btn btn-ghost p-2 lg:hidden app-shell-menu"
+            className="btn btn-ghost !px-2 p-2 lg:hidden app-shell-menu"
           >
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>

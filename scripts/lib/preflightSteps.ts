@@ -108,6 +108,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-odds-presentation.ts",
   `${RENDER} scripts/check-odds-presentation-render.tsx`,
   `${RENDER} scripts/check-odds-presentation-browser.tsx`,
+  "tsx scripts/check-return-experience.ts",
+  `${RENDER} scripts/check-return-experience-render.tsx`,
+  `${RENDER} scripts/check-return-experience-browser.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 

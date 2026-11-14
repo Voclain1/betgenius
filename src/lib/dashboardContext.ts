@@ -37,6 +37,9 @@ export function dashboardNavItems(canViewMap: Record<PredictionCategory, boolean
   return [
     { key: "overview", href: "/dashboard", label: "My dashboard" },
     { key: "saved", href: "/dashboard/saved", label: "Saved predictions" },
+    // The feed of what the reader follows lives on its own page (/following);
+    // linked out like Bet Builder rather than copied into a ?section=.
+    { key: "following", href: "/following", label: "Following" },
     { key: "preferences", href: "/dashboard/preferences", label: "Preferences" },
     ...PREDICTION_CATEGORIES.map((cat) => ({
       key: cat.toLowerCase(),

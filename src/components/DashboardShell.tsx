@@ -6,6 +6,7 @@ import { Menu, X, Lock } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LogoutButton } from "@/components/LogoutButton";
 import { lockScroll } from "@/lib/scrollLock";
+import { trackAccountShortcut } from "@/lib/engagement";
 
 export type DashboardNavItem = {
   key: string;
@@ -77,8 +78,8 @@ export function DashboardShell({
 
       <aside
         className={`fixed inset-y-0 left-0 z-50 border-r border-brand-border bg-brand-card transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width] ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        } ${desktopCollapsed ? "md:w-0 md:overflow-hidden md:border-r-0" : "md:w-64"}`}
+          mobileOpen ? "visible translate-x-0" : "invisible -translate-x-full"
+        } ${desktopCollapsed ? "md:invisible md:w-0 md:overflow-hidden md:border-r-0" : "md:visible md:w-64"}`}
       >
         <div className="flex h-full w-72 max-w-[85vw] flex-col overflow-y-auto p-4 md:w-64">
           <div className="mb-4 flex items-center justify-between">
@@ -106,7 +107,10 @@ export function DashboardShell({
                   )}
                   <Link
                     href={item.href}
-                    onClick={handleNavigate}
+                    onClick={() => {
+                      handleNavigate();
+                      if (item.key === "saved" || item.key === "following") trackAccountShortcut(item.key, "sidebar");
+                    }}
                     aria-current={active ? "page" : undefined}
                     className={`flex min-h-10 items-center gap-2 rounded-md px-3 py-2 text-sm transition ${
                       active
@@ -141,7 +145,10 @@ export function DashboardShell({
         </div>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col">
+      {/* min-w-0: a flex item cannot shrink below its widest child by default, so
+          one wide row or a scrolling filter bar pushed the whole page sideways
+          on a phone. */}
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-brand-border surface-blur px-4 py-3 backdrop-blur">
           <button
             type="button"

@@ -22,6 +22,9 @@ any other free text.
 | `prediction_view_change` | A reader switches Detailed / Compact | `view`, `page_template` |
 | `track_record_day_open` | A reader opens a past day in VIP, Premium or Banker results | `feed_category`, `days_ago`, `page_template` |
 | `track_record_more_days` | A reader taps "Show more days" there | `feed_category`, `days_shown`, `page_template` |
+| `saved_view` | A signed-in reader opens their saved predictions (Sprint 06) | `filter` (`all`, `upcoming`, `settled`, `won`, `lost`), `page_template` |
+| `following_view` | A signed-in reader opens their Following feed (Sprint 06) | `follows` (`0`, `1_5`, `6_plus`), `page_template` |
+| `account_shortcut` | A signed-in reader uses a shortcut to saved, following, upcoming or favourites (Sprint 06) | `target` (`upcoming`, `saved`, `favourites`, `following`, `preferences`), `surface` (`jump_row`, `account_menu`, `sidebar`), `page_template` |
 
 `page_template` is the kind of page, not its URL: `home`, `predictions_hub`,
 `category_feed`, `match`, `league`, `cup`, `team`, `h2h`, `guides_hub`,
@@ -33,7 +36,9 @@ individual URLs.
 
 1. GA4 → Admin → Custom definitions → **Create custom dimension**, scope
    **Event**, once for each of: `page_template`, `metric_rating`,
-   `feed_category`, `view`.
+   `feed_category`, `view`, and (Sprint 06) `filter`, `follows`, `target`,
+   `surface`. Sprint 06's reading guide is in
+   `docs/sprints/sprint-06-user-retention.md`.
 2. Optionally create a custom metric, scope **Event**, for `metric_value`
    (unit: milliseconds; standard for CLS).
 3. Dimensions only collect data from the moment they are registered, so do it

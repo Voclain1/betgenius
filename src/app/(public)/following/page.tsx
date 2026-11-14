@@ -9,6 +9,9 @@ import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import type { PredictionCategory } from "@/lib/enums";
 import { FollowButton, type FollowTargetType } from "@/components/FollowButton";
 import { matchSlug } from "@/lib/slug";
+import { getPersonalization } from "@/lib/personalizationData";
+import { FollowingFeedCard } from "@/components/personal/FollowingFeedCard";
+import { FollowingViewTracker } from "@/components/personal/ClientBits";
 
 export const metadata = { title: "Following", robots: { index: false, follow: false } };
 
@@ -20,6 +23,8 @@ export default async function FollowingPage({ searchParams }: { searchParams: { 
   if (!session?.user.id) redirect("/login?callbackUrl=%2Ffollowing");
   const page = Math.max(1, Math.floor(Number(searchParams.page)) || 1);
 
+  const [personal, now] = [await getPersonalization(session.user.id), new Date()];
+  const timezone = personal.timezone;
   const follows = await prisma.userFollow.findMany({ where: { userId: session.user.id }, orderBy: { createdAt: "desc" } });
   const keysOf = (type: FollowTargetType) => follows.filter((f) => f.targetType === type).map((f) => f.targetKey);
   const teams = keysOf("TEAM").map(Number);
@@ -48,12 +53,21 @@ export default async function FollowingPage({ searchParams }: { searchParams: { 
       <div>
         <h1 className="text-3xl font-bold">Following</h1>
         <p className="text-gray-400">One feed across every team, league, tip and category you follow.</p>
+        <nav aria-label="Your account" className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <Link className="font-semibold text-brand hover:underline" href="/dashboard">Dashboard</Link>
+          <Link className="font-semibold text-brand hover:underline" href="/dashboard/saved">Saved predictions</Link>
+          <Link className="font-semibold text-brand hover:underline" href="/dashboard/preferences">Preferences</Link>
+        </nav>
       </div>
+      <FollowingViewTracker follows={follows.length} />
 
       {!follows.length ? (
         <div className="card">
           <p>Follow teams, leagues, tips or categories from prediction pages and Match Insights.</p>
-          <Link className="mt-3 inline-block text-brand" href="/match-insights">Explore Match Insights →</Link>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+            <Link className="inline-block text-brand" href="/dashboard/preferences#teams">Choose teams and competitions →</Link>
+            <Link className="inline-block text-brand" href="/match-insights">Explore Match Insights →</Link>
+          </div>
         </div>
       ) : (
         <section className="space-y-3">
@@ -82,15 +96,7 @@ export default async function FollowingPage({ searchParams }: { searchParams: { 
           if (p.leagueApiId != null && leagues.includes(p.leagueApiId)) reasons.push(p.leagueName || "its league");
           const followedCategory = categories.find((c) => rowCategories.includes(c));
           if (followedCategory) reasons.push(`${followedCategory.toLowerCase().replace(/_/g, " ")} tips`);
-          return (
-            <article key={p.id} className="card">
-              <p className="text-xs text-gray-500">Because you follow {reasons.slice(0, 2).join(" and ")}</p>
-              <h3 className="font-semibold">{p.homeTeam} vs {p.awayTeam}</h3>
-              <p className="text-sm text-gray-400">{p.leagueName}{p.kickoff ? ` · ${p.kickoff.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT` : ""}</p>
-              <p className="mt-2">{allowed ? p.pick : "Locked selection. Following does not change subscription access."}</p>
-              {slug && <Link className="text-sm text-brand" href={`/predictions/match/${slug}`}>Open match →</Link>}
-            </article>
-          );
+          return <FollowingFeedCard key={p.id} row={p} allowed={allowed} reasons={reasons} href={slug ? `/predictions/match/${slug}` : null} timezone={timezone} now={now} />;
         })}
         {!rows.length && follows.length > 0 && <div className="card text-gray-400">No published predictions currently match your follows.</div>}
         <div className="flex gap-4">

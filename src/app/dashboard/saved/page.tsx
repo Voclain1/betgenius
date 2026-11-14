@@ -6,7 +6,7 @@ import { dashboardNavItems, loadDashboardContext } from "@/lib/dashboardContext"
 import { getPersonalization, listSaved, SAVED_PAGE_SIZE } from "@/lib/personalizationData";
 import { SAVED_FILTERS, parseSavedFilter, type SavedFilter } from "@/lib/personalization";
 import { EmptyState, PickList, SavedRow } from "@/components/personal/DashboardParts";
-import { RemoveSavedButton } from "@/components/personal/ClientBits";
+import { RemoveSavedButton, SavedViewTracker } from "@/components/personal/ClientBits";
 
 export const metadata: Metadata = { title: "Saved predictions", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -32,6 +32,7 @@ export default async function SavedPredictionsPage({ searchParams }: { searchPar
   return (
     <DashboardShell items={dashboardNavItems(canViewMap)} activeKey="saved" title="Saved predictions" userEmail={session.user.email}>
       <div className="max-w-3xl space-y-5">
+        <SavedViewTracker filter={filter} />
         <div>
           <h1 className="text-2xl font-black tracking-tight">Saved predictions</h1>
           <p className="text-sm text-gray-400">
