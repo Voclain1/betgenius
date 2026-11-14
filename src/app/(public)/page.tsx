@@ -1,4 +1,4 @@
-import { PredictionDiscovery } from "@/components/PredictionDiscovery";
+import { DiscoveryEntry } from "@/components/PredictionDiscovery";
 import { HomepageExplainer } from "@/components/HomepageExplainer";
 import Link from "next/link";
 import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
@@ -318,6 +318,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
                 <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
+                <DiscoveryEntry />
               </div>
             </div>
             {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
@@ -367,7 +368,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         </div>
       </nav>
 
-      <PredictionDiscovery results={false} />
+
 
       {genius.length > 0 && (
         <section aria-labelledby="home-genius">

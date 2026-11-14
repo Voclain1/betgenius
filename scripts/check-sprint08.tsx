@@ -372,8 +372,8 @@ const missing = renderToStaticMarkup(
     now={now}
   />,
 );
-ok(missing.includes("Insufficient verified recent scores"));
-ok(missing.includes("do not reconstruct"));
+eq(missing, "");
+ok(!missing.includes("evidence-guide"));
 const comparison = renderToStaticMarkup(
   <PublishedMarketComparison
     rows={[]}
@@ -382,7 +382,7 @@ const comparison = renderToStaticMarkup(
     now={now}
   />,
 );
-ok(comparison.includes("No published markets are readable"));
+eq(comparison, "");
 const perMarket = renderToStaticMarkup(
   <PublishedMarketComparison
     rows={[

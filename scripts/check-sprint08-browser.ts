@@ -73,7 +73,11 @@ async function main() {
         .filter((el) => el.getBoundingClientRect().right > innerWidth + 1)
         .filter((el) => {
           for (let p = el.parentElement; p; p = p.parentElement) {
-            if (["hidden", "auto", "scroll", "clip"].includes(getComputedStyle(p).overflowX))
+            if (
+              ["hidden", "auto", "scroll", "clip"].includes(
+                getComputedStyle(p).overflowX,
+              )
+            )
               return false;
           }
           return true;
@@ -146,8 +150,7 @@ async function main() {
         ).includes("noindex"),
         "Filtered discovery noindex",
       );
-      if (name !== "small-phone")
-        await shot(page, `${name}-discovery`, "#discover");
+      if (name !== "small-phone") await shot(page, `${name}-discovery`);
       const form = page.getByRole("form", {
         name: "Filter published predictions",
       });
@@ -179,6 +182,12 @@ async function main() {
       );
       ok(page.url().includes("d_market=BTTS"), "Shareable GET URL");
       await checkLayout(page);
+      await visit(page, "/predictions/featured?date=tomorrow");
+      ok(
+        (await page.locator("#discover > details").getAttribute("open")) === null,
+        "Category filters collapsed",
+      );
+      if (name !== "small-phone") await shot(page, `${name}-category`);
       await visit(
         page,
         `/predictions/featured?date=tomorrow&d_date=${manifest.date}&d_market=BTTS`,
@@ -188,7 +197,7 @@ async function main() {
         "Category scope reused",
       );
       if (name !== "small-phone")
-        await shot(page, `${name}-category`, "#discover");
+        await shot(page, `${name}-category-filtered`, "#discover");
       await visit(page, manifest.matchHref);
       if (name === "small-phone") {
         // Different system-font metrics exposed a genuine form-strip overflow in CI.
@@ -213,6 +222,29 @@ async function main() {
         !(await page.content()).includes("PRIVATE_PREVIEW_FACTOR"),
         "Paid evidence absent",
       );
+      ok(
+        (await page
+          .locator('section[aria-labelledby="evidence-guide"] > details')
+          .getAttribute("open")) === null,
+        "Evidence secondary and collapsed",
+      );
+      ok(
+        (await page
+          .locator('section[aria-labelledby="market-comparison"] > details')
+          .getAttribute("open")) === null,
+        "Comparison secondary and collapsed",
+      );
+      ok(
+        await page.evaluate(
+          () =>
+            document.querySelector("#form")!.getBoundingClientRect().top <
+            document.querySelector("#evidence-guide")!.getBoundingClientRect()
+              .top,
+        ),
+        "Form precedes supporting evidence",
+      );
+      await page.locator("#evidence-guide").click();
+      await page.locator("#market-comparison").click();
       ok(
         (
           await page
@@ -245,30 +277,36 @@ async function main() {
         ok(!schema.includes("PRIVATE_PREVIEW"), "Structured data stays public");
       }
       if (name !== "small-phone") {
-        await shot(page, `${name}-match`, "#verdict");
+        await page.locator("#evidence-guide").click();
+        await page.locator("#market-comparison").click();
+        await page.evaluate(() => scrollTo(0, 0));
+        await shot(page, `${name}-match`);
+        await page.locator("#evidence-guide").click();
+        await page.locator("#market-comparison").click();
         await shot(page, `${name}-evidence`, "#evidence-guide");
         await shot(page, `${name}-markets`, "#market-comparison");
       }
       await visit(page, manifest.missingHref);
       ok(
-        (
-          await page
-            .locator('section[aria-labelledby="evidence-guide"]')
-            .innerText()
-        ).includes("Insufficient verified recent scores"),
-        "Missing statistics explicit",
+        (await page.locator("#evidence-guide").count()) === 0,
+        "Empty evidence hidden",
       );
       ok(
-        (
-          await page
-            .locator('section[aria-labelledby="market-comparison"]')
-            .innerText()
-        ).includes("Unavailable, stale or not quoted"),
-        "Missing quotes explicit",
+        (await page.locator("#market-comparison").count()) === 0,
+        "Empty comparison hidden",
       );
-      await visit(page, "/");
-      ok(await page.locator("#discover").count(), "Homepage finder present");
-      if (name !== "small-phone") await shot(page, `${name}-home`, "#discover");
+      await visit(page, "/?date=tomorrow");
+      ok(
+        await page.locator("#home-match-search").count(),
+        "Compact homepage search present",
+      );
+      ok(
+        (await page
+          .getByRole("form", { name: "Filter published predictions" })
+          .count()) === 0,
+        "Homepage has no embedded finder",
+      );
+      if (name !== "small-phone") await shot(page, `${name}-home`);
       await ctx.close();
     }
     const { ctx, page } = await context(390, 844);

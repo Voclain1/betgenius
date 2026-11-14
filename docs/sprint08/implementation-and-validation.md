@@ -1,5 +1,7 @@
 # Sprint 08 — Prediction discovery and match intelligence
 
+**Design correction:** The interface descriptions and original screenshot set below document the first implementation. The current hierarchy, master comparison and review screenshots are in [design-correction-review.md](design-correction-review.md). Design approval remains pending.
+
 Started from `ff11995d6df8fe7b89f4dfefc62cd3e478820be8`, including PR #183; integrated latest master `0609bc9` with merged PRs #186–#188 before final validation. Delivery: [PR #184](https://github.com/Voclain1/betgenius/pull/184), branch `feat/sprint08-discovery`. The delivery message and PR record identify the final SHA and CI runs. No merge or deployment is authorized by this work.
 
 ## Repository audit and features reused

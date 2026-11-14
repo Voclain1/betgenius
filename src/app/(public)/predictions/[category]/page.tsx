@@ -301,10 +301,10 @@ export default async function CategoryPage(
           counts and AdPlacements.tsx for the rule they follow. The foot band
           is gone rather than kept: three insertions plus a fourth underneath
           would be four ads on one feed. */}
+      <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
       {canView && <PredictionDiscovery params={searchParams} basePath={`/predictions/${slug}`} category={cat} fallbackDay={day} results={hasDiscoveryFilters(searchParams)} />}
       {canView && hasDiscoveryFilters(searchParams) ? null : cat === "TODAY" ? (
         <>
-          <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
           <TodayPredictionsGuide dateLabel={dateLabel} day={day} />
           <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
         </>
@@ -314,8 +314,7 @@ export default async function CategoryPage(
         // shaped rows; the client switch only chooses which one to mount.
         paidCovered ? (
           <div className="space-y-4">
-            <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
-            <PaidFeedCover
+              <PaidFeedCover
               tier={cat === "PREMIUM" ? "Premium" : "VIP"}
               floor={cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}
               signedIn={!!session?.user}
@@ -324,7 +323,7 @@ export default async function CategoryPage(
           </div>
         ) : (
         <PredictionViewSwitch
-          tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
+
           intro={cat === "BANKER" ? <BankerPredictionsIntro /> : paidFeed ? <PaidFeedIntro tier={cat === "PREMIUM" ? "Premium" : "VIP"} /> : null}
           detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}

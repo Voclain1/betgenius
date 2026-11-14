@@ -289,8 +289,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const season = leagueCache?.season ? `${leagueCache.season}/${String(leagueCache.season + 1).slice(-2)}` : null;
   const sections = [
     ...(showResult ? [{ id: "result", label: state === "finished" ? "Result" : "Status" }] : []),
-    ...(topRow ? [{ id: "verdict", label: "Verdict" }, { id: "evidence-guide", label: "Evidence guide" }] : []),
-    { id: "market-comparison", label: "Compare markets" },
+    ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
     ...(preview ? [{ id: "preview", label: "Preview" }] : []),
     ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
     ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
@@ -420,7 +419,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         />
       )}
 
-      {topRow && <MatchEvidenceGuide marketType={topRow.marketType} selection={topRow.selection} market={topRow.market} pick={topRow.pick} kickoff={match.kickoff} home={homeDigest} away={awayDigest} recordedAt={original && highlightedJob ? highlightedJob.createdAt : null} homeFetchedAt={homeCache?.fetchedAt ?? null} awayFetchedAt={awayCache?.fetchedAt ?? null} />}
+
 
       {preview && (
         <PremiumPanel kicker="Preview" title="Match preview" id="preview">
@@ -522,6 +521,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       <AdHalfBanner />
 
       <MatchOddsPanel odds={fixtureDetail?.fixtureApiId != null && oddsCache?.fixtureApiId === fixtureDetail.fixtureApiId ? oddsCache?.oddsJson as unknown as FixtureOdds ?? null : null} fetchedAt={oddsCache?.fetchedAt ?? null} kickoff={match.kickoff} />
+
+      {topRow && <MatchEvidenceGuide marketType={topRow.marketType} selection={topRow.selection} market={topRow.market} pick={topRow.pick} kickoff={match.kickoff} home={homeDigest} away={awayDigest} recordedAt={original && highlightedJob ? highlightedJob.createdAt : null} homeFetchedAt={homeCache?.fetchedAt ?? null} awayFetchedAt={awayCache?.fetchedAt ?? null} />}
 
       <PublishedMarketComparison rows={shaped.filter(r => !("locked" in r && r.locked))} cache={oddsCache} contexts={comparisonContexts} confirmations={new Map(editorialRows.map(r => [r.id, r.marketConfirmation]))} />
 

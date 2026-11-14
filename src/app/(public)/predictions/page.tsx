@@ -60,19 +60,11 @@ export default function PredictionsIndex({ searchParams = {} }: { searchParams?:
   return (
     <div className="space-y-10">
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Predictions", path: "/predictions" }])} />
-      <CategoryMasthead
-        kicker="Predictions"
-        title="Football predictions and betting tips"
-        blurb={
-          <>
-            Start with today&apos;s full card or browse a focused selection below. Each published football prediction names its market and pick, shows a confidence rating where public, and explains the match evidence behind the assessment.
-            <span className="mt-2 block text-sm text-gray-400">
-              Predictions are statistical assessments, not promises. Results remain uncertain, so review the reasoning and public record before making your own decision.
-            </span>
-          </>
-        }
-        stats={[]}
-      />
+      <header className="space-y-2">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand">Predictions</p>
+        <h1 className="text-2xl font-black tracking-tight sm:text-4xl">Find your next match</h1>
+        <p className="text-sm text-gray-400">Published picks, match evidence and markets. Search a team or refine your selection.</p>
+      </header>
 
       <PredictionDiscovery params={searchParams} />
 

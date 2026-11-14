@@ -1,3 +1,4 @@
+import { Search } from "lucide-react";
 import { OddsFigure } from "./OddsFigure";
 import Link from "next/link";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
@@ -20,6 +21,20 @@ import {
 import type { PredictionCategory } from "@/lib/enums";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { SavePredictionButton } from "./SavePredictionButton";
+
+export function DiscoveryEntry() {
+  return (
+    <Link
+      id="home-match-search"
+      href="/predictions#discover"
+      aria-label="Find a match"
+      title="Find a match"
+      className="inline-flex min-h-11 min-w-11 items-center justify-center gap-2 text-sm font-semibold text-gray-300 hover:text-brand"
+    >
+      <Search aria-hidden className="h-4 w-4" /><span className="hidden sm:inline">Find a match</span><span aria-hidden className="hidden sm:inline">→</span>
+    </Link>
+  );
+}
 
 const control =
   "min-h-11 w-full min-w-0 rounded-xl border border-brand-border bg-brand-bg px-3 py-2 text-sm text-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand";
@@ -67,16 +82,7 @@ export function DiscoveryFilters({
       {fallbackDay && fallbackDay !== "today" && (
         <input type="hidden" name="date" value={fallbackDay} />
       )}
-      <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
-        <label className="min-w-0 text-xs text-gray-400">
-          Date · {f.zone}
-          <input
-            type="date"
-            name="d_date"
-            defaultValue={f.date}
-            className={`${control} mt-1`}
-          />
-        </label>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
         <label className="min-w-0 text-xs text-gray-400">
           Team
           <input
@@ -90,19 +96,30 @@ export function DiscoveryFilters({
         </label>
         <button
           type="submit"
-          className="btn btn-primary col-span-2 min-h-11 self-end justify-center sm:col-span-1"
+          aria-label="Find predictions"
+          className="btn btn-primary min-h-11 self-end justify-center"
         >
-          Find predictions
+          Search
         </button>
       </div>
-      <details className="rounded-xl border border-brand-border p-3">
+      <details className="border-t border-brand-border pt-2">
         <summary className="cursor-pointer py-1 text-sm font-semibold text-gray-300">
-          More filters{" "}
+          Filters{" "}
           <span className="font-normal text-gray-500">
             · {active ? `${active} active` : "competition, market & favourites"}
           </span>
         </summary>
         <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {" "}
+          <label className="min-w-0 text-xs text-gray-400">
+            Date · {f.zone}
+            <input
+              type="date"
+              name="d_date"
+              defaultValue={f.date}
+              className={`${control} mt-1`}
+            />
+          </label>
           <label className="min-w-0 text-xs text-gray-400">
             Competition
             <select
@@ -231,18 +248,15 @@ export function DiscoveryFilters({
             </>
           )}
         </p>
+        <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+          <Link
+            href={`${basePath}#discover`}
+            className="inline-flex min-h-11 shrink-0 items-center text-brand underline"
+          >
+            Reset filters
+          </Link>
+        </div>{" "}
       </details>
-      <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
-        <span>
-          Filters are shareable; personal results depend on who is signed in.
-        </span>
-        <Link
-          href={`${basePath}#discover`}
-          className="inline-flex min-h-11 shrink-0 items-center text-brand underline"
-        >
-          Reset filters
-        </Link>
-      </div>
     </form>
   );
 }
@@ -295,37 +309,50 @@ export async function PredictionDiscovery({
       aria-labelledby="discovery-heading"
       className="min-w-0 scroll-mt-28 space-y-4"
     >
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand">
-          Match finder
-        </p>
-        <h2
-          id="discovery-heading"
-          className="mt-1 text-xl font-bold text-gray-100"
-        >
-          {category
-            ? "Refine this prediction feed"
-            : "Find published predictions"}
-        </h2>
-        <p className="mt-1 text-sm text-gray-400">
-          Choose a fixture, then compare its published markets and match
-          evidence.
-        </p>
-      </div>
-      <div className="card min-w-0">
-        <DiscoveryFilters
-          filter={f}
-          basePath={basePath}
-          category={category}
-          signedIn={!!viewer.userId}
-          fallbackDay={fallbackDay}
-          publishedCompetitions={data?.items.flatMap((p) =>
-            p.leagueApiId && p.league
-              ? [{ id: p.leagueApiId, name: p.league }]
-              : [],
-          )}
-        />
-      </div>
+      <h2 id="discovery-heading" className="sr-only">
+        Match finder
+      </h2>
+      {category ? (
+        <details className="group border-y border-brand-border py-1">
+          <summary className="flex min-h-11 cursor-pointer items-center justify-between text-sm font-semibold text-gray-300">
+            Filter predictions{" "}
+            <span aria-hidden className="text-brand">
+              +
+            </span>
+          </summary>
+          <div className="pb-3">
+            {" "}
+            <DiscoveryFilters
+              filter={f}
+              basePath={basePath}
+              category={category}
+              signedIn={!!viewer.userId}
+              fallbackDay={fallbackDay}
+              publishedCompetitions={data?.items.flatMap((p) =>
+                p.leagueApiId && p.league
+                  ? [{ id: p.leagueApiId, name: p.league }]
+                  : [],
+              )}
+            />
+          </div>
+        </details>
+      ) : (
+        <div className="border-y border-brand-border py-4">
+          {" "}
+          <DiscoveryFilters
+            filter={f}
+            basePath={basePath}
+            category={category}
+            signedIn={!!viewer.userId}
+            fallbackDay={fallbackDay}
+            publishedCompetitions={data?.items.flatMap((p) =>
+              p.leagueApiId && p.league
+                ? [{ id: p.leagueApiId, name: p.league }]
+                : [],
+            )}
+          />
+        </div>
+      )}
       {f.notices.map((n) => (
         <p role="status" key={n} className="text-sm text-gray-400">
           {n}
@@ -359,7 +386,7 @@ export async function PredictionDiscovery({
             {data.items.length ? (
               <div className="grid min-w-0 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {data.items.map((p) => (
-                  <article key={p.id} className="card min-w-0 space-y-3 !p-4">
+                  <article key={p.id} className="card min-w-0 space-y-2 !p-4">
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-brand">
                         {CATEGORY_CHIP_LABELS[p.category]}
@@ -412,21 +439,22 @@ export async function PredictionDiscovery({
                           {p.quote.kind === "archived"
                             ? "archived quote"
                             : "cached quote"}
-                          <br />
-                          {p.quote.timeBasis === "provider"
-                            ? "Provider quote"
-                            : "Cache fetched"}{" "}
-                          {stamp(p.quote.at)} · {f.zone}
+                          <span className="block text-[11px]">
+                            {p.quote.timeBasis === "provider"
+                              ? "Provider quote"
+                              : "Cache fetched"}{" "}
+                            {stamp(p.quote.at)} · {f.zone}
+                          </span>
                         </>
                       ) : (
                         "No usable named quote for this selection."
                       )}
                     </p>
                     <Link
-                      href={`${p.href}#evidence-guide`}
+                      href={p.href}
                       className="inline-flex min-h-11 items-center text-sm font-semibold text-brand"
                     >
-                      Evidence & markets →
+                      View match →
                     </Link>
                   </article>
                 ))}
