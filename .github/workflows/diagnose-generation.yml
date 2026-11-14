@@ -37,6 +37,7 @@ on:
       - scripts/validate-paid-candidate-quality.ts
       - scripts/measure-qualification-funnel.ts
       - scripts/research-qualification-loosening.ts
+      - scripts/measure-paid-opportunity.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -319,3 +320,7 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/research-qualification-loosening.ts 150
+      - name: Paid opportunity loss (calendar, scope decisions, quota, dry days)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-paid-opportunity.ts 30
