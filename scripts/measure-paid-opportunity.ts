@@ -31,7 +31,7 @@ import { prisma } from "../src/lib/prisma";
 import { lagosDateKey } from "../src/lib/lagosDate";
 import { matchKey } from "../src/lib/slug";
 import type { FixtureOdds } from "../src/lib/odds";
-import { lopsidednessSignal } from "../src/lib/marketConfirmed";
+import { devigProbability, lopsidednessSignal } from "../src/lib/marketConfirmed";
 import { generationTierOf } from "../src/lib/leagues";
 import { providerOf } from "../src/lib/calibration";
 import { JOB_GENERATE_VIP_PREMIUM } from "../src/lib/jobRuns";
@@ -47,6 +47,16 @@ import { wilson95 } from "../src/lib/paidMarketQuality";
 
 const H = 3_600_000;
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "—");
+
+/** A goals selection the closing quote prices inside the paid band (75-87%, >=5 books). Closing reference only. */
+function goalsInPaidBand(odds: FixtureOdds | null): boolean {
+  if (!odds?.markets) return false;
+  const sels = [["Goals Over/Under", "Over 1.5"], ["Goals Over/Under", "Under 3.5"], ["Goals Over/Under", "Over 2.5"], ["Goals Over/Under", "Under 2.5"], ["Both Teams Score", "Yes"], ["Both Teams Score", "No"]] as const;
+  return sels.some(([m, v]) => {
+    const d = devigProbability(odds, m as any, v);
+    return !!d && d.bookmakers >= 5 && d.probability >= 75 && d.probability <= 100 / 1.15;
+  });
+}
 
 async function main() {
   if (process.env.REQUIRE_READ_ONLY === "1") {
@@ -88,6 +98,7 @@ async function main() {
     attempted: boolean; drafts: number; draftMaxConf: number | null; promoted: boolean;
     vip: boolean; vipDedicated: boolean; premium: boolean;
     everInScope: boolean | null;
+    goalsInBand: boolean;
   };
   const fx = new Map<string, Fx>();
   const get = (key: string, kickoff: Date, league: number | null, name: string | null, fixtureApiId: number | null) => {
@@ -100,7 +111,7 @@ async function main() {
         key, fixtureApiId, league, leagueName: name ?? String(league), kickoff, day: lagosDateKey(kickoff), group: scopeGroup(league), tier: generationTierOf(league) ?? "UNCATALOGUED",
         discovered: false, succeeded: false, ledgerCreated: null, firstOrdinaryAt: null, ordinaryPublished: 0, maxOrdinaryConf: null, route75: false,
         closingHeadline: sig?.probability ?? null, priced5: !!sig,
-        attempted: false, drafts: 0, draftMaxConf: null, promoted: false, vip: false, vipDedicated: false, premium: false, everInScope: null,
+        attempted: false, drafts: 0, draftMaxConf: null, promoted: false, vip: false, vipDedicated: false, premium: false, everInScope: null, goalsInBand: goalsInPaidBand(pre ? q!.oddsJson : null),
       };
       fx.set(key, x);
     }
@@ -304,6 +315,14 @@ async function main() {
   }
   console.log(`  TOTAL first loss: ${JSON.stringify(totals)}`);
   console.log(`  VIP fixtures ${all.filter((x) => x.vip).length} (dedicated ${all.filter((x) => x.vipDedicated).length}); PREMIUM fixtures ${all.filter((x) => x.premium).length}`);
+  // ── K. Goals-market reach of fixtures targeting skips ───────────────────
+  console.log("\n== K. MARKET_BELOW_BAR fixtures (never targeted: no 1X2/DC side >= 75) with a goals selection in the paid band at the closing quote ==");
+  const mbb = all.filter((x) => x.succeeded && firstPaidLoss(x) === "MARKET_BELOW_BAR");
+  for (const g of ["PAID_CORE", "PAID_WIDENED"] as const) {
+    const xs = mbb.filter((x) => x.group === g);
+    console.log(`  ${g.padEnd(12)} ${xs.filter((x) => x.goalsInBand).length} of ${xs.length}`);
+  }
+  console.log("  (What the model would have drafted on them is unknown: no attempt was made. Counted only to size the pool.)");
 }
 
 main()
