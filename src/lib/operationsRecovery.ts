@@ -44,6 +44,10 @@ export async function planRecovery(
     if (state.status === "FRESH" && provider.status === "FRESH")
       reasons.push("LOCAL_AND_PROVIDER_QUOTES_FRESH");
   } else {
+    if (p.marketType === "SAME_GAME_DOUBLE")
+      reasons.push("COMPOUND_REQUIRES_LEG_SETTLEMENT");
+    if (p.leagueApiId == null || !p.homeTeam || !p.awayTeam)
+      reasons.push("MISSING_SETTLEMENT_METADATA");
     if (p.outcome !== "PENDING" || p.manualSettlementOnly)
       reasons.push("MANUAL_OR_ALREADY_SETTLED");
     if (!p.kickoff || +now - +p.kickoff < 110 * 60000)

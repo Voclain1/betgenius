@@ -1,3 +1,4 @@
+import { incidentPeriod, settlementFinding } from "./settlementDiagnostics";
 /** Sprint 07 read-only operational assessments. No provider requests or repairs. */
 export const OPERATIONS_VERSION = "operations-s07-v1";
 export type FreshnessStatus =
@@ -33,17 +34,31 @@ export function freshness(input: {
   const ageMinutes = input.fetchedAt
     ? (+input.now - +input.fetchedAt) / 60000
     : null;
-  const status: FreshnessStatus = input.lastError
-    ? "PROVIDER_UNAVAILABLE"
-    : ageMinutes == null
-      ? "MISSING"
-      : !Number.isFinite(ageMinutes) || ageMinutes < 0
-        ? "UNKNOWN"
-        : ageMinutes > input.maxMinutes
-          ? "STALE"
-          : ageMinutes > input.maxMinutes * 0.75
-            ? "AGING"
-            : "FRESH";
+  const noQuotes =
+    !!input.lastError &&
+    /No bookmaker prices quoted|no fixture.*match|not found|no data returned/i.test(
+      input.lastError,
+    );
+  const fetchFailure =
+    !!input.lastError &&
+    /timeout|timed out|network|no response|ECONN|HTTP [45]\d\d|rate limit|quota|subscription|plan restriction/i.test(
+      input.lastError,
+    );
+  const status: FreshnessStatus = noQuotes
+    ? "MISSING"
+    : input.lastError
+      ? fetchFailure
+        ? "PROVIDER_UNAVAILABLE"
+        : "UNKNOWN"
+      : ageMinutes == null
+        ? "MISSING"
+        : !Number.isFinite(ageMinutes) || ageMinutes < 0
+          ? "UNKNOWN"
+          : ageMinutes > input.maxMinutes
+            ? "STALE"
+            : ageMinutes > input.maxMinutes * 0.75
+              ? "AGING"
+              : "FRESH";
   return {
     status,
     ageMinutes:
@@ -132,6 +147,7 @@ export function meaningfulCompletion(
   };
 }
 export type Finding = {
+  period?: "CURRENT" | "HISTORICAL";
   code: string;
   severity: "CRITICAL" | "WARNING" | "INFO";
   predictionId?: string;
@@ -140,6 +156,8 @@ export type Finding = {
 };
 export type OperationPrediction = {
   id: string;
+  observationExpected?: boolean;
+  paidPublicationEvidenceRequired?: boolean;
   status: string;
   outcome: string;
   kickoff: Date | null;
@@ -214,7 +232,15 @@ export function reconcilePredictions(
     severity: Finding["severity"],
     detail: string,
     repair: Finding["repair"] = "MANUAL_REVIEW",
-  ) => out.push({ predictionId: p.id, code, severity, detail, repair });
+  ) =>
+    out.push({
+      predictionId: p.id,
+      period: incidentPeriod(p.kickoff, now),
+      code,
+      severity,
+      detail,
+      repair,
+    });
   for (const p of rows) {
     const f = p.fixtureApiId != null ? fixtures.get(p.fixtureApiId) : undefined;
     if (p.status === "PUBLISHED") {
@@ -239,9 +265,13 @@ export function reconcilePredictions(
       if (paid && !evidence.has(p.id))
         add(
           p,
-          "MISSING_PAID_EVIDENCE",
-          "CRITICAL",
-          "No independently usable publication evidence",
+          p.paidPublicationEvidenceRequired
+            ? "MISSING_PAID_EVIDENCE"
+            : "PAID_PRICE_EVIDENCE_UNAVAILABLE",
+          p.paidPublicationEvidenceRequired ? "CRITICAL" : "INFO",
+          p.paidPublicationEvidenceRequired
+            ? "Required atomic paid publication evidence is unavailable; manual verification is needed."
+            : "No usable publication price evidence. Ordinary/manual/legacy curation may not have required it; this alone is not a publishing defect.",
         );
       if (
         (p.category === "VIP" || p.category === "PREMIUM") &&
@@ -260,12 +290,12 @@ export function reconcilePredictions(
           "WARNING",
           "Published prediction has no category relationships",
         );
-      if (paid && !observed.has(p.id))
+      if (paid && p.observationExpected === true && !observed.has(p.id))
         add(
           p,
           "MISSING_RELIABILITY_OBSERVATION",
           "INFO",
-          "No retained Sprint 06 first-decision record; dedicated or out-of-universe rows may legitimately lack one",
+          "No retained observation for an eligible post-collection candidate. Verify diagnostic settings and curation history before diagnosing collection failure.",
           null,
         );
       const key = JSON.stringify([
@@ -292,22 +322,8 @@ export function reconcilePredictions(
         "WARNING",
         "Stored fixture schedule differs; preserve historical decision evidence",
       );
-    if (f && FINAL_FIXTURE_STATUSES.has(f.status) && p.outcome === "PENDING")
-      add(
-        p,
-        "FINISHED_UNSETTLED",
-        "WARNING",
-        "Cached fixture is final but prediction is pending",
-        p.manualSettlementOnly ? "MANUAL_REVIEW" : "RETRY_SETTLEMENT",
-      );
-    if (p.outcome === "PENDING" && p.kickoff && +now - +p.kickoff > settlementMinutes * 60000)
-      add(
-        p,
-        "SETTLEMENT_DELAY",
-        "WARNING",
-        `Pending more than ${settlementMinutes} minutes after stored kickoff`,
-        p.manualSettlementOnly ? "MANUAL_REVIEW" : "RETRY_SETTLEMENT",
-      );
+    const settlement = settlementFinding(p, f, now, settlementMinutes);
+    if (settlement) out.push(settlement);
     if (
       p.outcome !== "PENDING" &&
       p.settledAt &&
@@ -316,9 +332,11 @@ export function reconcilePredictions(
     )
       add(
         p,
-        "SETTLED_BEFORE_KICKOFF",
-        "CRITICAL",
-        "Settlement timestamp predates kickoff",
+        p.outcome === "VOID" ? "EARLY_VOID_REVIEW" : "SETTLED_BEFORE_KICKOFF",
+        p.outcome === "VOID" ? "INFO" : "CRITICAL",
+        p.outcome === "VOID"
+          ? "Void predates stored kickoff; cancellation/refund or reschedule evidence needs review, not an inferred win/loss."
+          : "Settlement timestamp predates stored kickoff; verify schedule history before correcting outcomes.",
       );
     // Native Fixture totals on AET/PEN need regulation evidence; never compare them as FT scores.
     if (
@@ -336,11 +354,20 @@ export function reconcilePredictions(
         "CRITICAL",
         "Provider cache differs from frozen settled score; explicit correction review required",
       );
+    if (p.status === "APPROVED" && p.kickoff && p.kickoff <= now)
+      add(
+        p,
+        "EXPIRED_APPROVAL_WINDOW",
+        incidentPeriod(p.kickoff, now) === "HISTORICAL" ? "INFO" : "WARNING",
+        "Approved prediction was not published before kickoff; never auto-publish it retrospectively.",
+      );
     if (p.status === "PENDING_REVIEW" && p.kickoff && p.kickoff <= now)
       add(
         p,
-        "MISSED_REVIEW_WINDOW",
-        "WARNING",
+        incidentPeriod(p.kickoff, now) === "HISTORICAL"
+          ? "EXPIRED_REVIEW_HISTORY"
+          : "MISSED_REVIEW_WINDOW",
+        incidentPeriod(p.kickoff, now) === "HISTORICAL" ? "INFO" : "WARNING",
         "Review window passed; do not auto-publish",
       );
   }

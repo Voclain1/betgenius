@@ -31,6 +31,9 @@ export default async function PredictionOperations({
         ? competition
         : undefined,
     category,
+    period: ["CURRENT", "HISTORICAL"].includes(searchParams?.period ?? "")
+      ? searchParams!.period
+      : undefined,
     severity: ["CRITICAL", "WARNING", "INFO"].includes(
       searchParams?.severity ?? "",
     )
@@ -52,9 +55,13 @@ export default async function PredictionOperations({
       <h1 className="text-2xl font-black">Prediction operations</h1>
       <p className="text-sm text-gray-400">
         Read-only lookback: {s.days} day(s), plus 72 hours upcoming.{" "}
-        {s.universe} predictions sampled
+        {s.universe} of {s.total} predictions sampled (current/upcoming first)
         {s.truncated ? " · 500-row cap reached; incomplete cohort" : ""}.
         Unknown evidence is not healthy evidence.
+      </p>
+      <p className="text-xs text-gray-400">
+        Period and severity filter findings. Job metrics cover the full time
+        window; prediction metrics use the bounded category/competition sample.
       </p>
       <form className="card grid gap-3 sm:grid-cols-4">
         <label>
@@ -93,6 +100,18 @@ export default async function PredictionOperations({
             ))}
           </select>
         </label>
+        <label>
+          Incident period
+          <select
+            name="period"
+            className="input w-full"
+            defaultValue={searchParams?.period ?? ""}
+          >
+            <option value="">All</option>
+            <option value="CURRENT">Current (Lagos day)</option>
+            <option value="HISTORICAL">Historical</option>
+          </select>
+        </label>
         <button className="btn-secondary">Filter</button>
       </form>
       <section className="card">
@@ -121,17 +140,19 @@ export default async function PredictionOperations({
         usage counters do not retain every response classification.
       </p>
       <section className="card overflow-x-auto">
-        <h2 className="text-xl font-bold">Job outcomes</h2>
+        <h2 className="text-xl font-bold">
+          Job outcomes (all categories/competitions)
+        </h2>
         <table className="w-full min-w-[48rem] text-xs">
           <thead>
             <tr>
               {[
                 "Job",
                 "Last run / success",
-                "Useful / observed",
-                "HTTP success / observed",
+                "Productive / maintenance / no work / deferred",
+                "Reported success / observed",
                 "Failures / unknown",
-                "Schedule",
+                "Explanations / schedule",
               ].map((h) => (
                 <th className="p-2 text-left" key={h}>
                   {h}
@@ -149,7 +170,8 @@ export default async function PredictionOperations({
                   {time(j.lastSuccess)}
                 </td>
                 <td className="p-2">
-                  {j.useful}/{j.runs}
+                  {j.useful} / {j.maintenance} / {j.noWork} / {j.deferred} (
+                  {j.runs} observed)
                   {j.truncated ? " capped" : ""}
                 </td>
                 <td className="p-2">
@@ -158,7 +180,16 @@ export default async function PredictionOperations({
                 <td className="p-2">
                   {j.failed} / {j.unknown}
                 </td>
-                <td className="p-2">Unverified external schedule</td>
+                <td className="p-2">
+                  {Object.entries(j.explanations)
+                    .map(
+                      ([code, count]) =>
+                        `${code.toLowerCase().replaceAll("_", " ")}: ${count}`,
+                    )
+                    .join(" · ")}
+                  <br />
+                  External schedule unverified
+                </td>
               </tr>
             ))}
           </tbody>
@@ -166,29 +197,46 @@ export default async function PredictionOperations({
       </section>
       <section className="card space-y-2">
         <h2 className="text-xl font-bold">Reconciliation findings</h2>
-        {s.findings.length ? (
-          s.findings.slice(0, 200).map((f, i) => (
-            <div
-              key={`${f.predictionId}-${f.code}-${i}`}
+        {s.findingGroups.length ? (
+          s.findingGroups.map((g) => (
+            <details
+              key={`${g.code}-${g.severity}-${g.period}`}
               className="rounded-lg border border-brand-border p-3 text-sm"
             >
-              <span
+              <summary
                 className={
-                  f.severity === "CRITICAL" ? "text-red-300" : "text-amber-300"
+                  g.severity === "CRITICAL"
+                    ? "cursor-pointer text-red-300"
+                    : g.severity === "WARNING"
+                      ? "cursor-pointer text-amber-300"
+                      : "cursor-pointer text-gray-300"
                 }
               >
-                {f.severity} · {f.code}
-              </span>
-              <p className="break-all">{f.predictionId}</p>
-              <p className="text-gray-400">
-                {f.detail} · {f.repair ?? "Observation only"}
+                {g.severity} · {g.code} · {g.period.toLowerCase()} · {g.count}{" "}
+                records
+              </summary>
+              <p className="mt-2 text-xs text-gray-400">
+                Showing up to 10 sample records in this group.
               </p>
-            </div>
+              {g.samples.map((f, i) => (
+                <div
+                  key={`${f.predictionId}-${i}`}
+                  className="mt-2 border-t border-brand-border p-2"
+                >
+                  <p className="break-all">
+                    {f.predictionId ?? "Job/ledger finding"}
+                  </p>
+                  <p className="text-gray-400">
+                    {f.detail} · {f.repair ?? "Observation only"}
+                  </p>
+                </div>
+              ))}
+            </details>
           ))
         ) : (
           <p className="text-gray-400">
-            No findings in this bounded sample. This is not a whole-database
-            health guarantee.
+            No findings in this bounded sample/filter. This is not a
+            whole-database health guarantee.
           </p>
         )}
       </section>

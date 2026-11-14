@@ -165,13 +165,11 @@ const findings = reconcilePredictions(
 );
 for (const code of [
   "LATE_PUBLICATION",
-  "MISSING_PAID_EVIDENCE",
+  "PAID_PRICE_EVIDENCE_UNAVAILABLE",
   "MISSING_PAID_LINK",
   "MISSING_CATEGORY_LINKS",
   "FINISHED_UNSETTLED",
-  "SETTLEMENT_DELAY",
   "DUPLICATE_SELECTION",
-  "MISSING_RELIABILITY_OBSERVATION",
 ])
   check(() => assert.ok(findings.some((f) => f.code === code)));
 const settled = {
@@ -211,7 +209,7 @@ check(() =>
       new Set(),
       new Set(),
       now,
-    ).some((f) => f.code === "MISSED_REVIEW_WINDOW"),
+    ).some((f) => f.code === "EXPIRED_REVIEW_HISTORY"),
   ),
 );
 for (const role of [undefined, "USER", "VIP", "SUPERUSER"])

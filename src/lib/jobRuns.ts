@@ -1,4 +1,4 @@
-import { meaningfulCompletion } from "./predictionOperations";
+import { assessJobCompletion } from "./jobOutcome";
 /**
  * Durable execution history for scheduled jobs.
  *
@@ -114,7 +114,7 @@ export async function recordJobRun(input: JobRunInput): Promise<boolean> {
         job: input.job,
         ok: input.ok ?? true,
         summary: input.summary ?? null,
-        detail: (input.detail ?? undefined) as never,
+        detail: (input.detail && typeof input.detail === "object" && !Array.isArray(input.detail) ? {...input.detail,operationalCompletion:assessJobCompletion(input.job,input.detail,input.ok===false?500:200)} : input.detail ?? undefined) as never,
         ms: input.ms ?? null,
       },
     });
@@ -142,7 +142,7 @@ export async function withJobRun<T>(
   const startedAt = Date.now();
   try {
     const result = await run();
-    await recordJobRun({ job, ok: true, summary: summarise(result), detail: result && typeof result === "object" ? { ...result, operationalCompletion: meaningfulCompletion(result) } : { result, operationalCompletion: meaningfulCompletion(result) }, ms: Date.now() - startedAt });
+    await recordJobRun({ job, ok: true, summary: summarise(result), detail: result && typeof result === "object" ? { ...result, operationalCompletion: assessJobCompletion(job,result) } : { result, operationalCompletion: assessJobCompletion(job,result) }, ms: Date.now() - startedAt });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -202,7 +202,7 @@ export async function recordRouteRun(
         return `status ${response.status}`;
       }
     })(),
-    detail: payload && typeof payload === "object" ? { ...payload, operationalCompletion: meaningfulCompletion(payload, response.status) } : { payload, operationalCompletion: meaningfulCompletion(payload, response.status) },
+    detail: payload && typeof payload === "object" ? { ...payload, operationalCompletion: assessJobCompletion(job,payload,response.status) } : { payload, operationalCompletion: assessJobCompletion(job,payload,response.status) },
     ms: Date.now() - startedAt,
   });
 }
