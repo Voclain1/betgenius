@@ -1,3 +1,5 @@
+import { publicationStatusProblem } from "./predictionOperations";
+import { isValidSelection, type MarketType } from "./markets";
 import { prisma } from "@/lib/prisma";
 import { appendPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
@@ -43,8 +45,10 @@ export function applyCategoryChanges(
  * Pass `market` when the caller holds the row's market already, or is about to
  * change it and has not written it yet; otherwise the stored market is used.
  */
-export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket) {
-  const persisted = await prisma.prediction.findUnique({
+type CategoryDb = Pick<typeof prisma, "prediction" | "predictionCategoryLink">;
+export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket, db?: CategoryDb) {
+  const client = db ?? prisma;
+  const persisted = await client.prediction.findUnique({
     where: { id: predictionId },
     select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, provenance: true, categories: { select: { category: true } } },
   });
@@ -58,15 +62,17 @@ export async function setPredictionCategories(predictionId: string, categories: 
   const unique = withHiddenLegCategories(derived, resolvedMarket.marketType, held);
   if (unique.length === 0) throw new Error("At least one category is required");
 
-  await prisma.$transaction([
-    prisma.predictionCategoryLink.deleteMany({ where: { predictionId } }),
-    prisma.predictionCategoryLink.createMany({
+  const writes = [
+    client.predictionCategoryLink.deleteMany({ where: { predictionId } }),
+    client.predictionCategoryLink.createMany({
       data: unique.map((category) => ({ predictionId, category })),
     }),
     // A row in any free category is primarily that free category, so no
     // surface that labels or locks by the primary shows it as VIP/PREMIUM.
-    prisma.prediction.update({ where: { id: predictionId }, data: { category: presentedCategory(unique[0], unique) } }),
-  ]);
+    client.prediction.update({ where: { id: predictionId }, data: { category: presentedCategory(unique[0], unique) } }),
+  ];
+  if (db) await Promise.all(writes);
+  else await prisma.$transaction(writes);
 }
 
 /** Review actions that only move a prediction's status. SETTLE and EDIT carry extra payload and stay on the single-row route. */
@@ -133,8 +139,16 @@ export class KickoffPassedError extends Error {
   }
 }
 
+/** Cached authoritative fixture data is a veto, never an invented pre-match confirmation. */
+export async function assertPublicationFixture(row: { kickoff: Date | null; fixtureApiId?: number | null; marketType?: string; selection?: unknown }, db: Pick<typeof prisma, "fixture"> = prisma) {
+  const fixture = row.fixtureApiId != null ? await db.fixture.findUnique({where:{apiId:row.fixtureApiId}}) : null;
+  const problem = publicationStatusProblem(fixture, row.kickoff, new Date());
+  if (problem) throw new Error(problem);
+  if (row.marketType && row.marketType !== "OTHER" && !isValidSelection(row.marketType as MarketType, row.selection)) throw new Error("INVALID_PUBLICATION_SELECTION");
+}
+
 export async function applyReviewAction(
-  row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null },
+  row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null; updatedAt?: Date },
   action: ReviewAction,
   actorId: string,
 ) {
@@ -143,6 +157,15 @@ export async function applyReviewAction(
   const current = await prisma.prediction.findUnique({ where: { id: row.id }, select: { kickoff: true } });
   if (reviewBlockedByKickoff(action, current?.kickoff)) throw new KickoffPassedError();
   return prisma.$transaction(async (tx) => {
+    if (action === "APPROVE" || action === "PUBLISH") {
+      const claimed = await tx.prediction.updateMany({where:{id:row.id,status:row.status,...(row.updatedAt ? {updatedAt:row.updatedAt} : {}),OR:[{kickoff:null},{kickoff:{gt:new Date()}}]},data:{updatedAt:new Date()}});
+      if (claimed.count !== 1) throw new Error("REVIEW_STATE_CHANGED");
+      const locked = await tx.prediction.findUniqueOrThrow({where:{id:row.id},include:{categories:true}});
+      if (action === "PUBLISH" && locked.status === "PUBLISHED") return locked;
+      await assertPublicationFixture(locked, tx);
+      if (action === "APPROVE" && locked.status === "PUBLISHED") throw new Error("CANNOT_UNPUBLISH_BY_APPROVAL");
+      row = locked;
+    }
     const updated = await tx.prediction.update({
       where: { id: row.id },
       data: reviewTransition(action, actorId, row),
@@ -179,6 +202,7 @@ export async function publishPaidPredictionAtomically(
     });
     if (!before || before.status === "PUBLISHED") return false;
     if (reviewBlockedByKickoff("PUBLISH", before.kickoff)) throw new KickoffPassedError();
+    await assertPublicationFixture(before, tx);
     const snapshot = appendPublicationQuoteEvidence(before.marketConfirmation, publicationEvidence);
     if (!snapshot) throw new Error("Paid publication requires an unrecorded confirmation snapshot");
     const updated = await tx.prediction.update({

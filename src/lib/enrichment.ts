@@ -1398,17 +1398,26 @@ export async function selectStaleOddsTargets(targets: OddsTarget[], now: Date = 
  * that will change before kickoff — so it should stay due for another attempt,
  * not be cached as settled.
  */
-export async function refreshOddsCache(target: OddsTarget): Promise<{ matchKey: string; result: "ok" | "failed" | "error"; detail?: string }> {
+export async function refreshOddsCache(target: OddsTarget, fence?: { key: string; holder: string }): Promise<{ matchKey: string; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   const base = { matchKey: target.matchKey, fixtureApiId: target.fixtureApiId };
+  // Manual recovery must still own its lease at the cache-write boundary.
+  // Normal scheduled writers retain the existing path and make no extra queries.
+  const persistOdds = async (args: Prisma.FixtureOddsCacheUpsertArgs) => {
+    if (!fence) return prisma.fixtureOddsCache.upsert(args);
+    return prisma.$transaction(async tx => {
+      const held = await tx.appLock.updateMany({where:{key:fence.key,holder:fence.holder,expiresAt:{gt:new Date()}},data:{acquiredAt:new Date()}});
+      if (held.count !== 1) throw new Error("RECOVERY_LEASE_LOST_BEFORE_CACHE_WRITE");
+      return tx.fixtureOddsCache.upsert(args);
+    },{timeout:3000,maxWait:1000});
+  };
 
   let raw: Awaited<ReturnType<typeof getOdds>> = null;
   try {
     raw = await getOdds(target.fixtureApiId);
   } catch (err: any) {
     const lastError = err?.message ?? String(err);
-    await prisma.fixtureOddsCache
-      .upsert({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
+    await persistOdds({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
       .catch(() => {});
     return { matchKey: target.matchKey, result: "error", detail: lastError };
   }
@@ -1416,8 +1425,7 @@ export async function refreshOddsCache(target: OddsTarget): Promise<{ matchKey: 
   const trimmed = trimOdds(raw?.[0]);
   if (!trimmed) {
     const lastError = raw === null ? "No response from api-football — see server logs" : "No bookmaker prices quoted for this fixture yet";
-    await prisma.fixtureOddsCache
-      .upsert({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
+    await persistOdds({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })
       .catch(() => {});
     return { matchKey: target.matchKey, result: "failed", detail: lastError };
   }
@@ -1430,6 +1438,6 @@ export async function refreshOddsCache(target: OddsTarget): Promise<{ matchKey: 
     lastAttemptAt: now,
     lastError: null,
   };
-  await prisma.fixtureOddsCache.upsert({ where: { matchKey: target.matchKey }, create: payload, update: payload });
+  await persistOdds({ where: { matchKey: target.matchKey }, create: payload, update: payload });
   return { matchKey: target.matchKey, result: "ok", detail: `${trimmed.bookmakerCount} bookmakers, ${trimmed.markets.length} markets` };
 }

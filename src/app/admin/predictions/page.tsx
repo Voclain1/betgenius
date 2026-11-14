@@ -107,10 +107,12 @@ export default function AdminPredictions() {
   };
 
   const settle = async (id: string, outcome: "WON" | "LOST" | "VOID") => {
+    const correctionReason = prompt("Reason for this settlement or correction (at least 8 characters):");
+    if (!correctionReason || correctionReason.trim().length < 8) return;
     await fetch(`/api/admin/predictions/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "SETTLE", patch: { outcome } }),
+      body: JSON.stringify({ action: "SETTLE", patch: { outcome, correctionReason } }),
     });
     load();
   };

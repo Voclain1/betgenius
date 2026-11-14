@@ -203,6 +203,8 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
   };
 
   const settle = async () => {
+    const correctionReason = prompt("Reason for this settlement or correction (at least 8 characters):");
+    if (!correctionReason || correctionReason.trim().length < 8) return;
     setSettleBusy(true);
     setSettleError(null);
     try {
@@ -212,6 +214,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         body: JSON.stringify({
           action: "SETTLE",
           patch: {
+            correctionReason,
             outcome: settleForm.outcome,
             finalHomeScore: settleForm.homeScore !== "" ? Number(settleForm.homeScore) : null,
             finalAwayScore: settleForm.awayScore !== "" ? Number(settleForm.awayScore) : null,

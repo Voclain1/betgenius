@@ -36,7 +36,7 @@ check("no kickoff and 3 failures: hand to an admin (as before)", shouldAbandon(S
 
 // A pick is settled once even when the pass and the full run overlap.
 const lib = read("src/lib/settleFinished.ts");
-check("settle write is conditional on outcome PENDING", /updateMany\(\{ where: \{ id: p\.id, outcome: "PENDING" \}/.test(lib));
+check("settle write is conditional on outcome PENDING", /updateMany\(\{ where: \{ id: p\.id, outcome: "PENDING", updatedAt: p\.updatedAt \}/.test(lib));
 check("...and sends no notification when it lost the race", /if \(claimed\.count === 0\) return false;/.test(lib));
 
 // Both runs share the one settling routine.

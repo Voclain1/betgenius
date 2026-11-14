@@ -41,6 +41,7 @@ export type ScoreLookupResult = (
   // case and are flagged for manual settlement rather than guessed.
   | { status: "scored"; homeScore: number; awayScore: number; halftime: { home: number; away: number } | null }
   | { status: "not_finished" }
+  | { status: "provider_unavailable"; reason: string }
   | { status: "manual_required"; reason: string }
   | { status: "not_found"; reason: string }
 ) & LookupMeta;
@@ -144,10 +145,11 @@ export function regulationScoreOf(
  * A failed call yields an empty map rather than throwing: every row simply
  * falls back to its date+name lookup, which is the pre-existing behaviour.
  */
-export async function prefetchFixturesById(ids: number[]): Promise<Map<number, FinishedScoreFixture & { fixture: { id: number; date: string; status: { short: string } } }>> {
-  const map = new Map<number, any>();
+export async function prefetchFixturesById(ids: number[]): Promise<Map<number, FinishedScoreFixture & { fixture: { id: number; date: string; status: { short: string } } }> & { unavailable?: boolean }> {
+  const map: Map<number, any> & { unavailable?: boolean } = new Map();
   if (!ids.length) return map;
   const rows = await getFixturesByIds(ids);
+  if (rows === null) map.unavailable = true;
   for (const r of rows ?? []) map.set((r as any).fixture.id, r);
   return map;
 }
@@ -214,13 +216,17 @@ export async function lookupFinishedScore(input: {
   // spelling, so it never produces the "matched both team names" failure that
   // stranded rows indefinitely.
   if (input.fixtureApiId != null) {
+    if ((input.prefetched as { unavailable?: boolean } | undefined)?.unavailable)
+      return { status: "provider_unavailable", reason: "fixture batch unavailable; no duplicate per-row requests", matchedBy: "id" };
+    if (input.prefetched && !input.prefetched.has(input.fixtureApiId))
+      return { status: "not_found", reason: "successful fixture batch did not contain this id", matchedBy: "id" };
     let match = input.prefetched?.get(input.fixtureApiId);
     if (!match) {
       const rows = await getFixturesByIds([input.fixtureApiId]);
       // rows === null is a FAILED call — fall through to the date path rather
       // than declaring a fixture that exists to be missing. An empty array is
       // a successful "no such fixture", which the date path cannot improve on.
-      if (rows === null) match = undefined;
+      if (rows === null) return { status: "provider_unavailable", reason: "fixture provider unavailable", matchedBy: "id" };
       else if (rows.length === 0) return { status: "not_found", reason: `provider has no fixture with id ${input.fixtureApiId}`, matchedBy: "id" };
       else match = rows[0];
     }
@@ -233,7 +239,8 @@ export async function lookupFinishedScore(input: {
   // rescheduled across midnight is invisible to it no matter how well the
   // names match.
   const dateStr = input.kickoff.toISOString().slice(0, 10);
-  const fixtures = await getFixturesByDate(dateStr);
+  const fixtures = await getFixturesByDate(dateStr).catch(() => null);
+  if (fixtures === null) return { status: "provider_unavailable", reason: "fixture date lookup unavailable", matchedBy: "date" };
   if (!fixtures?.length) return { status: "not_found", reason: "no fixtures returned for that date (plan restriction or genuinely none)", matchedBy: "date" };
 
   const match = fixtures.find((f) => namesLikelyMatch(f.teams.home.name, input.homeTeam) && namesLikelyMatch(f.teams.away.name, input.awayTeam));
