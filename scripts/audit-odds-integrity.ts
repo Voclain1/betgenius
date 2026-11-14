@@ -59,6 +59,25 @@ async function main() {
         take: 1000,
       });
       const byKey = new Map(quotes.map((q) => [q.matchKey, q]));
+      const fixtures = await tx.fixture.findMany({
+        where: {
+          apiId: {
+            in: rows.flatMap((p) =>
+              p.fixtureApiId != null ? [p.fixtureApiId] : [],
+            ),
+          },
+        },
+        take: 1000,
+        select: {
+          apiId: true,
+          status: true,
+          kickoff: true,
+          updatedAt: true,
+          homeScore: true,
+          awayScore: true,
+        },
+      });
+      const fixtureById = new Map(fixtures.map((f) => [f.apiId, f]));
       const duplicates = [];
       for (const p of rows.filter((p) =>
         findings.some(
@@ -166,6 +185,10 @@ async function main() {
               ? (Date.now() - Date.parse(raw.update)) / 60000
               : null,
             missingFixtureId: !p.fixtureApiId,
+            storedFixtureState:
+              p.fixtureApiId != null
+                ? (fixtureById.get(p.fixtureApiId)?.status ?? "UNCACHED")
+                : "MISSING_ID",
             createdAt: p.createdAt,
             publishedAt: p.publishedAt,
             diagnostic:
@@ -175,6 +198,10 @@ async function main() {
                 marketType: p.marketType,
                 selection: p.selection,
                 cache: q,
+                fixture:
+                  p.fixtureApiId != null
+                    ? fixtureById.get(p.fixtureApiId)
+                    : undefined,
                 now: new Date(),
                 maxMinutes: 120,
               }).issue?.code ?? "NONE",
@@ -294,6 +321,7 @@ async function main() {
           total: odds.length,
           byMarket: tally(odds.map((x) => x.market)),
           byCompetition: tally(odds.map((x) => String(x.competition))),
+          byStoredFixtureState: tally(odds.map((x) => x.storedFixtureState)),
           byDiagnostic: tally(odds.map((x) => x.diagnostic)),
           createdRange: odds
             .map((x) => x.createdAt.toISOString())

@@ -219,7 +219,7 @@ export function assessJobCompletion(
     typeof p.attempted === "boolean" &&
     Array.isArray(p.tiers)
   ) {
-    if (!p.attempted && p.tiers.length === 0)
+    if (!p.attempted && p.tiers.every((t: any) => t?.status === "empty"))
       return result("NO_WORK", 0, 0, "ACCUMULATOR_POOL_GATE");
     if (
       p.attempted &&

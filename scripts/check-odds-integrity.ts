@@ -108,6 +108,43 @@ for (const status of ["FT", "1H", "PST"])
   );
 // Paid and free prices use the same cache diagnostic; publication evidence is never an input/output.
 check(JSON.stringify(cache), initialCache);
+check(
+  assess({
+    cache: {
+      ...cache,
+      oddsJson: { update: "invalid", markets: cache.oddsJson.markets },
+    },
+  }).issue?.code,
+  "ODDS_PROVIDER_TIMESTAMP_UNVERIFIED",
+);
+check(
+  assessJobCompletion("curate-accumulators", {
+    attempted: false,
+    tiers: Array.from({ length: 6 }, () => ({ status: "empty" })),
+  }).status,
+  "NO_WORK",
+);
+check(
+  assessJobCompletion("notifications-reminders", {
+    created: 0,
+    insights: 0,
+    digests: {
+      morning: "waiting: 1 of 3 categories ready",
+      night: "outside window",
+    },
+  }).status,
+  "DEFERRED",
+);
+check(
+  assessJobCompletion("email-dispatch", {
+    ran: true,
+    queued: {},
+    errors: {},
+    send: { sent: 0, failed: 0, retried: 0, skipped: 0, expired: 0 },
+    paystack: { ran: false, reason: "unexpected sync failure" },
+  }).status,
+  "UNKNOWN",
+);
 const cases: Array<[string, unknown, string]> = [
   [
     "refresh-insights",

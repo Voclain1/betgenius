@@ -116,6 +116,13 @@ export function assessOperationalOdds(input: {
       "INFO",
       "The latest cached response does not cover this market; current provider availability is unverified.",
     );
+  else if (provider.status === "UNKNOWN")
+    issue = finding(
+      "ODDS_PROVIDER_TIMESTAMP_UNVERIFIED",
+      "WARNING",
+      "Provider timestamp is invalid or in the future; freshness requires manual review.",
+      "MANUAL_REVIEW",
+    );
   else if (provider.status !== "FRESH")
     issue = finding(
       "ODDS_PROVIDER_TIMESTAMP_AGING",
