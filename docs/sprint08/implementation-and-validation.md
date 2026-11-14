@@ -63,7 +63,7 @@ All screenshots are from the actual production-mode local app in Chromium, using
 | Market comparison | [Desktop view](screenshots/desktop-markets.png) | [Phone view](screenshots/mobile-markets.png) |
 | Authenticated saved filter | — | [390 px](screenshots/mobile-saved.png) |
 
-The browser suite also verifies a 320-pixel viewport, zero document overflow, real GET submissions, anonymous/private HTML and flight boundaries, structured-data JSON, missing evidence/quotes, authenticated timezone/favourites, and the existing save API. The full synthetic screenshots/logs are also uploaded by the `prediction-discovery` CI workflow.
+The browser suite dismisses the existing optional notification onboarding through “Not now” when Chrome presents it, without granting push permission or changing production notification behavior. It also verifies a 320-pixel viewport, zero document overflow, real GET submissions, anonymous/private HTML and flight boundaries, structured-data JSON, missing evidence/quotes, authenticated timezone/favourites, and the existing save API. The full synthetic screenshots/logs are also uploaded by the `prediction-discovery` CI workflow.
 
 ## Reproducible local preview
 

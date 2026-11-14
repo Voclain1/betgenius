@@ -27,6 +27,28 @@ async function main() {
     checks++;
   };
   const errors: string[] = [];
+  let dismissedPrompts = 0;
+  const notificationDialog = (page: any) =>
+    page.locator('[role="dialog"][aria-labelledby="push-onboarding-title"]');
+  async function registerOnboardingHandler(page: any) {
+    const dialog = notificationDialog(page);
+    await page.addLocatorHandler(dialog, async () => {
+      await dialog
+        .getByRole("button", { name: "Not now", exact: true })
+        .click();
+      dismissedPrompts++;
+    });
+  }
+  async function dismissOnboarding(page: any) {
+    const dialog = notificationDialog(page);
+    if (!(await dialog.isVisible())) return;
+    // Do not let the automatic handler dismiss the target of this explicit click.
+    await page.removeLocatorHandler(dialog);
+    await dialog.getByRole("button", { name: "Not now", exact: true }).click();
+    dismissedPrompts++;
+    await registerOnboardingHandler(page);
+  }
+
   async function context(width: number, height: number) {
     const ctx = await browser.newContext({
       viewport: { width, height },
@@ -39,6 +61,7 @@ async function main() {
     );
     const page = await ctx.newPage();
     page.on("pageerror", (e: Error) => errors.push(e.message));
+    await registerOnboardingHandler(page);
     return { ctx, page };
   }
   async function checkLayout(page: any) {
@@ -57,6 +80,7 @@ async function main() {
       timeout: 90000,
     });
     ok(response?.status() === 200, `HTTP 200 for ${path}`);
+    await dismissOnboarding(page);
     const reject = page.getByRole("button", { name: "Reject", exact: true });
     if (await reject.isVisible()) await reject.click();
     const closeAd = page.getByRole("button", { name: "Close ad", exact: true });
@@ -66,6 +90,7 @@ async function main() {
   const discovery = `/predictions?d_date=${manifest.date}`;
   const snapshots: string[] = [];
   async function shot(page: any, name: string, anchor?: string) {
+    await dismissOnboarding(page);
     if (anchor)
       await page
         .locator(anchor)
@@ -294,7 +319,7 @@ async function main() {
       ),
     );
     console.log(
-      `Sprint 08 browser: ${checks} assertions passed at desktop, phone and small-phone widths; ${snapshots.length} screenshots in ${folder}`,
+      `Sprint 08 browser: ${checks} assertions passed at desktop, phone and small-phone widths; ${snapshots.length} screenshots in ${folder}; ${dismissedPrompts} notification prompts dismissed through Not now`,
     );
   } finally {
     await browser.close();
