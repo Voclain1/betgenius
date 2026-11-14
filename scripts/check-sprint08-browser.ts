@@ -68,6 +68,23 @@ async function main() {
     const dims = await page.evaluate(() => ({
       viewport: innerWidth,
       document: document.documentElement.scrollWidth,
+      path: location.pathname,
+      overflow: [...document.querySelectorAll("body *")]
+        .filter((el) => el.getBoundingClientRect().right > innerWidth + 1)
+        .filter((el) => {
+          for (let p = el.parentElement; p; p = p.parentElement) {
+            if (["hidden", "auto", "scroll", "clip"].includes(getComputedStyle(p).overflowX))
+              return false;
+          }
+          return true;
+        })
+        .slice(0, 16)
+        .map((el) => ({
+          tag: el.tagName,
+          cls: String(el.className),
+          right: Math.round(el.getBoundingClientRect().right),
+          text: el.textContent?.slice(0, 55),
+        })),
     }));
     ok(
       dims.document <= dims.viewport,
@@ -173,6 +190,21 @@ async function main() {
       if (name !== "small-phone")
         await shot(page, `${name}-category`, "#discover");
       await visit(page, manifest.matchHref);
+      if (name === "small-phone") {
+        // Different system-font metrics exposed a genuine form-strip overflow in CI.
+        const priorFont = await page.evaluate(
+          () => document.body.style.fontFamily,
+        );
+        for (const font of ["Arial", "DejaVu Sans"]) {
+          await page.evaluate((font: string) => {
+            document.body.style.fontFamily = font;
+          }, font);
+          await checkLayout(page);
+        }
+        await page.evaluate((font: string) => {
+          document.body.style.fontFamily = font;
+        }, priorFont);
+      }
       ok(
         !(await page.content()).includes("PRIVATE_PREVIEW_SELECTION"),
         "Paid match selection absent including flight payload",

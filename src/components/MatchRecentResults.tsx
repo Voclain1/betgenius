@@ -107,7 +107,7 @@ function TeamForm({ name, digest, side, history }: { name: string; digest: TeamD
       ) : (
         <>
           {/* Oldest to newest, left to right — the way a run reads. */}
-          <div className="flex items-center gap-2 px-5 sm:px-6" aria-label={`${name} last ${rows.length} results, oldest first`}>
+          <div className="flex flex-wrap items-center gap-2 px-5 sm:px-6" aria-label={`${name} last ${rows.length} results, oldest first`}>
             {[...rows].reverse().map((f, i) => <ResultTile key={`${f.date}-${i}`} result={f.result} />)}
             <span className="ml-auto text-[10px] font-semibold uppercase tracking-[0.14em] text-gray-500">Latest →</span>
           </div>

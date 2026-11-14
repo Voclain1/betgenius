@@ -87,7 +87,7 @@ Open the discovery date and match URL in `work/sprint08-preview.json`. In a seco
 
 ## Validation and performance
 
-New coverage: **91 pure/render assertions**, **83 PostgreSQL assertions**, **99 browser assertions**, and the actual Chromium suite at 1440/390/320 pixels. Existing regressions cover publication atomicity, concurrency and rollback; paid access/entitlements/payments; current-mode Sprint 06 immutable observations, selected/rejected candidates, empty sets, retries and observer failures; operations/read-only recovery; and match/SEO behavior. The consolidated local run contains 36 suites, plus 11 integrated-master Match Centre, navigation, prediction-experience and odds suites; all 47 pass. TypeScript and the production build pass.
+New coverage: **91 pure/render assertions**, **83 PostgreSQL assertions**, **101 browser assertions**, and the actual Chromium suite at 1440/390/320 pixels. Existing regressions cover publication atomicity, concurrency and rollback; paid access/entitlements/payments; current-mode Sprint 06 immutable observations, selected/rejected candidates, empty sets, retries and observer failures; operations/read-only recovery; and match/SEO behavior. The consolidated local run contains 36 suites, plus 11 integrated-master Match Centre, navigation, prediction-experience and odds suites; all 47 pass. TypeScript and the production build pass.
 
 The sitemap scope suite had one pre-existing failing assertion on untouched base `ff11995`: it forbade `coachJson` despite the established match staff-claim checks requiring that narrow cache field and its fetch timestamp. The assertion now requires those fields while continuing to forbid squad/stats blobs. This does not expand the production query; **all 280 sitemap assertions pass**.
 
@@ -96,6 +96,8 @@ Production-build JavaScript measurement: **75 routes pass the existing budgets**
 The integrated Match Centre render guard also accepts the safer allowlisted locked-row shape while still requiring an explicitly withheld outcome (77 assertions pass).
 
 The integrated Chrome check exposed an additional 320-pixel compact-table case: a long awaiting-result label squeezed a tip into extra lines. Ungraded phone tips now span the unused result-column space; no status is shortened or hidden and desktop columns stay unchanged. The unchanged row-height/overflow assertions pass at all five tested widths. Chrome also exposed a large accumulator multiplier overflowing its nested 320-pixel panel; its mobile font is now 24px (30px from small screens upward), keeping the entire unchanged decimal value visible without clipping or smaller-than-readable text.
+
+Different Linux system fonts also exposed the recent-result strip’s “Latest” label extending beyond a 320-pixel card. The strip now wraps that label when needed, preserving every result tile and its order. Explicit Arial and DejaVu Sans browser checks reproduce the original overflow and verify the fix.
 
 The new `prediction-discovery` workflow runs pure/render/SEO tests, real disposable-PostgreSQL integration, a synthetic preview production build, existing performance budgets and actual Chrome browser assertions/screenshots. Existing relevant preflight, operations, paid-market, league-quality and reliability workflows remain enabled.
 
