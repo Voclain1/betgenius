@@ -95,7 +95,7 @@ Production-build JavaScript measurement: **75 routes pass the existing budgets**
 
 The integrated Match Centre render guard also accepts the safer allowlisted locked-row shape while still requiring an explicitly withheld outcome (77 assertions pass).
 
-The integrated Chrome check exposed an additional 320-pixel compact-table case: a long awaiting-result label squeezed a tip into extra lines. Ungraded phone tips now span the unused result-column space; no status is shortened or hidden and desktop columns stay unchanged. The unchanged row-height/overflow assertions pass at all five tested widths.
+The integrated Chrome check exposed an additional 320-pixel compact-table case: a long awaiting-result label squeezed a tip into extra lines. Ungraded phone tips now span the unused result-column space; no status is shortened or hidden and desktop columns stay unchanged. The unchanged row-height/overflow assertions pass at all five tested widths. Chrome also exposed a large accumulator multiplier overflowing its nested 320-pixel panel; its mobile font is now 24px (30px from small screens upward), keeping the entire unchanged decimal value visible without clipping or smaller-than-readable text.
 
 The new `prediction-discovery` workflow runs pure/render/SEO tests, real disposable-PostgreSQL integration, a synthetic preview production build, existing performance budgets and actual Chrome browser assertions/screenshots. Existing relevant preflight, operations, paid-market, league-quality and reliability workflows remain enabled.
 

@@ -62,7 +62,7 @@ export function ComboCard({
         <>
           {product !== null && (
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-2xl bg-brand-bg/70 px-4 py-3 ring-1 ring-brand-border">
-              <OddsFigure value={product} lead="×" className="text-3xl font-black tabular-nums text-brand" />
+              <OddsFigure value={product} lead="×" className="text-2xl font-black tabular-nums text-brand sm:text-3xl" />
               <span className="text-xs text-gray-400">
                 combined odds from {combo.legs.length} legs, at the prices when this multi bet was built
               </span>
