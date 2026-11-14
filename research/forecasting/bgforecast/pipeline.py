@@ -26,6 +26,7 @@ from .ledger import Ledger
 from .metrics import (binary_brier_rows, binary_logloss_rows, brier_rows, logloss_rows, paired_difference, score_1x2,
                       score_binary)
 from .poisson import predict_frame
+from .validate import validate_dataset
 from .splits import assert_partition_integrity, describe, final_split, split_at, walk_forward, _kickoff_quantile
 from . import xgb_model
 
@@ -174,7 +175,7 @@ def _fit_and_score(df: pd.DataFrame, test_fraction: float, n_folds: int, cal_fra
 def run(dataset_dir: str | Path, out_dir: str | Path, *, mode: str = "strict", test_fraction: float = PRIMARY_TEST_FRACTION, n_folds: int = 4,
         cal_fraction: float = 0.2, quick: bool = False, sensitivity: bool = False, boundary_sensitivity: bool = True,
         boundary_fractions: tuple = BOUNDARY_SENSITIVITY_FRACTIONS, threads: int | None = None,
-        feature_config: FeatureConfig = FeatureConfig()) -> dict:
+        require_real: bool = False, feature_config: FeatureConfig = FeatureConfig()) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     if threads is not None:
@@ -188,6 +189,17 @@ def run(dataset_dir: str | Path, out_dir: str | Path, *, mode: str = "strict", t
         return now
 
     ds = load_dataset(dataset_dir)
+    validation = validate_dataset(ds, require_real=require_real)
+    if not validation["valid"]:
+        # Refuse before building anything: an invalid dataset is not evidence of anything.
+        failed = [c["check"] for c in validation["checks"] if not c["passed"] and c["severity"] == "error"]
+        r = {"engine_version": __version__, "validation": validation,
+             "dataset": {"path": str(ds.path), "source": ds.source, "schema_version": ds.manifest.get("schema_version"),
+                         "as_of": ds.manifest.get("as_of"), "counts": ds.manifest.get("counts")},
+             "ledger": {"mode": mode, "matches": 0}, "features": {}, "coverage": {"features_all": {}},
+             "status": f"invalid dataset: failed integrity check(s) {', '.join(failed)}; no model trained"}
+        r["recommendation"] = recommend(r)
+        return _finish(r, out, timings, t0)
     ledger = Ledger(ds.observations, mode=mode)
     t = lap("load_and_ledger", t0)
     df, featmeta = build_feature_table(ds.fixtures, ledger, feature_config)
@@ -203,6 +215,7 @@ def run(dataset_dir: str | Path, out_dir: str | Path, *, mode: str = "strict", t
         "protocol": {"ledger_mode": mode, "test_fraction": test_fraction, "pre_registered_test_fraction": PRIMARY_TEST_FRACTION,
                      "test_fraction_overridden": test_fraction != PRIMARY_TEST_FRACTION, "n_folds": n_folds, "calibration_fraction": cal_fraction,
                      "quick_grid": quick, "gates": {"min_test": MIN_TEST, "coverage_min_pct": COVERAGE_MIN, "min_logloss_gain": MIN_LOGLOSS_GAIN, "ece_max": ECE_MAX}},
+        "validation": validation,
         "ledger": ledger.summary(),
         "features": {**featmeta, "columns": feature_columns(df) if not df.empty else []},
         "coverage": {"features_all": completeness(df)},

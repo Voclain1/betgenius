@@ -64,6 +64,16 @@ def render(r: dict) -> str:
                  "A boundary chosen after seeing results is not a valid basis for a decision.\n")
     L.append(f"\nStatus: {r.get('status')}\n")
 
+    v = r.get("validation")
+    if v:
+        L.append(f"## Dataset validation: **{'passed' if v['valid'] else 'FAILED'}**\n")
+        L.append(_table(["check", "severity", "result", "detail"],
+                        [[c["check"], c["severity"], "pass" if c["passed"] else "**FAIL**", c["detail"]] for c in v["checks"]]))
+        L.append("\nExtracted counts beside the brief's audit observations (informational; denominators differ):\n")
+        L.append(_table(["measure", "extracted", "audit reference", "difference"],
+                        [[a["measure"], a["extracted"] if a["extracted"] is not None else "—", a["audit_reference"],
+                          f"{a['difference']:+d}" if a["difference"] is not None else "—"] for a in v["audit_comparison"]]))
+        L.append("")
     c = r["dataset"].get("counts") or {}
     L.append("## 1. Extracted dataset\n")
     L.append(_table(["measure", "count"], [[k, v] for k, v in c.items()]))

@@ -41,8 +41,12 @@ research/forecasting/
     extract.ts                   CLI
     check-extract-core.ts        unit checks (synthetic rows)
     integration/                 end-to-end check and extraction benchmark, both against a throwaway local Postgres
+  restore/                       real-data runner: isolated two-table restore -> extract -> validate -> evaluate
+    isolated-run.sh              the one command for a real run from a pg_dump file
+    check-isolated-run.sh        end-to-end check of the runner on a synthetic dump
   bgforecast/                    Python modelling package
     dataset.py                   load + verify (schema version, SHA-256 per file)
+    validate.py                  integrity checks run before any training; audit-figure comparison
     ledger.py                    point-in-time match ledger
     features.py                  deterministic feature extraction
     poisson.py                   Model A
@@ -275,6 +279,15 @@ Overriding `--test-fraction` is allowed for exploration. The run is then marked 
 
 ## 10. Running it
 
+The preferred real run is one command on an isolated machine, given a verified dump (section 11):
+
+```bash
+python3 -m venv research/forecasting/.venv && research/forecasting/.venv/bin/pip install -r research/forecasting/requirements.txt
+bash research/forecasting/restore/isolated-run.sh --dump /secure/path/betgenius.dump      # -> research/forecasting/work/real-<stamp>/
+```
+
+The manual steps, for a read replica or Neon branch instead of a dump:
+
 ```bash
 # 1. Extract (by hand, outside CI, with the research role; see section 11 for where to run it)
 RESEARCH_READONLY_DATABASE_URL='postgresql://betgenius_research:…@…/…?sslmode=require' \
@@ -287,8 +300,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 nice -n 19 .venv/bin/python -m bgforecast run --dataset work/dataset-2026-11-14 --out work/run-2026-11-14 --sensitivity --threads 2
 # -> work/run-2026-11-14/report.md, results.json, test_predictions.csv, model/
 
+# Validate a dataset on its own (the pipeline also runs this and refuses to train on failure)
+.venv/bin/python -m bgforecast validate --dataset work/dataset-2026-11-14 --require-real
+
 # Tests (synthetic only)
 npm run check:research-extract
+BGF_PYTHON=$PWD/research/forecasting/.venv/bin/python bash research/forecasting/restore/check-isolated-run.sh
 bash research/forecasting/extract/integration/run-local-integration.sh   # needs local postgres binaries
 cd research/forecasting && .venv/bin/python -m pytest -q
 ```
@@ -325,13 +342,28 @@ The extraction volume was 4,400 fixture ids, 5,150 jobs (1,500 V1 contexts padde
 
 **Where to run extraction, in order of preference:**
 
-1. **Off the live database entirely (preferred).** Restore the two tables needed from the nightly off-server backup into a throwaway Postgres on an isolated machine, then extract from that. This has zero load on production and zero buffer-cache disruption:
+1. **Off the live database entirely (preferred).** Restore the two tables needed from a dump into a throwaway Postgres on an isolated machine, then extract from that. This has zero load on production and zero buffer-cache disruption.
+
+   Use the one-command runner, which does every step below and tears the scratch database down afterwards:
 
    ```bash
-   pg_restore --no-owner --table='"Prediction"' --table='"AIJob"' -d <scratch_db> <daily dump>
+   bash research/forecasting/restore/isolated-run.sh --dump /secure/path/betgenius.dump
    ```
 
-   Create the read-only role there exactly as in section 5. Use the latest dump as `--as-of`, and delete the scratch database afterwards. Note that the dump contains production data: keep it on an encrypted disk and out of the repository.
+   The runner:
+   - refuses to run on the production VPS
+   - verifies the dump, including that its `pg_dump` version is no newer than the local Postgres
+   - restores **only** `Prediction` and `AIJob`
+   - drops the prompt, raw-output and prose columns
+   - creates the read-only role from section 5
+   - extracts with `--as-of` set to the dump's creation time
+   - destroys the cluster, then validates and evaluates
+
+   It is tested end to end by `restore/check-isolated-run.sh` on a synthetic dump. See docs/research/REAL_DATA_READINESS_2026-11-14.md for whether a usable dump currently exists.
+
+   If restoring by hand, note the quoting. **`pg_restore -t` matches names literally**: `pg_restore -t Prediction -t AIJob` is correct, while `-t '"Prediction"'` matches nothing *and still exits 0*, silently restoring an empty database. (An earlier version of this document showed the quoted form; that was wrong.) **`pg_dump -t` is the opposite**: it takes a pattern, so a mixed-case name must be quoted, as in `pg_dump -t '"Prediction"' -t '"AIJob"'`.
+
+   Production runs Postgres 17, so its dumps need Postgres 17 client and server binaries on the isolated machine. An older `pg_restore` cannot read them, and the runner refuses rather than half-restoring. The dump contains production data: keep it on an encrypted disk and out of the repository.
 2. **A Neon branch or read replica**, if the database is still on Neon.
 3. **The live VPS Postgres, only if 1 and 2 are unavailable.** Use the gentlest profile (`--page-size 25 --page-delay-ms 100`, with the npm script's heap cap), off-peak — not during the settlement or generation cron windows. Expect about 30 seconds of snapshot.
 
@@ -373,6 +405,8 @@ Fixed thread counts give bit-identical results. Compare runs at the same thread 
 | `npm run check:research-extract` | Duplicate fixture rows; earliest valid pre-kickoff context; contexts at or after kickoff; team, league, kickoff and score conflicts; partial and missing scores; settlement timing; outcome against score; V1 and V2 parsing via production code; observation orientation; missing opponents; same-day, future-dated and incomplete audit counts; future availability; engine rows scoped to the selected job; deterministic and order-independent output; every read-only posture and credential refusal, including that refusals never echo the credential. |
 | `extract/integration/run-local-integration.sh` | A real Postgres 16 with the real schema. Refuses the app credential and a role with write grants; an UPDATE inside the session fails; real extraction through a read-only role; V1 context; `--as-of` masking; byte-identical re-extraction. |
 | `pytest` (`research/forecasting/tests`) | The ledger's same-day, 28h and exact-kickoff rules; strict versus completion modes; target exclusion; duplicate merging; score conflicts; missing data. **Leakage invariance:** rewriting every result unknowable at generation time leaves features bit-identical across 30 fixtures and more than 1,000 tampered sightings, with a positive control. Shrinkage and priors; identifiers stay categorical. Partitions are disjoint, label-safe, ordered and non-random, and the integrity check fires on a planted violation. Poisson probabilities are checked against closed forms. Temperature scaling. XGBoost probabilities are valid with NaNs present. Bit-identical retraining and artifact hashes, with artifact tamper detection. Bit-identical end-to-end pipeline runs. Dataset hash, schema and duplicate refusals. The synthetic report banner. **Decision rule:** every branch. Low coverage, overall or in the test period alone, blocks proceed even with excellent results. Missing or NaN coverage and calibration fail closed. Coverage and margin thresholds are inclusive. A significant but negligible gain is not proceed, and the CI requirement still applies. An exhaustive grid of 432 combinations checks that proceed implies every gate passed. Sensitivity results cannot change the recommendation. Boundary sensitivity leaves the final model hash, test scores and recommendation bit-identical. An end-to-end run with zero coverage cannot proceed. An overridden test fraction is flagged. |
+| `restore/check-isolated-run.sh` | Builds a full-schema synthetic database with a canary user e-mail and canary prompt, dumps it, destroys it, and runs the isolated runner on the dump. It checks refusals: production-host markers, a dump without `AIJob` data, output outside the gitignored work tree, an unreadable dump, and a dump newer than the local Postgres (via a version shim). It then checks that only the two tables are restored with all rows, the scratch cluster is destroyed, the read-only snapshot and validation pass, all eight gates and both sensitivity analyses are produced, provenance is recorded, the thread cap holds, and neither canary reaches any output. |
+| `pytest tests/test_validate.py` | Each hard integrity check fires on a planted defect: generation at kickoff, settlement before kickoff, engine row after kickoff, observation after `as_of`, excluded without a reason, count mismatch, an unverified snapshot, and `--require-real` on synthetic data. The pipeline refuses to train on an invalid dataset. |
 | `extract/integration/bench-local-extract.sh` | Not a pass/fail test. It measures extractor wall time, snapshot duration and peak memory, and Postgres memory, at production-like volume on a VPS-configured local Postgres (section 11). |
 
 Mutation checks were run while developing:
