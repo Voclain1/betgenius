@@ -42,7 +42,7 @@ for (const s of ["check-schema-sync", "check-feed-days", "check-prediction-slugs
   check(`${s} reads the live database, so it is not in default preflight`, DB_READONLY_STEPS.some((x) => x.includes(s)) && !PURE_STEPS.some((x) => x.includes(s)));
 }
 const knownWriters = INTEGRATION_STEPS.map(scriptOf).filter((f): f is string => !!f);
-check("positive control: the write pattern flags every known writer", knownWriters.length === 4 && knownWriters.every((f) => WRITE.test(readFileSync(f, "utf8"))));
+check("positive control: the write pattern flags every known writer", knownWriters.length === 5 && knownWriters.every((f) => WRITE.test(readFileSync(f, "utf8"))));
 const pureWriters = PURE_STEPS.map(scriptOf).filter((f): f is string => !!f).filter((f) => WRITE.test(readFileSync(f, "utf8")));
 check("no default-preflight script contains a Prisma write", pureWriters.length === 0, pureWriters);
 const dbWriters = DB_READONLY_STEPS.map(scriptOf).filter((f): f is string => !!f).filter((f) => WRITE.test(readFileSync(f, "utf8")));

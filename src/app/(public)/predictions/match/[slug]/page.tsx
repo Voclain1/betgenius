@@ -42,6 +42,12 @@ import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
 import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
 import { EditorialAttribution } from "@/components/EditorialAttribution";
+import { LeagueBadge } from "@/components/LeagueBadge";
+import { MatchFormGoals } from "@/components/matchcentre/MatchFormGoals";
+import { MatchResultPanel } from "@/components/matchcentre/MatchResultPanel";
+import { formSource, h2hWindow, matchState, readFixtureResult, tableContext } from "@/lib/matchCentre";
+import { getPersonalization } from "@/lib/personalizationData";
+import { DEFAULT_TIMEZONE, kickoffInZone } from "@/lib/personalization";
 
 /**
  * Everything both generateMetadata and the page body need, assembled once.
@@ -183,7 +189,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     };
     return canView
       ? cleaned
-      : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, locked: true };
+      // A locked pick's result is withheld too: WON/LOST on a padlocked card is
+      // part of what is paid for (same rule as the VIP/Premium feeds, #173).
+      : { ...r, pick: "LOCKED", reasoning: "Subscribe to unlock this tip and full reasoning.", matchPreview: null, confidence: null, odds: null, outcome: null, overUnder: null, locked: true };
   });
 
   // The one preview worth showing at the top: the highest-confidence row the
@@ -219,17 +227,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
     getTeamFixtureHistories([match.homeTeamApiId, match.awayTeamApiId]),
   ]);
   const stamp = (date: Date | null | undefined) => date ? date.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" }) + " WAT" : "not available";
-  const sections = [
-    ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
-    ...(preview ? [{ id: "preview", label: "Preview" }] : []),
-    ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
-    ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
-    { id: "lineups", label: hasNews ? "Lineups & news" : "Lineups" },
-    ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
-    ...(evidenceMeetings.length && match.homeTeamApiId != null && match.awayTeamApiId != null ? [{ id: "h2h", label: "H2H" }] : []),
-    { id: "odds", label: "Odds" },
-    { id: "markets", label: "Published picks" },
-  ];
+
 
   // Venue for the structured data, from the same cached row the masthead
   // renders, so the markup can't describe a different ground than the page.
@@ -245,6 +243,54 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       { homeTeamApiId: match.homeTeamApiId, awayTeamApiId: match.awayTeamApiId, kickoff: match.kickoff, leagueApiId: match.leagueApiId },
     ])
   ).get(match.matchKey ?? "");
+
+  // ---- Sprint 02: Match Centre data. All from caches already read above. ----
+  // The provider's result record (status, half-time, events, statistics),
+  // captured by settlement / the fixture refresh — never fetched here.
+  const result = readFixtureResult((detail as { result?: unknown } | null)?.result, fixtureDetail?.fixtureApiId ?? null);
+  const state = matchState({ statusShort: result?.status ?? eventContext?.statusShort ?? null, finalScore, kickoff: match.kickoff });
+  // The signed-in reader's own timezone (Sprint 01 preferences); WAT otherwise.
+  const timeZone = session?.user?.id ? (await getPersonalization(session.user.id as string)).timezone : DEFAULT_TIMEZONE;
+  const localKickoff = timeZone !== DEFAULT_TIMEZONE ? kickoffInZone(match.kickoff, timeZone) : null;
+  const source =
+    match.homeTeamApiId != null && match.awayTeamApiId != null
+      ? formSource({
+          homeHistory: histories.get(match.homeTeamApiId),
+          awayHistory: histories.get(match.awayTeamApiId),
+          homeTeamApiId: match.homeTeamApiId,
+          awayTeamApiId: match.awayTeamApiId,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          kickoff: match.kickoff,
+          leagueApiId: match.leagueApiId,
+          leagueName: match.leagueName,
+        })
+      : null;
+  const hasFormGoals = !!source && (source.ALL.home.length > 0 || source.ALL.away.length > 0);
+  const hasTable = tableContext(standings, match.homeTeamApiId, match.awayTeamApiId).kind === "table";
+  const hasH2H = match.homeTeamApiId != null && match.awayTeamApiId != null && h2hWindow(evidenceMeetings, match.homeTeamApiId, match.awayTeamApiId, 10, match.kickoff).played > 0;
+  const showResult = state !== "scheduled" && state !== "live" && (state !== "unknown" || !!finalScore);
+  // What this page cannot show, said plainly rather than left as an absence.
+  const missing = [
+    !hasFormGoals && "recent form and scoring (no verified fixture history cached for these teams)",
+    !hasH2H && "head-to-head (no recorded meetings before kickoff)",
+    !hasTable && "league table (no table for this competition, or the teams are not in it)",
+  ].filter((x): x is string => !!x);
+  const season = leagueCache?.season ? `${leagueCache.season}/${String(leagueCache.season + 1).slice(-2)}` : null;
+  const sections = [
+    ...(showResult ? [{ id: "result", label: state === "finished" ? "Result" : "Status" }] : []),
+    ...(topRow ? [{ id: "verdict", label: "Verdict" }] : []),
+    ...(preview ? [{ id: "preview", label: "Preview" }] : []),
+    ...(topRow && parseAnalysis(topRow.analysisJson) ? [{ id: "key-factors", label: "Key factors" }] : []),
+    ...(hasForm ? [{ id: "form", label: "Recent form" }] : []),
+    ...(hasFormGoals ? [{ id: "form-goals", label: "Form & goals" }] : []),
+    { id: "lineups", label: hasNews ? "Lineups & news" : "Lineups" },
+    ...(hasStats ? [{ id: "stats", label: "Statistics" }] : []),
+    ...(hasTable ? [{ id: "table-context", label: "Table" }] : []),
+    ...(hasH2H ? [{ id: "h2h", label: "H2H" }] : []),
+    { id: "odds", label: "Odds" },
+    { id: "markets", label: "Published picks" },
+  ];
 
   const lineupsBody = <MatchLineupsBody raw={detail?.lineups} fixtureApiId={fixtureDetail?.fixtureApiId ?? null} homeId={match.homeTeamApiId} awayId={match.awayTeamApiId} kickoff={match.kickoff} supported={cupSupports(match.leagueApiId, "lineups")} />;
 
@@ -275,7 +321,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
             awayTeamApiId: match.awayTeamApiId,
             homeTeamLogo: eventContext?.homeTeamLogo ?? null,
             awayTeamLogo: eventContext?.awayTeamLogo ?? null,
-            statusShort: eventContext?.statusShort ?? null,
+            statusShort: eventContext?.statusShort ?? result?.status ?? null,
             // The SAME string the meta description carries, built from the
             // SAME anonymously-resolved publicTopPick that loadMatch computes
             // for generateMetadata. JSON-LD is served to crawlers and
@@ -312,12 +358,17 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         city={detail?.city}
         referee={detail?.referee}
         finalScore={finalScore}
+        statusCode={result?.status ?? null}
+        halftime={state === "finished" ? result?.halftime ?? null : null}
+        localKickoff={localKickoff}
+        season={season}
         follow={
           <>
             {/* One compact row: crest + "Follow" per team, then the match.
                 The full names are in each button's label and tooltip. */}
             {match.homeTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.homeTeamApiId)} label={match.homeTeam} subject={match.homeTeam} short="" icon={<TeamCrest teamApiId={match.homeTeamApiId} name={match.homeTeam} size={16} />} />}
             {match.awayTeamApiId != null && <FollowButton targetType="TEAM" targetKey={String(match.awayTeamApiId)} label={match.awayTeam} subject={match.awayTeam} short="" icon={<TeamCrest teamApiId={match.awayTeamApiId} name={match.awayTeam} size={16} />} />}
+            {match.leagueApiId != null && match.leagueName && <FollowButton targetType="LEAGUE" targetKey={String(match.leagueApiId)} label={match.leagueName} subject={match.leagueName} short="" icon={<LeagueBadge leagueApiId={match.leagueApiId} leagueName={match.leagueName} showName={false} size={16} />} />}
             {rows[0] && <FollowButton targetType="PREDICTION" targetKey={rows[0].id} label={`${match.homeTeam} vs ${match.awayTeam}`} subject="this match" short="match" icon={<Bell aria-hidden className="h-3.5 w-3.5" />} />}
           </>
         }
@@ -328,6 +379,26 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       </MatchMasthead>
 
       <MatchSectionNav sections={sections} />
+
+      {missing.length > 0 && (
+        <p className="-mt-4 text-xs text-gray-500">
+          Not available for this match: {missing.map((m) => m.split(" (")[0]).join(", ")}. See &ldquo;About this data&rdquo; below.
+        </p>
+      )}
+
+      {showResult && (
+        <MatchResultPanel
+          state={state}
+          result={result}
+          finalScore={finalScore}
+          homeTeam={match.homeTeam}
+          awayTeam={match.awayTeam}
+          homeTeamApiId={match.homeTeamApiId}
+          picks={shaped.filter((r) => !("locked" in r && r.locked)).map((r) => ({ id: r.id, market: r.market, pick: r.pick, outcome: r.outcome ?? null }))}
+          lockedCount={lockedCount}
+          timeZone={timeZone}
+        />
+      )}
 
       {topRow && (
         <MatchVerdict
@@ -359,6 +430,16 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayTeam={match.awayTeam}
         homeHistory={match.homeTeamApiId != null ? histories.get(match.homeTeamApiId) : undefined}
         awayHistory={match.awayTeamApiId != null ? histories.get(match.awayTeamApiId) : undefined}
+      />
+
+      <MatchFormGoals
+        source={source}
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+        homeTeamApiId={match.homeTeamApiId}
+        awayTeamApiId={match.awayTeamApiId}
+        leagueName={match.leagueName}
+        timeZone={timeZone}
       />
 
       {/* Who is playing, right under the form: the starting lineups first,
@@ -407,6 +488,9 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         awayTeamApiId={match.awayTeamApiId}
         leagueName={match.leagueName}
         leagueApiId={match.leagueApiId}
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+        season={leagueCache?.season ?? null}
       />
 
       <MatchH2HSummary
@@ -416,6 +500,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         homeTeamApiId={match.homeTeamApiId}
         awayTeamApiId={match.awayTeamApiId}
         h2hLink={h2hLink}
+        kickoff={match.kickoff}
+        timeZone={timeZone}
       />
 
       {/* After the head-to-head, before the odds: reference data on both
@@ -467,6 +553,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
         <p>
         {original && highlightedJob ? <>Highlighted prediction evidence recorded {highlightedJob.createdAt.toLocaleString("en-GB", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT. Recent form, statistics and H2H above use that original evidence.</> : <>Original prediction evidence is unavailable. Recent form, statistics and H2H above describe the latest cached context, which may differ from what was known before kickoff.</>}
         {" "}Team news, player totals, standings and performance records may refresh separately. Published analysis is not automatically rewritten when those figures change.</p>
+        {missing.length > 0 && <p>Not shown: {missing.join("; ")}.</p>}
         <p>Team context last fetched: {match.homeTeam}: {stamp(homeCache?.fetchedAt)}; {match.awayTeam}: {stamp(awayCache?.fetchedAt)}. Table cache last fetched: {stamp(leagueCache?.fetchedAt)}. A fetch time does not confirm that every underlying item changed.</p>
         {finalScore && <section aria-labelledby="completed-match-context" className="space-y-2 pt-2"><h2 id="completed-match-context" className="text-sm font-bold text-gray-300">Completed match: published prediction record</h2><p>This match has finished. The published call is retained for review; <Link href="/predictions/today" className="text-brand underline">see today’s predictions</Link>.</p></section>}
       </section>

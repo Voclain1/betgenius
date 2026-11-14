@@ -30,6 +30,7 @@ export function MatchScoreClock({
   timeZoneLabel,
   dayLabel,
   finalScore,
+  statusCode,
 }: {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
@@ -40,6 +41,13 @@ export function MatchScoreClock({
   /** "SAT 10 OCT", formatted on the server in Lagos time. */
   dayLabel: string;
   finalScore?: { home: number; away: number } | null;
+  /**
+   * The provider status from the server's cached result record. Lets a
+   * postponed or cancelled fixture say so on first paint instead of showing
+   * a plain kickoff time until (or unless) the client lookup answers. A live
+   * client fixture always takes precedence.
+   */
+  statusCode?: string | null;
 }) {
   const [fixture, setFixture] = useState<FixtureRow | null>(null);
 
@@ -77,7 +85,7 @@ export function MatchScoreClock({
     };
   }, [homeTeamApiId, awayTeamApiId, kickoff]);
 
-  const code = fixture?.fixture.status.short;
+  const code = fixture?.fixture.status.short ?? statusCode ?? undefined;
   const group = code ? classifyStatus(code) : null;
   const irregular = code ? isIrregular(code) : false;
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { leagueSlug } from "@/lib/slug";
 import type { LeagueStandingRow } from "@/lib/enrichment";
 import { PremiumPanel } from "@/components/PremiumPanel";
+import { tableContext, tableSentence } from "@/lib/matchCentre";
 
 /**
  * Where these two sit in the table, and what is at stake around them.
@@ -35,14 +36,26 @@ export function MatchStandingsContext({
   awayTeamApiId,
   leagueName,
   leagueApiId,
+  homeTeam,
+  awayTeam,
+  season,
 }: {
   standings: LeagueStandingRow[] | null;
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   leagueName: string | null;
   leagueApiId: number | null;
+  homeTeam?: string;
+  awayTeam?: string;
+  /** The cached table's season, printed so a reader can see which table this is. */
+  season?: number | null;
 }) {
   if (!standings?.length) return null;
+  // Sprint 02: both teams must be in THIS competition's table; anything else
+  // is not shown at all rather than half-shown (see tableContext).
+  const ctx = tableContext(standings, homeTeamApiId, awayTeamApiId);
+  if (ctx.kind !== "table") return null;
+  const sentence = homeTeam && awayTeam ? tableSentence(ctx, homeTeam, awayTeam) : null;
 
   const ranked = [...standings].sort((a, b) => a.rank - b.rank);
   const ids = new Set([homeTeamApiId, awayTeamApiId].filter((id): id is number => id != null));
@@ -53,6 +66,12 @@ export function MatchStandingsContext({
   const keep = new Set<number>();
   ranked.forEach((row, i) => {
     if (!ids.has(row.teamId) || row.played === 0) return;
+    // A grouped table (several groups share ranks) has no meaningful
+    // neighbours: show only the two teams.
+    if (ctx.grouped) {
+      keep.add(i);
+      return;
+    }
     for (let j = Math.max(0, i - RADIUS); j <= Math.min(ranked.length - 1, i + RADIUS); j++) keep.add(j);
   });
 
@@ -66,7 +85,7 @@ export function MatchStandingsContext({
   return (
     <PremiumPanel
       kicker="Table"
-      title="Table context"
+      title={ctx.grouped ? "Group standings" : "Table context"}
       id="table-context"
       aside={
         leagueName && (
@@ -77,15 +96,43 @@ export function MatchStandingsContext({
       }
     >
 
+      {(sentence || season) && (
+        <p className="mb-3 text-sm text-gray-300">
+          {sentence}
+          {season ? <span className="ml-1 text-xs text-gray-500">{leagueName ? `${leagueName} ` : ""}{season}/{String(season + 1).slice(-2)} table.</span> : null}
+        </p>
+      )}
+      {(ctx.home.venueRecord || ctx.away.venueRecord) && (
+        <dl className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-brand-border text-center">
+          {([
+            [homeTeam, ctx.home.venueRecord],
+            [awayTeam, ctx.away.venueRecord],
+          ] as const).map(([name, v], i) => (
+            <div key={i} className="min-w-0 bg-brand-bg px-2 py-2.5">
+              <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
+                {name ? `${name} ${v ? (v.label === "Home" ? "at home" : "away") : ""}` : v?.label}
+              </dt>
+              <dd className="mt-0.5 text-lg font-black tabular-nums text-gray-100">{v ? `${v.w}-${v.d}-${v.l}` : "—"}</dd>
+              {v && <dd className="text-[10px] tabular-nums text-gray-500">{v.played} played · goals {v.gf}-{v.ga}</dd>}
+            </div>
+          ))}
+        </dl>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">{leagueName ?? "League"} standings around {homeTeam ?? "the home team"} and {awayTeam ?? "the away team"}; both teams are in bold.</caption>
           <thead>
             <tr className="text-[10px] uppercase text-gray-500">
-              <th className="py-1 text-left font-normal">#</th>
-              <th className="py-1 text-left font-normal">Team</th>
-              <th className="py-1 text-right font-normal">P</th>
-              <th className="py-1 text-right font-normal">GD</th>
-              <th className="py-1 text-right font-normal">Pts</th>
+              <th scope="col" className="py-1 text-left font-normal">#</th>
+              <th scope="col" className="py-1 text-left font-normal">Team</th>
+              <th scope="col" className="py-1 text-right font-normal">P</th>
+              <th scope="col" className="hidden py-1 text-right font-normal sm:table-cell">W</th>
+              <th scope="col" className="hidden py-1 text-right font-normal sm:table-cell">D</th>
+              <th scope="col" className="hidden py-1 text-right font-normal sm:table-cell">L</th>
+              <th scope="col" className="hidden py-1 text-right font-normal sm:table-cell">GF:GA</th>
+              <th scope="col" className="py-1 text-right font-normal">GD</th>
+              <th scope="col" className="py-1 text-right font-normal">Pts</th>
             </tr>
           </thead>
           <tbody>
@@ -101,6 +148,10 @@ export function MatchStandingsContext({
                     {r.zone && <span className={`ml-2 text-[10px] ${zoneStyle(r.zone)}`}>{r.zone}</span>}
                   </td>
                   <td className="py-2 text-right tabular-nums text-gray-400">{r.played}</td>
+                  <td className="hidden py-2 text-right tabular-nums text-gray-400 sm:table-cell">{r.win}</td>
+                  <td className="hidden py-2 text-right tabular-nums text-gray-400 sm:table-cell">{r.draw}</td>
+                  <td className="hidden py-2 text-right tabular-nums text-gray-400 sm:table-cell">{r.loss}</td>
+                  <td className="hidden py-2 text-right tabular-nums text-gray-400 sm:table-cell">{r.goalsFor}:{r.goalsAgainst}</td>
                   <td className="py-2 text-right tabular-nums text-gray-400">{gd > 0 ? `+${gd}` : gd}</td>
                   <td className={`py-2 text-right tabular-nums ${isFixtureTeam ? "font-black text-brand" : "font-bold"}`}>{r.points}</td>
                 </tr>

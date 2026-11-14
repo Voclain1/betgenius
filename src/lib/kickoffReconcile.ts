@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { prefetchFixturesById } from "@/lib/settlement";
+import { captureFixtureResults } from "@/lib/fixtureResultCapture";
 
 /**
  * Refresh the stored kickoff of UPCOMING predictions against the provider.
@@ -58,6 +59,10 @@ export async function reconcileUpcomingKickoffs(opts: { now?: Date; limit?: numb
   const prefetched = await prefetchFixturesById(
     rows.map((r) => r.fixtureApiId).filter((id): id is number => id != null),
   );
+
+  // A postponement or cancellation is visible here before kickoff; record the
+  // status for the match page from the rows already fetched. Never throws.
+  await captureFixtureResults(prefetched.values());
 
   const changes: KickoffChange[] = [];
   for (const r of rows) {
