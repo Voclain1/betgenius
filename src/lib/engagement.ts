@@ -1,4 +1,5 @@
 import { trackEvent } from "@/lib/clientAnalytics";
+import type { ShortcutSurface, ShortcutTarget } from "@/lib/returnShortcuts";
 
 /**
  * Engagement and field-performance events for GA4 (SEO-109, SEO-502).
@@ -82,8 +83,20 @@ export const PERSONALIZATION_EVENTS = {
   prediction_unsave: ["source"],
   preferences_update: ["teams", "leagues", "markets", "timezone_changed"],
   preferences_reset: [],
+  // Sprint 06 returning-user actions. Fixed enums only: `target` and `surface`
+  // are the lists in src/lib/returnShortcuts.ts, `filter` is the saved list's
+  // own filter key, `follows` is a coarse bucket ("0", "1_5", "6_plus"). They
+  // describe a useful action; none of them measures retention by itself.
+  saved_view: ["filter"],
+  following_view: ["follows"],
+  account_shortcut: ["target", "surface"],
 } as const satisfies Record<string, readonly string[]>;
 export type PersonalizationEvent = keyof typeof PERSONALIZATION_EVENTS;
+
+/** An in-page or menu shortcut a signed-in reader used. Sends two fixed words and nothing else. */
+export function trackAccountShortcut(target: ShortcutTarget, surface: ShortcutSurface): void {
+  trackEngagement("account_shortcut", { target, surface });
+}
 
 /** The field metrics SEO-109 asks for. Others Next reports (FCP, TTFB, hydration timings) are not sent. */
 export const FIELD_METRICS = ["LCP", "INP", "CLS"] as const;

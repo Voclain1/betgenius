@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sparkles, Trash2, X } from "lucide-react";
-import { trackEngagement } from "@/lib/engagement";
+import { trackAccountShortcut, trackEngagement } from "@/lib/engagement";
+import { followBucket, type ShortcutSurface, type ShortcutTarget } from "@/lib/returnShortcuts";
 
 /** Fires dashboard_view once per mount. `personalized` is a 0/1 flag, nothing else. */
 export function DashboardViewTracker({ personalized }: { personalized: boolean }) {
@@ -15,6 +16,42 @@ export function DashboardViewTracker({ personalized }: { personalized: boolean }
     trackEngagement("dashboard_view", { personalized: personalized ? 1 : 0 });
   }, [personalized]);
   return null;
+}
+
+/** Fires saved_view once per mount. `filter` is the list's own filter key; nothing else leaves the page. */
+export function SavedViewTracker({ filter }: { filter: string }) {
+  const sent = useRef(false);
+  useEffect(() => {
+    if (sent.current) return;
+    sent.current = true;
+    trackEngagement("saved_view", { filter });
+  }, [filter]);
+  return null;
+}
+
+/** Fires following_view once per mount, with a coarse bucket rather than an exact count. */
+export function FollowingViewTracker({ follows }: { follows: number }) {
+  const sent = useRef(false);
+  useEffect(() => {
+    if (sent.current) return;
+    sent.current = true;
+    trackEngagement("following_view", { follows: followBucket(follows) });
+  }, [follows]);
+  return null;
+}
+
+/**
+ * A link that reports which shortcut was used, and where, then behaves exactly
+ * like a link (an in-page `#anchor` still scrolls, a path still navigates).
+ * It sends two fixed words — the target and the surface — and no label, name
+ * or id.
+ */
+export function ShortcutLink({ target, surface, href, className, children }: { target: ShortcutTarget; surface: ShortcutSurface; href: string; className?: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className={className} onClick={() => trackAccountShortcut(target, surface)}>
+      {children}
+    </Link>
+  );
 }
 
 /**

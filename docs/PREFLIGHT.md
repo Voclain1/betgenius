@@ -105,3 +105,5 @@ The `verify-*` scripts guard themselves: they run only against `127.0.0.1:55432/
 `check-category-navigation-browser` (Sprint 04) opens the Tips menu and phone drawer on a running site, so it reads `BASE_URL` and skips (exit 0) when that is unset. CI and `npm run preflight` therefore run it only where a site is up; run it locally with `BASE_URL=http://localhost:3000` against `next start`. It only reads public pages.
 
 The Sprint 05 odds checks (`check-odds-presentation`, `-render`, `-browser`) are pure or component-level: they need no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.
+
+The Sprint 06 checks (`check-return-experience`, `-render`, `-browser`) are pure or component-level: no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.

@@ -9,7 +9,8 @@ import { DashboardShell } from "@/components/DashboardShell";
 import { dashboardNavItems, loadDashboardContext } from "@/lib/dashboardContext";
 import { getPersonalization, interestsOf, personalizePicks, savedHighlights, todaysPicks, upcomingForFavourites, type PersonalizationState } from "@/lib/personalizationData";
 import { hasInterests, longDateInZone, marketPreferenceLabel, shouldInviteToPersonalize, shouldStartOnboarding, zoneAbbreviation } from "@/lib/personalization";
-import { EmptyState, PickList, PickRow, SavedRow, SectionHeader, UpcomingList } from "@/components/personal/DashboardParts";
+import { EmptyState, JumpRow, PickList, PickRow, SavedRow, SectionHeader, UpcomingList } from "@/components/personal/DashboardParts";
+import { DASHBOARD_ANCHORS, jumpLinks } from "@/lib/returnShortcuts";
 import { DashboardViewTracker, PersonalizeInvite, RemoveSavedButton } from "@/components/personal/ClientBits";
 import { leagueSlug, teamSlug } from "@/lib/slug";
 import { competitionPredictionsHref } from "@/lib/cupConfig";
@@ -216,6 +217,8 @@ async function OverviewSection({
         <Link href="/dashboard/preferences" className="btn btn-ghost px-3 py-1.5 text-sm">Edit preferences</Link>
       </header>
 
+      <JumpRow links={jumpLinks({ savedTotal: saved.total, upcomingCount: upcoming.length, favouriteCount })} />
+
       {invite && <PersonalizeInvite />}
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -255,7 +258,7 @@ async function OverviewSection({
         </section>
 
         <div className="space-y-8">
-          <section className="space-y-3">
+          <section id={DASHBOARD_ANCHORS.upcoming} className="scroll-mt-16 space-y-3">
             <SectionHeader title="Upcoming for you" action={favouriteCount ? { href: "/dashboard/preferences#teams", label: "Manage" } : undefined} />
             {upcoming.length > 0 ? (
               <UpcomingList fixtures={upcoming.slice(0, 6)} timezone={tz} />
@@ -266,7 +269,7 @@ async function OverviewSection({
             )}
           </section>
 
-          <section className="space-y-3">
+          <section id={DASHBOARD_ANCHORS.saved} className="scroll-mt-16 space-y-3">
             <SectionHeader title="Saved" count={saved.total || undefined} action={saved.total ? { href: "/dashboard/saved", label: "View all" } : undefined} />
             {saved.total === 0 ? (
               <EmptyState icon={<Bookmark size={18} />} title="No saved predictions" body="Tap the bookmark on any prediction to keep it here and follow its result." action={{ href: "/predictions/today", label: "Browse today's predictions" }} />
@@ -277,7 +280,7 @@ async function OverviewSection({
                 )}
                 {saved.settled.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-[11px] font-semibold text-gray-500">Recently settled</div>
+                    <div className="text-[11px] font-semibold text-gray-500">Latest results</div>
                     <PickList>{saved.settled.map((i) => <SavedRow key={i.id} item={i} timezone={tz} />)}</PickList>
                   </div>
                 )}
@@ -288,7 +291,7 @@ async function OverviewSection({
             )}
           </section>
 
-          <section className="space-y-3">
+          <section id={DASHBOARD_ANCHORS.favourites} className="scroll-mt-16 space-y-3">
             <SectionHeader title="Your favourites" action={{ href: "/dashboard/preferences", label: favouriteCount ? "Edit" : "Add" }} />
             {favouriteCount ? (
               <div className="flex flex-wrap gap-2">

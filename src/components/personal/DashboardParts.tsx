@@ -8,6 +8,8 @@ import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { kickoffInZone, shortDateInZone, timeInZone, type MatchReason, type UpcomingFixture } from "@/lib/personalization";
 import { rowStatus } from "@/lib/predictionStatus";
 import { OddsFigure } from "@/components/OddsFigure";
+import { ShortcutLink } from "@/components/personal/ClientBits";
+import type { JumpLink } from "@/lib/returnShortcuts";
 import type { DashboardPick, SavedItem } from "@/lib/personalizationData";
 
 /** Section heading with an optional trailing link. Same weight across every dashboard section. */
@@ -176,11 +178,16 @@ const OUTCOME_TEXT: Record<string, string> = { WON: "text-emerald-300", LOST: "t
 /** State line for a saved pick: result for settled, kickoff for upcoming, plain words otherwise. */
 export function SavedStatus({ item, timezone }: { item: SavedItem; timezone: string }) {
   const v = item.view;
+  // When the result was recorded, from the settlement time already stored with
+  // the prediction. Shown only for a pick the reader may see, so a locked row
+  // reveals nothing new; absent when no settlement time was recorded.
+  const settledOn = !v.locked && item.settledAt ? shortDateInZone(item.settledAt, timezone) : "";
   if (v.outcome) {
     return (
       <span className="text-[11px] font-black uppercase tracking-[0.12em]">
         <span className={OUTCOME_TEXT[v.outcome]}>{v.outcome}</span>
         {v.finalScore && <span className="ml-2 tabular-nums text-gray-400">FT {v.finalScore}</span>}
+        {settledOn && <span className="ml-2 font-semibold normal-case tracking-normal text-gray-500">settled {settledOn}</span>}
       </span>
     );
   }
@@ -222,7 +229,7 @@ export function SavedRow({ item, timezone, actions }: { item: SavedItem; timezon
           <div>
             <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">{item.market}</span>{" "}
             <span className="text-sm font-black text-brand">{item.pick}</span>
-            <OddsFigure value={item.odds} lead="Odds " tail="when saved" className="ml-2 text-[11px] tabular-nums text-gray-500" />
+            <OddsFigure value={item.odds} lead="Odds " tail="when saved" className="ml-2 whitespace-nowrap text-[11px] tabular-nums text-gray-500" />
             {item.view.changedTo && (
               <p className="mt-1 text-[11px] text-amber-300">Updated since you saved it — now {item.view.changedTo}. Your saved pick is shown and settled as saved.</p>
             )}
@@ -231,5 +238,30 @@ export function SavedRow({ item, timezone, actions }: { item: SavedItem; timezon
       </div>
       <div className="flex items-start">{actions}</div>
     </li>
+  );
+}
+
+/**
+ * The dashboard's own sections, one tap away. On a phone the Saved section sits
+ * more than a screen below the fold, under today's list; this row reaches it,
+ * Upcoming and Favourites without scrolling, and Following (its own page).
+ * Hidden from lg, where the sections sit side by side. Text links, one row, no
+ * cards — the reader's own counts, shown only when positive.
+ */
+export function JumpRow({ links }: { links: JumpLink[] }) {
+  return (
+    <nav aria-label="Jump to your sections" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 [scrollbar-width:none] lg:hidden">
+      {links.map((l) => (
+        <ShortcutLink key={l.target} target={l.target} surface="jump_row" href={l.href} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-brand-border px-3 text-sm font-semibold text-gray-300 transition hover:text-gray-100">
+          {l.label}
+          {l.count != null && (
+            <>
+              {" "}
+              <span className="tabular-nums text-gray-500">{l.count}</span>
+            </>
+          )}
+        </ShortcutLink>
+      ))}
+    </nav>
   );
 }
