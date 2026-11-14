@@ -50,6 +50,8 @@ const MEASURE = (wide: boolean) => `(() => {
     maxRight: Math.round(Math.max.apply(null, rects.map(function (r) { return r.right; }))),
     minLeft: Math.round(Math.min.apply(null, rects.map(function (r) { return r.left; }))),
     pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    pageWidth: document.documentElement.scrollWidth,
+    overflowElements: Array.prototype.slice.call(document.querySelectorAll("body *")).filter(function(e) { return e.getBoundingClientRect().right > innerWidth + 1; }).slice(0,16).map(function(e) { return {tag:e.tagName,cls:String(e.className),right:Math.round(e.getBoundingClientRect().right),text:e.textContent.slice(0,55)}; }),
     vw: innerWidth,
     rootBottom: Math.round(root.getBoundingClientRect().bottom),
     vh: innerHeight,
@@ -89,7 +91,7 @@ async function main() {
         const p = await ctx.newPage();
         await p.goto(base + path, { waitUntil: "domcontentloaded" });
         await p.addStyleTag({ content: '[aria-labelledby="push-onboarding-title"]{display:none!important}' });
-        await p.waitForTimeout(700);
+        await p.evaluate(() => document.fonts.ready);
         if (wide) await p.getByRole("button", { name: /^Tips/ }).first().click();
         else await p.getByRole("button", { name: "Open menu" }).click();
         await p.waitForTimeout(300);
@@ -100,7 +102,7 @@ async function main() {
           await ctx.close();
           continue;
         }
-        check("no sideways page overflow with the menu open", !m.pageOverflow);
+        check("no sideways page overflow with the menu open", !m.pageOverflow, m.pageOverflow ? JSON.stringify({width:m.pageWidth,viewport:m.vw,elements:m.overflowElements}) : "");
         check("links are inside the viewport", m.minLeft >= 0 && m.maxRight <= m.vw, `left ${m.minLeft}, right ${m.maxRight}/${m.vw}`);
         check("every link is ≥ 36px tall", m.minH >= 36, `min ${m.minH}`);
         check("three groups: By day, Curated tips, By market", ["By day", "Curated tips", "By market"].every((h) => m.headings.includes(h)), m.headings.join());
