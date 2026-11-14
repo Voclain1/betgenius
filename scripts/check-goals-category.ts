@@ -159,7 +159,7 @@ async function main() {
   const feeds = code("src/lib/categoryPredictions.ts");
   check("GOALS feed is scoped by the same Lagos-day kickoff bounds as every feed", /kickoff: \{ gte: today\.start, lt: today\.end \}/.test(feeds) && !/cat === "GOALS"[^}]*kickoff/.test(feeds));
   check("GOALS feed requires the tag, the market and no leg tag", /cat === "GOALS"\s*\?\s*\{ marketType: "OVER_UNDER", categories: \{ some: \{ category: "GOALS" \}, none: \{ category: "SAME_GAME_DOUBLE" \} \} \}/.test(feeds));
-  check("GOALS feed re-filters and keeps display ordering", /const rows = cat === "GOALS" \? goalsFeedRows\(found\) : found;/.test(feeds) && /return orderForDisplay\(rows\)/.test(feeds));
+  check("GOALS feed re-filters and keeps display ordering", /const rows = cat === "GOALS" \? goalsFeedRows\(found\) : found;/.test(feeds) && /const ordered = orderForDisplay\(rows\);/.test(feeds) && /return cat === "BANKER" \? onePerFixture\(ordered\) : ordered;/.test(feeds));
 
   // ── 6. Product surfaces ─────────────────────────────────────────────────
   console.log("\n6. Product surfaces");
@@ -167,9 +167,9 @@ async function main() {
   const { TRACK_RECORD_CATEGORIES } = await import("../src/lib/trackRecord");
   check("GOALS is a known category", (PREDICTION_CATEGORIES as readonly string[]).includes(GOALS));
   check("Goals is public to anonymous visitors", canViewCategory("GOALS", null, null, null));
-  check("Goals appears in the track record", (TRACK_RECORD_CATEGORIES as readonly string[]).includes(GOALS) && /GOALS: "Goals"/.test(read("src/components/TrackRecordView.tsx")));
+  check("Goals appears in the track record", (TRACK_RECORD_CATEGORIES as readonly string[]).includes(GOALS) && /GOALS: "Goals"/.test(read("src/lib/performanceLabels.ts")) && /performanceLabels/.test(read("src/components/TrackRecordView.tsx")));
   check("Goals is on the predictions index", /slug: "goals", name: "Goals", desc: CATEGORY_BLURBS\.GOALS/.test(read("src/app/(public)/predictions/page.tsx")));
-  check("Goals is in the tips navigation", /href: "\/predictions\/goals", label: "Goals"/.test(read("src/components/Nav.tsx")));
+  check("Goals is in the tips navigation", /href: "\/predictions\/goals", label: "Goals"/.test(read("src/lib/predictionNav.ts")) && /TIP_GROUPS/.test(read("src/components/Nav.tsx")));
   check("Goals is a back-button root", /"\/predictions\/goals"/.test(read("src/components/BackButton.tsx")));
   check("Goals has its own SEO title and phrase", /cat === "GOALS" \? "Over 1\.5 & Over 2\.5 Goals Predictions"/.test(read("src/app/(public)/predictions/[category]/page.tsx")));
   check("admin list can filter by GOALS", /"BET_OF_THE_DAY", "GOALS"\]\.map/.test(read("src/app/admin/predictions/page.tsx")));
