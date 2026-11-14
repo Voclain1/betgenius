@@ -114,6 +114,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-homepage-experience.ts",
   `${RENDER} scripts/check-homepage-experience-render.tsx`,
   "tsx scripts/check-homepage-experience-browser.ts",
+  "tsx scripts/check-discovery-search.ts",
+  `${RENDER} scripts/check-discovery-search-render.tsx`,
+  "tsx scripts/check-discovery-search-browser.ts",
   "tsc --noEmit -p tsconfig.json",
 ];
 
@@ -134,5 +137,6 @@ export const INTEGRATION_STEPS = [
   "tsx scripts/check-personalization-db.ts",
   "tsx scripts/check-match-centre-db.ts",
   "tsx scripts/check-prediction-experience-db.ts",
+  "tsx scripts/check-discovery-search-db.ts",
 ];
 

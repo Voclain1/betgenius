@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { OddsFigure } from "./OddsFigure";
 import Link from "next/link";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
@@ -17,7 +17,9 @@ import {
 import {
   CATEGORY_TO_SLUG,
   CATEGORY_CHIP_LABELS,
+  CATEGORY_SLUGS,
 } from "@/lib/categoryPredictions";
+import { activeFilters, emptyState, withoutFilter } from "@/lib/discoveryFilters";
 import type { PredictionCategory } from "@/lib/enums";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { SavePredictionButton } from "./SavePredictionButton";
@@ -45,6 +47,7 @@ export function DiscoveryFilters({
   signedIn,
   fallbackDay,
   publishedCompetitions = [],
+  params = {},
 }: {
   filter: DiscoveryFilter;
   basePath: string;
@@ -52,6 +55,7 @@ export function DiscoveryFilters({
   signedIn: boolean;
   fallbackDay?: string;
   publishedCompetitions?: Array<{ id: number; name: string }>;
+  params?: DiscoveryParams;
 }) {
   const competitions = new Map<number, { id: number; name: string }>(
     LEAGUE_CATALOGUE.map((l) => [l.id, { id: l.id, name: l.name }]),
@@ -63,15 +67,11 @@ export function DiscoveryFilters({
       id: f.competition,
       name: `Competition #${f.competition}`,
     });
-  const active = [
-    f.competition != null,
-    !!f.market,
-    f.window !== "all",
-    f.odds,
-    f.personal !== "all",
-    !!f.category,
-    f.state !== "upcoming",
-  ].filter(Boolean).length;
+  // What differs from the unfiltered page, each one removable in a single tap.
+  const active = activeFilters(f, {
+    competition: f.competition != null ? competitions.get(f.competition)?.name : undefined,
+    category: f.category && CATEGORY_SLUGS[f.category] ? CATEGORY_CHIP_LABELS[CATEGORY_SLUGS[f.category]] : undefined,
+  });
   return (
     <form
       method="get"
@@ -102,11 +102,29 @@ export function DiscoveryFilters({
           Search
         </button>
       </div>
+      {active.length > 0 && (
+        <nav aria-label="Active filters">
+          <ul className="flex flex-wrap gap-2">
+            {active.map((a) => (
+              <li key={a.key}>
+                <Link
+                  href={withoutFilter(basePath, params, a.key)}
+                  aria-label={`Remove filter: ${a.label}`}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-brand-border px-2.5 text-xs font-semibold text-gray-200 hover:border-brand hover:text-brand"
+                >
+                  {a.label}
+                  <X aria-hidden className="h-3 w-3 text-gray-500" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
       <details className="border-t border-brand-border pt-2">
         <summary className="cursor-pointer py-1 text-sm font-semibold text-gray-300">
           Filters{" "}
           <span className="font-normal text-gray-500">
-            · {active ? `${active} active` : "competition, market & favourites"}
+            · {active.length ? `${active.length} active` : "date, competition, market & more"}
           </span>
         </summary>
         <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -198,19 +216,21 @@ export function DiscoveryFilters({
               </select>
             </label>
           )}
-          <label className="text-xs text-gray-400">
-            Your interests
-            <select
-              name="d_personal"
-              defaultValue={f.personal}
-              className={`${control} mt-1`}
-            >
-              <option value="all">Browse everything</option>
-              <option value="favourites">Followed teams & competitions</option>
-              <option value="markets">Preferred markets</option>
-              <option value="saved">Saved predictions</option>
-            </select>
-          </label>
+          {signedIn && (
+            <label className="text-xs text-gray-400">
+              Your interests
+              <select
+                name="d_personal"
+                defaultValue={f.personal}
+                className={`${control} mt-1`}
+              >
+                <option value="all">Browse everything</option>
+                <option value="favourites">Followed teams & competitions</option>
+                <option value="markets">Preferred markets</option>
+                <option value="saved">Saved predictions</option>
+              </select>
+            </label>
+          )}
           <label className="flex min-h-11 items-center gap-2 text-sm text-gray-300">
             <input
               type="checkbox"
@@ -219,35 +239,17 @@ export function DiscoveryFilters({
               defaultChecked={f.odds}
               className="h-5 w-5 accent-brand"
             />
-            Only with usable named quotes
+            Only with a bookmaker quote
           </label>
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-gray-500">
-          {signedIn ? (
-            <>
-              Interests use your existing{" "}
-              <Link
-                href="/dashboard/preferences"
-                className="text-brand underline"
-              >
-                preferences
-              </Link>{" "}
-              and{" "}
-              <Link href="/dashboard/saved" className="text-brand underline">
-                saved picks
-              </Link>
-              . Access is checked on every visit.
-            </>
-          ) : (
-            <>
-              Browsing is open to everyone.{" "}
-              <Link href="/login" className="text-brand underline">
-                Sign in
-              </Link>{" "}
-              to use your favourites, preferred markets and saved picks.
-            </>
-          )}
-        </p>
+        {!signedIn && (
+          <p className="mt-3 text-xs text-gray-500">
+            <Link href="/login" className="text-brand underline">
+              Sign in
+            </Link>{" "}
+            to filter by your followed teams, preferred markets and saved picks.
+          </p>
+        )}
         <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
           <Link
             href={`${basePath}#discover`}
@@ -258,6 +260,78 @@ export function DiscoveryFilters({
         </div>{" "}
       </details>
     </form>
+  );
+}
+
+type ResultItem = Awaited<ReturnType<typeof loadDiscovery>>["items"][number];
+
+const stampIn = (at: Date, zone: string) =>
+  at.toLocaleString("en-GB", { timeZone: zone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+/**
+ * One match in the results. The whole card opens the match through the title
+ * link (a stretched link, as the tip table rows do), so there is one link per
+ * card instead of two to the same page; the save button sits above it. A
+ * bookmaker quote is shown when there is one; the absence of one is not
+ * repeated on every card (the "with a bookmaker quote" filter says it once).
+ */
+export function DiscoveryResultCard({ item: p, zone, savedFilter = false }: { item: ResultItem; zone: string; savedFilter?: boolean }) {
+  return (
+    <article className="card relative min-w-0 space-y-2 !p-4">
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-brand">{CATEGORY_CHIP_LABELS[p.category]}</span>
+        <SavePredictionButton predictionId={p.id} source="card" initiallySaved={savedFilter ? true : undefined} className="relative z-10 !h-11 !w-11" />
+      </div>
+      <div>
+        <p className="truncate text-xs text-gray-500">{p.league ?? "Competition unavailable"}</p>
+        <h3 className="mt-1 break-words font-bold text-gray-100">
+          <Link href={p.href} className="after:absolute after:inset-0 hover:text-brand">
+            {p.home} <span className="font-normal text-gray-500">vs</span> {p.away}
+          </Link>
+        </h3>
+        <p className="mt-1 text-xs text-gray-400">
+          {stampIn(p.kickoff, zone)} ·{" "}
+          {p.phase === "started"
+            ? (p.statusLabel ?? "Started · result unconfirmed")
+            : p.phase === "live"
+              ? "Started / awaiting result"
+              : p.phase === "unavailable"
+                ? "Schedule / status review"
+                : p.phase}
+          {!p.statusVerified && p.phase === "upcoming" ? " · stored schedule" : ""}
+        </p>
+      </div>
+      <div className="border-t border-brand-border pt-3">
+        <p className="text-[11px] text-gray-500">{p.market}</p>
+        <p className="break-words text-sm font-bold text-gray-100">{p.pick}</p>
+      </div>
+      {p.quote && (
+        <p className="text-xs leading-relaxed text-gray-400">
+          <OddsFigure value={p.quote.decimal} /> · {p.quote.bookmaker} · {p.quote.kind === "archived" ? "archived quote" : "cached quote"}
+          <span className="block text-[11px]">
+            {p.quote.timeBasis === "provider" ? "Provider quote" : "Cache fetched"} {stampIn(p.quote.at, zone)} · {zone}
+          </span>
+        </p>
+      )}
+    </article>
+  );
+}
+
+/** No results: what the search was limited by, and the links that most often fix it. */
+export function DiscoveryEmpty({ state }: { state: ReturnType<typeof emptyState> }) {
+  return (
+    <div className="card space-y-2 text-sm text-gray-400" role="status">
+      <p>{state.text}</p>
+      {state.actions.length > 0 && (
+        <p className="flex flex-wrap gap-x-4">
+          {state.actions.map((a) => (
+            <Link key={a.label} href={a.href} className="inline-flex min-h-11 items-center font-semibold text-brand underline">
+              {a.label}
+            </Link>
+          ))}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -295,14 +369,6 @@ export async function PredictionDiscovery({
   const data = results
     ? await loadDiscovery(f, viewer, category, interests)
     : null;
-  const stamp = (at: Date) =>
-    at.toLocaleString("en-GB", {
-      timeZone: f.zone,
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   return (
     <section
       id="discover"
@@ -328,6 +394,7 @@ export async function PredictionDiscovery({
               category={category}
               signedIn={!!viewer.userId}
               fallbackDay={fallbackDay}
+              params={params}
               publishedCompetitions={data?.items.flatMap((p) =>
                 p.leagueApiId && p.league
                   ? [{ id: p.leagueApiId, name: p.league }]
@@ -345,6 +412,7 @@ export async function PredictionDiscovery({
             category={category}
             signedIn={!!viewer.userId}
             fallbackDay={fallbackDay}
+            params={params}
             publishedCompetitions={data?.items.flatMap((p) =>
               p.leagueApiId && p.league
                 ? [{ id: p.leagueApiId, name: p.league }]
@@ -386,85 +454,20 @@ export async function PredictionDiscovery({
             {data.items.length ? (
               <div className="grid min-w-0 gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {data.items.map((p) => (
-                  <article key={p.id} className="card min-w-0 space-y-2 !p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-brand">
-                        {CATEGORY_CHIP_LABELS[p.category]}
-                      </span>
-                      <SavePredictionButton
-                        predictionId={p.id}
-                        source="card"
-                        initiallySaved={
-                          f.personal === "saved" ? true : undefined
-                        }
-                        className="!h-11 !w-11"
-                      />
-                    </div>
-                    <div>
-                      <p className="truncate text-xs text-gray-500">
-                        {p.league ?? "Competition unavailable"}
-                      </p>
-                      <h3 className="mt-1 break-words font-bold text-gray-100">
-                        <Link href={p.href} className="hover:text-brand">
-                          {p.home}{" "}
-                          <span className="font-normal text-gray-500">vs</span>{" "}
-                          {p.away}
-                        </Link>
-                      </h3>
-                      <p className="mt-1 text-xs text-gray-400">
-                        {stamp(p.kickoff)} ·{" "}
-                        {p.phase === "started"
-                          ? (p.statusLabel ?? "Started · result unconfirmed")
-                          : p.phase === "live"
-                            ? "Started / awaiting result"
-                            : p.phase === "unavailable"
-                              ? "Schedule / status review"
-                              : p.phase}
-                        {!p.statusVerified && p.phase === "upcoming"
-                          ? " · stored schedule"
-                          : ""}
-                      </p>
-                    </div>
-                    <div className="border-t border-brand-border pt-3">
-                      <p className="text-[11px] text-gray-500">{p.market}</p>
-                      <p className="break-words text-sm font-bold text-gray-100">
-                        {p.pick}
-                      </p>
-                    </div>
-                    <p className="text-xs leading-relaxed text-gray-400">
-                      {p.quote ? (
-                        <>
-                          <OddsFigure value={p.quote.decimal} /> ·{" "}
-                          {p.quote.bookmaker} ·{" "}
-                          {p.quote.kind === "archived"
-                            ? "archived quote"
-                            : "cached quote"}
-                          <span className="block text-[11px]">
-                            {p.quote.timeBasis === "provider"
-                              ? "Provider quote"
-                              : "Cache fetched"}{" "}
-                            {stamp(p.quote.at)} · {f.zone}
-                          </span>
-                        </>
-                      ) : (
-                        "No usable named quote for this selection."
-                      )}
-                    </p>
-                    <Link
-                      href={p.href}
-                      className="inline-flex min-h-11 items-center text-sm font-semibold text-brand"
-                    >
-                      View match →
-                    </Link>
-                  </article>
+                  <DiscoveryResultCard
+                    key={p.id}
+                    item={p}
+                    zone={f.zone}
+                    savedFilter={f.personal === "saved"}
+                  />
                 ))}
               </div>
             ) : (
-              <div className="card text-sm text-gray-400">
-                No accessible published predictions match these filters. Try
-                another date or broaden the market, status or interests filters.
-                A quiet feed does not lower the publication standard.
-              </div>
+              <DiscoveryEmpty
+                state={emptyState(f, basePath, params, {
+                  competition: f.competition != null ? data.items.find((p) => p.leagueApiId === f.competition)?.league ?? LEAGUE_CATALOGUE.find((l) => l.id === f.competition)?.name : undefined,
+                })}
+              />
             )}
             {data.pages > 1 && (
               <nav

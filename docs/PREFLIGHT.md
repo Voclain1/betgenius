@@ -40,6 +40,7 @@ These checks insert their own rows and delete them afterwards:
 - `check-personalization-db` (users, predictions, follows, preferences, saved predictions and one league/team cache row; Sprint 01)
 - `check-match-centre-db` (two FixtureDetailCache rows, to test result capture; Sprint 02)
 - `check-prediction-experience-db` (four FixtureDetailCache rows, to test the provider status lookup; Sprint 03)
+- `check-discovery-search-db` (a user and about seven published predictions with unique marker names, to test the match finder's search, accents, wildcards, entitlement and Lagos day edges; Sprint 08)
 
 They never run against Production. The repository holds no fingerprint of any real database, not even a hash. Every comparison is made at runtime, against the database identities the machine running the checks actually has.
 
@@ -109,3 +110,5 @@ The Sprint 05 odds checks (`check-odds-presentation`, `-render`, `-browser`) are
 The Sprint 06 checks (`check-return-experience`, `-render`, `-browser`) are pure or component-level: no database, network or running site. The browser check skips only when no browser is installed and `REQUIRE_BROWSER` is unset.
 
 The Sprint 07 homepage checks: `check-homepage-experience` and `-render` are pure/render tier (no database or site). `check-homepage-experience-browser` measures the real homepage, so it reads `BASE_URL` and skips (exit 0) when that is unset; run it with `BASE_URL=http://localhost:3000` against `next start`. It reads one public page and writes nothing.
+
+The Sprint 08 finder checks: `check-discovery-search` and `-render` are pure/render tier. `check-discovery-search-browser` measures the real `/predictions` page, so it reads `BASE_URL` and skips (exit 0) when that is unset; it reads public pages only. `check-discovery-search-db` needs an integration database that is UTF-8 encoded (the search folds accents with `translate()`, which is byte-wise in a SQL_ASCII database; production and the CI `postgres:16` image are UTF-8).

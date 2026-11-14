@@ -433,10 +433,22 @@ for (const label of [
   "d_window",
   "d_state",
   "d_category",
-  "d_personal",
   "d_odds",
 ])
   ok(filters.includes(`name="${label}"`));
+// Sprint 08 (search simplification): the interests control does nothing for a
+// signed-out reader (every option falls back to "everything"), so it is only
+// offered to a signed-in one.
+ok(!filters.includes('name="d_personal"'));
+ok(
+  renderToStaticMarkup(
+    <DiscoveryFilters
+      filter={parseDiscovery({}, undefined, now)}
+      basePath="/predictions"
+      signedIn={true}
+    />,
+  ).includes('name="d_personal"'),
+);
 ok(filters.includes('method="get"'));
 ok(filters.includes("Sign in"));
 ok(!/\bAI(?:-assisted)?\b/i.test(html + missing + comparison + filters));
