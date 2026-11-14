@@ -143,12 +143,17 @@ export default async function PredictionOperations({
         <h2 className="text-xl font-bold">
           Job outcomes (all categories/competitions)
         </h2>
+        <p className="text-xs text-gray-400">
+          Counts use at most 100 recent records per job. Capped rows are not
+          full-window totals; zero productive outputs does not imply failed
+          maintenance or generation.
+        </p>
         <table className="w-full min-w-[48rem] text-xs">
           <thead>
             <tr>
               {[
                 "Job",
-                "Last run / success",
+                "Last run / reported success",
                 "Productive / maintenance / no work / deferred",
                 "Reported success / observed",
                 "Failures / unknown",
