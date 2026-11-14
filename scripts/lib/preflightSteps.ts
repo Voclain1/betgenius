@@ -97,6 +97,8 @@ export const PURE_STEPS = [
   `${RENDER} scripts/check-prediction-timeline.tsx`,
   "tsx scripts/check-preloader.ts",
   "tsx scripts/check-personalization.ts",
+  "tsx scripts/check-match-centre.ts",
+  `${RENDER} scripts/check-match-centre-render.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 
@@ -115,5 +117,6 @@ export const INTEGRATION_STEPS = [
   "tsx scripts/check-vip-premium-gate.ts",
   "tsx scripts/check-betofday-targeting.ts",
   "tsx scripts/check-personalization-db.ts",
+  "tsx scripts/check-match-centre-db.ts",
 ];
 

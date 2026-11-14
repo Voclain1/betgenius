@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { computeH2HStats, h2hTrendLine, type H2HMeeting } from "@/lib/h2h";
 import { PremiumPanel } from "@/components/PremiumPanel";
+import { H2HBody } from "@/components/matchcentre/H2HBody";
+import { h2hWindow } from "@/lib/matchCentre";
 
 /**
  * The head-to-head record, inline on the match page.
@@ -13,9 +15,12 @@ import { PremiumPanel } from "@/components/PremiumPanel";
  *
  * The trend line is template-assembled from the same numbers rendered beneath
  * it (see h2hTrendLine), so it cannot state anything the table does not show.
+ *
+ * Sprint 02: the figures beneath it are now windowed (last 5 / last 10) by
+ * h2hWindow in src/lib/matchCentre.ts — de-duplicated by provider fixture id,
+ * restricted to meetings before this fixture's kickoff, with every rate shown
+ * as a count over the real sample.
  */
-
-const MEETINGS_SHOWN = 5;
 
 export function MatchH2HSummary({
   meetings,
@@ -24,6 +29,8 @@ export function MatchH2HSummary({
   homeTeamApiId,
   awayTeamApiId,
   h2hLink,
+  kickoff,
+  timeZone = "Africa/Lagos",
 }: {
   meetings: H2HMeeting[];
   homeTeam: string;
@@ -31,6 +38,9 @@ export function MatchH2HSummary({
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   h2hLink: string | null;
+  /** Meetings at or after this instant are not part of the record (a finished fixture's own result). Omitted: no cutoff. */
+  kickoff?: Date;
+  timeZone?: string;
 }) {
   // Orientation needs both ids: the home/away splits and the win counts are
   // keyed on team id so they can't drift with name spelling.
@@ -38,7 +48,13 @@ export function MatchH2HSummary({
 
   const stats = computeH2HStats(meetings, homeTeamApiId, awayTeamApiId);
   const trend = h2hTrendLine(stats, homeTeam, awayTeam);
-  const recent = meetings.slice(0, MEETINGS_SHOWN);
+  const cutoff = kickoff ?? new Date(8.64e15);
+  // Verified, de-duplicated, pre-kickoff meetings, newest first, at most 10;
+  // the client derives the last-5 view from this one list.
+  const ten = h2hWindow(meetings, homeTeamApiId, awayTeamApiId, 10, cutoff);
+  // Every stored meeting may post-date kickoff on a finished fixture's page
+  // (its own result included): nothing left to show is an honest empty panel.
+  if (!ten.played) return null;
 
   return (
     <PremiumPanel
@@ -53,33 +69,8 @@ export function MatchH2HSummary({
         )
       }
     >
-      <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-brand-border text-center">
-        {[
-          [homeTeam, stats.overall.teamAWins],
-          ["Draws", stats.overall.draws],
-          [awayTeam, stats.overall.teamBWins],
-        ].map(([label, value]) => (
-          <div key={String(label)} className="min-w-0 bg-brand-bg px-2 py-3">
-            <dd className="text-3xl font-black tabular-nums text-gray-100">{value}</dd>
-            <dt className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">{label}</dt>
-          </div>
-        ))}
-      </dl>
-
-      {trend && <p className="mt-4 text-sm leading-relaxed text-gray-300">{trend}</p>}
-
-      <ul className="mt-3 divide-y divide-brand-border">
-        {recent.map((m) => (
-          <li key={m.fixtureApiId} className="flex items-center gap-3 py-2.5 text-sm">
-            <span className="w-20 shrink-0 text-xs tabular-nums text-gray-500">{m.date.slice(0, 10)}</span>
-            <span className="min-w-0 flex-1 truncate text-right text-gray-300">{m.homeTeam}</span>
-            <span className="shrink-0 rounded-lg bg-brand-bg px-2 py-0.5 font-black tabular-nums text-gray-100">
-              {m.homeGoals}-{m.awayGoals}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-gray-300">{m.awayTeam}</span>
-          </li>
-        ))}
-      </ul>
+      {trend && <p className="mb-4 text-sm leading-relaxed text-gray-300">{trend}</p>}
+      <H2HBody meetings={ten.meetings} homeTeamApiId={homeTeamApiId} awayTeamApiId={awayTeamApiId} kickoff={cutoff.toISOString()} homeTeam={homeTeam} awayTeam={awayTeam} timeZone={timeZone} />
     </PremiumPanel>
   );
 }
