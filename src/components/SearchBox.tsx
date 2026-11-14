@@ -10,13 +10,18 @@ const MAX_PER_GROUP = 5;
 /**
  * Matches on prefix first, then substring — "ars" should surface Arsenal above
  * a club that merely contains those letters. Case- and accent-insensitive so
- * "atletico" finds "Atlético".
+ * "atletico" finds "Atlético", and two names ("arsenal chelsea") find the fixture.
  */
 function normalise(s: string) {
   return s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[̀-ͯ]/g, "")
+    // "arsenal vs chelsea" and "arsenal chelsea" find the same fixture, and a
+    // double space does not defeat a match.
+    .replace(/\s+(?:vs\.?|v\.?|x|[-–—])\s+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function rank<T extends { label: string }>(items: T[], q: string): T[] {

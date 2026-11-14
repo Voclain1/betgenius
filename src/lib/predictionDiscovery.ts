@@ -60,7 +60,8 @@ export function parseDiscovery(
     relative.getUTCDate() +
       (fallbackDay === "yesterday" ? -1 : fallbackDay === "tomorrow" ? 1 : 0),
   );
-  let date = first(p.d_date) || relative.toISOString().slice(0, 10);
+  const defaultDate = relative.toISOString().slice(0, 10);
+  let date = first(p.d_date) || defaultDate;
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     !Number.isFinite(Date.parse(date)) ||
@@ -77,6 +78,11 @@ export function parseDiscovery(
   ): T => (values.includes(v as T) ? (v as T) : fallback);
   const n = Number(first(p.d_competition));
   return {
+    // What the page shows with no filter set, so "is this filter changed?" is
+    // answered here once rather than guessed by each control.
+    today,
+    defaultDate,
+    defaultState: (date < today ? "finished" : "upcoming") as "finished" | "upcoming",
     date,
     zone,
     bounds: discoveryDay(date, zone),

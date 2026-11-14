@@ -1,0 +1,92 @@
+[
+ {
+  "task": "Find a team (arsenal)",
+  "interactions": 3,
+  "ok": true,
+  "got": "Arsenal vs Chelsea",
+  "note": ""
+ },
+ {
+  "task": "Find a specific match (arsenal chelsea)",
+  "interactions": 3,
+  "ok": true,
+  "got": "Arsenal vs Chelsea",
+  "note": ""
+ },
+ {
+  "task": "Find predictions for today (no input)",
+  "interactions": 0,
+  "ok": true,
+  "got": "Arsenal vs Chelsea; Real Madrid vs Barcelona; Tottenham vs Manchester United (+1)",
+  "note": ""
+ },
+ {
+  "task": "Find a team playing tomorrow (fenerbahce)",
+  "interactions": 5,
+  "ok": true,
+  "got": "Fenerbahçe vs Beşiktaş",
+  "note": ""
+ },
+ {
+  "task": "Find matches in a competition (Premier League)",
+  "interactions": 3,
+  "ok": true,
+  "got": "Arsenal vs Chelsea; Tottenham vs Manchester United",
+  "note": ""
+ },
+ {
+  "task": "Find a goals-market prediction (Total goals)",
+  "interactions": 3,
+  "ok": true,
+  "got": "Real Madrid vs Barcelona; Tottenham vs Manchester United",
+  "note": ""
+ },
+ {
+  "task": "Change the date to tomorrow",
+  "interactions": 3,
+  "ok": true,
+  "got": "Fenerbahçe vs Beşiktaş",
+  "note": ""
+ },
+ {
+  "task": "Clear a filter (competition, set first)",
+  "interactions": 1,
+  "ok": true,
+  "got": "Arsenal vs Chelsea; Real Madrid vs Barcelona; Tottenham vs Manchester United (+1)",
+  "note": ""
+ },
+ {
+  "task": "Return to a previous search (Back after two searches)",
+  "interactions": 1,
+  "ok": true,
+  "got": "Arsenal vs Chelsea",
+  "note": ""
+ },
+ {
+  "task": "Open a prediction from the results",
+  "interactions": 1,
+  "ok": true,
+  "got": "-",
+  "note": ""
+ },
+ {
+  "task": "Empty search, then recover (bayern → include started)",
+  "interactions": 4,
+  "ok": true,
+  "got": "Bayern Munich vs Borussia Dortmund",
+  "note": ""
+ },
+ {
+  "metrics": {
+   "discoverTop": 270,
+   "firstCardTop": 489,
+   "cardH": 208,
+   "cards": 4,
+   "linksPerCard": 2,
+   "quoteLines": 0,
+   "filtersControls": 7,
+   "overflow": false,
+   "pageH": 7189
+  }
+ }
+]
