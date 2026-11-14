@@ -11,4 +11,6 @@ cd research/forecasting && python -m pytest -q                   # modelling sui
 python -m bgforecast synth --out work/syn && python -m bgforecast run --dataset work/syn --out work/syn-run --quick
 ```
 
+The decision rule is a set of pre-registered gates (coverage on the whole dataset and on the test period, a 0.005-nat minimum gain plus paired CIs, calibration). They are decided from the primary test period only; alternative test boundaries are reported for stability and never used to tune or choose. Before running anything on the shared VPS, read the safe execution limits in section 11 of the docs.
+
 Real extractions need `RESEARCH_READONLY_DATABASE_URL` for a dedicated read-only role, and are never run in CI. Outputs go to `work/`, which is gitignored and private.

@@ -27,6 +27,8 @@ def main(argv=None) -> int:
     r.add_argument("--folds", type=int, default=4)
     r.add_argument("--quick", action="store_true", help="two-config grid instead of the full grid (CI / smoke tests)")
     r.add_argument("--sensitivity", action="store_true", help="also score the other ledger mode")
+    r.add_argument("--no-boundary-sensitivity", action="store_true", help="skip re-running the protocol at alternative test boundaries (reporting only)")
+    r.add_argument("--threads", type=int, default=None, help="XGBoost threads (default BGF_THREADS or 2; see docs for shared-VPS limits)")
     s = sub.add_parser("synth")
     s.add_argument("--out", required=True)
     s.add_argument("--seed", type=int, default=7)
@@ -37,7 +39,8 @@ def main(argv=None) -> int:
         m = generate(a.out, seed=a.seed, teams_per_league=a.teams, leagues=a.leagues)
         print(json.dumps(m["counts"], indent=2))
         return 0
-    res = run(a.dataset, a.out, mode=a.mode, test_fraction=a.test_fraction, n_folds=a.folds, quick=a.quick, sensitivity=a.sensitivity)
+    res = run(a.dataset, a.out, mode=a.mode, test_fraction=a.test_fraction, n_folds=a.folds, quick=a.quick, sensitivity=a.sensitivity,
+              boundary_sensitivity=not a.no_boundary_sensitivity, threads=a.threads)
     print(f"status: {res['status']}")
     print(f"recommendation: {res['recommendation']['decision']} — {'; '.join(res['recommendation']['reasons'])}")
     print(f"report: {a.out}/report.md")

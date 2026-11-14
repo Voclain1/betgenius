@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import os
 import platform
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,10 @@ from .features import CATEGORICAL
 from .metrics import logloss_rows
 
 SEED = 20261114
-NTHREAD = 4
+# Default 2: safe on the shared VPS (BetGenius's app container is itself capped at 2 CPUs).
+# Override with --threads or BGF_THREADS. Predictions are bit-identical for a
+# fixed thread count; compare runs only at the same count (it is recorded in the artifact).
+NTHREAD = max(1, int(os.environ.get("BGF_THREADS", "2")))
 MAX_ROUNDS = 2000
 EARLY_STOP = 100
 ES_TAIL = 0.15
@@ -50,6 +54,15 @@ BASE_PARAMS = {
     "nthread": NTHREAD,
     "verbosity": 0,
 }
+
+
+
+def set_threads(n: int) -> None:
+    """Set XGBoost's thread count for this process (training, prediction and DMatrix construction)."""
+    global NTHREAD
+    NTHREAD = max(1, int(n))
+    BASE_PARAMS["nthread"] = NTHREAD
+
 
 GRID = {
     "max_depth": [2, 3, 4],

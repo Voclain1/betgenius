@@ -40,7 +40,7 @@ research/forecasting/
     readonlyDb.ts                read-only snapshot session and posture checks
     extract.ts                   CLI
     check-extract-core.ts        unit checks (synthetic rows)
-    integration/                 end-to-end check against a throwaway local Postgres
+    integration/                 end-to-end check and extraction benchmark, both against a throwaway local Postgres
   bgforecast/                    Python modelling package
     dataset.py                   load + verify (schema version, SHA-256 per file)
     ledger.py                    point-in-time match ledger
@@ -51,7 +51,7 @@ research/forecasting/
     splits.py                    chronological partitions with a label-time embargo
     metrics.py                   scoring rules, calibration, bootstrap CIs
     engine_compare.py            existing-engine comparison (where valid)
-    pipeline.py                  orchestration + pre-registered decision rule
+    pipeline.py                  orchestration, pre-registered decision gates, boundary sensitivity
     report.py                    Markdown report from results.json
     synthetic.py                 synthetic datasets FOR TESTS ONLY
   tests/                         pytest suite
@@ -146,7 +146,7 @@ Inside the session, before any data is read, it then requires all of the followi
 - `default_transaction_read_only = on` on the role
 - not a superuser
 - **zero** tables in `public` on which the role holds INSERT, UPDATE, DELETE or TRUNCATE
-- `statement_timeout`, `lock_timeout = 5s` and `idle_in_transaction_session_timeout = 60s` set locally, and a 30-minute wall clock on the whole transaction
+- `statement_timeout` (default 60 s, `--statement-timeout-s`), `lock_timeout = 5s` and `idle_in_transaction_session_timeout = 60s` set locally, and a wall clock on the whole transaction (default 10 minutes, `--max-transaction-minutes`, at most 30)
 
 Any failure aborts the run with a message that never includes the URL. Other error messages are scrubbed of URLs and host:port pairs. The integration test confirms that an `UPDATE` inside the session fails, that a role with write grants is refused, and that the application credential is refused.
 
@@ -223,27 +223,68 @@ The report covers:
 
 **Existing-engine comparison.** The engine states one pick per market with a 0–100 confidence; it does not give a distribution. So the only valid comparison is selection-conditional: on the engine's own MATCH_WINNER, DOUBLE_CHANCE, OVER_UNDER 2.5 and BTTS picks from the selected pre-kickoff job, score the engine's raw confidence and each model's probability for that same outcome. A market with fewer than 30 picks is reported as insufficient. Engine confidence is uncalibrated, because the production calibration artifact is not applied. No profitability is measured or claimed, since no verified publication-time prices are used.
 
-**Pre-registered decision rule** (`pipeline.recommend`, unit-tested):
+### Pre-registered decision rule
 
-- **proceed:** all four of the following hold. Even then, this means proceeding to a shadow-mode comparison against live generation, never to publication.
-  - the test period has at least 300 fixtures
-  - XGBoost beats Poisson on log loss, with the paired 95% CI wholly below 0
-  - XGBoost beats the base rate on log loss, with the paired 95% CI wholly below 0
-  - top-label ECE ≤ 0.05
-- **stop:** XGBoost does not beat the base rate, with an adequate test sample and coverage of at least 70% of fixtures having history for both teams.
-- **improve data:** anything else. The reasons are listed in the report: a small test period, thin coverage, gains not attributable to XGBoost over Poisson, or poor calibration.
+The rule is implemented in `pipeline.decision_gates` and `pipeline.recommend`, and every branch is unit-tested. Its constants were fixed before any real data was seen. Changing one after looking at a real result invalidates that result.
+
+The rule reads **only** the primary test period: `r["status"]`, `r["test"]` and `r["coverage"]`. The boundary-sensitivity and ledger-mode sensitivity results are never consulted. The recommendation is computed before any alternative boundary is even evaluated.
+
+**proceed** requires every one of these eight gates to pass. Each gate fails closed: a missing or non-numeric value fails it.
+
+| Gate | Requirement |
+|---|---|
+| `test_size` | at least 300 fixtures in the untouched test period |
+| `coverage_all` | at least 70% of **all** included fixtures have history for both teams |
+| `coverage_test` | at least 70% of **test-period** fixtures have history for both teams |
+| `beats_poisson_ci` | XGBoost − Poisson log loss, paired 95% CI upper bound < 0 |
+| `beats_poisson_margin` | XGBoost − Poisson mean log loss ≤ −0.005 nats per match |
+| `beats_base_ci` | XGBoost − base rate log loss, paired 95% CI upper bound < 0 |
+| `beats_base_margin` | XGBoost − base rate mean log loss ≤ −0.005 nats per match |
+| `calibration` | top-label ECE ≤ 0.05 |
+
+Even when every gate passes, proceed means a shadow-mode comparison against live generation, never publication.
+
+- **stop:** all three data-adequacy gates pass (`test_size`, `coverage_all`, `coverage_test`) but XGBoost does not beat the base rate (`beats_base_ci` fails). Thin data can neither approve nor condemn the model.
+- **improve data:** anything else. Every failing gate is listed in the report, with its measured value.
+
+**Why coverage is a hard gate, on both partitions.** A fixture with no history for one side is forecast from league priors alone. When coverage is low, a gain on the remaining fixtures says little about how the model would behave across what BetGenius actually publishes. The first version of this rule recorded low coverage as a reason but could still return proceed. Review caught this: proceed was returned even at 10% coverage. The fix is regression-tested.
+
+The test-period gate exists because history accumulates over time. A dataset can reach 70% overall while its latest period, the one that decides, is thinner (or the reverse). Both must pass.
+
+**Why a minimum practical improvement of 0.005 nats.** A paired CI below zero shows that a difference is real; it does not show that it is worth having. With several thousand test fixtures, a gain of 0.001 nats can be statistically significant and still be operationally worthless. The cost of a second forecasting engine (maintenance, monitoring, shadow comparison, explaining disagreements) is fixed, so the gain must clear a floor.
+
+The floor is 0.005 nats per match, applied to the mean paired difference. That is exp(0.005) ≈ 1.005: on average, about 0.5% more probability placed on the outcome that actually happened. For a three-way market with log loss near 1.0, it is about 0.5% relative. That is roughly the smallest difference usually treated as meaningful between football forecasting models. It is a judgement fixed in advance, not a value fitted to data.
+
+The existing CI requirement is kept unchanged. The margin is applied to the point estimate, not to the CI bound, because a CI-bound version (upper bound < −0.005) would be far stricter. In the synthetic benchmark, the paired XGBoost − Poisson 95% CI on about 860 test fixtures spans roughly ±0.022 nats. A CI-bound margin would therefore need a true gain of about 0.027 nats, several times larger than realistic improvements between competent models. The point-estimate margin plus a CI excluding zero is the pre-registered compromise.
+
+### Sensitivity to the test boundary (reporting only)
+
+The primary test boundary is the latest 20% of fixtures; it is pre-registered as `PRIMARY_TEST_FRACTION`. By default the report also re-runs the whole protocol with the latest 15%, 25% and 30% as test periods. Each alternative is fully independent:
+
+- its own split and embargo
+- its own walk-forward tuning on its own development period
+- its own calibration slice
+
+Nothing is reused from the primary run, whose development period overlaps the larger alternatives' test periods. Reusing its tuned parameters would leak.
+
+The alternatives do not train the final model, choose its parameters, or produce the artifact. They do not feed `recommend()`. A test asserts that the model hash, test scores and recommendation are identical with and without them.
+
+The report shows each boundary's test window, size, coverage and log losses, and the XGBoost − Poisson and XGBoost − base-rate paired CIs. It also summarises the XGBoost-versus-Poisson verdicts (better, worse or inconclusive) across boundaries. A primary proceed that the alternatives contradict should be watched closely in shadow mode, but it is not overturned. Letting the alternatives vote would reintroduce the selection the protocol is designed to prevent.
+
+Overriding `--test-fraction` is allowed for exploration. The run is then marked `test_fraction_overridden`, and the report opens with a **protocol deviation** warning.
 
 ## 10. Running it
 
 ```bash
-# 1. Extract (by hand, outside CI, with the research role)
+# 1. Extract (by hand, outside CI, with the research role; see section 11 for where to run it)
 RESEARCH_READONLY_DATABASE_URL='postgresql://betgenius_research:…@…/…?sslmode=require' \
-  npm run research:extract -- --out research/forecasting/work/dataset-2026-11-14 --as-of 2026-11-14T00:00:00Z
+  npm run research:extract -- --out research/forecasting/work/dataset-2026-11-14 --as-of 2026-11-14T00:00:00Z \
+  --page-size 50 --page-delay-ms 100          # the shared-VPS profile; the npm script caps the Node heap at 384 MiB
 
-# 2. Model and report
+# 2. Model and report (boundary sensitivity runs by default; --no-boundary-sensitivity skips it)
 cd research/forecasting
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m bgforecast run --dataset work/dataset-2026-11-14 --out work/run-2026-11-14 --sensitivity
+nice -n 19 .venv/bin/python -m bgforecast run --dataset work/dataset-2026-11-14 --out work/run-2026-11-14 --sensitivity --threads 2
 # -> work/run-2026-11-14/report.md, results.json, test_predictions.csv, model/
 
 # Tests (synthetic only)
@@ -256,12 +297,74 @@ cd research/forecasting && .venv/bin/python -m pytest -q
 
 - **Python ≥ 3.12:** `xgboost 3.0.5`, `numpy 2.3.4`, `pandas 2.3.3`, `scipy 1.16.3` and `pytest 8.4.2` (pinned in `requirements.txt`). None of these are application dependencies, and nothing is added to `package.json` dependencies.
 - **Node:** the repository's existing toolchain (`tsx`, `@prisma/client`). The extractor adds two npm scripts and no packages.
-- **Measured on a synthetic dataset sized like the audit** (4,340 included fixtures, 54,753 observations), with the full 24-configuration grid and the sensitivity run, on a 4-CPU container:
-  - 49 seconds wall clock, about 41 of them tuning
-  - peak RSS 372 MiB
-
-  Real data should be of the same order. Real V1 contexts are parsed one page at a time, so extractor memory is bounded by the page size (default 200 jobs) plus the parsed digests.
 - **Database load:** a single connection (`connection_limit=1`), one snapshot transaction, and a sequential scan of `Prediction` plus a keyset-paged scan of `AIJob`.
+
+### Shared-VPS review and safe execution limits
+
+**The host** (docs/VPS_MIGRATION.md, deploy/docker-compose.yml) is a Contabo Cloud VPS 6 shared with School Kit: 6 vCPU, 12 GB RAM and 4 GB swap. BetGenius's containers are capped as follows:
+
+- app: 1 GB and 2 CPUs
+- Postgres 17: 768 MB, with `shared_buffers` at 192 MB and no CPU cap
+- ops: 256 MB
+
+The research tools are not containers, so **nothing caps them unless you do**. Nothing in this PR changes the server, compose or Postgres settings.
+
+**Measured costs.** These were measured on synthetic data at production-like volume, on a 4-CPU container.
+
+| Step | Setting | Wall time | Peak memory | Notes |
+|---|---|---|---|---|
+| Extract | page 200 (the old default), no heap cap | 8–10 s | 1,025 MiB | Too much for a shared host. Parsed JSON costs several times its raw size, and Node's heap grows lazily. |
+| Extract | page 50, no heap cap | 7 s | 524 MiB | |
+| Extract | **page 50, heap cap 384 MiB (the npm script default)** | 7 s | 402 MiB | The new default |
+| Extract | page 25, heap cap 256 MiB, 100 ms page delay | 28 s | 331 MiB | The gentlest profile |
+| Postgres during extraction | VPS settings (`shared_buffers` 192 MB) | — | about 290 MiB total across server processes | Within the 768 MB container limit |
+| Train | full grid, boundary and ledger-mode sensitivity, **2 threads** | 222 s (primary fit 50 s; three independent boundary runs 163 s) | 360 MiB | |
+| Train | full grid, ledger-mode sensitivity, no boundary sensitivity, 4 threads | 49 s | 372 MiB | |
+
+The extraction volume was 4,400 fixture ids, 5,150 jobs (1,500 V1 contexts padded to about 150 KB each with incompressible content) and 7,900 predictions: 179 MB of `AIJob` on disk. The training dataset had 4,340 included fixtures and 54,753 observations. Reproduce with `bash research/forecasting/extract/integration/bench-local-extract.sh` and a `bgforecast run` on a `synth` dataset of `--leagues 8 --teams 20`.
+
+**Where to run extraction, in order of preference:**
+
+1. **Off the live database entirely (preferred).** Restore the two tables needed from the nightly off-server backup into a throwaway Postgres on an isolated machine, then extract from that. This has zero load on production and zero buffer-cache disruption:
+
+   ```bash
+   pg_restore --no-owner --table='"Prediction"' --table='"AIJob"' -d <scratch_db> <daily dump>
+   ```
+
+   Create the read-only role there exactly as in section 5. Use the latest dump as `--as-of`, and delete the scratch database afterwards. Note that the dump contains production data: keep it on an encrypted disk and out of the repository.
+2. **A Neon branch or read replica**, if the database is still on Neon.
+3. **The live VPS Postgres, only if 1 and 2 are unavailable.** Use the gentlest profile (`--page-size 25 --page-delay-ms 100`, with the npm script's heap cap), off-peak — not during the settlement or generation cron windows. Expect about 30 seconds of snapshot.
+
+   Reading about 180 MB of `AIJob` through a 192 MB buffer cache will evict most of the application's hot pages once. The application's next queries then come from disk. A long `REPEATABLE READ` snapshot also holds back vacuum for its duration. That is why the transaction wall clock defaults to 10 minutes, with a 60 s statement timeout and a 5 s lock timeout.
+
+**Where to run training.** Anywhere except the VPS is preferable: it needs only the dataset files, and any machine with 2 CPUs and 1 GB free will do. If it must run on the VPS, cap it so it cannot squeeze School Kit or the BetGenius app:
+
+```bash
+systemd-run --user --scope -p MemoryMax=1G -p CPUQuota=200% \
+  nice -n 19 ionice -c3 .venv/bin/python -m bgforecast run --dataset … --out … --threads 2
+```
+
+`--threads` defaults to 2 (`BGF_THREADS` overrides it), matching the app container's own CPU cap. Never run with more threads than 2 on the shared host. The extractor needs about 400 MiB under the npm script's heap cap, so cap it the same way:
+
+```bash
+systemd-run --user --scope -p MemoryMax=768M nice -n 19 npm run research:extract -- …
+```
+
+If the heap cap is reached, Node aborts with an out-of-memory error. That is a clean failure, not host memory pressure. Rerun with a smaller `--page-size`.
+
+**Limits in force:**
+
+| Limit | Value |
+|---|---|
+| Extractor page size | default 50 (10–1000) |
+| Extractor Node heap | 384 MiB via `npm run research:extract` |
+| Extractor statement timeout | 60 s (5–300) |
+| Extractor snapshot wall clock | 10 min (1–30) |
+| Database connections | 1, plus the role's own `CONNECTION LIMIT 2` |
+| XGBoost threads | 2 by default |
+| Training memory | measured at about 360–370 MiB; cap at 1 GB |
+
+Fixed thread counts give bit-identical results. Compare runs at the same thread count; the count is recorded in the model artifact.
 
 ## 12. Tests
 
@@ -269,9 +372,13 @@ cd research/forecasting && .venv/bin/python -m pytest -q
 |---|---|
 | `npm run check:research-extract` | Duplicate fixture rows; earliest valid pre-kickoff context; contexts at or after kickoff; team, league, kickoff and score conflicts; partial and missing scores; settlement timing; outcome against score; V1 and V2 parsing via production code; observation orientation; missing opponents; same-day, future-dated and incomplete audit counts; future availability; engine rows scoped to the selected job; deterministic and order-independent output; every read-only posture and credential refusal, including that refusals never echo the credential. |
 | `extract/integration/run-local-integration.sh` | A real Postgres 16 with the real schema. Refuses the app credential and a role with write grants; an UPDATE inside the session fails; real extraction through a read-only role; V1 context; `--as-of` masking; byte-identical re-extraction. |
-| `pytest` (`research/forecasting/tests`) | The ledger's same-day, 28h and exact-kickoff rules; strict versus completion modes; target exclusion; duplicate merging; score conflicts; missing data. **Leakage invariance:** rewriting every result unknowable at generation time leaves features bit-identical across 30 fixtures and more than 1,000 tampered sightings, with a positive control. Shrinkage and priors; identifiers stay categorical. Partitions are disjoint, label-safe, ordered and non-random, and the integrity check fires on a planted violation. Poisson probabilities are checked against closed forms. Temperature scaling. XGBoost probabilities are valid with NaNs present. Bit-identical retraining and artifact hashes, with artifact tamper detection. Bit-identical end-to-end pipeline runs. Dataset hash, schema and duplicate refusals. The synthetic report banner. Every branch of the decision rule. |
+| `pytest` (`research/forecasting/tests`) | The ledger's same-day, 28h and exact-kickoff rules; strict versus completion modes; target exclusion; duplicate merging; score conflicts; missing data. **Leakage invariance:** rewriting every result unknowable at generation time leaves features bit-identical across 30 fixtures and more than 1,000 tampered sightings, with a positive control. Shrinkage and priors; identifiers stay categorical. Partitions are disjoint, label-safe, ordered and non-random, and the integrity check fires on a planted violation. Poisson probabilities are checked against closed forms. Temperature scaling. XGBoost probabilities are valid with NaNs present. Bit-identical retraining and artifact hashes, with artifact tamper detection. Bit-identical end-to-end pipeline runs. Dataset hash, schema and duplicate refusals. The synthetic report banner. **Decision rule:** every branch. Low coverage, overall or in the test period alone, blocks proceed even with excellent results. Missing or NaN coverage and calibration fail closed. Coverage and margin thresholds are inclusive. A significant but negligible gain is not proceed, and the CI requirement still applies. An exhaustive grid of 432 combinations checks that proceed implies every gate passed. Sensitivity results cannot change the recommendation. Boundary sensitivity leaves the final model hash, test scores and recommendation bit-identical. An end-to-end run with zero coverage cannot proceed. An overridden test fraction is flagged. |
+| `extract/integration/bench-local-extract.sh` | Not a pass/fail test. It measures extractor wall time, snapshot duration and peak memory, and Postgres memory, at production-like volume on a VPS-configured local Postgres (section 11). |
 
-A mutation check was run while developing: removing the ledger's time cut-off fails 20 tests.
+Mutation checks were run while developing:
+
+- Removing the ledger's time cut-off fails 20 tests.
+- The original `recommend()` from `ec0d5d9` returns proceed at 10% coverage and for a significant but negligible 0.003-nat gain. The new tests reject both.
 
 ## 13. Limitations
 
@@ -283,3 +390,7 @@ A mutation check was run while developing: removing the ledger's time cut-off fa
 - **Engine comparison.** It is selection-conditional and uses uncalibrated engine confidence.
 - **Excluded inputs.** Season aggregates, standings, availability and odds are excluded until their point-in-time validity can be established. Some of them may hold signal.
 - **Recent-results features only.** There is no Elo or other rating system, and no goals-market XGBoost model; both are natural next experiments if the first result warrants it.
+- **The decision thresholds are judgements.** The 70% coverage, 0.005-nat margin, 300-fixture and 0.05 ECE thresholds are reasoned in section 9, not derived from BetGenius data. They are fixed now so they cannot be fitted later.
+- **Coverage is measured as "any history for both teams".** A team with one prior match counts as covered. The report also gives the share with at least five matches per side, which is worth reading alongside the gate.
+- **The boundary sensitivity is not a significance correction.** Three alternative boundaries are reported for stability, not combined into a test. Their test periods overlap the primary one, so they are not independent evidence.
+- **Resource figures are synthetic.** They come from synthetic data at production-like volume. Real V1 payload sizes vary, and the first real extraction should be watched with the measurements in section 11.

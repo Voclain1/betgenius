@@ -55,6 +55,13 @@ def render(r: dict) -> str:
     L.append(f"## Recommendation: **{rec.get('decision', '—')}**\n")
     for x in rec.get("reasons", []):
         L.append(f"- {x}")
+    if rec.get("gates"):
+        L.append("\nPre-registered gates (all must pass for **proceed**; decided from the primary test period only):\n")
+        L.append(_table(["gate", "result", "detail"], [[g["gate"], "pass" if g["passed"] else "**FAIL**", g["detail"]] for g in rec["gates"]]))
+    proto = r.get("protocol") or {}
+    if proto.get("test_fraction_overridden"):
+        L.append(f"\n> **Protocol deviation:** test fraction {proto.get('test_fraction')} differs from the pre-registered {proto.get('pre_registered_test_fraction')}. "
+                 "A boundary chosen after seeing results is not a valid basis for a decision.\n")
     L.append(f"\nStatus: {r.get('status')}\n")
 
     c = r["dataset"].get("counts") or {}
@@ -156,8 +163,22 @@ def render(r: dict) -> str:
         L.append(_table(["market", "picks", "engine hit rate", "engine mean confidence", "model", "Δ log loss vs engine", "Δ Brier vs engine"], rows))
         L.append("\nNegative Δ means the model's probability for the engine's own pick scored better than the engine's stated confidence.\n")
 
+    bs = r.get("boundary_sensitivity")
+    if bs:
+        L.append("\n## 9. Sensitivity: alternative test boundaries (reporting only)\n")
+        L.append(f"{bs['note']} Primary test fraction: {bs['primary_test_fraction']}.\n")
+        rows = []
+        for x in bs["boundaries"]:
+            if x.get("status") != "evaluated":
+                rows.append([x["test_fraction"], "—", "—", "—", "—", "—", "—", "—", x.get("status")])
+                continue
+            rows.append([x["test_fraction"], x["boundary"], x["n_test"], _f(x.get("coverage_test_both_history_pct"), 1), _f(x["base_rate_log_loss"]),
+                         _f(x["poisson_log_loss"]), _f(x["xgb_calibrated_log_loss"]), _ci(x["xgb_minus_poisson"]), _ci(x["xgb_minus_base_rate"])])
+        L.append(_table(["test fraction", "boundary", "n test", "test coverage %", "base rate", "Poisson", "XGB calibrated", "XGB − Poisson", "XGB − base rate"], rows))
+        L.append(f"\nXGBoost vs Poisson across alternative boundaries: {', '.join(bs['xgb_vs_poisson_verdicts']) or '—'}. "
+                 "A primary 'proceed' that is contradicted here should be treated with caution in the shadow phase; these rows never change the decision.\n")
     if r.get("sensitivity"):
-        L.append("\n## 9. Sensitivity: ledger mode\n")
+        L.append("\n## 10. Sensitivity: ledger mode\n")
         L.append(_kv(r["sensitivity"]))
     L.append(f"\n## Model artifact\n\n`{r['artifact']['version']}` at `{r['artifact']['path']}` (sha256 `{r['artifact']['model_sha256']}`), research only.\n")
     return _tail(L, r)

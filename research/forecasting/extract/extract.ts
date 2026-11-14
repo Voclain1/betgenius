@@ -12,7 +12,11 @@
  *
  * Run (never in CI — CI uses synthetic data only):
  *   RESEARCH_READONLY_DATABASE_URL=postgres://… npx tsx research/forecasting/extract/extract.ts \
- *     [--out research/forecasting/work/dataset] [--as-of 2026-11-14T00:00:00Z] [--page-size 200]
+ *     [--out research/forecasting/work/dataset] [--as-of 2026-11-14T00:00:00Z] [--page-size 50]
+ *     [--page-delay-ms 0] [--max-transaction-minutes 10] [--statement-timeout-s 60]
+ *
+ * On the shared VPS, see docs/research/XGBOOST_RESEARCH_ENGINE.md section 11
+ * for the recommended limits: small pages, a delay between pages, off-peak.
  *
  * --as-of bounds every timestamp read (rows created, jobs created, settlements
  * recorded after it are treated as not existing), so re-running with the same
@@ -20,7 +24,7 @@
  */
 export {};
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { assembleDataset } from "./assemble";
 import { parseJob, type ParsedJob, type PredictionRow } from "./core";
@@ -31,12 +35,32 @@ function arg(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+/** True peak resident memory (VmHWM) on Linux; current RSS elsewhere. */
+function peakRssMiB(): number {
+  try {
+    const m = /VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf8"));
+    if (m) return Number(m[1]) / 1024;
+  } catch { /* not Linux */ }
+  return process.memoryUsage().rss / 2 ** 20;
+}
+
+function boundedNumber(name: string, fallback: number, min: number, max: number): number {
+  const raw = arg(name);
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < min || n > max) throw new Error(`--${name} must be between ${min} and ${max}`);
+  return n;
+}
+
 type RawPrediction = Omit<PredictionRow, "fixtureApiId"> & { fixtureApiId: number | null };
 
 async function main() {
   const url = assertDedicatedCredential(process.env);
   const out = resolve(arg("out") ?? "research/forecasting/work/dataset");
-  const pageSize = Math.min(1000, Math.max(10, Number(arg("page-size") ?? 200)));
+  const pageSize = boundedNumber("page-size", 50, 10, 1000);
+  const pageDelayMs = boundedNumber("page-delay-ms", 0, 0, 10_000);
+  const maxTxMinutes = boundedNumber("max-transaction-minutes", 10, 1, 30);
+  const statementTimeoutS = boundedNumber("statement-timeout-s", 60, 5, 300);
   const asOfArg = arg("as-of");
   if (asOfArg && !Number.isFinite(Date.parse(asOfArg))) throw new Error(`--as-of is not a timestamp: ${asOfArg}`);
   const started = Date.now();
@@ -72,11 +96,13 @@ async function main() {
       for (const j of page) jobs.push(parseJob(j));
       cursor = page[page.length - 1].id;
       process.stdout.write(`\rjobs parsed: ${jobs.length}`);
+      if (pageDelayMs) await new Promise((r) => setTimeout(r, pageDelayMs));
     }
     process.stdout.write("\n");
 
     return { asOf, total, predictions, withoutId: raw.length - predictions.length, jobs };
-  });
+  }, { statementTimeoutMs: statementTimeoutS * 1000, transactionTimeoutMs: maxTxMinutes * 60_000 });
+  const snapshotSeconds = (Date.now() - started) / 1000;
 
   const ds = assembleDataset({
     predictions: result.predictions,
@@ -98,7 +124,7 @@ async function main() {
   console.log(`  fixtures: ${m.counts.distinct_fixture_ids} distinct, ${m.counts.fixtures_included} included, ${m.counts.fixtures_excluded} excluded`);
   for (const [k, v] of Object.entries(m.fixture_exclusions)) console.log(`    ${k}: ${v}`);
   console.log(`  observations: ${m.counts.observations}`);
-  console.log(`  elapsed ${((Date.now() - started) / 1000).toFixed(1)}s, peak rss ${(process.memoryUsage().rss / 2 ** 20).toFixed(0)} MiB`);
+  console.log(`  snapshot held ${snapshotSeconds.toFixed(1)}s, total ${((Date.now() - started) / 1000).toFixed(1)}s, peak rss ${peakRssMiB().toFixed(0)} MiB`);
 }
 
 main().catch((e) => {
