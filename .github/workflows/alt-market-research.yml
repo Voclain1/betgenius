@@ -1,0 +1,58 @@
+# VIP/Premium Sprint 10: alternative-market research. EXPLICITLY INVOKED ONLY:
+# no schedule, no push or pull_request trigger, so nothing here can run on its
+# own or recur. Every database session is forced read-only and verified by the
+# scripts (REQUIRE_READ_ONLY). Nothing is published or written to production.
+#
+#   job=baseline    read-only historical baseline (no provider or model calls)
+#   job=experiment  the pre-registered shadow experiment (src/lib/altMarketResearch.ts):
+#                   at most 30 model requests, $0.30, cache-only football data.
+#                   Requires confirm=RUN-ALT-MARKET-S10.
+#   job=settle      read-only settlement of recorded observations
+
+name: alt-market-research
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "baseline | experiment | settle"
+        default: "baseline"
+      confirm:
+        description: "For job=experiment only: type RUN-ALT-MARKET-S10"
+        default: ""
+      days:
+        description: "baseline look-back in days"
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    if: github.event.inputs.job == 'baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Alternative-market baseline (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-alt-market-baseline.ts "${{ github.event.inputs.days || '30' }}"
