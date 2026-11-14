@@ -17,6 +17,10 @@ on:
       - 'scripts/research-qualification-loosening.ts'
       - 'scripts/measure-qualification-funnel.ts'
       - 'scripts/check-qualification-research.ts'
+      - 'src/lib/vipPremiumOverlay.ts'
+      - 'src/lib/paidOpportunity.ts'
+      - 'scripts/measure-paid-opportunity.ts'
+      - 'scripts/check-paid-spare-quota.ts'
       - '.github/workflows/diagnose-generation.yml'
       - 'scripts/research-global-competitions.ts'
       - 'scripts/lib/loadValidationRows.ts'
@@ -51,6 +55,8 @@ jobs:
         run: npm run check:league-coverage-quality
       - name: Sprint 08 qualification research (pre-registered, isolated from production code)
         run: npm run check:qualification-research
+      - name: Sprint 09 spare kickoff-day quota (default shadow)
+        run: npm run check:paid-spare-quota
       - name: Discovery, coverage and generation (unchanged behaviour)
         run: |
           npm run check:adaptive-coverage

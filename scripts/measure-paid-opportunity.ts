@@ -41,7 +41,7 @@ import {
 import { VIP_PREMIUM_DAILY_QUOTA } from "../src/lib/vipPremiumPipeline";
 import { DEDICATED_PAID_PROVENANCES, VIP_ROUTE_PROVENANCE } from "../src/lib/geniusCuration";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
-import { kickoffDayScope, scopeGroup, spareQuotaSlots, type ScopeGroup } from "../src/lib/paidOpportunity";
+import { firstPaidLoss, kickoffDayScope, scopeGroup, spareQuotaSlots, type ScopeGroup } from "../src/lib/paidOpportunity";
 import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 import { wilson95 } from "../src/lib/paidMarketQuality";
 
@@ -87,6 +87,7 @@ async function main() {
     closingHeadline: number | null; priced5: boolean;
     attempted: boolean; drafts: number; draftMaxConf: number | null; promoted: boolean;
     vip: boolean; vipDedicated: boolean; premium: boolean;
+    everInScope: boolean | null;
   };
   const fx = new Map<string, Fx>();
   const get = (key: string, kickoff: Date, league: number | null, name: string | null, fixtureApiId: number | null) => {
@@ -99,7 +100,7 @@ async function main() {
         key, fixtureApiId, league, leagueName: name ?? String(league), kickoff, day: lagosDateKey(kickoff), group: scopeGroup(league), tier: generationTierOf(league) ?? "UNCATALOGUED",
         discovered: false, succeeded: false, ledgerCreated: null, firstOrdinaryAt: null, ordinaryPublished: 0, maxOrdinaryConf: null, route75: false,
         closingHeadline: sig?.probability ?? null, priced5: !!sig,
-        attempted: false, drafts: 0, draftMaxConf: null, promoted: false, vip: false, vipDedicated: false, premium: false,
+        attempted: false, drafts: 0, draftMaxConf: null, promoted: false, vip: false, vipDedicated: false, premium: false, everInScope: null,
       };
       fx.set(key, x);
     }
@@ -192,6 +193,7 @@ async function main() {
     const inWindow = scoped.filter((r) => x.kickoff.getTime() >= r.at.getTime() + GENERATE_FROM_HOURS * H && x.kickoff.getTime() <= r.at.getTime() + GENERATE_UNTIL_HOURS * H);
     const s = dayScope.get(x.day) ?? kickoffDayScope();
     s.fixtures++;
+    x.everInScope = inWindow.some((r) => r.widened);
     if (inWindow.length === 0) s.noRunInWindow++;
     else if (inWindow.some((r) => r.widened)) s.everInScope++;
     else s.neverInScope++;
@@ -287,6 +289,21 @@ async function main() {
     console.log(`  ${day} core ${core.length} attempts ${perDay.get(day) ?? 0} core never attempted ${core.filter((x) => !x.attempted).length} widened lopsided out of scope ${s.neverInScopeLopsided} -> slots ${slots} VIP that day ${all.filter((x) => x.day === day && x.vip).length}`);
   }
   console.log(`  total slots ${slotsTotal}; at the widened-scope conversion seen on thin days (${(100 * rate).toFixed(0)}% of ${promotedWidened.length} attempts) ~ ${(slotsTotal * rate).toFixed(1)} promotions over the window (upper bound: lopsidedness read at the closing quote)`);
+  // ── J. Opportunity-loss table by competition ────────────────────────────
+  console.log("\n== J. Opportunity loss by competition (covered fixtures, kicked off in window; first loss per fixture) ==");
+  console.log("  competition (id)                         group        cov  best>=75  lops  att  d>=75  prom  VIP PREM | first loss");
+  const byLeague = new Map<string, Fx[]>();
+  for (const x of all) if (x.succeeded) byLeague.set(`${x.leagueName} (${x.league})`, [...(byLeague.get(`${x.leagueName} (${x.league})`) ?? []), x]);
+  const totals: Record<string, number> = {};
+  for (const [lg, xs] of [...byLeague.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    const loss: Record<string, number> = {};
+    for (const x of xs) { const l = firstPaidLoss(x); loss[l] = (loss[l] ?? 0) + 1; totals[l] = (totals[l] ?? 0) + 1; }
+    if (xs.length < 5 && !xs.some((x) => x.vip)) continue;
+    const c = (f: (x: Fx) => boolean) => xs.filter(f).length;
+    console.log(`  ${lg.slice(0, 40).padEnd(40)} ${xs[0].group.padEnd(12)} ${String(xs.length).padStart(4)} ${String(c((x) => (x.maxOrdinaryConf ?? 0) >= 75)).padStart(9)} ${String(c((x) => (x.closingHeadline ?? 0) >= 75)).padStart(5)} ${String(c((x) => x.attempted)).padStart(4)} ${String(c((x) => (x.draftMaxConf ?? 0) >= 75)).padStart(6)} ${String(c((x) => x.promoted)).padStart(5)} ${String(c((x) => x.vip)).padStart(4)} ${String(c((x) => x.premium)).padStart(4)} | ${Object.entries(loss).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(", ")}`);
+  }
+  console.log(`  TOTAL first loss: ${JSON.stringify(totals)}`);
+  console.log(`  VIP fixtures ${all.filter((x) => x.vip).length} (dedicated ${all.filter((x) => x.vipDedicated).length}); PREMIUM fixtures ${all.filter((x) => x.premium).length}`);
 }
 
 main()

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
 import { paidQualityPolicyMode } from "@/lib/paidQualityPolicy";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
-import { lagosTodayBounds } from "@/lib/lagosDate";
+import { lagosDateKey, lagosTodayBounds } from "@/lib/lagosDate";
 import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
@@ -55,6 +55,10 @@ import {
   PREMIUM_MARKET_FLOOR,
   VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
+  spareQuotaSlotsByDay,
+  spareQuotaWideningMode,
+  PAID_CORE_LEAGUE_IDS,
+  type SpareQuotaMode,
   type OddsSkipReason,
   type OverlayAttempt,
   type OverlayQuote,
@@ -453,6 +457,21 @@ export type TargetSelection = {
   widened: boolean;
   /** Covered core fixtures inside the window. */
   coreFixtures: number;
+  /**
+   * Spare kickoff-day quota (PAID_SPARE_QUOTA_WIDENING; vipPremiumOverlay.ts).
+   * Absent when off. Under shadow nothing here affects the run.
+   */
+  spareQuota?: {
+    mode: SpareQuotaMode;
+    /** Spare slots per Lagos kickoff day, after reserving one per attemptable core fixture. */
+    slots: Record<string, number>;
+    /** Widened-scope fixtures on those days that pass every other pre-odds rule. */
+    eligible: number;
+    /** ...of which the quote already cached (no call made for them under shadow) is fresh and at the VIP bar. */
+    qualifiedFromCache: number;
+    /** Up to five of them, for the record. */
+    wouldTarget: Array<{ fixture: string; kickoff: string; leagueApiId: number; marketProbability: number }>;
+  };
 };
 
 /**
@@ -488,6 +507,27 @@ export async function selectVipPremiumTargets(
     prisma.appLock.findMany({ where: { key: { startsWith: VIP_PREMIUM_BACKOFF_LOCK_PREFIX }, expiresAt: { gt: now } }, select: { key: true } }),
   ]);
   const backingOff = new Set(backoffs.map((b) => Number(b.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))).filter(Number.isFinite));
+  const used = attemptsByKickoffDay(attempts);
+
+  // Spare kickoff-day quota: one database read, no provider call.
+  const spareMode = options.anyLeague ? "off" : spareQuotaWideningMode();
+  let spareSlots = new Map<string, number>();
+  if (spareMode !== "off") {
+    const coreLedger = await prisma.generationAttempt.findMany({
+      // Through the end of the last Lagos day the window touches, so a day's
+      // later core fixtures are reserved before any of them enters the window.
+      where: { kickoff: { gte: from, lte: new Date(until.getTime() + 24 * 3_600_000) }, leagueApiId: { in: [...PAID_CORE_LEAGUE_IDS] } },
+      select: { fixtureApiId: true, leagueApiId: true, kickoff: true, status: true },
+    });
+    spareSlots = spareQuotaSlotsByDay({
+      days: ledger.map((l) => lagosDateKey(l.kickoff)),
+      coreLedger,
+      attempted: new Set(attempts.map((a) => a.fixtureApiId).filter((id): id is number => id != null)),
+      used,
+      quota: VIP_PREMIUM_DAILY_QUOTA,
+      now,
+    });
+  }
 
   const plan = planVipPremiumCandidates({
     ledger: ledger.filter((l) => l.kickoff).map((l) => ({ ...l, kickoff: l.kickoff! })),
@@ -496,6 +536,7 @@ export async function selectVipPremiumTargets(
     backingOff,
     now,
     anyLeague: options.anyLeague,
+    ...(spareMode !== "off" ? { spareQuota: { mode: spareMode, slots: spareSlots } } : {}),
   });
 
   const readQuotes = async (keys: string[]) =>
@@ -535,7 +576,25 @@ export async function selectVipPremiumTargets(
     }
   }
 
-  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used: attemptsByKickoffDay(attempts), quota: VIP_PREMIUM_DAILY_QUOTA });
+  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used, quota: VIP_PREMIUM_DAILY_QUOTA }, spareSlots);
+
+  let spareQuota: TargetSelection["spareQuota"];
+  if (plan.spareQuota) {
+    const eligible = plan.spareQuota.eligible;
+    // Shadow reads the cache only; "on" candidates were already priced above.
+    const shadowQuotes = new Map(quotes);
+    for (const q of await readQuotes(eligible.filter((c) => !shadowQuotes.has(c.matchKey)).map((c) => c.matchKey))) {
+      shadowQuotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt });
+    }
+    const would = qualifyVipPremiumTargets(eligible, shadowQuotes, now, eligible.length, { used, quota: VIP_PREMIUM_DAILY_QUOTA }, spareSlots);
+    spareQuota = {
+      mode: plan.spareQuota.mode,
+      slots: Object.fromEntries(spareSlots),
+      eligible: eligible.length,
+      qualifiedFromCache: would.qualified,
+      wouldTarget: would.targets.slice(0, 5).map((t) => ({ fixture: `${t.homeTeam} vs ${t.awayTeam}`, kickoff: t.kickoff.toISOString(), leagueApiId: t.leagueApiId, marketProbability: Number(t.marketProbability.toFixed(1)) })),
+    };
+  }
   return {
     targets: odds.targets,
     considered: plan.considered,
@@ -547,6 +606,7 @@ export async function selectVipPremiumTargets(
     skipped: { ...plan.skipped, ...odds.skipped },
     widened: plan.widened,
     coreFixtures: plan.coreFixtures,
+    ...(spareQuota ? { spareQuota } : {}),
   };
 }
 

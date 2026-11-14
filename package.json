@@ -75,6 +75,8 @@
     "check:adaptive-coverage": "tsx scripts/check-adaptive-coverage.ts",
     "check:league-coverage-quality": "tsx scripts/check-league-coverage-quality.ts",
     "check:qualification-research": "tsx scripts/check-qualification-research.ts",
+    "check:paid-spare-quota": "tsx scripts/check-paid-spare-quota.ts",
+    "measure:paid-opportunity": "tsx --env-file=.env scripts/measure-paid-opportunity.ts",
     "measure:qualification-funnel": "tsx --env-file=.env scripts/measure-qualification-funnel.ts",
     "research:qualification-loosening": "tsx --env-file=.env scripts/research-qualification-loosening.ts",
     "measure:league-coverage": "tsx --env-file=.env scripts/measure-league-coverage.ts",
