@@ -46,6 +46,29 @@ function numericShape(
   }
   return out;
 }
+function failureCategory(message: unknown): string {
+  if (typeof message !== "string") return "NO_STORED_ERROR_TEXT";
+  if (
+    /ground|evidence|unsupported claim|hallucin|factual|competition.stage|inconsistent/i.test(
+      message,
+    )
+  )
+    return "EVIDENCE_OR_CONTENT_GUARD";
+  if (/timed out|timeout|AbortError/i.test(message)) return "TIMEOUT";
+  if (/429|rate.limit|quota|budget/i.test(message))
+    return "RATE_OR_QUOTA_GUARD";
+  if (
+    /no predictions|no valid|no usable|empty|invalid.*output|JSON|parse|schema/i.test(
+      message,
+    )
+  )
+    return "EMPTY_OR_INVALID_OUTPUT";
+  if (/prisma|constraint|database|P[0-9]{4}/i.test(message))
+    return "DATABASE_OR_CONSTRAINT";
+  if (/provider|api|network|fetch|connection/i.test(message))
+    return "PROVIDER_OR_NETWORK";
+  return "UNCLASSIFIED_STORED_ERROR";
+}
 async function main() {
   const now = new Date(),
     since = new Date(+now - 86400000),
@@ -365,6 +388,16 @@ async function main() {
       medianObservedGapMinutes: gaps.length
         ? gaps[Math.floor(gaps.length / 2)]
         : null,
+      failureEvidence: tally(
+        h.runs.flatMap((r) => {
+          const p = r.detail as any;
+          return Array.isArray(p?.results)
+            ? p.results
+                .filter((x: any) => x?.ok === false)
+                .map((x: any) => failureCategory(x.error))
+            : [];
+        }),
+      ),
       legacyClassification: tally(
         h.runs.map(
           (r) => meaningfulCompletion(r.detail, r.ok ? 200 : 500).status,

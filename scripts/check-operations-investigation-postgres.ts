@@ -116,6 +116,37 @@ async function main() {
     const missingPlan = await planRecovery("RETRY_SETTLEMENT", missing.id);
     assert.equal(missingPlan.eligible, false);
     assert.ok(missingPlan.reasons.includes("MISSING_SETTLEMENT_METADATA"));
+    await prisma.jobRun.create({
+      data: {
+        id: `${prefix}-first-collection`,
+        job: "prediction-reliability-s06",
+        summary: prefix,
+        ranAt: new Date(+now - 2 * 3600000),
+        detail: { version: "reliability-s06-v1" },
+      },
+    });
+    const first = await prisma.jobRun.findFirstOrThrow({
+      where: { job: "prediction-reliability-s06", ranAt: { lte: now } },
+      orderBy: { ranAt: "asc" },
+    });
+    const legacyPaid = await create("legacy-paid", {
+      category: "VIP",
+      categories: { create: { category: "VIP" } },
+      createdAt: new Date(+first.ranAt - 86400000),
+      provenance: "VIP_ROUTE_CONFIRMED",
+    });
+    const eligiblePaid = await create("eligible-paid", {
+      category: "VIP",
+      categories: { create: { category: "VIP" } },
+      createdAt: new Date(+now - 60000),
+      provenance: "VIP_ROUTE_CONFIRMED",
+    });
+    const dedicatedPaid = await create("dedicated-paid", {
+      category: "VIP",
+      categories: { create: { category: "VIP" } },
+      createdAt: new Date(+now - 60000),
+      provenance: "VIP_GENERATED",
+    });
     const before = await prisma.prediction.findMany({
         where: { authorId: user.id },
         orderBy: { id: "asc" },
@@ -124,13 +155,50 @@ async function main() {
       logCount = await prisma.jobRun.count();
     const s = await loadOperations({ days: 7, competition });
     assert.equal(s.universe, 500);
-    assert.equal(s.total, 516); // missing-metadata row has null league and is outside this competition filter
+    assert.equal(s.total, 519); // missing-metadata row has null league and is outside this competition filter
     assert.equal(s.truncated, true);
     assert.ok(
       s.freshness.some((r) => r.id === upcoming.id),
       "current/upcoming data cannot be evicted by 510 historical records",
     );
     assert.ok(s.sampling.current >= 1);
+    assert.ok(
+      !s.findings.some(
+        (f) =>
+          f.predictionId === legacyPaid.id &&
+          f.code === "MISSING_RELIABILITY_OBSERVATION",
+      ),
+    );
+    assert.ok(
+      !s.findings.some(
+        (f) =>
+          f.predictionId === dedicatedPaid.id &&
+          f.code === "MISSING_RELIABILITY_OBSERVATION",
+      ),
+    );
+    assert.ok(
+      s.findings.some(
+        (f) =>
+          f.predictionId === eligiblePaid.id &&
+          f.code === "MISSING_RELIABILITY_OBSERVATION" &&
+          f.severity === "INFO",
+      ),
+    );
+    assert.ok(
+      !s.findings.some(
+        (f) =>
+          f.predictionId === legacyPaid.id &&
+          f.code === "MISSING_PAID_EVIDENCE",
+      ),
+    );
+    assert.ok(
+      s.findings.some(
+        (f) =>
+          f.predictionId === dedicatedPaid.id &&
+          f.code === "MISSING_PAID_EVIDENCE",
+      ),
+    );
+
     assert.ok(
       !s.findings.some(
         (f) =>
