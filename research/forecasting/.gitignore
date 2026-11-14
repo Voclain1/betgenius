@@ -1,0 +1,6 @@
+# Datasets, model artifacts and reports are private and never committed.
+work/
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
