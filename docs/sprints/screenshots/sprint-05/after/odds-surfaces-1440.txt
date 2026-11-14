@@ -1,0 +1,201 @@
+DEMONSTRATION DATA — invented fixtures and prices, real components. Rows marked “broken” feed a deliberately invalid price.
+
+DASHBOARD PICK — VALID / BROKEN (0.5)
+Premier League
+19:12
+Arsenal
+Chelsea
+BOTH TEAMS TO SCORE
+Yes
+Confidence 68%
+Odds 
+Decimal odds
+1.72
+Banker
+YOUR TEAM
+Premier League
+19:12
+Arsenal
+Chelsea
+BOTH TEAMS TO SCORE
+Yes
+Confidence 68%
+Banker
+YOUR TEAM
+SAVED PREDICTION — VALID / BROKEN (NAN)
+Premier League
+Sun 19:12 WAT
+Arsenal
+Chelsea
+MATCH WINNER ArsenalOdds 
+Decimal odds
+2.10 when saved
+Premier League
+Sun 19:12 WAT
+Arsenal
+Chelsea
+MATCH WINNER Arsenal
+VIP CARD QUOTE — ENTRY / CURRENT / CLOSING / BROKEN (0)
+VIP
+Sun 19:12 WAT
+Premier League
+Arsenal vs Chelsea
+MATCH WINNER
+Arsenal to win
+78%
+CONFIDENCE
+STATUS
+Upcoming
+PRICE WHEN PUBLISHED
+Decimal odds
+1.38median of 9 books
+PUBLISHED
+Fri 11:00 WAT
+
+Picked for VIP: two independent reads agree.
+
+Arsenal have the stronger recent form.
+
+Full prediction
+VIP
+Sun 19:12 WAT
+Premier League
+Arsenal vs Chelsea
+MATCH WINNER
+Arsenal to win
+78%
+CONFIDENCE
+STATUS
+Upcoming
+LATEST QUOTE
+Decimal odds
+1.90median of 9 books · Sat 10:00 WAT
+PUBLISHED
+Fri 11:00 WAT
+
+Picked for VIP: two independent reads agree.
+
+Arsenal have the stronger recent form.
+
+Full prediction
+VIP
+Sun 19:12 WAT
+Premier League
+Arsenal vs Chelsea
+MATCH WINNER
+Arsenal to win
+78%
+CONFIDENCE
+STATUS
+Upcoming
+LAST QUOTE BEFORE KICKOFF
+Decimal odds
+1.90median of 9 books · Sat 10:00 WAT
+PUBLISHED
+Fri 11:00 WAT
+
+Picked for VIP: two independent reads agree.
+
+Arsenal have the stronger recent form.
+
+Full prediction
+VIP
+Sun 19:12 WAT
+Premier League
+Arsenal vs Chelsea
+MATCH WINNER
+Arsenal to win
+78%
+CONFIDENCE
+STATUS
+Upcoming
+PRICE
+No bookmaker quote for this market
+PUBLISHED
+Fri 11:00 WAT
+
+Picked for VIP: two independent reads agree.
+
+Arsenal have the stronger recent form.
+
+Full prediction
+MULTI BET — VALID / BROKEN LEG (INFINITY)
+PREMIUM
+5x accumulator
+×
+Decimal odds
+4.32
+combined odds from 3 legs, at the prices when this multi bet was built
+Market prices this at ~23.1%
+1. Arsenal vs Chelsea
+Match Winner — Arsenal
+Decimal odds
+1.50
+2. Arsenal vs Chelsea
+Match Winner — Arsenal
+Decimal odds
+1.60
+3. Arsenal vs Chelsea
+Match Winner — Arsenal
+Decimal odds
+1.80
+Add to slip
+PREMIUM
+5x accumulator
+1. Arsenal vs Chelsea
+Match Winner — Arsenal
+2. Arsenal vs Chelsea
+Match Winner — Arsenal
+3. Arsenal vs Chelsea
+Match Winner — Arsenal
+Add to slip
+TREND — VALID / BROKEN (NAN)
+Arsenal
+7
+UNBEATEN
+
+Arsenal are unbeaten in 7.
+
+Arsenal vs Chelsea
+
+Sat 14 Nov
+
+Both teams to score @ 
+Decimal odds
+1.85
+
+Arsenal
+7
+UNBEATEN
+
+Arsenal are unbeaten in 7.
+
+Arsenal vs Chelsea
+
+Sat 14 Nov
+
+BET OF THE DAY — VALID / BROKEN (0)
+PREMIER LEAGUE
+SUN 15 NOV · 19:12
+A
+Arsenal
+C
+Chelsea
+MATCH WINNER
+Arsenal
+Decimal odds
+2.40
+ODDS
+77% confidence
+Best of 6 bookmakers · 20m ago
+Market 52% · +4pp edge
+PREMIER LEAGUE
+SUN 15 NOV · 19:12
+A
+Arsenal
+C
+Chelsea
+MATCH WINNER
+Arsenal
+Price not available yet
+77% confidence

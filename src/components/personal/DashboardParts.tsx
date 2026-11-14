@@ -7,6 +7,7 @@ import { SavePredictionButton } from "@/components/SavePredictionButton";
 import { categoryChipLabel } from "@/lib/categoryPredictions";
 import { kickoffInZone, shortDateInZone, timeInZone, type MatchReason, type UpcomingFixture } from "@/lib/personalization";
 import { rowStatus } from "@/lib/predictionStatus";
+import { OddsFigure } from "@/components/OddsFigure";
 import type { DashboardPick, SavedItem } from "@/lib/personalizationData";
 
 /** Section heading with an optional trailing link. Same weight across every dashboard section. */
@@ -113,7 +114,7 @@ export function PickRow({ row, reasons, timezone }: { row: DashboardPick; reason
         <div className="truncate text-sm font-black text-brand">{row.pick}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-gray-500">
           <span>Confidence {row.confidence}%</span>
-          {row.odds != null && <span className="tabular-nums">Odds {row.odds.toFixed(2)}</span>}
+          <OddsFigure value={row.odds} lead="Odds " className="tabular-nums" />
           {/* "Today" says nothing on a list of today's picks; the others (Banker, Genius, Featured, Bet of the Day, VIP, Premium, Goals, Combo Bet) do. */}
           {row.presented !== "TODAY" && <span>{categoryChipLabel(row.presented)}</span>}
         </div>
@@ -221,7 +222,7 @@ export function SavedRow({ item, timezone, actions }: { item: SavedItem; timezon
           <div>
             <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">{item.market}</span>{" "}
             <span className="text-sm font-black text-brand">{item.pick}</span>
-            {item.odds != null && <span className="ml-2 text-[11px] tabular-nums text-gray-500">Odds {item.odds.toFixed(2)}</span>}
+            <OddsFigure value={item.odds} lead="Odds " tail="when saved" className="ml-2 text-[11px] tabular-nums text-gray-500" />
             {item.view.changedTo && (
               <p className="mt-1 text-[11px] text-amber-300">Updated since you saved it — now {item.view.changedTo}. Your saved pick is shown and settled as saved.</p>
             )}

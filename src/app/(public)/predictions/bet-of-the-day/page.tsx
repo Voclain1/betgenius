@@ -13,6 +13,7 @@ import { AdRectangle } from "@/components/ads/AdPlacements";
 import { LinkTile } from "@/components/LinkTile";
 import { Prose } from "@/components/Prose";
 import { stripUnsupportedStaff } from "@/lib/ai/staffClaims";
+import { formatOdds } from "@/lib/oddsFormat";
 
 const BLURB = "One pick a day — the strongest call we have at a price worth taking, not the shortest-priced favourite.";
 
@@ -133,7 +134,7 @@ export default async function BetOfTheDayPage() {
         blurb={BLURB}
         stats={[
           { label: "Confidence", value: `${row.confidence}%`, accent: true },
-          ...(live && data.gate?.price != null ? [{ label: "Best odds", value: data.gate.price.toFixed(2) }] : []),
+          ...(live && formatOdds(data.gate?.price) !== null ? [{ label: "Best odds", value: formatOdds(data.gate?.price)! }] : []),
           ...(state === "SETTLED" ? [{ label: "Result", value: row.outcome.charAt(0) + row.outcome.slice(1).toLowerCase() }] : []),
         ]}
       />

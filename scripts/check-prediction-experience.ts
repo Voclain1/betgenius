@@ -206,7 +206,7 @@ console.log("terminology and copy:");
   const produced = new Set<string>();
   for (const offset of [-1, 10 * MIN, 6 * 60 * MIN]) for (const c of [null, "PST", "CANC", "ABD", "SUSP", "AWD", "FT"]) { const l = rowStatus({ statusCode: c, kickoff: KICK, now: at(offset) }).label; if (l) produced.add(l); }
   check("every status word is from the approved list; none says 'Live'", [...produced].every((l) => labels.includes(l)) && ![...produced].some((l) => /live/i.test(l)));
-  check("odds are labelled 'Odds', never confused with confidence", /Odds \{row\.odds\.toFixed\(2\)\}/.test(src("src/components/personal/DashboardParts.tsx")) && !/@ \{(row|item)\.odds/.test(src("src/components/personal/DashboardParts.tsx")));
+  check("odds are labelled 'Odds', never confused with confidence", /<OddsFigure value=\{row\.odds\} lead="Odds "/.test(src("src/components/personal/DashboardParts.tsx")) && !/@ \{(row|item)\.odds/.test(src("src/components/personal/DashboardParts.tsx")));
   check("saved predictions reachable from the account menu and the drawer", (src("src/components/Nav.tsx").match(/href="\/dashboard\/saved"/g) ?? []).length === 2);
 }
 

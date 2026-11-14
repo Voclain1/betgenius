@@ -118,7 +118,7 @@ console.log("dashboard rows:");
   check("postponed: warning tone, no score, no result", text(pst).includes("Postponed") && pst.includes("text-amber-400") && !/FT|WON|LOST/.test(text(pst)));
   check("postponed beats a stray stored score", text(row(pick({ kickoff: at(-5 * 60 * MIN), statusCode: "PST", finalHomeScore: 1, finalAwayScore: 0 }))).includes("Postponed"));
   const odds = text(row(pick({ odds: 1.72 })));
-  check("odds are labelled 'Odds', apart from confidence", odds.includes("Confidence 68%") && odds.includes("Odds 1.72") && !odds.includes("@ 1.72"));
+  check("odds are labelled 'Odds', apart from confidence", odds.includes("Confidence 68%") && /Odds\s+(Decimal odds\s+)?1\.72/.test(odds) && !odds.includes("@ 1.72"));
   check("missing odds print nothing (not 0, not a dash)", !text(up).includes("Odds"));
   check("match link intact", up.includes('href="/predictions/match/arsenal-vs-chelsea-2026-11-14"'));
   check("save control present on a visible pick", up.includes("Sign in to save this prediction"));
@@ -134,7 +134,7 @@ console.log("dashboard rows:");
   check("saved: cancelled", text(html(<ul><SavedRow item={saved({ statusCode: "CANC" })} timezone="Africa/Lagos" /></ul>)).includes("Cancelled"));
   const lockedSaved = text(html(<ul><SavedRow item={saved({ market: null, pick: null, odds: null, confidence: null, view: { state: "unplayed", outcome: null, changedTo: null, finalScore: null, locked: true } })} timezone="Africa/Lagos" /></ul>));
   check("saved + locked: the status fact shows, the pick does not", lockedSaved.includes("Postponed") && lockedSaved.includes("upgrade to view") && !lockedSaved.includes("Odds"));
-  check("saved: odds labelled 'Odds'", text(html(<ul><SavedRow item={saved({ view: { state: "upcoming", outcome: null, changedTo: null, finalScore: null, locked: false }, statusCode: null })} timezone="Africa/Lagos" /></ul>)).includes("Odds 1.70"));
+  check("saved: odds labelled 'Odds'", text(html(<ul><SavedRow item={saved({ view: { state: "upcoming", outcome: null, changedTo: null, finalScore: null, locked: false }, statusCode: null })} timezone="Africa/Lagos" /></ul>)).match(/Odds\s+(Decimal odds\s+)?1\.70/) !== null);
 }
 
 console.log("follow chips (match header):");
