@@ -1,3 +1,5 @@
+import { PredictionDiscovery } from "@/components/PredictionDiscovery";
+import { hasDiscoveryFilters, type DiscoveryParams } from "@/lib/predictionDiscovery";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -40,12 +42,12 @@ import { PaidFeedIntro, PaidPerformancePanel } from "@/components/PaidPerformanc
 const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
 export async function generateMetadata(
-  { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
+  { params, searchParams }: { params: { category: string }; searchParams?: DiscoveryParams },
 ): Promise<Metadata> {
   const cat = SLUGS[params.category];
   if (!cat) return {};
   // Same resolved day as the page body, so cache() serves ONE query for both.
-  const day = parseFeedDay(searchParams?.date);
+  const day = parseFeedDay(typeof searchParams?.date === "string" ? searchParams.date : undefined);
   const name = NAMES[cat];
   // Only categories with a term behind them get one. VIP has measured demand
   // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
@@ -77,7 +79,7 @@ export async function generateMetadata(
     return {
       title: seoTitle,
       description: `${cat === "PREMIUM" ? "Premium" : "VIP"} football predictions from ${SITE_NAME}: every pick clears ${cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}% confidence or better, with the reasoning behind it. Football predictions updated daily.`,
-      robots: day === "today" ? undefined : { index: false, follow: true },
+      robots: day === "today" && !hasDiscoveryFilters(searchParams) ? undefined : { index: false, follow: true },
       alternates: { canonical: feedDayHref(params.category, day) },
     };
   }
@@ -112,17 +114,17 @@ export async function generateMetadata(
     // different slate after midnight. Keep them available for users and links,
     // but do not let search engines retain them as unstable landing pages.
     // The clean/default feed remains the indexable search destination.
-    robots: day === "today" ? undefined : { index: false, follow: true },
+    robots: day === "today" && !hasDiscoveryFilters(searchParams) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref(params.category, day) },
   };
 }
 
 export default async function CategoryPage(
-  { params, searchParams }: { params: { category: string }; searchParams?: { date?: string } },
+  { params, searchParams }: { params: { category: string }; searchParams?: DiscoveryParams },
 ) {
   const cat = SLUGS[params.category];
   if (!cat) return notFound();
-  const day = parseFeedDay(searchParams?.date);
+  const day = parseFeedDay(typeof searchParams?.date === "string" ? searchParams.date : undefined);
   const showOutcomes = dayShowsOutcomes(day);
   const dateLabel = lagosDayLabel(DAY_OFFSETS[day]);
 
@@ -299,9 +301,10 @@ export default async function CategoryPage(
           counts and AdPlacements.tsx for the rule they follow. The foot band
           is gone rather than kept: three insertions plus a fourth underneath
           would be four ads on one feed. */}
-      {cat === "TODAY" ? (
+      <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
+      {canView && <PredictionDiscovery params={searchParams} basePath={`/predictions/${slug}`} category={cat} fallbackDay={day} results={hasDiscoveryFilters(searchParams)} />}
+      {canView && hasDiscoveryFilters(searchParams) ? null : cat === "TODAY" ? (
         <>
-          <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
           <TodayPredictionsGuide dateLabel={dateLabel} day={day} />
           <CategoryPredictionsList category={cat} rows={shaped as any} withAds />
         </>
@@ -311,8 +314,7 @@ export default async function CategoryPage(
         // shaped rows; the client switch only chooses which one to mount.
         paidCovered ? (
           <div className="space-y-4">
-            <FeedDayTabs basePath={`/predictions/${slug}`} active={day} />
-            <PaidFeedCover
+              <PaidFeedCover
               tier={cat === "PREMIUM" ? "Premium" : "VIP"}
               floor={cat === "PREMIUM" ? PREMIUM_CONFIDENCE_FLOOR : VIP_CONFIDENCE_FLOOR}
               signedIn={!!session?.user}
@@ -321,7 +323,7 @@ export default async function CategoryPage(
           </div>
         ) : (
         <PredictionViewSwitch
-          tabs={<FeedDayTabs basePath={`/predictions/${slug}`} active={day} />}
+
           intro={cat === "BANKER" ? <BankerPredictionsIntro /> : paidFeed ? <PaidFeedIntro tier={cat === "PREMIUM" ? "Premium" : "VIP"} /> : null}
           detailed={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="detailed" />}
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}

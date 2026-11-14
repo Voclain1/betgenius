@@ -1,3 +1,5 @@
+import { discoveryAccessWhere } from "./predictionVisibility";
+import { ANONYMOUS } from "./entitlement";
 import type { InsightFixture } from "@/lib/insights";
 import { cache } from "react";
 import type { Prisma } from "@prisma/client";
@@ -34,6 +36,8 @@ const SCOPED_SELECT = {
   id: true,
   category: true,
   categories: { select: { category: true } },
+  provenance: true,
+  fixtureApiId: true,
   leagueApiId: true,
   leagueName: true,
   homeTeam: true,
@@ -89,6 +93,8 @@ export type ScopedResult = {
   rows: {
     id: string;
     category: string;
+    provenance: string;
+    fixtureApiId: number | null;
     /** Every category link, so pages can present a free category over a paid primary (presentedCategory). */
     categories: { category: string }[];
     leagueApiId: number | null;
@@ -181,7 +187,8 @@ export type MatchScopedResult = ScopedResult & {
 export const getPublishedByMatchSlug = cache(async (slug: string): Promise<MatchScopedResult> => {
   const matched = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", matchSlugKey: slug },
-    orderBy: { publishedAt: "desc" },
+    orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+    take: 60,
     select: SCOPED_SELECT,
   });
   const rows = orderForDisplay(matched);
@@ -294,9 +301,10 @@ export type SearchIndex = {
 export const getSearchIndex = cache(async (): Promise<SearchIndex> => {
   const [rows, leagues] = await Promise.all([
     prisma.prediction.findMany({
-      where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
-      select: { homeTeam: true, awayTeam: true, kickoff: true },
-      orderBy: { kickoff: "desc" },
+      where: { AND: [discoveryAccessWhere(ANONYMOUS)], status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
+      select: { homeTeam: true, awayTeam: true, kickoff: true, leagueApiId: true },
+      orderBy: [{ kickoff: "desc" }, { id: "asc" }],
+      take: 1000,
     }),
     getLeaguesWithPublishedPredictions(),
   ]);
@@ -322,7 +330,7 @@ export const getSearchIndex = cache(async (): Promise<SearchIndex> => {
 
   return {
     teams: [...teams.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    leagues: leagues.map((l) => ({ name: l.name, slug: l.slug, country: l.country })),
+    leagues: leagues.filter(l => rows.some(r => r.leagueApiId === l.leagueApiId)).map((l) => ({ name: l.name, slug: l.slug, country: l.country })),
     matches: [...matches.values()],
   };
 });
@@ -1094,7 +1102,9 @@ async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
 /** Original model evidence for this match only; never shipped to a client component. */
 export const getMatchEditorialEvidence = cache(async (slug: string) => prisma.prediction.findMany({
   where: { status: "PUBLISHED", matchSlugKey: slug },
-  select: { id: true, aiJob: { select: { context: true, createdAt: true } } },
+  orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
+  take: 60,
+  select: { id: true, marketConfirmation: true, aiJob: { select: { context: true, createdAt: true } } },
 }));
 
 /** Cached prices only. Reading a match page never refreshes bookmaker quotes. */

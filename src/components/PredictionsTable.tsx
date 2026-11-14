@@ -196,7 +196,10 @@ export function PredictionsTable({
                 <td className="hidden px-3 py-3 sm:table-cell">
                   <span className="font-bold text-gray-100"><MatchLink homeTeam={home} awayTeam={away} kickoff={kickoff} homeTeamApiId={p.homeTeamApiId} awayTeamApiId={p.awayTeamApiId} /></span>
                 </td>
-                <td className="col-start-1 row-start-3 min-w-0 text-sm font-black text-brand sm:px-3 sm:py-3 sm:text-sm">
+                {/* An ungraded phone row has no result in column two. Let its tip use
+                    that space so a long status beside the teams cannot squeeze
+                    the selection into several extra lines. Desktop columns stay the same. */}
+                <td className={`col-start-1 row-start-3 min-w-0 text-sm font-black text-brand sm:px-3 sm:py-3 sm:text-sm ${!p.outcome || p.outcome === "PENDING" ? "col-span-2 sm:col-span-1" : ""}`}>
                   <span className="mr-1.5 text-[9.5px] font-bold uppercase tracking-[0.14em] text-gray-500 sm:hidden">Tip</span>
                   {matchHref ? (
                     <Link href={matchHref} className="hover:underline">{p.locked ? "LOCKED" : standalonePickText(p.pick, p.marketType, p.market)}</Link>
@@ -214,7 +217,7 @@ export function PredictionsTable({
                   />
                 </td>
                 {showOutcome && (
-                  <td className="col-start-2 row-start-3 text-right sm:px-3 sm:py-3 sm:text-left">
+                  <td className={`col-start-2 row-start-3 text-right sm:px-3 sm:py-3 sm:text-left ${!p.outcome || p.outcome === "PENDING" ? "hidden sm:table-cell" : ""}`}>
                     {p.outcome && p.outcome !== "PENDING" ? (
                       <span className={`text-[11px] font-black uppercase tracking-[0.1em] ${textTone(OUTCOME_STYLES[p.outcome] ?? "text-gray-400")}`}>{p.outcome}</span>
                     ) : (

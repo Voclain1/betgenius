@@ -155,7 +155,7 @@ console.log("result panel and match states:");
 console.log("page wiring and access:");
 {
   const page = src("src/app/(public)/predictions/match/[slug]/page.tsx");
-  check("locked rows carry no outcome (result withheld like #173)", /pick: "LOCKED"[^\n]*outcome: null/.test(page));
+  check("locked rows carry no outcome (result withheld like #173)", (/pick: "LOCKED"[^\n]*outcome: null/.test(page) || /lockedPredictionView\(r\)[^\n]*outcome: null/.test(page)));
   check("result panel gets only picks the reader can see", /picks=\{shaped\.filter\(\(r\) => !\("locked" in r && r\.locked\)\)/.test(page));
   check("no football-API call on the page (caches only)", !/from "@\/lib\/football\/api-football"/.test(page) && !/apiFetch|getFixturesBy/.test(page));
   check("reader timezone from Sprint 01 preferences", /getPersonalization\(session\.user\.id/.test(page) && /kickoffInZone\(match\.kickoff, timeZone\)/.test(page));

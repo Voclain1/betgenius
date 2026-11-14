@@ -132,7 +132,9 @@
     "research:prediction-reliability": "tsx scripts/research-reliability.ts",
     "check:prediction-operations": "tsx scripts/check-prediction-operations.ts",
     "check:operations-investigation": "tsx scripts/check-operations-investigation.ts",
-    "check:odds-integrity": "tsx scripts/check-odds-integrity.ts"
+    "check:odds-integrity": "tsx scripts/check-odds-integrity.ts",
+    "check:sprint08": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-sprint08.tsx",
+    "check:sprint08-browser": "tsx scripts/check-sprint08-browser.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

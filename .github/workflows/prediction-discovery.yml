@@ -1,0 +1,75 @@
+name: prediction-discovery
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: betgenius
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: betgenius_paid_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U betgenius -d betgenius_paid_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      DATABASE_URL_UNPOOLED: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      BETGENIUS_DISPOSABLE_PG: 'yes'
+      NEXTAUTH_SECRET: sprint08-local-preview-only
+      NEXTAUTH_URL: http://127.0.0.1:3000
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:sprint08
+      - run: npm run check:match-centre
+      - run: npm run check:match-centre-render
+      - run: npm run check:prediction-experience
+      - run: npm run check:prediction-experience-render
+      - run: npm run check:category-navigation
+      - run: npm run check:category-navigation-render
+      - run: npm run check:odds-presentation
+      - run: npm run check:odds-presentation-render
+      - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-render.tsx
+      - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-evidence.tsx
+      - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-sitemap-scoping.tsx
+      - run: npx tsc --noEmit
+      - run: npx prisma db push --skip-generate
+      - run: npx tsx scripts/check-sprint08-postgres.ts
+      - run: npx tsx scripts/preview-sprint08.ts
+      - run: npm run build > work/s08-build.log 2>&1
+      - run: npm run check:budgets
+      - name: Install browser driver
+        run: npm install --no-save playwright-core@1.55.0
+      - run: REQUIRE_BROWSER=1 npm run check:prediction-experience-browser
+      - run: REQUIRE_BROWSER=1 npm run check:odds-presentation-browser
+      - name: Start synthetic local preview
+        run: |
+          npx next start -H 127.0.0.1 -p 3000 > work/s08-server.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/predictions > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npm run check:category-navigation-browser
+      - run: npm run check:sprint08-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sprint08-synthetic-browser-preview
+          path: |
+            work/sprint08-screenshots
+            work/s08-build.log
+            work/s08-server.log

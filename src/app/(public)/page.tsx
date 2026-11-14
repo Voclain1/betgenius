@@ -1,3 +1,4 @@
+import { DiscoveryEntry } from "@/components/PredictionDiscovery";
 import { HomepageExplainer } from "@/components/HomepageExplainer";
 import Link from "next/link";
 import { HOME_CATEGORY_LINKS, HOME_PERIOD_LINKS } from "@/lib/homeCategoryLinks";
@@ -317,6 +318,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/predictions/today" className="btn btn-primary">Today&apos;s tips</Link>
                 <Link href="/pricing" className="btn btn-ghost">Go VIP</Link>
+                <DiscoveryEntry />
               </div>
             </div>
             {heroSlides.length > 0 && <HeroSlider slides={heroSlides} />}
@@ -365,6 +367,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           </div>
         </div>
       </nav>
+
+
 
       {genius.length > 0 && (
         <section aria-labelledby="home-genius">
@@ -417,7 +421,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             narrow screen. */}
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
-          <div className="flex items-center justify-between gap-4 sm:mb-4 sm:justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-4 sm:mb-4 sm:justify-end">
             {/* The two excerpts share one ?date=, so both controls show the same
                 active day. Repeated rather than hoisted because the sections are
                 far apart on the page — a reader at Featured should not have to

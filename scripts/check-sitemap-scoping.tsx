@@ -632,8 +632,8 @@ async function main() {
   fake.reset();
   await scope.getTeamDigest(77);
   const teamRead = fake.calls.find((c) => c.model === "teamEnrichmentCache");
-  check("match page: team read selects only digest/lastFixtures/fetchedAt (no squad/coach/stats JSON)",
-    !!teamRead?.args?.select && !teamRead.args.select.squadJson && !teamRead.args.select.coachJson && !teamRead.args.select.statsJson && teamRead.args.select.teamDigestJson && teamRead.args.select.lastFixtures,
+  check("match page: narrow evidence read includes coach identity for staff-claim checks, not squad/stats JSON",
+    !!teamRead?.args?.select && !teamRead.args.select.squadJson && teamRead.args.select.coachJson && teamRead.args.select.squadFetchedAt && !teamRead.args.select.statsJson && teamRead.args.select.teamDigestJson && teamRead.args.select.lastFixtures,
     teamRead?.args?.select);
   const formSource = read("src/components/MatchFormComparison.tsx");
   check("match page: form comparison shares the narrow read", formSource.includes("getTeamMatchEnrichment(") && !formSource.includes("getTeamEnrichment("));
