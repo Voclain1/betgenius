@@ -36,7 +36,8 @@ if [ "$(id -u)" = "0" ]; then
 fi
 pg() { local b="$1"; shift; "${RUN[@]}" "$PG_BIN/$b" "$@"; }
 cleanup() {
-  for d in "$T/src" "$T/decoy"; do pg pg_ctl -D "$d" -m immediate stop >/dev/null 2>&1 || true; done
+  "${RUN[@]}" "${DUMP_PG_BIN:-$PG_BIN}/pg_ctl" -D "$T/src" -m immediate stop >/dev/null 2>&1 || true
+  pg pg_ctl -D "$T/decoy" -m immediate stop >/dev/null 2>&1 || true
   rm -rf "$T" "$WORKREL/$TAG"*
 }
 trap cleanup EXIT
@@ -56,22 +57,11 @@ iso() { bash "$ISO" "$@"; }
 scratch_of() { sed -n 's/^   scratch: //p' "$1" | head -1; }
 
 echo "building a synthetic source database and dump…"
-pg initdb -D "$T/src" -U admin --auth=trust >/dev/null
-pg pg_ctl -D "$T/src" -o "-p $SRC_PORT -k $T -c listen_addresses=localhost" -l "$T/src.log" -w start >/dev/null
-URL="postgresql://admin@localhost:$SRC_PORT/source"
-"$PG_BIN/psql" -h localhost -p "$SRC_PORT" -U admin -d postgres -qc "CREATE DATABASE source"
-DATABASE_URL="$URL" DATABASE_URL_UNPOOLED="$URL" npx prisma db push --skip-generate --accept-data-loss >/dev/null
-BENCH_ADMIN_URL="$URL" BENCH_FIXTURES=500 BENCH_JOBS=560 BENCH_V1_JOBS=40 BENCH_V1_KB=20 BENCH_PREDICTIONS=900 \
-  npx tsx research/forecasting/extract/integration/bench-seed.ts >/dev/null
-"$PG_BIN/psql" -h localhost -p "$SRC_PORT" -U admin -d source -q <<'SQL'
-INSERT INTO "User"(id, email, "updatedAt") VALUES ('canary-user', 'canary-user@example.invalid', now());
-UPDATE "AIJob" SET prompt = 'CANARY-PROMPT-MUST-NOT-SURVIVE' WHERE id = 'benchjob000000';
-SQL
-"$PG_BIN/pg_dump" -h localhost -p "$SRC_PORT" -U admin -Fc -f "$T/source.dump" source
-"$PG_BIN/pg_dump" -h localhost -p "$SRC_PORT" -U admin -Fc -T '"AIJob"' -f "$T/noaijob.dump" source
-pg pg_ctl -D "$T/src" -m fast stop >/dev/null
+# shellcheck source=testlib-synthetic-dump.sh
+. research/forecasting/restore/testlib-synthetic-dump.sh
+bgf_build_synthetic_dump "$T" "$SRC_PORT" "$T/source.dump" "$T/noaijob.dump"
 DUMP_MAJOR=$("$PG_BIN/pg_restore" -l "$T/source.dump" | sed -n 's/^;[[:space:]]*Dumped by pg_dump version: \([0-9]*\).*/\1/p')
-echo "source destroyed; dump written by pg_dump $DUMP_MAJOR"
+echo "source destroyed; dump written by pg_dump $DUMP_MAJOR, restored with Postgres $REAL_MAJOR$([ "${DUMP_PG_BIN:-$PG_BIN}" != "$PG_BIN" ] && echo " (cross-version)")"
 
 # A decoy server on the OLD fixed port, logging every connection. Nothing in this check may ever reach it.
 pg initdb -D "$T/decoy" -U admin --auth=trust >/dev/null
