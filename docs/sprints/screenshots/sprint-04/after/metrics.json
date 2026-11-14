@@ -1,0 +1,377 @@
+{
+ "today@320": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Today"
+  ],
+  "minH": 36,
+  "right": 304,
+  "bottom": 800,
+  "view": [
+   320,
+   800
+  ],
+  "triggerActive": null
+ },
+ "btts@320": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "BTTS"
+  ],
+  "minH": 36,
+  "right": 304,
+  "bottom": 800,
+  "view": [
+   320,
+   800
+  ],
+  "triggerActive": null
+ },
+ "banker@320": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Banker"
+  ],
+  "minH": 36,
+  "right": 304,
+  "bottom": 800,
+  "view": [
+   320,
+   800
+  ],
+  "triggerActive": null
+ },
+ "weekend@320": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Weekend"
+  ],
+  "minH": 36,
+  "right": 304,
+  "bottom": 800,
+  "view": [
+   320,
+   800
+  ],
+  "triggerActive": null
+ },
+ "vip@320": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "VIP★"
+  ],
+  "minH": 36,
+  "right": 304,
+  "bottom": 800,
+  "view": [
+   320,
+   800
+  ],
+  "triggerActive": null
+ },
+ "today@375": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Today"
+  ],
+  "minH": 36,
+  "right": 359,
+  "bottom": 800,
+  "view": [
+   375,
+   800
+  ],
+  "triggerActive": null
+ },
+ "btts@375": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "BTTS"
+  ],
+  "minH": 36,
+  "right": 359,
+  "bottom": 800,
+  "view": [
+   375,
+   800
+  ],
+  "triggerActive": null
+ },
+ "banker@375": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Banker"
+  ],
+  "minH": 36,
+  "right": 359,
+  "bottom": 800,
+  "view": [
+   375,
+   800
+  ],
+  "triggerActive": null
+ },
+ "weekend@375": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Weekend"
+  ],
+  "minH": 36,
+  "right": 359,
+  "bottom": 800,
+  "view": [
+   375,
+   800
+  ],
+  "triggerActive": null
+ },
+ "vip@375": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "VIP★"
+  ],
+  "minH": 36,
+  "right": 359,
+  "bottom": 800,
+  "view": [
+   375,
+   800
+  ],
+  "triggerActive": null
+ },
+ "today@414": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Today"
+  ],
+  "minH": 36,
+  "right": 398,
+  "bottom": 800,
+  "view": [
+   414,
+   800
+  ],
+  "triggerActive": null
+ },
+ "btts@414": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "BTTS"
+  ],
+  "minH": 36,
+  "right": 398,
+  "bottom": 800,
+  "view": [
+   414,
+   800
+  ],
+  "triggerActive": null
+ },
+ "banker@414": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Banker"
+  ],
+  "minH": 36,
+  "right": 398,
+  "bottom": 800,
+  "view": [
+   414,
+   800
+  ],
+  "triggerActive": null
+ },
+ "weekend@414": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Weekend"
+  ],
+  "minH": 36,
+  "right": 398,
+  "bottom": 800,
+  "view": [
+   414,
+   800
+  ],
+  "triggerActive": null
+ },
+ "vip@414": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "VIP★"
+  ],
+  "minH": 36,
+  "right": 398,
+  "bottom": 800,
+  "view": [
+   414,
+   800
+  ],
+  "triggerActive": null
+ },
+ "today@768": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Today"
+  ],
+  "minH": 36,
+  "right": 752,
+  "bottom": 800,
+  "view": [
+   768,
+   800
+  ],
+  "triggerActive": null
+ },
+ "btts@768": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "BTTS"
+  ],
+  "minH": 36,
+  "right": 752,
+  "bottom": 800,
+  "view": [
+   768,
+   800
+  ],
+  "triggerActive": null
+ },
+ "banker@768": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Banker"
+  ],
+  "minH": 36,
+  "right": 752,
+  "bottom": 800,
+  "view": [
+   768,
+   800
+  ],
+  "triggerActive": null
+ },
+ "weekend@768": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "Weekend"
+  ],
+  "minH": 36,
+  "right": 752,
+  "bottom": 800,
+  "view": [
+   768,
+   800
+  ],
+  "triggerActive": null
+ },
+ "vip@768": {
+  "pageOverflow": false,
+  "links": 26,
+  "current": [
+   "VIP★"
+  ],
+  "minH": 36,
+  "right": 752,
+  "bottom": 800,
+  "view": [
+   768,
+   800
+  ],
+  "triggerActive": null
+ },
+ "today@1440": {
+  "pageOverflow": false,
+  "links": 15,
+  "current": [
+   "Today"
+  ],
+  "minH": 36,
+  "right": 593,
+  "bottom": 374,
+  "view": [
+   1440,
+   900
+  ],
+  "triggerActive": true
+ },
+ "btts@1440": {
+  "pageOverflow": false,
+  "links": 15,
+  "current": [
+   "BTTS"
+  ],
+  "minH": 36,
+  "right": 593,
+  "bottom": 374,
+  "view": [
+   1440,
+   900
+  ],
+  "triggerActive": true
+ },
+ "banker@1440": {
+  "pageOverflow": false,
+  "links": 15,
+  "current": [
+   "Banker"
+  ],
+  "minH": 36,
+  "right": 593,
+  "bottom": 374,
+  "view": [
+   1440,
+   900
+  ],
+  "triggerActive": true
+ },
+ "weekend@1440": {
+  "pageOverflow": false,
+  "links": 15,
+  "current": [
+   "Weekend"
+  ],
+  "minH": 36,
+  "right": 593,
+  "bottom": 374,
+  "view": [
+   1440,
+   900
+  ],
+  "triggerActive": true
+ },
+ "vip@1440": {
+  "pageOverflow": false,
+  "links": 15,
+  "current": [
+   "VIP★"
+  ],
+  "minH": 36,
+  "right": 593,
+  "bottom": 374,
+  "view": [
+   1440,
+   900
+  ],
+  "triggerActive": true
+ }
+}

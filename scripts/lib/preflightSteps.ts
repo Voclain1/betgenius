@@ -102,6 +102,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-prediction-experience.ts",
   `${RENDER} scripts/check-prediction-experience-render.tsx`,
   `${RENDER} scripts/check-prediction-experience-browser.tsx`,
+  "tsx scripts/check-category-navigation.ts",
+  `${RENDER} scripts/check-category-navigation-render.tsx`,
+  "tsx scripts/check-category-navigation-browser.ts",
   "tsc --noEmit -p tsconfig.json",
 ];
 

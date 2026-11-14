@@ -101,3 +101,5 @@ are the build-time guard that keeps them from drifting.
 ## Scripts outside the tiers
 
 The `verify-*` scripts guard themselves: they run only against `127.0.0.1:55432/betgenius_feature_test`. Several other `check-*`, `research-*` and `measure-*` scripts read or write the live database and are not in any tier. Examples are `check-bet-of-the-day*`, `check-doubles-quota`, `check-double-settlement`, `check-market-confirmed-curation` and `check-combo-date-gating`. Run them deliberately, never as part of a routine check. Before adding any of them to a tier, apply the rules above.
+
+`check-category-navigation-browser` (Sprint 04) opens the Tips menu and phone drawer on a running site, so it reads `BASE_URL` and skips (exit 0) when that is unset. CI and `npm run preflight` therefore run it only where a site is up; run it locally with `BASE_URL=http://localhost:3000` against `next start`. It only reads public pages.
