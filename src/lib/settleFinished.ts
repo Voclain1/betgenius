@@ -57,15 +57,16 @@ export function shouldAbandon(attempts: number, kickoff: Date | null, now: numbe
 export type SettleResult = { id: string; match: string; result: string; detail?: string };
 
 /** Settle up to `limit` finished picks, oldest kickoff first. */
-export async function settleFinishedPredictions(limit: number): Promise<{
+export async function settleFinishedPredictions(limit: number, predictionIds?: readonly string[]): Promise<{
   checked: number;
   results: SettleResult[];
   kickoffsReconciled: number;
   fixtureIdsPrefetched: number;
 }> {
-  const internalDoubleLegIds = await publishedDoubleLegIds();
+  const internalDoubleLegIds = predictionIds ? [] : await publishedDoubleLegIds();
   const candidates = await prisma.prediction.findMany({
     where: {
+      ...(predictionIds ? { id: { in: [...predictionIds].slice(0, 5) } } : {}),
       // Normal picks must be published. Internally hidden legs become
       // settlement-eligible once their compound pick is published, so the
       // reviewer does not have to publish three public-looking rows merely to
@@ -87,7 +88,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
       marketType: { not: "SAME_GAME_DOUBLE" },
     },
     orderBy: { kickoff: "asc" },
-    take: limit,
+    take: Math.min(60, Math.max(1, Math.floor(limit) || 1)),
     include: { categories: { select: { category: true } } },
   });
 
@@ -114,6 +115,11 @@ export async function settleFinishedPredictions(limit: number): Promise<{
         prefetched,
       });
 
+      if (lookup.status === "provider_unavailable") {
+        results.push({ id:p.id, match, result:"provider_unavailable", detail:lookup.reason });
+        continue; // A provider outage is not evidence that a fixture is missing; do not exhaust its retries.
+      }
+
       // Reconcile a stale stored kickoff against the provider's current one.
       //
       // Predictions are generated ~42h ahead and the kickoff was previously
@@ -123,7 +129,9 @@ export async function settleFinishedPredictions(limit: number): Promise<{
       // disagree, while an id match is authoritative about identity.
       if (lookup.matchedBy === "id" && lookup.actualKickoff && p.kickoff
           && Math.abs(lookup.actualKickoff.getTime() - p.kickoff.getTime()) > 60_000) {
-        await prisma.prediction.update({ where: { id: p.id }, data: { kickoff: lookup.actualKickoff } });
+        const reconciled = await prisma.prediction.update({ where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt }, data: { kickoff: lookup.actualKickoff } });
+        p.kickoff = reconciled.kickoff;
+        p.updatedAt = reconciled.updatedAt;
         kickoffsReconciled++;
       }
 
@@ -134,7 +142,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
         // being retried. 72h past kickoff it is postponed/abandoned, not slow.
         const abandon = !!p.kickoff && Date.now() - p.kickoff.getTime() > SETTLEMENT_ABANDON_AFTER_MS;
         await prisma.prediction.update({
-          where: { id: p.id },
+          where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt },
           data: {
             settlementAttempts: attempts,
             ...(abandon
@@ -152,7 +160,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
         const attempts = p.settlementAttempts + 1;
         const abandon = shouldAbandon(attempts, p.kickoff);
         await prisma.prediction.update({
-          where: { id: p.id },
+          where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt },
           data: {
             settlementAttempts: attempts,
             ...(abandon
@@ -168,7 +176,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
       }
       if (lookup.status === "manual_required") {
         await prisma.prediction.update({
-          where: { id: p.id },
+          where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt },
           data: {
             manualSettlementOnly: true,
             settlementNote: `Manual settlement required — ${lookup.reason}`,
@@ -187,7 +195,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
         // Score found, but the market couldn't be resolved from it (shouldn't
         // happen for a valid marketType/selection — flag for manual review).
         await prisma.prediction.update({
-          where: { id: p.id },
+          where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt },
           data: {
             finalHomeScore: lookup.homeScore,
             finalAwayScore: lookup.awayScore,
@@ -204,7 +212,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
         // Only while still PENDING: the 10-minute results pass and the full
         // run can overlap, and the second to arrive must not settle the pick
         // again or send a second result notification.
-        const claimed = await tx.prediction.updateMany({ where: { id: p.id, outcome: "PENDING" }, data: { finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 } });
+        const claimed = await tx.prediction.updateMany({ where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt }, data: { marketConfirmation: { ...(p.marketConfirmation && typeof p.marketConfirmation === "object" && !Array.isArray(p.marketConfirmation) ? p.marketConfirmation as Record<string, unknown> : {}), settlementEvidence: { version: "settlement-s07-v1", source: "api-football", matchedBy: lookup.matchedBy ?? null, regulationHome: lookup.homeScore, regulationAway: lookup.awayScore, halftime: lookup.halftime, actualKickoff: lookup.actualKickoff?.toISOString() ?? null, observedAt: settledAt.toISOString(), marketType: p.marketType, selection: p.selection } } as any, finalHomeScore: lookup.homeScore, finalAwayScore: lookup.awayScore, outcome, settledAt, settlementNote: null, settlementAttempts: 0 } });
         if (claimed.count === 0) return false;
         // Hidden double legs settle here too, but nobody can follow a row that
         // was never published, so only published tips produce a result event.
@@ -229,7 +237,7 @@ export async function settleFinishedPredictions(limit: number): Promise<{
       results.push({ id: p.id, match, result: won ? outcome : "already_settled", detail: `${lookup.homeScore}-${lookup.awayScore}` });
     } catch (err: any) {
       const message = err?.message ?? String(err);
-      await prisma.prediction.update({ where: { id: p.id }, data: { settlementNote: `Auto-settlement error — ${message}` } }).catch(() => {});
+      await prisma.prediction.update({ where: { id: p.id, outcome: "PENDING", updatedAt: p.updatedAt }, data: { settlementNote: `Auto-settlement error — ${message}` } }).catch(() => {});
       results.push({ id: p.id, match, result: "error", detail: message });
     }
   }

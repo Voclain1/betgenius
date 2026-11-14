@@ -1,3 +1,4 @@
+import { meaningfulCompletion } from "./predictionOperations";
 /**
  * Durable execution history for scheduled jobs.
  *
@@ -141,7 +142,7 @@ export async function withJobRun<T>(
   const startedAt = Date.now();
   try {
     const result = await run();
-    await recordJobRun({ job, ok: true, summary: summarise(result), detail: result, ms: Date.now() - startedAt });
+    await recordJobRun({ job, ok: true, summary: summarise(result), detail: result && typeof result === "object" ? { ...result, operationalCompletion: meaningfulCompletion(result) } : { result, operationalCompletion: meaningfulCompletion(result) }, ms: Date.now() - startedAt });
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -201,7 +202,7 @@ export async function recordRouteRun(
         return `status ${response.status}`;
       }
     })(),
-    detail: payload,
+    detail: payload && typeof payload === "object" ? { ...payload, operationalCompletion: meaningfulCompletion(payload, response.status) } : { payload, operationalCompletion: meaningfulCompletion(payload, response.status) },
     ms: Date.now() - startedAt,
   });
 }

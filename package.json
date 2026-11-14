@@ -116,7 +116,8 @@
     "preflight:db": "tsx scripts/preflight.ts --db",
     "preflight:integration": "tsx scripts/preflight.ts --integration",
     "check:prediction-reliability": "tsx scripts/check-prediction-reliability.ts",
-    "research:prediction-reliability": "tsx scripts/research-reliability.ts"
+    "research:prediction-reliability": "tsx scripts/research-reliability.ts",
+    "check:prediction-operations": "tsx scripts/check-prediction-operations.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

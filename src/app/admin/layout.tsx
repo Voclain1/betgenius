@@ -27,6 +27,7 @@ const items = [
   { href: "/admin/admins", label: "Admins" },
   { href: "/admin/jobs", label: "Scheduled jobs" },
   { href: "/admin/paid-ops", label: "Paid operations" },
+  { href: "/admin/prediction-ops", label: "Prediction operations" },
   { href: "/admin/tasks", label: "Tasks" },
 ];
 

@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { setPredictionCategories, reviewTransition, reviewBlockedByKickoff } from "@/lib/predictions";
+import { assertPublicationFixture, setPredictionCategories, reviewTransition, reviewBlockedByKickoff } from "@/lib/predictions";
 import { GOALS, withGoalsCategory } from "@/lib/goalsCategory";
 import { hiddenLegCategoryEditError, HiddenComboLegError } from "@/lib/comboLegs";
 import { setBetOfTheDay } from "@/lib/betOfTheDay";
@@ -38,6 +38,7 @@ const Patch = z.object({
   action: z.enum(["APPROVE", "PUBLISH", "ARCHIVE", "EDIT", "SETTLE", "PIN_BET_OF_THE_DAY", "NOTIFY_TOP_PREDICTION"]),
   patch: z
     .object({
+      correctionReason: z.string().trim().min(8).max(500).optional(),
       outcome: z.enum(["PENDING", "WON", "LOST", "VOID"]).optional(),
       finalHomeScore: z.number().int().min(0).nullable().optional(),
       finalAwayScore: z.number().int().min(0).nullable().optional(),
@@ -78,7 +79,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const before = await prisma.prediction.findUnique({ where: { id: params.id }, include: { categories: true } });
   if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
+  const { correctionReason, categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
 
   const comboError = comboMarketEditError(isComboPrediction(before), { marketType, selection, otherMarket, otherPick, ouLine, ouDirection });
@@ -98,6 +99,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     merged && !merged.ok && categories!.length === 0 && held.includes(GOALS) ? { ok: true as const, categories: [] as string[] } : merged;
   if (nextCategories && !nextCategories.ok) return NextResponse.json({ error: nextCategories.error }, { status: 400 });
 
+  const correction = action === "SETTLE" && before.outcome !== "PENDING" &&
+    (outcome !== before.outcome || (finalHomeScore !== undefined && finalHomeScore !== before.finalHomeScore) || (finalAwayScore !== undefined && finalAwayScore !== before.finalAwayScore));
+  if (correction && !correctionReason) return NextResponse.json({error:"A correction reason is required to change an existing settlement"},{status:409});
+  if (action === "SETTLE" && !correction && before.outcome !== "PENDING") return NextResponse.json({prediction:before,replayed:true});
   const data: any = { ...rest };
   if (rest.leagueName !== undefined) {
     const leagueName = rest.leagueName === null ? null : normalizeLeagueName(rest.leagueName);
@@ -202,6 +207,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // kickoff itself, so the edited value wins over the stored one.
   const kickoffBlock = reviewBlockedByKickoff(action, rest.kickoff !== undefined ? rest.kickoff : before.kickoff);
   if (kickoffBlock) return NextResponse.json({ error: kickoffBlock }, { status: 409 });
+  if (action === "PUBLISH" || action === "APPROVE") {
+    try { await assertPublicationFixture({...before,...data}); }
+    catch(error) { return NextResponse.json({error:error instanceof Error?error.message:"PUBLICATION_BLOCKED"},{status:409}); }
+    if (action === "PUBLISH" && before.status === "PUBLISHED") return NextResponse.json({prediction:before,replayed:true});
+  }
 
   if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {
     // Shared with the bulk endpoint so the two can't drift — see
@@ -213,11 +223,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     data.outcome = outcome;
     data.settledById = session!.user.id;
     data.settledAt = new Date();
-    data.settlementNote = null;
+    data.settlementNote = correctionReason ?? null;
     if (finalHomeScore !== undefined) data.finalHomeScore = finalHomeScore;
     if (finalAwayScore !== undefined) data.finalAwayScore = finalAwayScore;
   }
 
+  const updated = await prisma.$transaction(async (tx) => {
+    const claim = await tx.prediction.updateMany({where:{id:params.id,updatedAt:before.updatedAt},data:{updatedAt:new Date()}});
+    if (claim.count !== 1) return null;
+    if (action === "PUBLISH" || action === "APPROVE") await assertPublicationFixture({...before,...data},tx);
   if (categoriesToWrite) {
     // The editor cannot see or send BET_OF_THE_DAY or SAME_GAME_DOUBLE (they
     // are not among its checkboxes), so a plain replace would silently strip
@@ -225,13 +239,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // time anyone saved an unrelated field. mergeEditedCategories carries both
     // through; only the pin action moves BET_OF_THE_DAY. GOALS is not carried
     // at all: it is re-derived from effectiveMarket on every write.
-    await setPredictionCategories(params.id, categoriesToWrite, effectiveMarket);
+    await setPredictionCategories(params.id, categoriesToWrite, effectiveMarket, tx);
   }
-  const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.prediction.update({ where: { id: params.id }, data, include: { categories: true } });
+    if (correction) await tx.jobRun.create({data:{job:"settlement-correction",summary:`Authorized correction ${params.id}`,detail:{actorId:session!.user.id,reason:correctionReason,before:{outcome:before.outcome,home:before.finalHomeScore,away:before.finalAwayScore,settledAt:before.settledAt?.toISOString()??null,evidence:before.marketConfirmation},after:{outcome:row.outcome,home:row.finalHomeScore,away:row.finalAwayScore}}}});
     await recordPredictionEvents(tx, before, row, action);
     return row;
-  });
+  }).catch((error) => { if (error?.code === "P2025") return null; throw error; });
+  if (!updated) return NextResponse.json({error:"Prediction state changed; reload before retrying"},{status:409});
   // A newly published pick may belong in Genius or Banker: fill them now rather
   // than at the next three-hourly settlement run. Never fails the publish.
   if (action === "PUBLISH") {

@@ -146,7 +146,7 @@ export type FixtureRow = {
 };
 
 export function getFixturesByDate(date: string) {
-  return apiFetch<FixtureRow[]>("/fixtures", { date });
+  return apiFetch<FixtureRow[]>("/fixtures", { date }, 15000).catch(() => null);
 }
 
 /**
@@ -172,8 +172,8 @@ export async function getFixturesByIds(ids: number[]): Promise<FixtureRow[] | nu
     const chunk = unique.slice(i, i + FIXTURES_BY_ID_BATCH);
     // Single id uses `id`; the plural `ids` param requires 2+ and errors on one.
     const rows = chunk.length === 1
-      ? await apiFetch<FixtureRow[]>("/fixtures", { id: chunk[0] })
-      : await apiFetch<FixtureRow[]>("/fixtures", { ids: chunk.join("-") });
+      ? await apiFetch<FixtureRow[]>("/fixtures", { id: chunk[0] }, 15000).catch(() => null)
+      : await apiFetch<FixtureRow[]>("/fixtures", { ids: chunk.join("-") }, 15000).catch(() => null);
     // A null chunk is a failed call, not an empty result — surface it rather
     // than silently returning a partial slate the caller would read as
     // "these fixtures do not exist".
@@ -559,7 +559,7 @@ export type OddsResponse = {
 };
 
 export function getOdds(fixtureId: number) {
-  return apiFetch<OddsResponse[]>("/odds", { fixture: fixtureId });
+  return apiFetch<OddsResponse[]>("/odds", { fixture: fixtureId }, 15000).catch(() => null);
 }
 
 /** Cron-only consumer; match pages read the resulting fixture cache. */
