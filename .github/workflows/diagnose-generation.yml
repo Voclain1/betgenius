@@ -16,6 +16,9 @@ on:
       days:
         description: "Kickoff days to look back over"
         default: "7"
+      qualification_only:
+        description: "true = skip the provider-spending league-coverage job (the qualification job spends no provider calls)"
+        default: "false"
   push:
     branches: ["claude/**"]
     paths:
@@ -32,6 +35,8 @@ on:
       - scripts/research-global-competitions.ts
       - scripts/research-paid-policy.ts
       - scripts/validate-paid-candidate-quality.ts
+      - scripts/measure-qualification-funnel.ts
+      - scripts/research-qualification-loosening.ts
       - .github/workflows/diagnose-generation.yml
 
 permissions:
@@ -200,6 +205,7 @@ jobs:
   # read-only as above. The provider probe spends at most 40 api-football calls
   # (hard cap in the script) and touches no database.
   league-coverage:
+    if: github.event.inputs.qualification_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -256,3 +262,60 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/research-paid-policy.ts 150
+
+  # VIP/Premium Sprint 08: paid qualification funnel in unique fixtures,
+  # evaluation-lane record, api-football budget, the pre-registered loosening
+  # research, and the flag values the RUNNING app actually has. Database
+  # read-only as above; no provider calls. The configuration probe prints only
+  # an allowlist of non-secret flag names from the running container (values
+  # never leave the server for any other name).
+  qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Production configuration (running container, allowlisted flags only)
+        if: vars.DB_ON_VPS == 'true'
+        run: |
+          ssh vps 'bash -s' <<'PROBE'
+          set -u
+          cd /opt/betgenius || exit 0
+          echo "deployed APP_TAG=$(grep '^APP_TAG=' deploy.env | cut -d= -f2)"
+          C=$(docker compose --env-file deploy.env ps -q app 2>/dev/null | head -1)
+          if [ -z "$C" ]; then echo "app container not found"; exit 0; fi
+          echo "container started $(docker inspect -f '{{.State.StartedAt}}' "$C") image $(docker inspect -f '{{.Config.Image}}' "$C")"
+          for n in COVERAGE_ROLLOUT PAID_QUALITY_POLICY PAID_SELECTION_MODE PAID_ROUTE_PRIMARY_PROVIDER PAID_CALIBRATION_DISABLED PAID_VALUE_MIN_EV_LOWER API_FOOTBALL_DAILY_LIMIT API_FOOTBALL_DAILY_RESERVE API_FOOTBALL_PAID_RESERVE RELIABILITY_CALIBRATION RELIABILITY_SHADOW RELIABILITY_DIAGNOSTICS OPS_RECOVERY_MODE ANTHROPIC_MODEL GEMINI_MODEL GROQ_MODEL EDITORIAL_DAILY_CAP APP_ENV; do
+            v=$(docker exec "$C" printenv "$n" 2>/dev/null || true)
+            echo "running $n=${v:-(unset)}"
+          done
+          for n in COVERAGE_ROLLOUT PAID_QUALITY_POLICY PAID_SELECTION_MODE PAID_ROUTE_PRIMARY_PROVIDER; do
+            if grep -q "^$n=" app.env 2>/dev/null; then echo "app.env sets $n"; else echo "app.env does not set $n"; fi
+          done
+          PROBE
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Qualification funnel (unique fixtures), lane record, api-football budget
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-qualification-funnel.ts "${{ github.event.inputs.days || '14' }}"
+      - name: Qualification loosening research (pre-registered candidates, holdout once)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/research-qualification-loosening.ts 150
