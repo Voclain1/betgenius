@@ -67,3 +67,8 @@ jobs:
           python -m bgforecast synth --out "$RUNNER_TEMP/syn"
           python -m bgforecast run --dataset "$RUNNER_TEMP/syn" --out "$RUNNER_TEMP/syn-run" --quick
           head -3 "$RUNNER_TEMP/syn-run/report.md" | grep -q "SYNTHETIC DATA"
+
+      # The real-data runner, end to end on a SYNTHETIC dump built inside the job:
+      # refusals, two-table restore, teardown, validation, evaluation, canaries.
+      - name: Isolated real-data runner (synthetic dump)
+        run: BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-isolated-run.sh
