@@ -46,6 +46,202 @@ export function assessJobCompletion(
   if (hardError || p.ok === false)
     return result("FAILED", null, Math.max(1, failed), "EXPLICIT_FAILURE");
   if (
+    job === "refresh-insights" &&
+    ["targets", "insights", "teamsWritten", "cleared", "fetchFailed"].every(
+      (k) => count(p, k) != null,
+    )
+  ) {
+    const writes = p.teamsWritten + p.cleared;
+    if (p.fetchFailed)
+      return result(
+        writes || p.insights ? "PARTIAL_FAILURE" : "FAILED",
+        writes,
+        p.fetchFailed,
+        "ENRICHMENT_FETCH_FAILURE",
+      );
+    if (writes)
+      return result("MAINTENANCE_COMPLETE", writes, 0, "INSIGHTS_RECALCULATED");
+    if (p.insights || p.targets)
+      return result("MAINTENANCE_COMPLETE", 0, 0, "CACHED_INSIGHTS_CHECKED");
+    return result("NO_WORK", 0, 0, "NO_INSIGHT_TARGETS");
+  }
+  if (
+    job === "notifications-reminders" &&
+    count(p, "created") != null &&
+    count(p, "insights") != null
+  ) {
+    const digests = object(p.digests);
+    const states = [digests.morning, digests.night];
+    const known = (v: unknown) =>
+      typeof v === "string" &&
+      /^(created(?: \(partial\))?(?: for \d{4}-\d{2}-\d{2})?|already created|outside window|before (09:00|03:10)|after the (morning|night) window|nothing usable yet|waiting for category content|waiting: \d+ of \d+ categories ready|no published picks that day|nothing settled (yet|by the cutoff)|deferred: \d+ still unsettled)$/.test(
+        v,
+      );
+    if (!states.every(known))
+      return result("UNKNOWN", null, null, "DIGEST_OUTCOME_UNVERIFIED");
+    const outputs =
+      p.created + p.insights + states.filter((v) => /^created/.test(v)).length;
+    if (
+      !outputs &&
+      states.some((v) =>
+        /^(waiting|deferred:|nothing usable yet|nothing settled yet)/.test(v),
+      )
+    )
+      return result("DEFERRED", 0, 0, "DIGEST_READINESS_PENDING");
+    if (!outputs && states.includes("already created"))
+      return result("MAINTENANCE_COMPLETE", 0, 0, "DIGEST_ALREADY_PRESENT");
+    return result(
+      outputs ? "USEFUL_OUTPUT" : "NO_WORK",
+      outputs,
+      0,
+      outputs ? "NOTIFICATION_EVENTS_CREATED" : "NO_REMINDERS_DUE",
+    );
+  }
+  if (
+    job === "notifications-dispatch" &&
+    [
+      "claimed",
+      "delivered",
+      "retried",
+      "skipped",
+      "deferred",
+      "lostLeases",
+    ].every((k) => count(p, k) != null)
+  ) {
+    if (p.lostLeases)
+      return result(
+        p.delivered ? "PARTIAL_FAILURE" : "UNKNOWN",
+        p.delivered,
+        p.lostLeases,
+        "DELIVERY_LEASE_LOST",
+      );
+    if (p.retried)
+      return result(
+        p.delivered ? "PARTIAL_FAILURE" : "DEFERRED",
+        p.delivered,
+        p.retried,
+        "DELIVERY_RETRIES_PENDING",
+      );
+    if (p.deferred)
+      return result("DEFERRED", p.delivered, 0, "DELIVERY_WINDOW_PENDING");
+    if (p.delivered)
+      return result("USEFUL_OUTPUT", p.delivered, 0, "NOTIFICATIONS_DELIVERED");
+    if (p.skipped)
+      return result(
+        "MAINTENANCE_COMPLETE",
+        0,
+        0,
+        "INELIGIBLE_DELIVERIES_SKIPPED",
+      );
+    return result(
+      p.claimed ? "UNKNOWN" : "NO_WORK",
+      0,
+      0,
+      p.claimed ? "CLAIM_WITHOUT_OUTCOME" : "NO_DELIVERIES_DUE",
+    );
+  }
+  if (
+    job === "paystack-sync" &&
+    typeof p.ran === "boolean" &&
+    count(p, "recorded") != null
+  ) {
+    if (!p.ran) return result("DEFERRED", 0, 0, "PAYMENT_SYNC_DEFERRED");
+    return result(
+      "MAINTENANCE_COMPLETE",
+      p.recorded,
+      0,
+      "PAYMENT_ATTEMPTS_RECONCILED",
+    );
+  }
+  if (job === "email-dispatch") {
+    if (p.ran === false)
+      return result("DEFERRED", 0, 0, "EMAIL_DISPATCH_DISABLED_OR_DEFERRED");
+    const send = object(p.send),
+      queued = object(p.queued);
+    if (
+      p.ran === true &&
+      ["sent", "failed", "retried", "skipped", "expired"].every(
+        (k) => count(send, k) != null,
+      ) &&
+      p.errors &&
+      p.queued
+    ) {
+      const queuedValues = Object.values(queued);
+      if (
+        queuedValues.some(
+          (v) => typeof v !== "number" || !Number.isFinite(v) || v < 0,
+        )
+      )
+        return result("UNKNOWN", null, null, "QUEUE_COUNTERS_UNVERIFIED");
+      const outputs = send.sent + queuedValues.reduce((a, b) => a + b, 0);
+      const failures = send.failed + Object.keys(object(p.errors)).length;
+      if (failures)
+        return result(
+          outputs ? "PARTIAL_FAILURE" : "FAILED",
+          outputs,
+          failures,
+          "EMAIL_SEND_OR_PRODUCER_FAILURE",
+        );
+      if (send.retried)
+        return result(
+          outputs ? "PARTIAL_FAILURE" : "DEFERRED",
+          outputs,
+          send.retried,
+          "EMAIL_RETRIES_PENDING",
+        );
+      const sync = object(p.paystack);
+      if (
+        sync.ran === false &&
+        !["PAYSTACK_SECRET_KEY not set", "tried within the hour"].includes(
+          sync.reason,
+        )
+      )
+        return result(
+          "UNKNOWN",
+          outputs,
+          null,
+          "NESTED_PAYMENT_SYNC_UNVERIFIED",
+        );
+      if (outputs)
+        return result("USEFUL_OUTPUT", outputs, 0, "EMAIL_SENT_OR_QUEUED");
+      if (send.skipped || send.expired)
+        return result(
+          "MAINTENANCE_COMPLETE",
+          0,
+          0,
+          "INELIGIBLE_EMAILS_CLEARED",
+        );
+      return result("NO_WORK", 0, 0, "NO_EMAIL_DUE");
+    }
+  }
+  if (
+    job === "curate-accumulators" &&
+    typeof p.attempted === "boolean" &&
+    Array.isArray(p.tiers)
+  ) {
+    if (!p.attempted && p.tiers.every((t: any) => t?.status === "empty"))
+      return result("NO_WORK", 0, 0, "ACCUMULATOR_POOL_GATE");
+    if (
+      p.attempted &&
+      p.tiers.length &&
+      p.tiers.every((t: any) =>
+        ["created", "exists", "empty"].includes(t?.status),
+      )
+    ) {
+      const created = p.tiers.filter((t: any) => t.status === "created").length;
+      if (created)
+        return result("USEFUL_OUTPUT", created, 0, "ACCUMULATORS_CREATED");
+      if (p.tiers.some((t: any) => t.status === "exists"))
+        return result(
+          "MAINTENANCE_COMPLETE",
+          0,
+          0,
+          "ACCUMULATORS_ALREADY_PRESENT",
+        );
+      return result("NO_WORK", 0, 0, "NO_QUALIFYING_ACCUMULATORS");
+    }
+  }
+  if (
     job === "generation-discovery" &&
     count(p, "candidatesQueued") != null &&
     count(p, "leaguesScanned") != null

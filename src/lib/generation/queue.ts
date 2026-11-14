@@ -427,20 +427,26 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
 
   const existing = await prisma.prediction.findMany({
     where: { homeTeamApiId: { not: null }, awayTeamApiId: { not: null }, kickoff: { not: null } },
-    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
+    select: { id: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });
   const generated = new Set<string>();
+  const outputIds = new Map<string, string[]>();
   for (const row of existing) {
     if (row.homeTeamApiId != null && row.awayTeamApiId != null && row.kickoff) {
-      generated.add(`${row.homeTeamApiId}-${row.awayTeamApiId}-${row.kickoff.toISOString().slice(0, 10)}`);
+      const key = `${row.homeTeamApiId}-${row.awayTeamApiId}-${row.kickoff.toISOString().slice(0, 10)}`;
+      generated.add(key);
+      outputIds.set(key, [...(outputIds.get(key) ?? []), row.id]);
     }
   }
-  const completedAttemptIds = attempts.filter((attempt) => generated.has(attempt.matchKey)).map((attempt) => attempt.id);
-  if (completedAttemptIds.length) {
-    await prisma.generationAttempt.updateMany({
-      where: { id: { in: completedAttemptIds } },
-      data: { status: "SUCCEEDED", nextAttemptAt: null, lastError: null },
-    });
+  // The already-generated exclusion is unchanged. Record its authentic output
+  // links in the same update as success, so a retry cannot leave a false empty success.
+  const completed = attempts.filter((attempt) => generated.has(attempt.matchKey));
+  if (completed.length) {
+    await prisma.$transaction(completed.map(attempt => prisma.generationAttempt.updateMany({
+      where: { id: attempt.id, status: { in: ["PENDING", "FAILED"] } },
+      data: { status: "SUCCEEDED", nextAttemptAt: null, lastError: null,
+        predictionIds: [...outputIds.get(attempt.matchKey)!].sort() },
+    })));
   }
   const today = lagosDateKey(now);
 
