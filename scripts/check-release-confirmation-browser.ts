@@ -47,7 +47,7 @@ async function main() {
     .map((f) => readFileSync(".next/static/css/" + f, "utf8"))
     .join("\n");
   try {
-    for (const provider of ["paystack", "korapay", "flutterwave"]) {
+    for (const provider of ["paystack", "korapay", "flutterwave", "unknown"]) {
       const p = await browser.newPage();
       const errors: string[] = [];
       p.on("pageerror", (e: any) => {
@@ -75,7 +75,7 @@ async function main() {
       );
       await p
         .getByText(
-          `${provider === "paystack" ? "Paystack" : provider === "korapay" ? "Korapay" : "Flutterwave"} declined this payment`,
+          `${provider === "paystack" ? "Paystack" : provider === "korapay" ? "Korapay" : provider === "flutterwave" ? "Flutterwave" : "Your payment provider"} declined this payment`,
           { exact: false },
         )
         .waitFor({ timeout: 5000 });
@@ -105,7 +105,7 @@ async function main() {
             ? "Paystack"
             : provider === "korapay"
               ? "Korapay"
-              : "Flutterwave";
+              : provider === "flutterwave" ? "Flutterwave" : "Your payment provider";
         await p
           .getByText(
             status === "pending"

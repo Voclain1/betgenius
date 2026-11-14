@@ -18,5 +18,7 @@ export function paymentProviderName(
     ? "Flutterwave"
     : provider === "korapay"
       ? "Korapay"
-      : "Paystack";
+      : provider === "paystack"
+        ? "Paystack"
+        : "Your payment provider";
 }

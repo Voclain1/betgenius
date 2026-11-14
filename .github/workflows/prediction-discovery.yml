@@ -70,6 +70,7 @@ jobs:
           exit 1
       - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npm run check:category-navigation-browser
       - run: npm run check:release-browser
+      - run: npm run check:registration-signin-browser
       - run: npm run check:release-confirmation-browser
       - run: npm run check:sprint08-browser
       - run: npx tsx scripts/check-sprint09-browser.ts

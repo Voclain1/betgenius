@@ -68,7 +68,9 @@ for (const tier of ["VIP", "PREMIUM"] as const) {
 eq(paymentProviderName("flutterwave"), "Flutterwave");
 eq(paymentProviderName("korapay"), "Korapay");
 eq(paymentProviderName("paystack"), "Paystack");
-eq(paymentProviderName("<script>"), "Paystack");
+for (const provider of ["<script>", "unknown", "", null, undefined]) {
+  eq(paymentProviderName(provider), "Your payment provider");
+}
 const read = (p: string) => readFileSync(p, "utf8");
 const pricing = read("src/app/(public)/pricing/page.tsx"),
   login = read("src/app/(public)/login/page.tsx"),
