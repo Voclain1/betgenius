@@ -1,3 +1,7 @@
+import {
+  assessOperationalOdds,
+  requiresAtomicEvidence,
+} from "./operationsIntegrity";
 import { isPaidOnlyProvenance } from "./paidOnly";
 import { assessJobCompletion } from "./jobOutcome";
 import {
@@ -205,6 +209,7 @@ async function readOperations(
         nextAttemptAt: true,
         lastError: true,
         predictionIds: true,
+        matchKey: true,
       },
     }),
     db.notificationDelivery.findMany({
@@ -242,7 +247,10 @@ async function readOperations(
   const normalized = bounded.map((p) => ({
     ...p,
     categories: p.categories.map((c) => c.category),
-    paidPublicationEvidenceRequired: isPaidOnlyProvenance(p.provenance),
+    paidPublicationEvidenceRequired: requiresAtomicEvidence(
+      p.provenance,
+      p.publishedAt,
+    ),
     observationExpected:
       !!firstObservation &&
       p.createdAt >= firstObservation.ranAt &&
@@ -260,15 +268,24 @@ async function readOperations(
     now,
     limits.settlement,
   );
+  const sampledOutputKeys = new Set(
+    bounded.map((p) => matchKey(p)).filter(Boolean),
+  );
   for (const attempt of ledger)
-    if (attempt.status === "SUCCEEDED" && !attempt.predictionIds.length)
+    if (attempt.status === "SUCCEEDED" && !attempt.predictionIds.length) {
+      const outputExists = sampledOutputKeys.has(attempt.matchKey);
       findings.push({
         period: incidentPeriod(attempt.kickoff, now),
-        code: "SUCCESS_WITHOUT_PREDICTION_IDS",
-        severity: "WARNING",
-        detail: `Generation attempt ${attempt.id} claims success with no recorded output ids`,
+        code: outputExists
+          ? "GENERATION_OUTPUT_LINKS_MISSING"
+          : "SUCCESS_WITHOUT_PREDICTION_IDS",
+        severity: outputExists ? "INFO" : "WARNING",
+        detail: outputExists
+          ? `Generation attempt ${attempt.id} lacks output links; matching predictions are present in this sample. Historical bookkeeping requires review.`
+          : `Generation attempt ${attempt.id} claims success with no recorded output ids; output existence is unverified in this sample`,
         repair: "MANUAL_REVIEW",
       });
+    }
   for (const attempt of ledger)
     if (
       ["PENDING", "FAILED"].includes(attempt.status) &&
@@ -289,32 +306,22 @@ async function readOperations(
       q = key ? byOdds.get(key) : undefined,
       d = key ? byDetail.get(key) : undefined,
       f = p.fixtureApiId ? fixtureMap.get(p.fixtureApiId) : undefined;
-    const local = freshness({
-      fetchedAt: q?.fetchedAt ?? null,
-      now,
-      maxMinutes: limits.odds,
-      lastError: q?.lastError,
-    });
-    const providerUpdate = (q?.oddsJson as any)?.update;
-    const provider = freshness({
-      fetchedAt: providerUpdate ? new Date(providerUpdate) : null,
+    const assessment = assessOperationalOdds({
+      status: p.status,
+      kickoff: p.kickoff,
+      marketType: p.marketType,
+      selection: p.selection,
+      fixture: f,
+      cache: q,
       now,
       maxMinutes: limits.odds,
     });
-    const oddsState =
-      local.status === "FRESH" || local.status === "AGING" ? provider : local;
-    if (
-      p.kickoff &&
-      p.kickoff > now &&
-      p.status === "PUBLISHED" &&
-      oddsState.status !== "FRESH"
-    )
+    const oddsState = assessment.state;
+    if (assessment.issue)
       findings.push({
+        ...assessment.issue,
         predictionId: p.id,
-        code: "ODDS_" + oddsState.status,
-        severity: "WARNING",
-        detail: "Provider quote freshness differs from local fetch freshness",
-        repair: "REFRESH_ODDS",
+        period: incidentPeriod(p.kickoff, now),
       });
     const publicationEvidence =
       (p.marketConfirmation as any)?.publicationQuoteEvidence ??
@@ -341,6 +348,8 @@ async function readOperations(
         maxMinutes: limits.fixture,
       }),
       odds: oddsState,
+      oddsLocalFetch: assessment.local,
+      oddsProviderQuote: assessment.provider,
       enrichment: freshness({
         fetchedAt: d?.fetchedAt ?? null,
         now,

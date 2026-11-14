@@ -53,7 +53,7 @@ export async function syncPaystackAttempts(now: Date): Promise<{ ran: boolean; r
     const listed = await listTransactions(50);
     for (const transaction of listed.data ?? []) await recordPaymentAttempt(transaction, "RECONCILE");
     const recorded = listed.data?.length ?? 0;
-    await recordJobRun({ job: JOB_PAYSTACK_SYNC, ok: true, summary: `recorded ${recorded}`, ms: Date.now() - started });
+    await recordJobRun({ job: JOB_PAYSTACK_SYNC, ok: true, summary: `recorded ${recorded}`, detail: { ran: true, recorded }, ms: Date.now() - started });
     return { ran: true, recorded };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
