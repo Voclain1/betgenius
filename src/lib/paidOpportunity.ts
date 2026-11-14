@@ -17,3 +17,13 @@ export function scopeGroup(leagueApiId: number | null | undefined): ScopeGroup {
 export function kickoffDayScope() {
   return { fixtures: 0, everInScope: 0, neverInScope: 0, neverInScopeLopsided: 0, noRunInWindow: 0, attempted: 0 };
 }
+
+/**
+ * Attempts on a kickoff day that the day's own core fixtures could never use,
+ * even if every core fixture not yet attempted were to qualify: the quota left
+ * after reserving one slot per such fixture. Capped by what could fill them.
+ */
+export function spareQuotaSlots(input: { quota: number; attemptsUsed: number; coreUnattempted: number; widenedLopsidedOutOfScope: number }): number {
+  const spare = input.quota - input.attemptsUsed - input.coreUnattempted;
+  return Math.max(0, Math.min(spare, input.widenedLopsidedOutOfScope));
+}

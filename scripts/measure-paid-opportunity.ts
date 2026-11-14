@@ -41,7 +41,9 @@ import {
 import { VIP_PREMIUM_DAILY_QUOTA } from "../src/lib/vipPremiumPipeline";
 import { DEDICATED_PAID_PROVENANCES, VIP_ROUTE_PROVENANCE } from "../src/lib/geniusCuration";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
-import { kickoffDayScope, scopeGroup, type ScopeGroup } from "../src/lib/paidOpportunity";
+import { kickoffDayScope, scopeGroup, spareQuotaSlots, type ScopeGroup } from "../src/lib/paidOpportunity";
+import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
+import { wilson95 } from "../src/lib/paidMarketQuality";
 
 const H = 3_600_000;
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : "—");
@@ -251,6 +253,40 @@ async function main() {
   console.log("\n== G. Covered paid-scope fixtures whose first ordinary row arrived inside 12h of kickoff (never in the pass's window) ==");
   const late = all.filter((x) => x.group !== "OUTSIDE" && x.firstOrdinaryAt && x.kickoff.getTime() - x.firstOrdinaryAt.getTime() < GENERATE_FROM_HOURS * H);
   console.log(`  ${late.length} of ${all.filter((x) => x.group !== "OUTSIDE" && x.firstOrdinaryAt).length}: ${late.slice(0, 10).map((x) => `${x.day} ${x.leagueName}`).join("; ")}`);
+  // ── H. Settled dedicated picks by scope group ───────────────────────────
+  console.log("\n== H. Settled dedicated paid picks since the paid-tier cutover (2026-10-03), by scope group; price = frozen entry quote ==");
+  const settled = await prisma.prediction.findMany({
+    where: { status: "PUBLISHED", provenance: { in: [...DEDICATED_PAID_PROVENANCES] }, outcome: { in: ["WON", "LOST", "VOID"] }, kickoff: { gte: new Date("2026-10-02T23:00:00Z"), lt: now } },
+    select: { leagueApiId: true, leagueName: true, outcome: true, kickoff: true, marketConfirmation: true, categories: { select: { category: true } } },
+  });
+  for (const g of ["PAID_CORE", "PAID_WIDENED"] as const) {
+    for (const tier of ["VIP", "PREMIUM"] as const) {
+      const xs = settled.filter((r) => scopeGroup(r.leagueApiId) === g && r.categories.some((c) => c.category === tier));
+      const dec = xs.filter((r) => r.outcome !== "VOID");
+      const w = dec.filter((r) => r.outcome === "WON").length;
+      const priced = xs.map((r) => ({ r, o: r.kickoff ? verifiedEntryPrice(r.marketConfirmation, r.kickoff) : null })).filter((x) => x.o != null);
+      const ret = priced.reduce((a, x) => a + (x.r.outcome === "WON" ? x.o! - 1 : x.r.outcome === "LOST" ? -1 : 0), 0);
+      const ci = wilson95(w, dec.length);
+      const mkt = xs.map((r) => (r.marketConfirmation as any)?.marketProbability).filter((m): m is number => typeof m === "number");
+      console.log(`  ${g.padEnd(12)} ${tier.padEnd(7)} n ${String(xs.length).padStart(3)} W/L ${w}/${dec.length - w} strike ${dec.length ? ((100 * w) / dec.length).toFixed(1) : "—"}% [${ci ? ci.map((v) => (100 * v).toFixed(0)).join("–") : "—"}] entry-priced ${priced.length} ROI ${priced.length ? ((100 * ret) / priced.length).toFixed(1) : "—"}% mean market ${mkt.length ? (mkt.reduce((a, b) => a + b, 0) / mkt.length).toFixed(1) : "—"}% leagues ${[...new Set(xs.map((r) => r.leagueName))].slice(0, 6).join(", ")}`);
+    }
+  }
+
+  // ── I. Bounded opportunity: spare kickoff-day quota core can never use ──
+  console.log("\n== I. Spare kickoff-day quota on healthy days that only out-of-scope widened fixtures could have used ==");
+  const promotedWidened = att.filter((x) => x.group === "PAID_WIDENED");
+  const rate = promotedWidened.length ? promotedWidened.filter((x) => x.promoted).length / promotedWidened.length : 0;
+  let slotsTotal = 0;
+  for (const day of [...dayScope.keys()].sort()) {
+    const s = dayScope.get(day)!;
+    const core = all.filter((x) => x.day === day && x.succeeded && x.group === "PAID_CORE");
+    if (core.length < PAID_THIN_CORE_MIN || s.neverInScopeLopsided === 0) continue;
+    const slots = spareQuotaSlots({ quota: VIP_PREMIUM_DAILY_QUOTA, attemptsUsed: perDay.get(day) ?? 0, coreUnattempted: core.filter((x) => !x.attempted).length, widenedLopsidedOutOfScope: s.neverInScopeLopsided });
+    if (!slots) continue;
+    slotsTotal += slots;
+    console.log(`  ${day} core ${core.length} attempts ${perDay.get(day) ?? 0} core never attempted ${core.filter((x) => !x.attempted).length} widened lopsided out of scope ${s.neverInScopeLopsided} -> slots ${slots} VIP that day ${all.filter((x) => x.day === day && x.vip).length}`);
+  }
+  console.log(`  total slots ${slotsTotal}; at the widened-scope conversion seen on thin days (${(100 * rate).toFixed(0)}% of ${promotedWidened.length} attempts) ~ ${(slotsTotal * rate).toFixed(1)} promotions over the window (upper bound: lopsidedness read at the closing quote)`);
 }
 
 main()
