@@ -12,6 +12,7 @@ import { z } from "zod";
 import { resolveMarket, isValidSelection, type MarketType } from "@/lib/markets";
 import { comparePredictionsForDisplay, type DisplayRankable } from "@/lib/predictionOrdering";
 import { LEAGUE_CATALOGUE, MAJOR_LEAGUE_IDS } from "@/lib/leagues";
+import { rowStatus } from "@/lib/predictionStatus";
 
 // ---------------------------------------------------------------------------
 // Markets
@@ -465,7 +466,12 @@ export type LivePrediction = {
   kickoff: Date | null;
 } | null;
 
-export type SavedState = "upcoming" | "awaiting" | "settled" | "unavailable";
+/**
+ * "unplayed": the provider reports the match postponed, cancelled, abandoned or
+ * suspended and nothing has settled. It is neither upcoming nor awaiting a
+ * result, so it appears under All only (Sprint 03).
+ */
+export type SavedState = "upcoming" | "awaiting" | "settled" | "unavailable" | "unplayed";
 
 export type SavedView = {
   state: SavedState;
@@ -496,7 +502,7 @@ function sameSelection(a: { marketType: string; selection: unknown; pick: string
  * - `locked` (the reader cannot view the category now) hides the outcome as
  *   well as the pick: a win/loss on a locked pick is part of what is paid for.
  */
-export function savedPredictionView(snapshot: SavedSnapshot, live: LivePrediction, canView: boolean, now: Date = new Date()): SavedView {
+export function savedPredictionView(snapshot: SavedSnapshot, live: LivePrediction, canView: boolean, now: Date = new Date(), statusCode?: string | null): SavedView {
   const finalScore = live && live.finalHomeScore != null && live.finalAwayScore != null ? `${live.finalHomeScore}–${live.finalAwayScore}` : null;
   if (!live) {
     return { state: "unavailable", outcome: null, changedTo: null, finalScore: null, locked: !canView };
@@ -520,11 +526,17 @@ export function savedPredictionView(snapshot: SavedSnapshot, live: LivePredictio
   // settled too, even when its own result cannot be derived (a rewritten
   // free-text or half-time market). It is then "settled, result unavailable",
   // never left waiting forever.
+  // A provider end-state that means no match was played (postponed, cancelled,
+  // abandoned, suspended) keeps a pick out of "upcoming" even when its original
+  // kickoff is still ahead, and out of "awaiting a result" when it has passed.
+  const unplayed = rowStatus({ statusCode, kickoff, now }).unplayed;
   const state: SavedState = outcome || liveSettled
     ? "settled"
-    : kickoff && kickoff.getTime() > now.getTime()
-      ? "upcoming"
-      : "awaiting";
+    : unplayed
+      ? "unplayed"
+      : kickoff && kickoff.getTime() > now.getTime()
+        ? "upcoming"
+        : "awaiting";
   if (!canView) return { state, outcome: null, changedTo: null, finalScore: state === "settled" ? finalScore : null, locked: true };
   return { state, outcome, changedTo: same ? null : live.pick, finalScore, locked: false };
 }

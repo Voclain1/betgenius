@@ -99,6 +99,9 @@ export const PURE_STEPS = [
   "tsx scripts/check-personalization.ts",
   "tsx scripts/check-match-centre.ts",
   `${RENDER} scripts/check-match-centre-render.tsx`,
+  "tsx scripts/check-prediction-experience.ts",
+  `${RENDER} scripts/check-prediction-experience-render.tsx`,
+  `${RENDER} scripts/check-prediction-experience-browser.tsx`,
   "tsc --noEmit -p tsconfig.json",
 ];
 
@@ -118,5 +121,6 @@ export const INTEGRATION_STEPS = [
   "tsx scripts/check-betofday-targeting.ts",
   "tsx scripts/check-personalization-db.ts",
   "tsx scripts/check-match-centre-db.ts",
+  "tsx scripts/check-prediction-experience-db.ts",
 ];
 

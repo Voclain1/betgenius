@@ -64,7 +64,9 @@ function rows(n: number, over: Record<string, unknown> = {}) {
     leagueApiId: 39,
     homeTeam: `Home${i}Side`,
     awayTeam: `Away${i}Side`,
-    kickoff: "2026-09-29T15:00:00Z",
+    // Relative to the clock: this row stands for "a tip not yet played". A fixed
+    // date silently turned it into a past match once the calendar caught up.
+    kickoff: new Date(Date.now() + 36 * 3_600_000).toISOString(),
     ...over,
   }));
 }
