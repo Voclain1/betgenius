@@ -327,8 +327,15 @@ export function planVipPremiumCandidates(input: {
     if (!inVipPremiumWindow(l.kickoff, input.now)) { skip("OUTSIDE_WINDOW"); continue; }
     let viaSpare = false;
     if (!input.anyLeague && !scope.leagueIds.has(l.leagueApiId ?? -1)) {
+      // Only inside VIP_PREMIUM_WARM_WITHIN_MS (24h) of kickoff. Core fixtures
+      // enter the ledger 37-48h before their own kickoff, so by the time a
+      // widened fixture is this close, every core fixture of its Lagos day is
+      // already in the ledger and reserved (measured: scripts/
+      // measure-paid-opportunity.ts section L). Earlier than that a later core
+      // fixture of the day might not be discovered yet.
       viaSpare = spareMode !== "off"
         && PAID_WIDENED_LEAGUE_IDS.includes(l.leagueApiId ?? -1)
+        && l.kickoff.getTime() - input.now.getTime() <= VIP_PREMIUM_WARM_WITHIN_MS
         && (input.spareQuota!.slots.get(lagosDateKey(l.kickoff)) ?? 0) > 0;
       // Counted exactly as before under shadow, so every existing counter is unchanged.
       if (!viaSpare || spareMode === "shadow") skip("OUT_OF_SCOPE");

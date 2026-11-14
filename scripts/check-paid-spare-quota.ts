@@ -187,6 +187,16 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
 
 // ── 8. Reservation edge cases (Phase 0 of Sprint 10) ─────────────────────
 {
+  // Late discovery guard: spare slots apply only inside 24h of kickoff.
+  const core = [fx(91, CORE, 20), fx(92, CORE, 21), fx(93, CORE, 22), fx(94, CORE, 23)];
+  const far = fx(95, WIDE, 30), near = fx(96, WIDE, 23.5);
+  const all8 = [...core, far, near];
+  const slots8 = new Map([[lagosDateKey(far.kickoff), 3], [lagosDateKey(near.kickoff), 3]]);
+  const p8 = planVipPremiumCandidates({ ledger: all8.map((f) => f.ledger), rows: all8.map((f) => f.row), attempts: [], now: NOW, spareQuota: { mode: "on", slots: slots8 } });
+  check("8 a widened fixture more than 24h out is not admitted on spare quota (its day's core may not be discovered yet)", !p8.candidates.some((c) => c.matchKey === far.key) && !p8.spareQuota!.eligible.some((c) => c.matchKey === far.key));
+  check("8 inside 24h it is admitted", p8.candidates.some((c) => c.matchKey === near.key && c.viaSpareQuota));
+}
+{
   const at = (iso: string) => new Date(iso);
   const now = at("2026-11-05T08:00:00Z");
   const row = (id: number | null, kickoff: string, status = "SUCCEEDED") => ({ fixtureApiId: id, leagueApiId: CORE, kickoff: at(kickoff), status });
