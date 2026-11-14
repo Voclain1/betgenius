@@ -1,5 +1,6 @@
 import { isPaidOnlyProvenance } from "./paidOnly";
 import { toBookmakerSelection } from "./odds";
+import { ODDS_NEAR_KICKOFF_WINDOW_MS } from "./oddsCadence";
 import {
   freshness,
   publicationStatusProblem,
@@ -95,6 +96,16 @@ export function assessOperationalOdds(input: {
       "ODDS_COVERAGE_UNAVAILABLE",
       "INFO",
       "The last recorded provider response contained no quotes; current availability is unverified.",
+    );
+  else if (
+    input.kickoff.getTime() - now.getTime() > ODDS_NEAR_KICKOFF_WINDOW_MS &&
+    (local.status === "STALE" || local.status === "AGING") &&
+    provider.status !== "UNKNOWN"
+  )
+    issue = finding(
+      "ODDS_DISTANT_CACHE_RETAINED",
+      "INFO",
+      "Existing refresh policy fetches a distant fixture once successfully, then refreshes inside 24 hours of kickoff. Cached quote age alone does not require another call.",
     );
   else if (
     local.status === "STALE" ||

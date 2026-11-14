@@ -184,6 +184,20 @@ async function main() {
       where: { authorId: author.id },
       orderBy: { id: "asc" },
     });
+    await assert.rejects(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+        const mode = await tx.$queryRaw<
+          Array<{ transaction_read_only: string }>
+        >`SHOW transaction_read_only`;
+        assert.equal(mode[0]?.transaction_read_only, "on");
+        await tx.prediction.updateMany({
+          where: { authorId: author.id },
+          data: { reasoning: "This write must be rejected" },
+        });
+      }),
+      /read-only transaction/,
+    );
     const result = await loadOperations({ days: 7, competition: leagueApiId });
     for (const [id, code] of expected) {
       const issues = result.findings.filter(

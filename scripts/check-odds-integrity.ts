@@ -145,6 +145,20 @@ check(
   }).status,
   "UNKNOWN",
 );
+check(
+  assess({
+    kickoff: new Date(+now + 86400001),
+    cache: { ...cache, fetchedAt: new Date(+now - 121 * 60000) },
+  }).issue?.code,
+  "ODDS_DISTANT_CACHE_RETAINED",
+);
+check(
+  assess({
+    kickoff: new Date(+now + 86400000),
+    cache: { ...cache, fetchedAt: new Date(+now - 121 * 60000) },
+  }).issue?.code,
+  "ODDS_REFRESH_DUE",
+);
 const cases: Array<[string, unknown, string]> = [
   [
     "refresh-insights",

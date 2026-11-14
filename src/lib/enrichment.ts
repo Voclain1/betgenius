@@ -8,6 +8,8 @@
 // full-scan-then-dedupe-in-JS posture predictionScope.ts already uses at this
 // data volume (see its file comment) rather than adding new indexes.
 import { Prisma } from "@prisma/client";
+import { ODDS_NEAR_KICKOFF_WINDOW_MS } from "./oddsCadence";
+export { ODDS_NEAR_KICKOFF_WINDOW_MS } from "./oddsCadence";
 import { prisma } from "@/lib/prisma";
 import {
   getTeamById,
@@ -1315,7 +1317,6 @@ export const ODDS_NEAR_KICKOFF_TTL_MS = 60 * 60 * 1000;
  */
 export const ODDS_FAILED_RETRY_MS = 60 * 60 * 1000;
 /** Inside this window of kickoff, a fixture is refreshed hourly rather than once. */
-export const ODDS_NEAR_KICKOFF_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Which targets are actually due, on the cadence the research justifies:
