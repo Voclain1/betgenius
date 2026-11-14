@@ -29,6 +29,7 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - run: npm run check:operations-investigation
       - run: npm run check:prediction-operations
       - run: npm run check:results-pass
       - run: npm run check:period-predictions
@@ -49,3 +50,4 @@ jobs:
       - run: npx tsx scripts/check-paid-publication-postgres.ts
       - run: npx tsx scripts/check-reliability-postgres.ts
       - run: npx tsx scripts/check-current-reliability-postgres.ts
+      - run: npx tsx scripts/check-operations-investigation-postgres.ts

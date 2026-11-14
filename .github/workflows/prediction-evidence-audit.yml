@@ -5,11 +5,21 @@ on:
       - scripts/audit-prediction-evidence.ts
       - .github/workflows/prediction-evidence-audit.yml
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Read-only audit scope
+        type: choice
+        options: [evidence, operations]
+        default: evidence
+      provider:
+        description: Bounded read-only fixture verification (maximum five calls)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   audit:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    if: (github.event_name == 'workflow_dispatch' && inputs.scope != 'operations') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -29,3 +39,33 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+
+  operations-investigation:
+    if: github.event_name == 'workflow_dispatch' && inputs.scope == 'operations'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Provider key (masked, optional)
+        if: inputs.provider
+        env:
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          K=$(printf '%s\n' "$PROD_ENV_FILE" | sed -n 's/^API_FOOTBALL_KEY=//p' | head -1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+          if [ -n "$K" ]; then echo "::add-mask::$K"; echo "API_FOOTBALL_KEY=$K" >> "$GITHUB_ENV"; fi
+      - name: Bounded read-only operations investigation
+        run: npx tsx scripts/investigate-prediction-operations.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          OPS_PROBE_PROVIDER: ${{ inputs.provider && '1' || '0' }}

@@ -1,3 +1,10 @@
+import { isPaidOnlyProvenance } from "./paidOnly";
+import { assessJobCompletion } from "./jobOutcome";
+import {
+  groupFindings,
+  incidentPeriod,
+  currentLagosDayStart,
+} from "./settlementDiagnostics";
 import { snapshotId } from "./reliabilitySnapshot";
 import { prisma } from "./prisma";
 import { auditPublicationQuoteEvidence } from "./paidEntryEvidence";
@@ -5,7 +12,6 @@ import { matchKey } from "./slug";
 import {
   freshness,
   freshnessThresholds,
-  meaningfulCompletion,
   reconcilePredictions,
   type FixtureState,
 } from "./predictionOperations";
@@ -28,6 +34,7 @@ export async function loadOperations(
     competition?: number;
     category?: string;
     severity?: string;
+    period?: string;
   } = {},
 ) {
   return prisma.$transaction(
@@ -46,27 +53,47 @@ async function readOperations(
     competition?: number;
     category?: string;
     severity?: string;
+    period?: string;
   } = {},
 ) {
   const now = new Date(),
     days = input.days === 7 ? 7 : 1,
     since = new Date(+now - days * 86400000),
     limits = freshnessThresholds();
-  const rows = await db.prediction.findMany({
-    where: {
-      kickoff: {
-        gte: since,
-        lte: new Date(+now + 3 * 86400000),
-      },
-      ...(input.competition ? { leagueApiId: input.competition } : {}),
-      ...(input.category
-        ? { categories: { some: { category: input.category } } }
-        : {}),
-    },
-    take: 501,
-    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
-    include: { categories: { select: { category: true } } },
-  });
+  const baseWhere = {
+    ...(input.competition ? { leagueApiId: input.competition } : {}),
+    ...(input.category
+      ? { categories: { some: { category: input.category } } }
+      : {}),
+  };
+  const dayStart = currentLagosDayStart(now),
+    end = new Date(+now + 3 * 86400000);
+  const [current, historical, total, firstObservation] = await Promise.all([
+    db.prediction.findMany({
+      where: { ...baseWhere, kickoff: { gte: dayStart, lte: end } },
+      take: 501,
+      orderBy: [{ kickoff: "asc" }, { id: "asc" }],
+      include: { categories: { select: { category: true } } },
+    }),
+    db.prediction.findMany({
+      where: { ...baseWhere, kickoff: { gte: since, lt: dayStart } },
+      take: 501,
+      orderBy: [{ kickoff: "desc" }, { id: "asc" }],
+      include: { categories: { select: { category: true } } },
+    }),
+    db.prediction.count({
+      where: { ...baseWhere, kickoff: { gte: since, lte: end } },
+    }),
+    db.jobRun.findFirst({
+      where: { job: "prediction-reliability-s06", ranAt: { lte: now } },
+      orderBy: { ranAt: "asc" },
+      select: { ranAt: true },
+    }),
+  ]);
+  const rows = [
+    ...current.slice(0, 500),
+    ...historical.slice(0, Math.max(0, 500 - current.length)),
+  ];
   const bounded = rows.slice(0, 500),
     ids = bounded.map((p) => p.id),
     fixtureIds = [
@@ -118,7 +145,23 @@ async function readOperations(
       take: 500,
       select: { matchKey: true, fetchedAt: true, lastError: true },
     }),
-    db.teamEnrichmentCache.findMany({where:{teamApiId:{in:[...new Set(bounded.flatMap(p=>[p.homeTeamApiId,p.awayTeamApiId].filter((id): id is number=>id!=null)))]}},take:1000,select:{teamApiId:true,fetchedAt:true,lastError:true}}),
+    db.teamEnrichmentCache.findMany({
+      where: {
+        teamApiId: {
+          in: [
+            ...new Set(
+              bounded.flatMap((p) =>
+                [p.homeTeamApiId, p.awayTeamApiId].filter(
+                  (id): id is number => id != null,
+                ),
+              ),
+            ),
+          ],
+        },
+      },
+      take: 1000,
+      select: { teamApiId: true, fetchedAt: true, lastError: true },
+    }),
     db.jobRun.findMany({
       where: {
         job: "prediction-reliability-s06",
@@ -199,6 +242,15 @@ async function readOperations(
   const normalized = bounded.map((p) => ({
     ...p,
     categories: p.categories.map((c) => c.category),
+    paidPublicationEvidenceRequired: isPaidOnlyProvenance(p.provenance),
+    observationExpected:
+      !!firstObservation &&
+      p.createdAt >= firstObservation.ranAt &&
+      p.marketType !== "SAME_GAME_DOUBLE" &&
+      !isPaidOnlyProvenance(p.provenance) &&
+      p.provenance !== "MARKET_CONFIRMED" &&
+      p.confidence >=
+        (p.categories.some((c) => c.category === "VIP") ? 75 : 80),
   }));
   const findings = reconcilePredictions(
     normalized,
@@ -211,6 +263,7 @@ async function readOperations(
   for (const attempt of ledger)
     if (attempt.status === "SUCCEEDED" && !attempt.predictionIds.length)
       findings.push({
+        period: incidentPeriod(attempt.kickoff, now),
         code: "SUCCESS_WITHOUT_PREDICTION_IDS",
         severity: "WARNING",
         detail: `Generation attempt ${attempt.id} claims success with no recorded output ids`,
@@ -222,6 +275,7 @@ async function readOperations(
       attempt.kickoff <= now
     )
       findings.push({
+        period: incidentPeriod(attempt.kickoff, now),
         code: "MISSED_GENERATION_WINDOW",
         severity: "WARNING",
         detail: `Attempt ${attempt.id} reached kickoff without completion`,
@@ -229,7 +283,7 @@ async function readOperations(
       });
   const byOdds = new Map(odds.map((q) => [q.matchKey, q])),
     byDetail = new Map(details.map((d) => [d.matchKey, d]));
-  const byTeam = new Map(teams.map(t=>[t.teamApiId,t]));
+  const byTeam = new Map(teams.map((t) => [t.teamApiId, t]));
   const fresh = bounded.map((p) => {
     const key = matchKey(p),
       q = key ? byOdds.get(key) : undefined,
@@ -262,12 +316,25 @@ async function readOperations(
         detail: "Provider quote freshness differs from local fetch freshness",
         repair: "REFRESH_ODDS",
       });
-    const publicationEvidence = (p.marketConfirmation as any)?.publicationQuoteEvidence ?? p.marketConfirmation as any;
+    const publicationEvidence =
+      (p.marketConfirmation as any)?.publicationQuoteEvidence ??
+      (p.marketConfirmation as any);
     const quoteTime = publicationEvidence?.quoteFetchedAt;
-    const teamFreshness = (id:number|null) => { const t=id!=null?byTeam.get(id):undefined;return freshness({fetchedAt:t?.fetchedAt??null,now,maxMinutes:limits.enrichment,lastError:t?.lastError}); };
+    const teamFreshness = (id: number | null) => {
+      const t = id != null ? byTeam.get(id) : undefined;
+      return freshness({
+        fetchedAt: t?.fetchedAt ?? null,
+        now,
+        maxMinutes: limits.enrichment,
+        lastError: t?.lastError,
+      });
+    };
     return {
       id: p.id,
-      teamEnrichment: {home:teamFreshness(p.homeTeamApiId),away:teamFreshness(p.awayTeamApiId)},
+      teamEnrichment: {
+        home: teamFreshness(p.homeTeamApiId),
+        away: teamFreshness(p.awayTeamApiId),
+      },
       fixture: freshness({
         fetchedAt: f?.updatedAt ?? null,
         now,
@@ -302,7 +369,7 @@ async function readOperations(
     const h = histories[i],
       classified = h
         .slice(0, 100)
-        .map((r) => meaningfulCompletion(r.detail, r.ok ? 200 : 500));
+        .map((r) => assessJobCompletion(job, r.detail, r.ok ? 200 : 500));
     return {
       job,
       lastAt: h[0]?.ranAt ?? null,
@@ -313,6 +380,14 @@ async function readOperations(
       truncated: h.length > 100,
       transportSuccess: h.slice(0, 100).filter((r) => r.ok).length,
       useful: classified.filter((r) => r.status === "USEFUL_OUTPUT").length,
+      maintenance: classified.filter((r) => r.status === "MAINTENANCE_COMPLETE")
+        .length,
+      noWork: classified.filter((r) => r.status === "NO_WORK").length,
+      deferred: classified.filter((r) => r.status === "DEFERRED").length,
+      explanations: classified.reduce<Record<string, number>>((s, r) => {
+        s[r.reason] = (s[r.reason] ?? 0) + 1;
+        return s;
+      }, {}),
       failed: classified.filter(
         (r) => r.status === "FAILED" || r.status === "PARTIAL_FAILURE",
       ).length,
@@ -328,14 +403,50 @@ async function readOperations(
       .filter((p) => p.status === "PUBLISHED" && p.kickoff && p.kickoff > now)
       .map((p) => p.id),
   );
+  const filteredFindings = findings.filter(
+    (f) =>
+      (!input.severity || f.severity === input.severity) &&
+      (!input.period || (f.period ?? "CURRENT") === input.period),
+  );
   return {
+    findingGroups: groupFindings(filteredFindings),
+    findingPeriods: {
+      current: findings.filter((f) => (f.period ?? "CURRENT") === "CURRENT")
+        .length,
+      historical: findings.filter((f) => f.period === "HISTORICAL").length,
+    },
+    reviewQueue: {
+      upcoming: bounded.filter(
+        (p) => p.status === "PENDING_REVIEW" && p.kickoff && p.kickoff > now,
+      ).length,
+      expiredCurrent: bounded.filter(
+        (p) =>
+          p.status === "PENDING_REVIEW" &&
+          p.kickoff &&
+          p.kickoff <= now &&
+          incidentPeriod(p.kickoff, now) === "CURRENT",
+      ).length,
+      expiredHistorical: bounded.filter(
+        (p) =>
+          p.status === "PENDING_REVIEW" &&
+          p.kickoff &&
+          p.kickoff <= now &&
+          incidentPeriod(p.kickoff, now) === "HISTORICAL",
+      ).length,
+    },
     now: now.toISOString(),
     days,
-    truncated: rows.length > 500,
+    total,
+    sampling: {
+      current: Math.min(current.length, 500),
+      historical: Math.min(
+        historical.length,
+        Math.max(0, 500 - current.length),
+      ),
+    },
+    truncated: total > rows.length,
     universe: bounded.length,
-    findings: findings.filter(
-      (f) => !input.severity || f.severity === input.severity,
-    ),
+    findings: filteredFindings,
     freshness: fresh,
     jobs,
     publishing: normalized.reduce<Record<string, number>>((s, p) => {
