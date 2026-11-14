@@ -10,6 +10,7 @@ import { categoryFeedWhere, CATEGORY_SLUGS } from "./categoryPredictions";
 import { goalsFeedRows } from "./goalsCategory";
 import { matchKey, matchSlug } from "./slug";
 import { discoveryQuote } from "./selectionQuote";
+import { teamSearchIds } from "./discoveryTeamSearch";
 export { discoveryQuote } from "./selectionQuote";
 import {
   DISCOVERY_LIMIT,
@@ -107,6 +108,10 @@ export async function loadDiscovery(
               ],
             }
           : {};
+  // The typed team or match, read accent-, case- and spacing-insensitively and
+  // with wildcard characters taken literally. A bounded id prefilter only: every
+  // access rule below still applies to these ids. See discoveryTeamSearch.ts.
+  const teamIds = f.team ? await teamSearchIds(f.team, f.bounds) : null;
   const found = await prisma.prediction.findMany({
     where: {
       AND: [
@@ -115,26 +120,7 @@ export async function loadDiscovery(
         personal,
         { kickoff: { gte: f.bounds.start, lt: f.bounds.end } },
         ...(f.competition ? [{ leagueApiId: f.competition }] : []),
-        ...(f.team
-          ? [
-              {
-                OR: [
-                  {
-                    homeTeam: {
-                      contains: f.team,
-                      mode: "insensitive" as const,
-                    },
-                  },
-                  {
-                    awayTeam: {
-                      contains: f.team,
-                      mode: "insensitive" as const,
-                    },
-                  },
-                ],
-              },
-            ]
-          : []),
+        ...(teamIds ? [{ id: { in: teamIds } }] : []),
         ...(f.market ? [{ marketType: f.market }] : []),
       ],
     },
