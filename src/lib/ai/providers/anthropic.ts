@@ -18,21 +18,28 @@ export type AnthropicEffort = "low" | "medium" | "high";
  * defaults to medium; the comparison runs more than one setting side by side.
  * Without an explicit effort, ANTHROPIC_EFFORT applies, else the model default.
  */
-export function makeAnthropicProvider(opts: { effort?: AnthropicEffort } = {}): AIProvider {
+export function makeAnthropicProvider(opts: { effort?: AnthropicEffort; maxRetries?: number } = {}): AIProvider {
   return {
     name: "anthropic",
     isConfigured: () => !!process.env.ANTHROPIC_API_KEY,
-    complete: (req) => completeAnthropic(req, opts.effort ?? (process.env.ANTHROPIC_EFFORT as AnthropicEffort | undefined)),
+    complete: (req) => completeAnthropic(req, opts.effort ?? (process.env.ANTHROPIC_EFFORT as AnthropicEffort | undefined), opts.maxRetries ?? DEFAULT_MAX_RETRIES),
   };
 }
 
+/**
+ * SDK retries per call in production. A research run that must cap HTTP
+ * requests exactly (scripts/run-alt-market-experiment.ts) passes 0, so one
+ * call is one request.
+ */
+export const DEFAULT_MAX_RETRIES = 1;
+
 export const anthropicProvider: AIProvider = makeAnthropicProvider();
 
-async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | undefined): Promise<CompletionResult> {
+async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | undefined, maxRetries = DEFAULT_MAX_RETRIES): Promise<CompletionResult> {
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
   // 90s per attempt: a high-effort call measured ~21s at p50, and the route's
   // maxDuration has to leave room for the fallback after a hung request.
-  const client = new Anthropic({ timeout: 90_000, maxRetries: 1 });
+  const client = new Anthropic({ timeout: 90_000, maxRetries });
 
   const res = await client.messages.create({
     model,

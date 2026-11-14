@@ -93,3 +93,80 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/measure-alt-market-baseline.ts "${{ needs.request.outputs.days }}"
+
+  experiment:
+    needs: request
+    if: needs.request.outputs.job == 'experiment' && needs.request.outputs.confirm == 'RUN-ALT-MARKET-S10'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # One experiment at a time: caps are cumulative across invocations.
+    concurrency: alt-market-experiment
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Production model credential (the same key production uses; masked)
+        env:
+          ANTHROPIC_KEY_SECRET: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          read_env() { printf '%s\n' "$PROD_ENV_FILE" | grep -E "^$1=" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+          # deploy-vps.yml: the ANTHROPIC_API_KEY secret wins over PROD_ENV_FILE.
+          K="${ANTHROPIC_KEY_SECRET:-$(read_env ANTHROPIC_API_KEY)}"
+          if [ -z "$K" ]; then echo "::error::no production Anthropic credential available; experiment blocked (no substitute provider)"; exit 1; fi
+          echo "::add-mask::$K"
+          echo "ANTHROPIC_API_KEY=$K" >> "$GITHUB_ENV"
+          M=$(read_env ANTHROPIC_MODEL)
+          [ -z "$M" ] || echo "ANTHROPIC_MODEL=$M" >> "$GITHUB_ENV"
+          # No other provider key is exported: the runner cannot fall back.
+      - name: Pre-registered alternative-market experiment (capped)
+        env:
+          REQUIRE_READ_ONLY: "1"
+          ALT_MARKET_CONFIRM: ${{ needs.request.outputs.confirm }}
+        run: npx tsx scripts/run-alt-market-experiment.ts
+
+  settle:
+    needs: request
+    if: needs.request.outputs.job == 'settle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Settle recorded observations (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/settle-alt-market-experiment.ts

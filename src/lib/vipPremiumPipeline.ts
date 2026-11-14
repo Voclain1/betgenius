@@ -635,7 +635,8 @@ export function provenanceForTier(tier: PaidTier): string {
 type FixtureRef = { id: string; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; kickoff: Date | null };
 
 /** Every non-archived row on the same fixture as `ref`, with its paid tags. */
-async function liveRowsOnFixture(ref: FixtureRef) {
+/** Live (not archived) rows on a fixture. Read-only; also used by scripts/run-alt-market-experiment.ts. */
+export async function liveRowsOnFixture(ref: FixtureRef) {
   const byTeams = ref.homeTeamApiId != null && ref.awayTeamApiId != null && !!ref.kickoff;
   if (!byTeams && ref.fixtureApiId == null) return [];
   const key = paidFixtureKey(ref);
