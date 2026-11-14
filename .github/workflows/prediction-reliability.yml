@@ -1,0 +1,47 @@
+name: prediction-reliability
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: betgenius
+          POSTGRES_PASSWORD: disposable_ci_only
+          POSTGRES_DB: betgenius_paid_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U betgenius -d betgenius_paid_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      DATABASE_URL_UNPOOLED: postgresql://betgenius:disposable_ci_only@127.0.0.1:5432/betgenius_paid_ci
+      BETGENIUS_DISPOSABLE_PG: 'yes'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:prediction-reliability
+      - run: npm run check:paid-market-quality
+      - run: npm run check:league-coverage-quality
+      - run: npm run check:paid-value-integration
+      - run: npm run check:vip-premium-overlay
+      - run: npm run check:paid-selection
+      - run: npm run check:paid-subscriber
+      - run: npm run check:paid-render
+      - run: npm run check:subscription-entitlement
+      - run: npm run check:paystack-entitlement
+      - run: npm run check:onetime-fallback
+      - run: npx tsc --noEmit
+      - run: npx prisma db push --skip-generate
+      - run: npx tsx scripts/check-paid-publication-postgres.ts
+      - run: npx tsx scripts/check-reliability-postgres.ts
+      - run: npx tsx scripts/check-current-reliability-postgres.ts

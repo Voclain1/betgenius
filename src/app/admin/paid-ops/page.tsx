@@ -1,3 +1,4 @@
+import { loadReliabilityDiagnostics } from "@/lib/reliabilityDiagnostics";
 import { loadPaidQualityDiagnostics } from "@/lib/paidQualityDiagnostics";
 import { loadPaidOpsSnapshot } from "@/lib/paidOpsData";
 import { exploreCompetition, loadCoverageDiagnostics, WELSH_COMPETITION_IDS } from "@/lib/coverageDiagnostics";
@@ -23,6 +24,7 @@ const STATUS_TEXT: Record<PaidDayStatus, { label: string; tone: string }> = {
 
 export default async function PaidOpsPage({ searchParams }: { searchParams?: { competition?: string } }) {
   const [s, quality, coverage] = await Promise.all([loadPaidOpsSnapshot(14), loadPaidQualityDiagnostics(90), loadCoverageDiagnostics(14)]);
+  const reliability = await loadReliabilityDiagnostics().catch(() => null);
   const mode = effectivePaidSelection();
   // Explorer input: a positive integer competition id, or the first Welsh id.
   const requested = Number.parseInt(searchParams?.competition ?? "", 10);
@@ -60,6 +62,23 @@ export default async function PaidOpsPage({ searchParams }: { searchParams?: { c
         <div className="flex flex-wrap gap-2">{Object.entries(s.integrityLast24h.warnings).length ? Object.entries(s.integrityLast24h.warnings).map(([reason, count]) => <span key={reason} className="rounded-lg border border-amber-500/40 px-2 py-1 text-xs text-amber-300">{reason}: {count}</span>) : <span className="text-xs text-gray-400">No integrity warnings recorded in audited runs.</span>}</div>
       </div>
       {s.shadow.lastSummary && <p className="text-xs text-gray-400">Latest shadow record: {s.shadow.lastSummary}</p>}
+
+      <section className="card space-y-3">
+        <h2 className="text-xl font-bold text-gray-100">Prediction reliability · prospective research</h2>
+        <p className="text-sm text-amber-300">No Sprint 06 policy is eligible for activation. Historical holdouts were already used; new evidence must mature prospectively. Reference quotes are not subscriber entry prices.</p>
+        {!reliability ? <p className="text-sm text-gray-400">Reliability diagnostics unavailable. Live publication is independent.</p> : <>
+          <p className="text-sm text-gray-400">{reliability.records} first-decision records, last 90 days{reliability.truncated ? " · capped at 1,000, incomplete cohort" : ""}. Calibration {reliability.calibration.version ?? "absent"}: {reliability.calibration.active ? "active in existing framework" : "inactive"}{reliability.calibration.stale ? " · stale" : ""}. Sprint 06 estimates remain evaluation only.</p>
+          <dl className="grid gap-3 sm:grid-cols-3">{[["Price quality",reliability.price],["Value evidence",reliability.value],["Structural risk",reliability.risk]].map(([label,counts])=><div key={String(label)}><dt className="text-sm font-bold text-gray-200">{String(label)}</dt><dd className="break-words text-xs text-gray-400">{Object.entries(counts).map(([k,v])=>`${k}: ${v}`).join(" · ") || "No observations"}</dd></div>)}</dl>
+          <p className="text-xs text-gray-400">Price evidence coverage: {Object.entries(reliability.evidenceCoverage).map(([k,v])=>`${k}: ${v}/${reliability.records}`).join(" · ")}. Named quotes are the cache’s retained comparison subset, not the entire market. Suspension status remains unknown where the provider supplied none.</p>
+          {reliability.dimensions.map(group=><details key={group.dimension} className="rounded-lg border border-brand-border p-3">
+            <summary className="cursor-pointer text-sm text-gray-200">Reliability by {group.dimension} (up to 80 segments)</summary>
+            <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[48rem] text-xs"><thead><tr className="text-left text-gray-400">{["Segment","Candidates / decided","Raw confidence / observed","95% interval","Brier / log loss / ECE","Valid-price coverage","Evidence"].map(h=><th key={h} className="p-2">{h}</th>)}</tr></thead>
+              <tbody>{group.rows.map(r=><tr key={r.key} className="border-t border-brand-border text-gray-300"><td className="p-2">{r.key}</td><td className="p-2">{r.candidates} / {r.n}</td><td className="p-2">{r.meanConfidence?.toFixed(3) ?? "—"} / {r.winRate?.toFixed(3) ?? "—"}</td><td className="p-2">{r.winInterval?.map(p=>p.toFixed(3)).join(" – ") ?? "—"}</td><td className="p-2">{[r.brier,r.logLoss,r.ece].map(p=>p?.toFixed(3)??"—").join(" / ")}</td><td className="p-2">{(r.priceCoverage*100).toFixed(1)}%</td><td className="p-2">{r.sufficient?"Descriptive only":"Sparse sample"}{group.dimension==="competition" && r.shrunkWinRate!=null ? ` · pooled estimate ${r.shrunkWinRate.toFixed(3)} (50 pooled observations)` : ""}{r.omittedNonBinary?" · push/unsupported markets omitted from binary scores":""}</td></tr>)}</tbody>
+            </table></div>
+          </details>)}
+          <p className="text-xs text-gray-400">Policy observations: {reliability.policies.map(p=>`${p.name}: ${p.candidates} proposed, ${p.baselineOverlap} overlap with baseline, ${p.settled} settled`).join(" · ")}. No independent holdout result yet. Country, season and completeness are unknown where not captured. Discovery eligibility remains separate.</p>
+        </>}
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-xl font-bold text-gray-100">Historical paid quality · last {quality.days} days</h2>

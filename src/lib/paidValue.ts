@@ -168,6 +168,8 @@ export type PaidCandidateAssessment = {
   value: ValueAssessment;
   /** Age of the quote read, in minutes; null when none was usable. */
   quoteAgeMinutes: number | null;
+  /** Sprint 06: original point-in-time evidence, never consumed by live selection. */
+  reliabilityPrice?: import("./reliabilitySnapshot").ReliabilityPriceInput;
 };
 
 /**

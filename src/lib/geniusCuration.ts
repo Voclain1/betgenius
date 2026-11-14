@@ -681,12 +681,12 @@ async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) 
     ...(plan.added.length ? [prisma.predictionCategoryLink.createMany({ data: plan.added.map((predictionId) => ({ predictionId, category })), skipDuplicates: true })] : []),
     ...(plan.removed.length ? [prisma.predictionCategoryLink.deleteMany({ where: { predictionId: { in: plan.removed }, category } })] : []),
   ]);
-  // Shadow log (PAID_SELECTION_MODE shadow or value): what each candidate was
-  // worth at this moment and what the live rule did with it. Best effort.
-  if (pipeline && decision && decision.effective.mode !== "current") {
+  // Observation is independent of live mode and runs after category changes commit.
+  // Current mode records reliability only; the legacy shadow log stays disabled.
+  if (pipeline && decision && pipeline.shouldRecordPaidSelection(decision.effective.mode)) {
     const { selectedIds, added, removed, ...counts } = plan;
     await pipeline.recordPaidSelectionShadow({
-      category, day: lagosDateKey(start), effective: decision.effective, assessments: decision.assessments,
+      category, day: lagosDateKey(start), effective: decision.effective, assessments: decision.assessments, researchAssessments: decision.researchAssessments,
       selectedIds, plan: { ...counts, added: added.length, removed: removed.length }, rows, now,
     });
   }

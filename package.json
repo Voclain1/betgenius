@@ -114,7 +114,9 @@
     "report:paid-market-quality": "tsx --env-file=.env scripts/report-paid-market-quality.ts",
     "backtest:paid-selection": "tsx --env-file=.env scripts/backtest-paid-selection.ts",
     "preflight:db": "tsx scripts/preflight.ts --db",
-    "preflight:integration": "tsx scripts/preflight.ts --integration"
+    "preflight:integration": "tsx scripts/preflight.ts --integration",
+    "check:prediction-reliability": "tsx scripts/check-prediction-reliability.ts",
+    "research:prediction-reliability": "tsx scripts/research-reliability.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
