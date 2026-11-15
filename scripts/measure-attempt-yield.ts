@@ -58,6 +58,26 @@ async function main() {
     const above = xs.filter((a) => signalBand(a.signal, PAID_MAX_MARKET_PROBABILITY) === "above ceiling");
     console.log(`${d}  ${String(xs.length).padStart(8)}  ${String(above.length).padStart(13)}  ${String(above.reduce((s, a) => s + a.promotedVip + a.promotedPremium, 0)).padStart(14)}  ${String(xs.filter((a) => !above.includes(a)).reduce((s, a) => s + a.promotedVip + a.promotedPremium, 0)).padStart(15)}`);
   }
+  // Runs whose target produced no gate verdict: deferred, failed, or held for a requote?
+  console.log("\nruns with a target but no gate verdict (evaluated 0):");
+  const silent: Record<string, number> = {};
+  for (const r of runs) {
+    const d = r.detail as any, v = d?.vipPremium;
+    if (!(v?.targets ?? []).length || (v?.evaluated ?? 0) > 0) continue;
+    const k = `succeeded ${d.succeeded ?? "?"} failed ${d.failed ?? "?"} held ${v.heldForRequote ?? "?"} reason ${String(d.reason ?? "—").slice(0, 60)} error ${String(d.results?.[0]?.error ?? "—").slice(0, 60)}`;
+    silent[k] = (silent[k] ?? 0) + 1;
+  }
+  for (const [k, n] of Object.entries(silent).sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(4)}  ${k}`);
+
+  // Attempt records (AIJobs) per fixture: does any fixture consume the quota more than once?
+  const jobs = await prisma.aIJob.findMany({ where: { createdAt: { gte: since }, prompt: { contains: `"intent":"VIP_PREMIUM"` } }, select: { prompt: true, createdAt: true } });
+  const perFixture = new Map<string, number>();
+  for (const j of jobs) {
+    try { const p = JSON.parse(j.prompt); const k = `${p.fixtureApiId ?? `${p.home}|${p.away}`}`; perFixture.set(k, (perFixture.get(k) ?? 0) + 1); } catch { /* unparseable prompt: not an attempt */ }
+  }
+  const dup = [...perFixture.values()].filter((n) => n > 1);
+  console.log(`\nVIP_PREMIUM attempt records ${jobs.length} on ${perFixture.size} fixtures; fixtures with more than one record ${dup.length} (extra records ${dup.reduce((s, n) => s + n - 1, 0)})`);
+
   console.log("\nevery attempt above the ceiling:");
   for (const a of attempts.filter((x) => signalBand(x.signal, PAID_MAX_MARKET_PROBABILITY) === "above ceiling")) {
     console.log(`  ${a.ranAt.toISOString().slice(0, 16)} ${a.kickoffDay} ${a.fixture.slice(0, 40).padEnd(40)} ${a.market.padEnd(24)} ${a.signal.toFixed(1)} -> promoted ${a.promotedVip + a.promotedPremium} rejected ${JSON.stringify(a.rejected)}`);
