@@ -6,6 +6,7 @@ import {createReadStream,createWriteStream,readFileSync,mkdirSync,writeFileSync,
 import {join} from 'node:path';
 import {promises as dns} from 'node:dns';
 const approvedPlan='99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6';
+const manifestSql=readFileSync(new URL('./backup-schema-manifest.sql',import.meta.url),'utf8');
 const snapshotSql=readFileSync(new URL('./readonly-backup-snapshot.sql',import.meta.url),'utf8');
 const emit=(kind,value)=>console.log(JSON.stringify({kind,...value}));
 const sha=x=>createHash('sha256').update(x).digest('hex');
@@ -14,6 +15,7 @@ function newest(items){return items.filter(x=>!x.IsDir&&backupName.test(x.Name)&
 function classifyError(s){return /AccessDenied|InvalidAccessKey|SignatureDoesNotMatch/i.test(s)?'storage-authentication-or-authorization':/NoSuchBucket|bucket.*not.*exist/i.test(s)?'storage-bucket-missing':/didn.t find section|failed to create file system/i.test(s)?'storage-remote-configuration':'storage-or-transport-error';}
 const roUrl=raw=>{const u=new URL(raw);u.searchParams.set('options','-c default_transaction_read_only=on -c statement_timeout=15000');return u.toString();};
 const remoteBase='cd /opt/betgenius && docker compose --env-file deploy.env';
+let storageReader;
 const ops=script=>`${remoteBase} exec -T ops sh -c ${quote('. /ops/env.sh; '+script)}`;
 function quote(s){return "'"+s.replaceAll("'","'\\''")+"'";}
 function ssh(command,input){
@@ -71,7 +73,7 @@ function backupDnsEvidence(failedHost){
 }
 function inventory(prefix){
  assert.ok(['daily','weekly'].includes(prefix));let raw;
- try{raw=ssh(ops('exec rclone lsjson "backup:${BACKUP_BUCKET}/'+prefix+'" --files-only'));return JSON.parse(raw);}
+ try{raw=ssh((storageReader||ops)('exec rclone lsjson "backup:${BACKUP_BUCKET}/'+prefix+'" --files-only'));return JSON.parse(raw);}
  catch(e){
   const stderr=String(e.stderr??'');
   const tokens=[...new Set(stderr.match(/AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|NoSuchBucket|InvalidBucketName|ExpiredToken|InvalidToken|AuthorizationHeaderMalformed|RequestTimeTooSkewed|AllAccessDisabled|InvalidArgument|InvalidRequest|NoCredentials|InvalidEndpoint|directory not found|no such host|connection refused|i\/o timeout|TLS handshake|x509|unsupported protocol scheme|unknown flag|unknown command|failed to create file system|didn.t find section|\b(?:400|401|403|404|429|500|502|503)\b/gi)??[])];
@@ -128,6 +130,16 @@ async function main(){
    const hash=sha(plan);emit('read_only_schema_plan',{sha256:hash,matches_reviewed:hash===approvedPlan});assert.equal(hash,approvedPlan,'live plan differs from reviewed SQL');return hash;
   };
   inspectPlan();
+  const [liveManifestRow]=await db.$queryRawUnsafe(manifestSql);const liveManifest=liveManifestRow.manifest;
+  emit('live_schema_manifest',liveManifest);
+  if(process.env.USE_SCHOOLKIT_BACKUP_READER==='true'){
+   const candidates=ssh('docker ps --filter label=com.docker.compose.service=ops --format '+quote('{{.ID}} {{.Names}} {{.Label "com.docker.compose.project"}}')).trim().split('\n').filter(x=>/school|scholkit|naija/i.test(x));
+   assert.equal(candidates.length,1,'one School Kit reader required');const id=candidates[0].split(/\s+/)[0];assert.match(id,/^[a-f0-9]{12,64}$/);
+   storageReader=script=>'docker exec '+id+' sh -c '+quote('if [ -r /ops/env.sh ]; then . /ops/env.sh; fi; '+script);
+   // Keep School Kit's authenticated reader; change only this process's prefix.
+   const reader=storageReader;storageReader=script=>reader('export BACKUP_BUCKET=school-kit-backups/betgenius; '+script);
+   emit('backup_reader',{source:'existing-school-kit-remote',prefix:'school-kit-backups/betgenius',production_configuration_changed:false});
+  }
   emit('audit_phase',{stage:'backup-environment-and-inventory'});
   await storageConfigurationEvidence();
   const config=ssh(ops('for n in BACKUP_BUCKET RCLONE_CONFIG_BACKUP_TYPE RCLONE_CONFIG_BACKUP_PROVIDER RCLONE_CONFIG_BACKUP_ENDPOINT RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY; do v=$(printenv "$n" || true); if [ -n "$v" ]; then echo "$n=set"; else echo "$n=unset"; fi; done'));
@@ -143,14 +155,19 @@ async function main(){
   // Still test an available stale dump; freshness remains a final blocking condition.
   assert.ok(Number.isFinite(ageHours)&&ageHours>=-0.0834,'invalid/future backup timestamp');
   timer=setInterval(()=>{try{const s=opsSnapshot();validateSnapshot(s);assert.equal(s.schema_fingerprint,live.schema_fingerprint);observations.push(s);}catch(e){monitoringError=e;}},15000);
-  await run('ssh',['-o','BatchMode=yes','vps',ops('exec rclone cat "backup:${BACKUP_BUCKET}/daily/'+latest.Name+'"')],{outputFile:dump});
+  await run('ssh',['-o','BatchMode=yes','vps',(storageReader||ops)('exec rclone cat "backup:${BACKUP_BUCKET}/daily/'+latest.Name+'"')],{outputFile:dump});
   const bytes=readFileSync(dump);assert.equal(bytes.length,latest.Size);emit('download_verified',{bytes:bytes.length,sha256:sha(bytes)});
   const toc=execFileSync('docker',['exec','-i',localContainer,'pg_restore','--list'],{input:bytes,encoding:'utf8',timeout:60000,stdio:['pipe','pipe','pipe']});
   emit('archive_metadata',{lines:toc.split('\n').filter(x=>/^;.*(dbname:|Dumped from database version:|Dumped by pg_dump version:|Dump Version:|TOC Entries:|Archive created at)/.test(x))});
+  assert.equal(toc.match(/^;.*dbname:\s+([^\r\n]+)$/m)?.[1].trim(),live.database,'archive belongs to another database');
   await run('docker',['exec','-i',localContainer,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','audit','-d','restore_audit'],{inputFile:dump});
   const countSql=`SELECT json_build_object('database',current_database(),'User',(SELECT count(*) FROM "User"),'Prediction',(SELECT count(*) FROM "Prediction"),'Subscription',(SELECT count(*) FROM "Subscription"),'PaymentAttempt',(SELECT count(*) FROM "PaymentAttempt"));`;
   const restored=JSON.parse(execFileSync('docker',['exec','-i',localContainer,'psql','-U','audit','-d','restore_audit','-XAt','-v','ON_ERROR_STOP=1'],{input:countSql,encoding:'utf8',timeout:30000}));
   for(const table of Object.keys(live.counts))if(live.counts[table]>0)assert.ok(restored[table]>0,`restored ${table} empty`);
+  const restoredManifestRow=JSON.parse(execFileSync('docker',['exec','-i',localContainer,'psql','-U','audit','-d','restore_audit','-XAt','-v','ON_ERROR_STOP=1'],{input:manifestSql,encoding:'utf8',timeout:30000}));
+  emit('restored_schema_manifest',restoredManifestRow);
+  assert.equal(restoredManifestRow.schema_fingerprint,liveManifest.schema_fingerprint,'backup/live schema definitions differ');
+  assert.equal(restoredManifestRow.table_count,liveManifest.table_count);assert.equal(restoredManifestRow.invalid_indexes,0);assert.equal(restoredManifestRow.unvalidated_constraints,0);
   emit('isolated_restore_passed',{...restored,production_database_written:false});
   if(timer){clearInterval(timer);timer=null;}if(monitoringError)throw monitoringError;
   const end=opsSnapshot();validateSnapshot(end);assert.equal(end.schema_fingerprint,live.schema_fingerprint);observations.push(end);inspectPlan();

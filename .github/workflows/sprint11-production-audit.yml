@@ -24,6 +24,10 @@ on:
         description: "Read-only BetGenius/School Kit bucket and prefix verification"
         type: boolean
         default: false
+      use_schoolkit_backup_reader:
+        description: "Use existing authenticated School Kit remote for isolated BetGenius recovery proof"
+        type: boolean
+        default: false
       days:
         description: "look-back in days"
         default: "30"
@@ -162,6 +166,7 @@ jobs:
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           DB_ON_VPS: ${{ vars.DB_ON_VPS }}
           OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+          USE_SCHOOLKIT_BACKUP_READER: ${{ inputs.use_schoolkit_backup_reader }}
           AUDIT_LOCAL_PG_CONTAINER: ${{ job.services.scratch.id }}
           AUDIT_DIR: ${{ runner.temp }}/betgenius-backup-audit
         run: node scripts/ops/readonly-backup-audit.mjs
