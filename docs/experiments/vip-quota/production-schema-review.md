@@ -2,6 +2,8 @@
 
 Reviewed on 15 November 2026. Master remains `35015264` (#201), an ancestor of PR implementation `7c1374b`. PR #202 remains draft. **No production database write, deployment, merge or experiment enablement is authorized by this document or has been performed during this review.**
 
+Operational follow-up: [live target, schema activity and backup/DNS evidence](operational-safety-check.md). **Backup access/recovery is currently a remaining blocker; schema-only production safety is not cleared.**
+
 ## Verdict and exact plan
 
 **Strictly additive and backward-compatible.** The entire schema difference is a new `PaidQuotaAttempt` table, its primary key on `fixtureApiId`, and two ordinary B-tree indexes on `spendDay` and `kickoffDay`. There are no foreign keys, triggers, changes to existing relations, data backfills, updates, renames, drops or type changes. Required fields/defaults apply only to the new, initially empty table. The primary key cannot invalidate any existing production rows.
@@ -65,4 +67,4 @@ gh workflow run db-push.yml \
 - Fresh disposable PostgreSQL experiment concurrency/cost/API/disable/publication checks and the existing atomic publication/quote/notification/rollback checks passed.
 - Preflight's match-evidence and lineup/odds rendering checks passed. Chromium header checks passed at all seven widths in signed-out, signed-in and admin states. `next build` completed against disposable PostgreSQL with the experiment off and provider keys empty; all **76** measured pages passed the performance budgets.
 
-**Readiness:** ready for the next, narrowly scoped production-schema approval after target/backup checks. Not ready to merge/deploy until the approved schema operation and real preflight rerun succeed and separate operational approval is given. The experiment remains disabled by default. Current review changes are limited to the optional plan guard and schema-review artifacts in this same PR.
+**Readiness:** the additive schema approval package is prepared, but the subsequent [operational check](operational-safety-check.md) found a backup-destination DNS blocker. A safe schema-only operation is **not cleared** until backup freshness and isolated recovery are demonstrated. Merge/deployment also remain unapproved and require a successful real preflight rerun. The experiment remains disabled by default, and the reviewed SQL hash guard is unchanged.
