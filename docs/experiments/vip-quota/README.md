@@ -2,6 +2,8 @@
 
 Base: master `35015264` (includes #201). **Disabled; merge, deploy and enable require owner approval. No production changes or paid requests were made to prepare this PR. No supply improvement is claimed.**
 
+Production schema approval package: [compatibility review, exact operation and rollback](production-schema-review.md), with the [reviewed SQL](production-schema.sql). The operation has not been executed against production.
+
 ## Historical simulation, run before implementation
 
 Source: read-only audit [43697810970](https://github.com/Voclain1/betgenius/actions/runs/43697810970), 15 November 2026. `historical-source.txt` contains the archived funnel and attempt-yield output, with no credentials or database connection details. The generated JSON records its SHA-256. Reproduce from repository root:
