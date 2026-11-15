@@ -23,6 +23,7 @@ on:
     branches: ["ccr-0ae2ea72-2ta0dr"]
     paths:
       - scripts/audit-sprint11.ts
+      - scripts/diagnose-entry-price-evidence.ts
       - src/lib/sprint11Audit.ts
       - .github/workflows/sprint11-production-audit.yml
 
@@ -83,6 +84,10 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/audit-sprint11.ts "${{ github.event.inputs.days || '30' }}"
+      - name: Publication-price evidence diagnosis (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/diagnose-entry-price-evidence.ts 60
       - name: Paid performance (existing audit, 60 days)
         env:
           REQUIRE_READ_ONLY: "1"

@@ -162,3 +162,44 @@ export function wilsonPct(k: number, n: number): [number, number] | null {
 
 /** Minimum decided picks before a strike rate or ROI is read as more than anecdote. */
 export const MIN_DECIDED_FOR_READING = 30;
+
+// ── Publication-price evidence ──────────────────────────────────────────────
+
+/** First reason a stored confirmation fails verifiedEntryPrice, in that function's own order. Pure. */
+export type EntryEvidenceStatus =
+  | "VERIFIED"
+  | "NO_CONFIRMATION"
+  | "NO_ENTRY_PRICE_FIELD" // written before entryValueRecord existed (#176)
+  | "ENTRY_PRICE_UNAVAILABLE" // field present but null/<=1: no direct bookmaker line for the exact selection
+  | "MISSING_QUOTE_TIMESTAMP"
+  | "MISSING_CONFIRMED_AT"
+  | "QUOTE_AFTER_CONFIRMATION"
+  | "QUOTE_OLDER_THAN_6H"
+  | "CONFIRMED_AT_OR_AFTER_KICKOFF"
+  | "INVALID_KICKOFF";
+
+export function entryEvidenceStatus(confirmation: unknown, kickoff: Date): EntryEvidenceStatus {
+  if (!Number.isFinite(kickoff.getTime())) return "INVALID_KICKOFF";
+  if (!confirmation || typeof confirmation !== "object" || Array.isArray(confirmation)) return "NO_CONFIRMATION";
+  const c = confirmation as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(c, "entryPrice")) return "NO_ENTRY_PRICE_FIELD";
+  if (typeof c.entryPrice !== "number" || !Number.isFinite(c.entryPrice) || c.entryPrice <= 1) return "ENTRY_PRICE_UNAVAILABLE";
+  const quoted = typeof c.quoteFetchedAt === "string" ? Date.parse(c.quoteFetchedAt) : NaN;
+  const confirmed = typeof c.confirmedAt === "string" ? Date.parse(c.confirmedAt) : NaN;
+  if (!Number.isFinite(quoted)) return "MISSING_QUOTE_TIMESTAMP";
+  if (!Number.isFinite(confirmed)) return "MISSING_CONFIRMED_AT";
+  if (quoted > confirmed) return "QUOTE_AFTER_CONFIRMATION";
+  if (confirmed - quoted > 6 * 60 * 60 * 1000) return "QUOTE_OLDER_THAN_6H";
+  if (confirmed >= kickoff.getTime()) return "CONFIRMED_AT_OR_AFTER_KICKOFF";
+  return "VERIFIED";
+}
+
+/** Code that writes publication-price evidence, in deployment order. */
+export const ENTRY_EVIDENCE_ERAS = [
+  { name: "before #176 (no entry price written)", until: new Date("2026-11-13T14:48:51.000Z") },
+  { name: "#176-#178 (promotion record only)", until: new Date("2026-11-13T21:02:29.000Z") },
+  { name: "after #178 (promotion + publication snapshot)", until: new Date("2100-01-01T00:00:00.000Z") },
+] as const;
+export function entryEvidenceEra(promotedAt: Date): string {
+  return ENTRY_EVIDENCE_ERAS.find((e) => promotedAt < e.until)!.name;
+}
