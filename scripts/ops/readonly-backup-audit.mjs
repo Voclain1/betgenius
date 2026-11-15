@@ -4,6 +4,7 @@ import {spawn,execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createReadStream,createWriteStream,readFileSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
+import {promises as dns} from 'node:dns';
 const approvedPlan='99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6';
 const snapshotSql=readFileSync(new URL('./readonly-backup-snapshot.sql',import.meta.url),'utf8');
 const emit=(kind,value)=>console.log(JSON.stringify({kind,...value}));
@@ -18,6 +19,30 @@ function quote(s){return "'"+s.replaceAll("'","'\\''")+"'";}
 function ssh(command,input){
  try{return execFileSync('ssh',['-o','BatchMode=yes','vps',command],{input,encoding:'utf8',timeout:45000,stdio:['pipe','pipe','pipe']});}
  catch(e){const msg=String(e.stderr??'');e.category=/service.*not running/i.test(msg)?'production-service-unavailable':/Permission denied|Could not resolve|Connection refused|timed out/i.test(msg)?'ssh-or-service-access':/env.sh.*(not found|No such file)/i.test(msg)?'ops-environment-file-missing':'remote-read-only-probe-failed';throw e;}
+}
+async function storageConfigurationEvidence(){
+ // Endpoints are read only into process memory. Never print credentials, URL
+ // userinfo, paths, queries, or complete environment/configuration files.
+ const raw=ssh(ops('printf "%s\\0" "${RCLONE_CONFIG_BACKUP_ENDPOINT-}" "${RCLONE_CONFIG_BACKUP_TYPE-}" "${RCLONE_CONFIG_BACKUP_PROVIDER-}" "${RCLONE_CONFIG_BACKUP_REGION-}" "${RCLONE_CONFIG_BACKUP_FORCE_PATH_STYLE-}"'));
+ const [endpoint,type,provider,region,pathStyle]=raw.split('\0');
+ let u;try{u=new URL(endpoint.includes('://')?endpoint:'https://'+endpoint);}catch{emit('storage_configuration',{endpoint_parseable:false});return;}
+ const clean=(v,pattern)=>pattern.test(v??'')?v:v?'(set, unexpected format)':'(unset)';
+ const containerEndpoint=ssh(remoteBase+' exec -T ops sh -c '+quote('printf %s "${RCLONE_CONFIG_BACKUP_ENDPOINT-}"'));
+ const fileEndpoint=ssh("cd /opt/betgenius && sed -n 's/^RCLONE_CONFIG_BACKUP_ENDPOINT=//p' ops.env").trim().replace(/^(["'])(.*)\1$/,'$2');
+ const ns=ssh(ops("awk '$1 == \"nameserver\" {print $2}' /etc/resolv.conf")).trim().split('\n').filter(x=>/^[0-9a-f:.]+$/i.test(x));
+ const probe=host=>`if getent hosts ${quote(host)} >/dev/null 2>&1; then echo resolves; else echo unresolved; fi`;
+ const hostDns=ssh(probe(u.hostname)).trim();
+ const containerDns=ssh(ops(probe(u.hostname))).trim();
+ const control=ssh(ops(probe('example.com'))).trim();
+ const addresses=await dns.resolve4(u.hostname).then(x=>({status:'resolved',addresses:x}),e=>({status:e.code||'dns-error'}));
+ emit('storage_configuration',{
+  endpoint_hostname:u.hostname,endpoint_protocol:u.protocol,endpoint_port:u.port||'(default)',
+  endpoint_has_url_credentials:!!(u.username||u.password),endpoint_has_path_or_query:!!(u.search||u.pathname!=='/'),
+  type:clean(type,/^(s3|b2|azureblob|sftp)$/),provider:clean(provider,/^(Other|AWS|Backblaze|Cloudflare|DigitalOcean|Wasabi|Minio|Ceph|Dreamhost|Alibaba|TencentCOS|IBMCOS)$/),
+  region:clean(region,/^[a-z0-9-]{1,40}$/),force_path_style:clean(pathStyle,/^(true|false)$/),
+  saved_env_matches_container:endpoint===containerEndpoint,host_ops_file_matches_container:fileEndpoint===containerEndpoint,
+  container_nameservers:ns,host_dns:hostDns,container_dns:containerDns,container_control_dns:control,runner_dns:addresses,
+ });
 }
 function backupDnsEvidence(failedHost){
  const safeHost=/^[a-z0-9][a-z0-9.-]{0,252}$/i.test(failedHost??'')?failedHost:'';
@@ -92,6 +117,7 @@ async function main(){
   };
   inspectPlan();
   emit('audit_phase',{stage:'backup-environment-and-inventory'});
+  await storageConfigurationEvidence();
   const config=ssh(ops('for n in BACKUP_BUCKET RCLONE_CONFIG_BACKUP_TYPE RCLONE_CONFIG_BACKUP_PROVIDER RCLONE_CONFIG_BACKUP_ENDPOINT RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY; do v=$(printenv "$n" || true); if [ -n "$v" ]; then echo "$n=set"; else echo "$n=unset"; fi; done'));
   emit('backup_environment',{presence:config.trim().split('\n')});
   // Only successful backup log lines are returned, never raw container logs/config.
