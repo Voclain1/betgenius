@@ -23,6 +23,13 @@ function ssh(command,input){
 async function storageConfigurationEvidence(){
  // Endpoints are read only into process memory. Never print credentials, URL
  // userinfo, paths, queries, or complete environment/configuration files.
+ const credentialShapeScript=[
+  'id=${RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID-}', 'key=${RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY-}',
+  "if [ \"${#id}\" -eq 32 ] && printf %s \"$id\" | grep -Eq '^[0-9a-fA-F]+$'; then echo access_key_r2_hex32_shape=true; else echo access_key_r2_hex32_shape=false; fi",
+  "if [ \"${#key}\" -eq 64 ] && printf %s \"$key\" | grep -Eq '^[0-9a-fA-F]+$'; then echo secret_key_r2_hex64_shape=true; else echo secret_key_r2_hex64_shape=false; fi",
+  "case \"${BACKUP_BUCKET-}\" in *'<'*|*'>'*|*'${'*|*YOUR_*|*REPLACE*|*CHANGEME*) echo bucket_has_template_markers=true;; *) echo bucket_has_template_markers=false;; esac",
+ ].join('; ');
+ emit('backup_credential_format',{checks:ssh(ops(credentialShapeScript)).trim().split('\n'),authentication_verified:false});
  const raw=ssh(ops('printf "%s\\0" "${RCLONE_CONFIG_BACKUP_ENDPOINT-}" "${RCLONE_CONFIG_BACKUP_TYPE-}" "${RCLONE_CONFIG_BACKUP_PROVIDER-}" "${RCLONE_CONFIG_BACKUP_REGION-}" "${RCLONE_CONFIG_BACKUP_FORCE_PATH_STYLE-}"'));
  const fields=raw.split('\0');const [endpoint,type,provider,region,pathStyle]=fields;
  const clean=(v,pattern)=>pattern.test(v??'')?v:v?'(set, unexpected format)':'(unset)';
