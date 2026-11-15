@@ -17,33 +17,39 @@ function assignments(text){
  }
  return result;
 }
+let stage='secret-presence';
 try{
  const secret=process.env.OPS_ENV_FILE;
  requireTrue(!!secret&&!!process.env.PROD_ENV_FILE);
  const file=ssh('cat /opt/betgenius/ops.env');
- requireTrue(normalize(secret)===normalize(file));
- const settings=assignments(secret);
+ stage='configuration-comparison';
+ const fileMatches=normalize(secret)===normalize(file);
+ let settings={};let parseable=true;try{settings=assignments(secret);}catch{parseable=false;}
+ const liveSettings=assignments(file);
  const fields=['BACKUP_BUCKET','RCLONE_CONFIG_BACKUP_TYPE','RCLONE_CONFIG_BACKUP_PROVIDER','RCLONE_CONFIG_BACKUP_REGION','RCLONE_CONFIG_BACKUP_ENDPOINT','RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID','RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY','RCLONE_CONFIG_BACKUP_FORCE_PATH_STYLE'];
  const read='printf "%s\\0" '+fields.map(k=>'"${'+k+'-}"').join(' ');
  const saved=ops(read).split('\0').slice(0,-1);
  const container=ssh(compose+' exec -T ops sh -c '+quote(read)).split('\0').slice(0,-1);
  requireTrue(saved.length===fields.length&&container.length===fields.length);
- for(let i=0;i<fields.length;i++)requireTrue(saved[i]===(settings[fields[i]]||'')&&container[i]===saved[i]);
- requireTrue(settings.BACKUP_BUCKET==='school-kit-backups/betgenius');
- requireTrue(settings.RCLONE_CONFIG_BACKUP_TYPE==='s3'&&settings.RCLONE_CONFIG_BACKUP_PROVIDER==='Cloudflare');
- requireTrue(/^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com\/?$/.test(settings.RCLONE_CONFIG_BACKUP_ENDPOINT||''));
- requireTrue(/^[a-fA-F0-9]{32}$/.test(settings.RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID||''));
- requireTrue(/^[a-fA-F0-9]{64}$/.test(settings.RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY||''));
- const host=new URL(settings.RCLONE_CONFIG_BACKUP_ENDPOINT).hostname;
+ const fieldMatches=Object.fromEntries(fields.map((k,i)=>[k,saved[i]===(settings[k]||'')]));
+ const endpointPattern=/^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com\/?$/;
+ const validChecks={parseable,bucket_matches:settings.BACKUP_BUCKET==='school-kit-backups/betgenius',s3_type:settings.RCLONE_CONFIG_BACKUP_TYPE==='s3',cloudflare_provider:settings.RCLONE_CONFIG_BACKUP_PROVIDER==='Cloudflare',r2_endpoint_valid:endpointPattern.test(settings.RCLONE_CONFIG_BACKUP_ENDPOINT||''),access_key_format_valid:/^[a-fA-F0-9]{32}$/.test(settings.RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID||''),secret_key_format_valid:/^[a-fA-F0-9]{64}$/.test(settings.RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY||'')};
+ emit('repository_secret_comparison',{entire_ops_file_matches:fileMatches,normalization:'CRLF and terminal newlines only',field_matches:fieldMatches,format_checks:validChecks,credentials_printed:false});
+ for(let i=0;i<fields.length;i++)requireTrue(saved[i]===(liveSettings[fields[i]]||'')&&container[i]===saved[i]);
+ requireTrue(endpointPattern.test(liveSettings.RCLONE_CONFIG_BACKUP_ENDPOINT||''));
+ stage='live-endpoint-dns';
+ const host=new URL(liveSettings.RCLONE_CONFIG_BACKUP_ENDPOINT).hostname;
  ops('getent hosts '+quote(host)+' >/dev/null');
- emit('deployment_settings_match',{entire_ops_file_matches:true,normalization:'CRLF and terminal newlines only',container_and_cron_backup_settings_match:true,r2_endpoint_valid:true,container_dns_resolves:true,credentials_printed:false});
+ emit('live_backup_settings',{container_and_cron_backup_settings_match:true,r2_endpoint_valid:true,container_dns_resolves:true});
  // Both the incoming application settings and the running app must stay off.
+ stage='experiment-flags';
  const flags=process.env.PROD_ENV_FILE.split(/\r?\n/).filter(l=>/^\s*(?:export\s+)?VIP_QUOTA_EXPERIMENT\s*=/.test(l));
  requireTrue(flags.length<=1);
  const incoming=flags.length?assignments(flags[0]).VIP_QUOTA_EXPERIMENT:undefined;
  const live=ssh(compose+' exec -T app node -e '+quote('process.stdout.write(process.env.VIP_QUOTA_EXPERIMENT||"(unset)")')).trim();
  requireTrue(incoming!=='on'&&live!=='on'&&settings.VIP_QUOTA_EXPERIMENT!=='on');
  emit('experiment_disabled',{incoming_app_settings_disabled:true,running_app_disabled:true});
+ stage='authenticated-live-backup-read';
  const listing=()=>JSON.parse(ops('rclone lsjson "backup:${BACKUP_BUCKET}/daily" --files-only'));
  const files=listing().filter(x=>!x.IsDir&&/^betgenius-\d{4}-\d{2}-\d{2}T\d{4}Z\.dump$/.test(x.Name)&&x.Size>1024).sort((a,b)=>a.Name.localeCompare(b.Name));
  const latest=files.at(-1);requireTrue(!!latest);
@@ -54,8 +60,10 @@ try{
  if(known[latest.Name])requireTrue(checksum===known[latest.Name]);
  const after=listing().find(x=>x.Name===latest.Name);requireTrue(after&&after.Size===latest.Size&&after.ModTime===latest.ModTime);
  emit('authenticated_backup_access',{list_succeeded:true,full_object_get_succeeded:true,latest:{name:latest.Name,bytes:latest.Size,modified:latest.ModTime,age_hours:age,sha256:checksum},matches_previously_restored_archive:known[latest.Name]?true:null});
- emit('configuration_verdict',{repository_secret_matches_repaired_vps:true,shipping_current_secret_preserves_repair:true,production_database_accessed:false,production_written:false,deployed:false});
+ const matched=fileMatches&&Object.values(fieldMatches).every(Boolean)&&Object.values(validChecks).every(Boolean);
+ emit('configuration_verdict',{repository_secret_matches_repaired_vps:matched,shipping_current_secret_preserves_repair:matched,production_database_accessed:false,production_written:false,deployed:false});
+ stage='repository-secret-must-match';requireTrue(matched);
 }catch{
  // Errors can carry command output or assertion operands containing secrets.
- console.error('Secret-safe configuration verification failed; values and subprocess output withheld.');process.exitCode=1;
+ console.error('Secret-safe configuration verification failed at '+stage+'; values and subprocess output withheld.');process.exitCode=1;
 }
