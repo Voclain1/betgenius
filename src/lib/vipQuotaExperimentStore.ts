@@ -12,6 +12,16 @@ export async function reserveExtraAttempt(target: VipPremiumTarget, config: Quot
     // consumption is separately reserved per dispatch in football/usage.ts.
     const current = quotaExperimentConfig(process.env, now);
     if (!current || JSON.stringify(current) !== JSON.stringify(config)) return null;
+    // The extra allowance must never re-buy a baseline fixture rescheduled
+    // beyond the ordinary four-day accounting lookback. Parse exact ids after
+    // the SQL prefilter, since textual id prefixes can also match larger ids.
+    const historical = await tx.aIJob.findMany({
+      where: { AND: [
+        { prompt: { contains: '\"intent\":\"VIP_PREMIUM\"' } },
+        { prompt: { contains: `"fixtureApiId":${target.fixtureApiId}` } },
+      ] }, select: { prompt: true, createdAt: true },
+    });
+    if (historical.some(j => readVipPremiumAttempt(j.prompt, j.createdAt)?.fixtureApiId === target.fixtureApiId)) return null;
     const all = await tx.paidQuotaAttempt.findMany();
     const { start, end } = lagosTodayBounds(now);
     const jobs = await tx.aIJob.findMany({ where: { createdAt: { gte: new Date(now.getTime() - 4 * 86400_000) }, prompt: { contains: '"intent":"VIP_PREMIUM"' } }, select: { prompt: true, createdAt: true } });

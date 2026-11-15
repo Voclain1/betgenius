@@ -32,6 +32,9 @@ async function main(){
  const user=await prisma.user.upsert({where:{email:"quota-test@example.invalid"},create:{email:"quota-test@example.invalid"},update:{}});
  await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
  const target=(id:number)=>({fixtureApiId:id,kickoff} as VipPremiumTarget);
+ // An old baseline attempt still blocks an extra after a distant reschedule.
+ await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:777,kickoff:new Date(Date.now()-10*86400_000).toISOString()}),createdAt:new Date(Date.now()-10*86400_000),model:"test",rawOutput:"{}"}});
+ assert.equal(await reserveExtraAttempt(target(777),cfg),null);
  // Concurrent reservations cannot double-charge a fixture or overrun the ceiling.
  const results=await Promise.all(Array.from({length:12},(_,i)=>reserveExtraAttempt(target(100+i%3),cfg)));
  assert.equal(results.filter(Boolean).length,2);
