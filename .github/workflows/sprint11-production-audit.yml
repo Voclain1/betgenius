@@ -1,4 +1,6 @@
-# VIP/Premium Sprint 11: production validation audit. READ-ONLY.
+# VIP/Premium Sprint 11: production validation audit. Read-only by default.
+# Explicit approved repair/backup-only modes can update ops storage settings
+# and offsite backup objects; neither writes the production database.
 #
 # No schedule: runs on demand (workflow_dispatch) or when the audit itself
 # changes on the Sprint 11 branch. Every database session is forced read-only
@@ -204,6 +206,9 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN" > "$RUNNER_TEMP/proof.json"
           node -e 'const r=JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/proof.json")); if(r.conclusion!=="success" || r.path!==".github/workflows/sprint11-production-audit.yml" || r.head_branch!=="codex/vip-controlled-quota" || Date.now()-Date.parse(r.updated_at)>3600000) process.exit(1)'
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN/jobs" --jq '.jobs[] | select(.name=="operational-safety") | .conclusion' | grep -x success
+          # A bucket-only success is not isolated recovery proof.
+          gh run view "$PROOF_RUN" --repo "$GITHUB_REPOSITORY" --log > "$RUNNER_TEMP/proof.log"
+          node -e 'const s=require("fs").readFileSync(process.env.RUNNER_TEMP+"/proof.log","utf8"); const rows=s.split("\n").filter(l=>l.includes("{\"kind\":\"operational_verdict\"")); if(!rows.some(l=>{const r=JSON.parse(l.slice(l.indexOf("{")));return r.target_verified&&r.daily_backup_fresh&&r.isolated_restore_passed&&r.schema_stable_during_observations&&r.production_written===false}))process.exit(1)'
       - uses: ./.github/actions/vps-ssh
         with:
           host: ${{ secrets.VPS_HOST }}

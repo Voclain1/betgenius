@@ -110,3 +110,22 @@ reviewed indexes. Prisma reported synchronization at **13:52:54 Lagos** and the
 workflow's schema verification passed. The existing reviewed workflow/hash
 guard is byte-for-byte unchanged. No application container was deployed or
 experiment enabled. No production data manipulation or restore was performed.
+
+### Post-schema recovery
+
+[Post-schema backup 43716126024](https://github.com/Voclain1/betgenius/actions/runs/43716126024)
+and [isolated restore 43716190020](https://github.com/Voclain1/betgenius/actions/runs/43716190020)
+both passed. Latest archive `betgenius-2026-11-15T1253Z.dump`, **30,185,719 bytes**,
+modified **15 November 13:53:38 Lagos**, was **2.43 minutes old** at verification.
+SHA-256 `15fec36c6c683f1aae8f10c6f9d9dd1b8edbba688ee0358d6144957bc6ff2cd2`.
+The full restore reproduced **43 tables**, including the new ledger, and the
+post-schema column/index/constraint manifest matched live production. Zero
+invalid indexes/unvalidated constraints; representative row counts remained
+250 / 8,012 / 185 / 69. Source schema was stable with no DDL candidates/locks
+through 13:56:20 Lagos; experiment remained unset.
+[Exact post-schema evidence](post-schema-recovery.json).
+
+[Post-schema preflight 43716102385](https://github.com/Voclain1/betgenius/actions/runs/43716102385)
+passed without bypass, including schema sync and all downstream steps. Final
+head CI status is linked in PR #202; a passing earlier head is not represented
+as final-head completion.

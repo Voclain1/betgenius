@@ -1,0 +1,214 @@
+{
+  "schema_run": 43715964797,
+  "backup_run": 43716126024,
+  "restore_run": 43716190020,
+  "evidence": [
+    {
+      "at_utc": "2026-11-15T12:55:32.6523439Z",
+      "kind": "audit_phase",
+      "stage": "running-app-target"
+    },
+    {
+      "at_utc": "2026-11-15T12:55:35.0024798Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "at_utc": "2026-11-15T12:55:35.0026009Z",
+      "kind": "audit_phase",
+      "stage": "read-only-production-and-repository-targets"
+    },
+    {
+      "at_utc": "2026-11-15T12:55:37.1665099Z",
+      "kind": "production_start",
+      "at": "2026-11-15T12:55:37.016506+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "261c48eb6ee7c999a3f5bd70e4ff04e3",
+      "paid_quota_table_present": true,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8012,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:55:38.3360628Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "at_utc": "2026-11-15T12:55:38.6639475Z",
+      "kind": "live_schema_manifest",
+      "schema_fingerprint": "5c9bef89565d6945af03b56c2f84cea7",
+      "table_count": 43,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:55:38.6642191Z",
+      "kind": "audit_phase",
+      "stage": "backup-environment-and-inventory"
+    },
+    {
+      "at_utc": "2026-11-15T12:55:40.6703991Z",
+      "kind": "backup_credential_format",
+      "checks": [
+        "access_key_r2_hex32_shape=true",
+        "secret_key_r2_hex64_shape=true",
+        "bucket_has_template_markers=false"
+      ],
+      "authentication_verified": false
+    },
+    {
+      "at_utc": "2026-11-15T12:55:48.8004556Z",
+      "kind": "storage_endpoint_shape",
+      "returned_fields": 6,
+      "endpoint_length": 65,
+      "has_surrounding_whitespace": false,
+      "has_quote_wrappers": false,
+      "has_angle_wrappers": false,
+      "contains_whitespace": false,
+      "contains_template_markers": false,
+      "normalization_would_change": false
+    },
+    {
+      "at_utc": "2026-11-15T12:55:54.9010556Z",
+      "kind": "storage_configuration",
+      "endpoint_hostname": "46ec5b1fe217cb7a05ba922f8b306870.r2.cloudflarestorage.com",
+      "endpoint_protocol": "https:",
+      "endpoint_port": "(default)",
+      "endpoint_has_url_credentials": false,
+      "endpoint_has_path_or_query": false,
+      "type": "s3",
+      "provider": "Cloudflare",
+      "region": "auto",
+      "force_path_style": "(unset)",
+      "saved_env_matches_container": true,
+      "host_ops_file_matches_container": true,
+      "container_nameservers": [
+        "127.0.0.11"
+      ],
+      "host_dns": "resolves",
+      "container_dns": "resolves",
+      "container_control_dns": "resolves",
+      "runner_dns": {
+        "status": "resolved",
+        "addresses": [
+          "172.64.190.1",
+          "172.64.66.1"
+        ]
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:55:56.9550049Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:55:58.9374149Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "at_utc": "2026-11-15T12:56:04.0877372Z",
+      "kind": "backup_inventory",
+      "daily_files": 3,
+      "weekly_files": 2,
+      "latest_daily": {
+        "name": "betgenius-2026-11-15T1253Z.dump",
+        "bytes": 30185719,
+        "modified": "2026-11-15T12:53:38.046405503Z"
+      },
+      "latest_weekly": {
+        "name": "betgenius-2026-11-15T1253Z.dump",
+        "bytes": 30185719,
+        "modified": "2026-11-15T12:53:38.046405503Z"
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:56:04.0880155Z",
+      "kind": "backup_freshness",
+      "age_hours": 0.04056694444444445,
+      "max_age_hours": 30
+    },
+    {
+      "at_utc": "2026-11-15T12:56:09.7927023Z",
+      "kind": "download_verified",
+      "bytes": 30185719,
+      "sha256": "15fec36c6c683f1aae8f10c6f9d9dd1b8edbba688ee0358d6144957bc6ff2cd2"
+    },
+    {
+      "at_utc": "2026-11-15T12:56:09.9060429Z",
+      "kind": "archive_metadata",
+      "lines": [
+        "; Archive created at 2026-11-15 12:53:34 UTC",
+        ";     dbname: betgenius",
+        ";     TOC Entries: 299",
+        ";     Dump Version: 1.16-0",
+        ";     Dumped from database version: 17.11",
+        ";     Dumped by pg_dump version: 17.11",
+        "; Selected TOC Entries:"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:56:18.4853291Z",
+      "kind": "restored_schema_manifest",
+      "schema_fingerprint": "5c9bef89565d6945af03b56c2f84cea7",
+      "table_count": 43,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:56:18.4854748Z",
+      "kind": "isolated_restore_passed",
+      "database": "restore_audit",
+      "User": 250,
+      "Prediction": 8012,
+      "Subscription": 185,
+      "PaymentAttempt": 69,
+      "production_database_written": false
+    },
+    {
+      "at_utc": "2026-11-15T12:56:23.2769875Z",
+      "kind": "schema_observation_window",
+      "start": "2026-11-15T12:55:37.016506+00:00",
+      "end": "2026-11-15T12:56:20.482664+00:00",
+      "samples": 2,
+      "fingerprint": "261c48eb6ee7c999a3f5bd70e4ff04e3",
+      "active_ddl_or_schema_locks": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:56:23.2773179Z",
+      "kind": "operational_verdict",
+      "target_verified": true,
+      "daily_backup_fresh": true,
+      "isolated_restore_passed": true,
+      "schema_stable_during_observations": true,
+      "production_written": false
+    }
+  ]
+}
