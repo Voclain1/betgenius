@@ -52,6 +52,8 @@ export class CertaintyLanguageError extends Error {
 }
 
 export type GenerateFixtureInput = {
+  /** Internal immutable attribution; never a qualification bypass. */
+  quotaExperiment?: string;
   fixtureId?: string;
   /**
    * Provider fixture id. Supplied by the scheduled worker, which already has it

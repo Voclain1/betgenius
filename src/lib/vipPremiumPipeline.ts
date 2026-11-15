@@ -1,3 +1,4 @@
+import { experimentalDays, quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
 import { reliabilityControls } from "@/lib/reliabilitySnapshot";
 import { recordReliability } from "@/lib/reliabilityStore";
 import { captureReliabilityPrice } from "@/lib/reliabilityPrice";
@@ -199,7 +200,17 @@ export function vipPremiumSpendFrom(generatedToday: number): number {
  * (selectVipPremiumTargets) and again at publication.
  */
 export async function vipPremiumQuotaRemaining(now: Date = new Date()): Promise<number> {
-  return vipPremiumSpendFrom(await vipPremiumGeneratedToday(now));
+  let generated = await vipPremiumGeneratedToday(now);
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") {
+    const { start, end } = lagosTodayBounds(now);
+    const [reservations, jobs] = await Promise.all([
+      prisma.paidQuotaAttempt.findMany({ where: { createdAt: { gte: start, lt: end } } }),
+      prisma.aIJob.findMany({ where: { createdAt: { gte: start, lt: end }, prompt: { contains: '"intent":"VIP_PREMIUM"' } }, select: { prompt: true } }),
+    ]);
+    const ids = new Set(jobs.map(j => { try { return JSON.parse(j.prompt).fixtureApiId; } catch { return null; } }));
+    generated += reservations.filter(r => !ids.has(r.fixtureApiId)).length;
+  }
+  return vipPremiumSpendFrom(generated);
 }
 
 // ── Targeting ────────────────────────────────────────────────────────────────
@@ -215,7 +226,16 @@ export async function loadVipPremiumAttempts(now: Date = new Date()): Promise<Ov
     where: { createdAt: { gte: new Date(now.getTime() - ATTEMPT_LOOKBACK_MS) }, prompt: { contains: `"intent":"${VIP_PREMIUM_INTENT}"` } },
     select: { prompt: true, createdAt: true },
   });
-  return jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+  const attempts = jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") {
+    // Extra-fixture identity survives a reschedule beyond the normal lookback.
+    const reservations = await prisma.paidQuotaAttempt.findMany();
+    for (const r of reservations) if (!attempts.some(a => a.fixtureApiId === r.fixtureApiId)) {
+      const a = readVipPremiumAttempt(JSON.stringify({ intent: VIP_PREMIUM_INTENT, fixtureApiId: r.fixtureApiId, kickoff: `${r.kickoffDay}T12:00:00+01:00` }), r.createdAt);
+      if (a) attempts.push(a);
+    }
+  }
+  return attempts;
 }
 
 /**
@@ -439,6 +459,8 @@ export async function recordPaidSelectionShadow(input: {
 }
 
 export type TargetSelection = {
+  /** Cache-qualified rich-day allowance; absent when the experiment switch is off. */
+  experiment?: { enabled: boolean; quotas: Record<string, number> };
   targets: VipPremiumTarget[];
   /** Covered (ledger SUCCEEDED) fixtures inside the paid-generation window. */
   considered: number;
@@ -579,7 +601,11 @@ export async function selectVipPremiumTargets(
     }
   }
 
-  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used, quota: VIP_PREMIUM_DAILY_QUOTA }, spareSlots);
+  const experiment = options.anyLeague ? null : quotaExperimentConfig(process.env, now);
+  // Cache-only eligibility: no extra warming budget and no threshold changes.
+  const eligible = experiment ? qualifyVipPremiumTargets(plan.candidates, quotes, now, plan.candidates.length, undefined, spareSlots).targets : [];
+  const quotas = experimentalDays(used, eligible.map(c => ({ day: lagosDateKey(c.kickoff), fixtureApiId: c.fixtureApiId })), experiment?.extra ?? 0);
+  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used, quota: VIP_PREMIUM_DAILY_QUOTA, byDay: quotas }, spareSlots);
 
   let spareQuota: TargetSelection["spareQuota"];
   if (plan.spareQuota) {
@@ -599,6 +625,7 @@ export async function selectVipPremiumTargets(
     };
   }
   return {
+    ...(process.env.VIP_QUOTA_EXPERIMENT === "on" ? { experiment: { enabled: !!experiment, quotas: Object.fromEntries(quotas) } } : {}),
     targets: odds.targets,
     considered: plan.considered,
     inScope: plan.candidates.length,
@@ -783,6 +810,18 @@ export async function autoPublishVipPremiumPrediction(
   const attemptNumber = own
     ? sameDayAttempts.filter((a) => attemptKickoffDay(a) === attemptKickoffDay(own) && a.createdAt <= own.createdAt).length
     : Infinity;
+  let experimentalJob = false;
+  try { experimentalJob = JSON.parse(row.aiJob?.prompt ?? "{}").quotaExperiment === "vip-quota-v1"; } catch { /* invalid attribution fails closed */ }
+  const experiment = quotaExperimentConfig(process.env, now);
+  let withinQuota = attemptNumber <= VIP_PREMIUM_DAILY_QUOTA && !experimentalJob;
+  if (!withinQuota && experimentalJob && row.fixtureApiId != null && experiment) {
+    const reservation = await prisma.paidQuotaAttempt.findUnique({ where: { fixtureApiId: row.fixtureApiId } });
+    const extra = experiment.extra;
+    withinQuota = !!reservation && row.aiJob != null && reservation.experiment === "vip-quota-v1"
+      && reservation.createdAt <= row.aiJob.createdAt && reservation.usageReliable && reservation.modelRequests === 1
+      && reservation.kickoffDay === lagosDateKey(row.kickoff ?? new Date(0))
+      && attemptNumber <= VIP_PREMIUM_DAILY_QUOTA + extra;
+  }
   const others = onFixture.filter((r) => r.id !== row.id);
 
   const verdict = evaluateMarketConfirmed({
@@ -809,7 +848,7 @@ export async function autoPublishVipPremiumPrediction(
       categories: row.categories.map((c) => c.category),
     },
     verdict,
-    paidPublishFixture(row, ledger?.status ?? null, onFixture, attemptNumber <= VIP_PREMIUM_DAILY_QUOTA),
+    paidPublishFixture(row, ledger?.status ?? null, onFixture, withinQuota),
   );
   if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
 

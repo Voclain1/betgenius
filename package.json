@@ -161,7 +161,11 @@
     "check:registration-signin-browser": "tsx scripts/check-registration-signin-browser.ts",
     "check:release-readiness": "tsx scripts/check-release-readiness.ts",
     "check:release-browser": "tsx scripts/check-release-browser.ts",
-    "check:release-confirmation-browser": "tsx scripts/check-release-confirmation-browser.ts"
+    "check:release-confirmation-browser": "tsx scripts/check-release-confirmation-browser.ts",
+    "check:vip-quota-experiment": "tsx scripts/check-vip-quota-experiment.ts",
+    "check:vip-quota-postgres": "tsx scripts/check-vip-quota-postgres.ts",
+    "simulate:vip-quota": "python3 scripts/simulate-vip-quota.py",
+    "report:vip-quota": "tsx scripts/report-vip-quota-experiment.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

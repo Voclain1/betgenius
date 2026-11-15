@@ -1,0 +1,175 @@
+{
+  "verdict": "BLOCKED: backup destination DNS prevents verifying freshness and recovery",
+  "latest_audit_run": "https://github.com/Voclain1/betgenius/actions/runs/43708477253",
+  "latest_audit_head": "8189e5955d45b7f32686b77fe7d95d9c49c22cdd",
+  "latest_audit_job": 132794651043,
+  "scheduled_restore_run": "https://github.com/Voclain1/betgenius/actions/runs/41300649446",
+  "scheduled_restore_evidence": [
+    "2026-11-01T11:09:57.1765466Z NOTICE: Config file \"/root/.config/rclone/rclone.conf\" not found - using defaults",
+    "2026-11-01T11:09:57.5454067Z no backups found",
+    "2026-11-01T11:09:57.5547251Z Process completed with exit code 1."
+  ],
+  "production_schema_observations": [
+    {
+      "logged_at_utc": "2026-11-15T11:13:18.5028296Z",
+      "kind": "production_start",
+      "at": "2026-11-15T11:13:18.35574+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8009,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:13:28.1010631Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:17:42.1574297Z",
+      "kind": "production_start",
+      "at": "2026-11-15T11:17:42.018721+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8009,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:17:47.3979817Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:04.2392359Z",
+      "kind": "production_start",
+      "at": "2026-11-15T11:22:04.112011+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8009,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:10.1685796Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    }
+  ],
+  "latest_observations": [
+    {
+      "logged_at_utc": "2026-11-15T11:22:02.6496232Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:05.0161462Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:11.6380653Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:13.1026593Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:14.5841681Z",
+      "kind": "backup_inventory_error",
+      "prefix": "daily",
+      "category": "storage-or-transport-error",
+      "error_type": "Error",
+      "exit_status": 1,
+      "signal": null,
+      "safe_error_tokens": [
+        "no such host"
+      ],
+      "stdout_bytes": null,
+      "stderr_bytes": 912
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:16.0431135Z",
+      "kind": "backup_dns_evidence",
+      "failed_request_hostname_sha256": "a5cdddc66574a7d7666bd7020980963ae3be6d233091f9817f31b32a3bba8683",
+      "checks": [
+        "endpoint_hostname_sha256=24ed390dead82200d83f18d996e0f28fb227f90e735afb14e9f46c7133a3f028",
+        "reserved_example_or_invalid_domain=false",
+        "dns_tool=getent",
+        "endpoint_dns_resolves=false",
+        "control_dns_resolves=true",
+        "failed_request_host_resolves=false"
+      ]
+    },
+    {
+      "logged_at_utc": "2026-11-15T11:22:16.0498163Z",
+      "kind": "audit_blocked",
+      "reason": "storage-or-transport-error"
+    }
+  ],
+  "production_backup_freshness_verified": false,
+  "production_backup_recoverability_verified": false,
+  "production_archive_downloaded": false,
+  "production_database_written": false,
+  "reviewed_sql_guard_unchanged": true,
+  "customer_rows_or_credentials_in_this_evidence": false
+}

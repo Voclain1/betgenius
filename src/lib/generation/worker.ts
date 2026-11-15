@@ -1,3 +1,7 @@
+import { quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
+import { reserveExtraAttempt, runExtraAttempt } from "@/lib/vipQuotaExperimentStore";
+import { loadVipPremiumAttempts, vipPremiumQuotaRemaining } from "@/lib/vipPremiumPipeline";
+import { attemptsByKickoffDay } from "@/lib/vipPremiumOverlay";
 /**
  * The scheduled generation run.
  *
@@ -767,8 +771,18 @@ async function runVipPremiumGenerationInner(opts: { authorId: string; limit?: nu
       }
       const label = `${t.homeTeam} vs ${t.awayTeam}`;
       try {
+        // Recheck under the run lease; the route's earlier count is only advisory.
+        const experimentOn = !!selection.experiment || process.env.VIP_QUOTA_EXPERIMENT === "on";
+        if (experimentOn && await vipPremiumQuotaRemaining() <= 0) { base.reason = "daily model-call spend cap reached"; break; }
+        const attempts = experimentOn ? await loadVipPremiumAttempts() : [];
+        if (attempts.some(a => a.fixtureApiId === t.fixtureApiId)) continue;
+        const used = attemptsByKickoffDay(attempts).get(lagosDateKey(t.kickoff)) ?? 0;
+        const config = quotaExperimentConfig();
+        const extra = used >= 8;
+        if (extra && (!config || !selection.experiment?.quotas[lagosDateKey(t.kickoff)])) continue;
+        if (extra && !await reserveExtraAttempt(t, config!)) continue;
         const avoidPicks = await existingPicksOnFixture(t);
-        const { predictions, sources } = await generateAndPersistPrediction({
+        const generate = () => generateAndPersistPrediction({
           home: t.homeTeam,
           away: t.awayTeam,
           league: t.leagueName ?? "",
@@ -787,7 +801,9 @@ async function runVipPremiumGenerationInner(opts: { authorId: string; limit?: nu
           homeTeamApiId: t.homeTeamApiId,
           awayTeamApiId: t.awayTeamApiId,
           fixtureApiId: t.fixtureApiId,
+          ...(extra ? { quotaExperiment: "vip-quota-v1" } : {}),
         });
+        const { predictions, sources } = extra ? await runExtraAttempt(t.fixtureApiId, config!, generate) : await generate();
         for (const s of [sources.homeTeam, sources.awayTeam, sources.standings, sources.h2h]) {
           if (s === "cache") base.cacheHits++;
           else if (s === "fetched") base.fetches++;

@@ -1,3 +1,4 @@
+import { beforeExperimentalModel } from "@/lib/vipQuotaExperiment";
 /**
  * Turning a MatchDigest into a prediction — prompt construction, provider
  * selection, parsing.
@@ -895,6 +896,7 @@ export async function completeWithFallback<T>(
     if (!provider.isConfigured()) continue;
 
     try {
+      await beforeExperimentalModel(provider.name, Buffer.byteLength(request.system + request.user, "utf8"));
       const res = await provider.complete(request);
 
       let output: T;

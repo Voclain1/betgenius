@@ -1,0 +1,702 @@
+{
+  "existing_recovery_run": 43715408678,
+  "repair_run": 43715635012,
+  "fresh_recovery_run": 43715713257,
+  "monthly_recovery_run": 43715717153,
+  "existing_recovery": [
+    {
+      "at_utc": "2026-11-15T12:46:20.4607768Z",
+      "kind": "self_test",
+      "passed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:46:20.5511160Z",
+      "kind": "audit_phase",
+      "stage": "running-app-target"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:22.1510399Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:22.1511890Z",
+      "kind": "audit_phase",
+      "stage": "read-only-production-and-repository-targets"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:23.5741151Z",
+      "kind": "production_start",
+      "at": "2026-11-15T12:46:23.461495+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8012,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:46:24.4133542Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:29.5989609Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:46:29.8844088Z",
+      "kind": "live_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:46:31.1382046Z",
+      "kind": "backup_reader",
+      "source": "existing-school-kit-remote",
+      "prefix": "school-kit-backups/betgenius",
+      "production_configuration_changed": false
+    },
+    {
+      "at_utc": "2026-11-15T12:46:31.1383582Z",
+      "kind": "audit_phase",
+      "stage": "backup-environment-and-inventory"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:32.4966927Z",
+      "kind": "backup_credential_format",
+      "checks": [
+        "access_key_r2_hex32_shape=true",
+        "secret_key_r2_hex64_shape=false",
+        "bucket_has_template_markers=false"
+      ],
+      "authentication_verified": false
+    },
+    {
+      "at_utc": "2026-11-15T12:46:39.1521029Z",
+      "kind": "storage_configuration",
+      "type": "s3",
+      "provider": "Cloudflare",
+      "region": "auto",
+      "force_path_style": "(unset)",
+      "returned_fields": 6,
+      "endpoint_length": 46,
+      "has_surrounding_whitespace": false,
+      "has_quote_wrappers": false,
+      "has_angle_wrappers": false,
+      "contains_whitespace": false,
+      "contains_template_markers": true,
+      "saved_env_matches_container": true,
+      "host_ops_file_matches_container": true,
+      "container_nameservers": [
+        "127.0.0.11"
+      ],
+      "endpoint_parseable": false,
+      "normalization_would_change": false,
+      "container_control_dns": "resolves",
+      "runner_control_dns": "resolves"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:40.4704064Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:46:41.7905620Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "at_utc": "2026-11-15T12:46:44.9000284Z",
+      "kind": "backup_inventory",
+      "daily_files": 1,
+      "weekly_files": 0,
+      "latest_daily": {
+        "name": "betgenius-2026-11-14T1711Z.dump",
+        "bytes": 29850681,
+        "modified": "2026-11-14T17:11:30.648252335Z"
+      },
+      "latest_weekly": null
+    },
+    {
+      "at_utc": "2026-11-15T12:46:44.9001362Z",
+      "kind": "backup_freshness",
+      "age_hours": 19.587291944444445,
+      "max_age_hours": 30
+    },
+    {
+      "at_utc": "2026-11-15T12:46:48.9199314Z",
+      "kind": "download_verified",
+      "bytes": 29850681,
+      "sha256": "c955ae877ec124927f1c6bae1effc33f5d98174132042e56378893b55dea1b85"
+    },
+    {
+      "at_utc": "2026-11-15T12:46:49.0249799Z",
+      "kind": "archive_metadata",
+      "lines": [
+        "; Archive created at 2026-11-14 17:11:26 UTC",
+        ";     dbname: betgenius",
+        ";     TOC Entries: 294",
+        ";     Dump Version: 1.16-0",
+        ";     Dumped from database version: 17.11",
+        ";     Dumped by pg_dump version: 17.11",
+        "; Selected TOC Entries:"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:46:58.1939231Z",
+      "kind": "restored_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:46:58.1940535Z",
+      "kind": "isolated_restore_passed",
+      "database": "restore_audit",
+      "User": 246,
+      "Prediction": 7942,
+      "Subscription": 182,
+      "PaymentAttempt": 68,
+      "production_database_written": false
+    },
+    {
+      "at_utc": "2026-11-15T12:47:04.8382800Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:47:06.4802093Z",
+      "kind": "schema_observation_window",
+      "start": "2026-11-15T12:46:23.461495+00:00",
+      "end": "2026-11-15T12:46:59.525742+00:00",
+      "samples": 2,
+      "fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "active_ddl_or_schema_locks": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:47:06.4803873Z",
+      "kind": "operational_verdict",
+      "target_verified": true,
+      "daily_backup_fresh": true,
+      "isolated_restore_passed": true,
+      "schema_stable_during_observations": true,
+      "production_written": false
+    }
+  ],
+  "repair": [
+    {
+      "at_utc": "2026-11-15T12:47:54.6998277Z",
+      "kind": "candidate_authenticated",
+      "prefix": "school-kit-backups/betgenius",
+      "archive_count": 1
+    },
+    {
+      "at_utc": "2026-11-15T12:47:56.0434736Z",
+      "kind": "backup_storage_repaired",
+      "changed_fields": [
+        "RCLONE_CONFIG_BACKUP_ENDPOINT",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY"
+      ],
+      "prefix": "school-kit-backups/betgenius",
+      "app_and_postgres_containers_unchanged": true,
+      "rollback_file": "ops.env.before-backup-repair-20261115T124754Z",
+      "github_secret_synchronized": false
+    },
+    {
+      "at_utc": "2026-11-15T12:48:05.4417708Z",
+      "kind": "scheduled_backup_script_passed",
+      "message": "2026-11-15T12:48:05Z backup ok: betgenius-2026-11-15T1247Z.dump, 30184133 bytes",
+      "production_database_written": false
+    },
+    {
+      "at_utc": "2026-11-15T12:48:05.9086645Z",
+      "kind": "backup_inventory_after",
+      "daily": [
+        {
+          "Path": "betgenius-2026-11-14T1711Z.dump",
+          "Name": "betgenius-2026-11-14T1711Z.dump",
+          "Size": 29850681,
+          "MimeType": "application/octet-stream",
+          "ModTime": "2026-11-14T17:11:30.648252335Z",
+          "IsDir": false
+        },
+        {
+          "Path": "betgenius-2026-11-15T1247Z.dump",
+          "Name": "betgenius-2026-11-15T1247Z.dump",
+          "Size": 30184133,
+          "MimeType": "application/octet-stream",
+          "ModTime": "2026-11-15T12:48:00.758583586Z",
+          "IsDir": false
+        }
+      ]
+    }
+  ],
+  "fresh_recovery": [
+    {
+      "at_utc": "2026-11-15T12:49:51.7378064Z",
+      "kind": "self_test",
+      "passed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:49:51.8038244Z",
+      "kind": "audit_phase",
+      "stage": "running-app-target"
+    },
+    {
+      "at_utc": "2026-11-15T12:49:53.4972456Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "at_utc": "2026-11-15T12:49:53.4973209Z",
+      "kind": "audit_phase",
+      "stage": "read-only-production-and-repository-targets"
+    },
+    {
+      "at_utc": "2026-11-15T12:49:55.2347801Z",
+      "kind": "production_start",
+      "at": "2026-11-15T12:49:55.107647+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8012,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:49:56.1417201Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:02.1239294Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:50:02.4918727Z",
+      "kind": "live_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:02.4919484Z",
+      "kind": "audit_phase",
+      "stage": "backup-environment-and-inventory"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:04.2530683Z",
+      "kind": "backup_credential_format",
+      "checks": [
+        "access_key_r2_hex32_shape=true",
+        "secret_key_r2_hex64_shape=true",
+        "bucket_has_template_markers=false"
+      ],
+      "authentication_verified": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:10.8669950Z",
+      "kind": "storage_endpoint_shape",
+      "returned_fields": 6,
+      "endpoint_length": 65,
+      "has_surrounding_whitespace": false,
+      "has_quote_wrappers": false,
+      "has_angle_wrappers": false,
+      "contains_whitespace": false,
+      "contains_template_markers": false,
+      "normalization_would_change": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:16.0764143Z",
+      "kind": "storage_configuration",
+      "endpoint_hostname": "46ec5b1fe217cb7a05ba922f8b306870.r2.cloudflarestorage.com",
+      "endpoint_protocol": "https:",
+      "endpoint_port": "(default)",
+      "endpoint_has_url_credentials": false,
+      "endpoint_has_path_or_query": false,
+      "type": "s3",
+      "provider": "Cloudflare",
+      "region": "auto",
+      "force_path_style": "(unset)",
+      "saved_env_matches_container": true,
+      "host_ops_file_matches_container": true,
+      "container_nameservers": [
+        "127.0.0.11"
+      ],
+      "host_dns": "resolves",
+      "container_dns": "resolves",
+      "container_control_dns": "resolves",
+      "runner_dns": {
+        "status": "resolved",
+        "addresses": [
+          "172.64.190.1",
+          "172.64.66.1"
+        ]
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:50:17.6944807Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:50:19.3599985Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "at_utc": "2026-11-15T12:50:23.6777948Z",
+      "kind": "backup_inventory",
+      "daily_files": 2,
+      "weekly_files": 1,
+      "latest_daily": {
+        "name": "betgenius-2026-11-15T1247Z.dump",
+        "bytes": 30184133,
+        "modified": "2026-11-15T12:48:00.758583586Z"
+      },
+      "latest_weekly": {
+        "name": "betgenius-2026-11-15T1247Z.dump",
+        "bytes": 30184133,
+        "modified": "2026-11-15T12:48:00.758583586Z"
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:50:23.6779702Z",
+      "kind": "backup_freshness",
+      "age_hours": 0.03969972222222222,
+      "max_age_hours": 30
+    },
+    {
+      "at_utc": "2026-11-15T12:50:28.1282261Z",
+      "kind": "download_verified",
+      "bytes": 30184133,
+      "sha256": "95ed97a8308eebf0a45e8cd4f6e846b550facde9bd431fb29bf9bcd34005301a"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:28.2088404Z",
+      "kind": "archive_metadata",
+      "lines": [
+        "; Archive created at 2026-11-15 12:47:57 UTC",
+        ";     dbname: betgenius",
+        ";     TOC Entries: 294",
+        ";     Dump Version: 1.16-0",
+        ";     Dumped from database version: 17.11",
+        ";     Dumped by pg_dump version: 17.11",
+        "; Selected TOC Entries:"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:50:34.8263083Z",
+      "kind": "restored_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:34.8264198Z",
+      "kind": "isolated_restore_passed",
+      "database": "restore_audit",
+      "User": 250,
+      "Prediction": 8012,
+      "Subscription": 185,
+      "PaymentAttempt": 69,
+      "production_database_written": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:42.7236855Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:50:44.8193767Z",
+      "kind": "schema_observation_window",
+      "start": "2026-11-15T12:49:55.107647+00:00",
+      "end": "2026-11-15T12:50:36.483427+00:00",
+      "samples": 2,
+      "fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "active_ddl_or_schema_locks": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:44.8195040Z",
+      "kind": "operational_verdict",
+      "target_verified": true,
+      "daily_backup_fresh": true,
+      "isolated_restore_passed": true,
+      "schema_stable_during_observations": true,
+      "production_written": false
+    }
+  ],
+  "monthly_recovery": [
+    {
+      "at_utc": "2026-11-15T12:50:13.4259959Z",
+      "kind": "audit_phase",
+      "stage": "running-app-target"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:14.7960162Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:14.7960953Z",
+      "kind": "audit_phase",
+      "stage": "read-only-production-and-repository-targets"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:16.2335891Z",
+      "kind": "production_start",
+      "at": "2026-11-15T12:50:16.121923+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8012,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:50:16.9956904Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:17.2071300Z",
+      "kind": "live_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:17.2072492Z",
+      "kind": "audit_phase",
+      "stage": "backup-environment-and-inventory"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:18.5489161Z",
+      "kind": "backup_credential_format",
+      "checks": [
+        "access_key_r2_hex32_shape=true",
+        "secret_key_r2_hex64_shape=true",
+        "bucket_has_template_markers=false"
+      ],
+      "authentication_verified": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:23.7767835Z",
+      "kind": "storage_endpoint_shape",
+      "returned_fields": 6,
+      "endpoint_length": 65,
+      "has_surrounding_whitespace": false,
+      "has_quote_wrappers": false,
+      "has_angle_wrappers": false,
+      "contains_whitespace": false,
+      "contains_template_markers": false,
+      "normalization_would_change": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:27.7446681Z",
+      "kind": "storage_configuration",
+      "endpoint_hostname": "46ec5b1fe217cb7a05ba922f8b306870.r2.cloudflarestorage.com",
+      "endpoint_protocol": "https:",
+      "endpoint_port": "(default)",
+      "endpoint_has_url_credentials": false,
+      "endpoint_has_path_or_query": false,
+      "type": "s3",
+      "provider": "Cloudflare",
+      "region": "auto",
+      "force_path_style": "(unset)",
+      "saved_env_matches_container": true,
+      "host_ops_file_matches_container": true,
+      "container_nameservers": [
+        "127.0.0.11"
+      ],
+      "host_dns": "resolves",
+      "container_dns": "resolves",
+      "container_control_dns": "resolves",
+      "runner_dns": {
+        "status": "resolved",
+        "addresses": [
+          "172.64.66.1",
+          "172.64.190.1"
+        ]
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:50:29.1113076Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:50:30.4122182Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "at_utc": "2026-11-15T12:50:33.8490542Z",
+      "kind": "backup_inventory",
+      "daily_files": 2,
+      "weekly_files": 1,
+      "latest_daily": {
+        "name": "betgenius-2026-11-15T1247Z.dump",
+        "bytes": 30184133,
+        "modified": "2026-11-15T12:48:00.758583586Z"
+      },
+      "latest_weekly": {
+        "name": "betgenius-2026-11-15T1247Z.dump",
+        "bytes": 30184133,
+        "modified": "2026-11-15T12:48:00.758583586Z"
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:50:33.8492024Z",
+      "kind": "backup_freshness",
+      "age_hours": 0.042525,
+      "max_age_hours": 30
+    },
+    {
+      "at_utc": "2026-11-15T12:50:39.5164172Z",
+      "kind": "download_verified",
+      "bytes": 30184133,
+      "sha256": "95ed97a8308eebf0a45e8cd4f6e846b550facde9bd431fb29bf9bcd34005301a"
+    },
+    {
+      "at_utc": "2026-11-15T12:50:39.6092734Z",
+      "kind": "archive_metadata",
+      "lines": [
+        "; Archive created at 2026-11-15 12:47:57 UTC",
+        ";     dbname: betgenius",
+        ";     TOC Entries: 294",
+        ";     Dump Version: 1.16-0",
+        ";     Dumped from database version: 17.11",
+        ";     Dumped by pg_dump version: 17.11",
+        "; Selected TOC Entries:"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:50:51.4914628Z",
+      "kind": "restored_schema_manifest",
+      "schema_fingerprint": "61849b2b8a2401c5b18bceef24548d89",
+      "table_count": 42,
+      "invalid_indexes": 0,
+      "unvalidated_constraints": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:51.4915722Z",
+      "kind": "isolated_restore_passed",
+      "database": "restore_audit",
+      "User": 250,
+      "Prediction": 8012,
+      "Subscription": 185,
+      "PaymentAttempt": 69,
+      "production_database_written": false
+    },
+    {
+      "at_utc": "2026-11-15T12:50:54.7264890Z",
+      "kind": "schema_observation_window",
+      "start": "2026-11-15T12:50:16.121923+00:00",
+      "end": "2026-11-15T12:50:52.84591+00:00",
+      "samples": 3,
+      "fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "active_ddl_or_schema_locks": 0
+    },
+    {
+      "at_utc": "2026-11-15T12:50:54.7266815Z",
+      "kind": "operational_verdict",
+      "target_verified": true,
+      "daily_backup_fresh": true,
+      "isolated_restore_passed": true,
+      "schema_stable_during_observations": true,
+      "production_written": false
+    }
+  ]
+}

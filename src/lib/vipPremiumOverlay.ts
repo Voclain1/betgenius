@@ -466,7 +466,7 @@ export function qualifyVipPremiumTargets(
   now: Date,
   limit: number,
   /** Attempts already spent per kickoff day (attemptsByKickoffDay) and the per-day quota. Absent: no per-day limit. */
-  kickoffDayQuota?: { used: ReadonlyMap<string, number>; quota: number },
+  kickoffDayQuota?: { used: ReadonlyMap<string, number>; quota: number; byDay?: ReadonlyMap<string, number> },
   /** Spare slots per kickoff day (spareQuotaSlotsByDay): the most viaSpareQuota targets a day may take. */
   spareSlots?: ReadonlyMap<string, number>,
 ): OddsQualification {
@@ -493,7 +493,7 @@ export function qualifyVipPremiumTargets(
     current.signal = best ? Number(best.probability.toFixed(1)) : null;
     if (!best) { skip("NO_QUOTED_MARKET"); continue; }
     if (best.probability < VIP_MARKET_FLOOR) { skip("MARKET_BELOW_BAR"); continue; }
-    if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= kickoffDayQuota.quota) { skip("KICKOFF_DAY_QUOTA"); continue; }
+    if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= (kickoffDayQuota.byDay?.get(lagosDateKey(c.kickoff)) ?? kickoffDayQuota.quota)) { skip("KICKOFF_DAY_QUOTA"); continue; }
     if (c.viaSpareQuota) {
       const day = lagosDateKey(c.kickoff);
       if ((spareTaken.get(day) ?? 0) >= (spareSlots?.get(day) ?? 0)) { skip("KICKOFF_DAY_QUOTA"); continue; }

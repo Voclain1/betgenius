@@ -1,4 +1,6 @@
-# VIP/Premium Sprint 11: production validation audit. READ-ONLY.
+# VIP/Premium Sprint 11: production validation audit. Read-only by default.
+# Explicit approved repair/backup-only modes can update ops storage settings
+# and offsite backup objects; neither writes the production database.
 #
 # No schedule: runs on demand (workflow_dispatch) or when the audit itself
 # changes on the Sprint 11 branch. Every database session is forced read-only
@@ -16,6 +18,34 @@ name: sprint11-production-audit
 on:
   workflow_dispatch:
     inputs:
+      operational_safety_only:
+        description: "Read-only production target/backup audit; restore only on isolated runner"
+        type: boolean
+        default: false
+      verify_deployment_settings_only:
+        description: "Secret-safe read-only repository/VPS backup comparison and authenticated GET; no DB access"
+        type: boolean
+        default: false
+      verify_backup_bucket_only:
+        description: "Read-only BetGenius/School Kit bucket and prefix verification"
+        type: boolean
+        default: false
+      use_schoolkit_backup_reader:
+        description: "Use existing authenticated School Kit remote for isolated BetGenius recovery proof"
+        type: boolean
+        default: false
+      repair_backup_storage:
+        description: "Approved ops-only storage repair and scheduled backup test; requires successful isolated recovery run ID"
+        type: boolean
+        default: false
+      recovery_proof_run_id:
+        description: "Successful operational-safety recovery run on this PR branch (required for repair)"
+        type: string
+        default: ""
+      create_fresh_backup_only:
+        description: "Run verified existing backup script only; no settings or database changes"
+        type: boolean
+        default: false
       days:
         description: "look-back in days"
         default: "30"
@@ -39,6 +69,7 @@ concurrency:
 
 jobs:
   audit:
+    if: ${{ !inputs.operational_safety_only && !inputs.verify_deployment_settings_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -112,3 +143,106 @@ jobs:
           REQUIRE_READ_ONLY: "1"
           ALT_MARKET_SCREEN_ONLY: "1"
         run: npx tsx scripts/run-alt-market-experiment.ts
+
+  operational-safety:
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && !inputs.repair_backup_storage && !inputs.create_fresh_backup_only && !inputs.verify_deployment_settings_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      scratch:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: audit
+          POSTGRES_PASSWORD: isolated_runner_only
+          POSTGRES_DB: restore_audit
+        options: >-
+          --health-cmd "pg_isready -U audit -d restore_audit"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Local audit self-test
+        run: node scripts/ops/readonly-backup-audit.mjs --self-test
+      - name: Read-only bucket verification
+        if: inputs.verify_backup_bucket_only
+        env:
+          OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+        run: node scripts/ops/verify-backup-bucket.mjs
+      - name: Read-only production audit and isolated backup restore
+        if: ${{ !inputs.verify_backup_bucket_only }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          DB_ON_VPS: ${{ vars.DB_ON_VPS }}
+          OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+          USE_SCHOOLKIT_BACKUP_READER: ${{ inputs.use_schoolkit_backup_reader }}
+          AUDIT_LOCAL_PG_CONTAINER: ${{ job.services.scratch.id }}
+          AUDIT_DIR: ${{ runner.temp }}/betgenius-backup-audit
+        run: node scripts/ops/readonly-backup-audit.mjs
+      - name: Delete runner-only temporary archive
+        if: always()
+        run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
+
+  backup-storage-repair:
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && (inputs.repair_backup_storage || inputs.create_fresh_backup_only) && !inputs.verify_deployment_settings_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful isolated recovery proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN: ${{ inputs.recovery_proof_run_id }}
+        run: |
+          [[ "$PROOF_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN" > "$RUNNER_TEMP/proof.json"
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/proof.json")); if(r.conclusion!=="success" || r.path!==".github/workflows/sprint11-production-audit.yml" || r.head_branch!=="codex/vip-controlled-quota" || Date.now()-Date.parse(r.updated_at)>3600000) process.exit(1)'
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN/jobs" --jq '.jobs[] | select(.name=="operational-safety") | .conclusion' | grep -x success
+          # A bucket-only success is not isolated recovery proof.
+          gh run view "$PROOF_RUN" --repo "$GITHUB_REPOSITORY" --log > "$RUNNER_TEMP/proof.log"
+          node -e 'const s=require("fs").readFileSync(process.env.RUNNER_TEMP+"/proof.log","utf8"); const rows=s.split("\n").filter(l=>l.includes("{\"kind\":\"operational_verdict\"")); if(!rows.some(l=>{const r=JSON.parse(l.slice(l.indexOf("{")));return r.target_verified&&r.daily_backup_fresh&&r.isolated_restore_passed&&r.schema_stable_during_observations&&r.production_written===false}))process.exit(1)'
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Repair only backup storage and test deployed backup script
+        if: ${{ !inputs.create_fresh_backup_only }}
+        run: ssh vps 'APPROVED_BACKUP_REPAIR=yes python3 -' < scripts/ops/repair-backup-storage.py
+      - name: Run only the verified scheduled backup script
+        if: inputs.create_fresh_backup_only
+        run: ssh vps 'APPROVED_BACKUP_REPAIR=yes BACKUP_ONLY=yes python3 -' < scripts/ops/repair-backup-storage.py
+
+  deployment-settings-verification:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_deployment_settings_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate deployment settings and compare without exposing values
+        env:
+          OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          node scripts/ops/verify-deployment-backup-settings.mjs
+          node scripts/ops/validate-backup-settings.mjs

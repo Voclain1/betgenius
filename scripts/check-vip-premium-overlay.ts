@@ -269,6 +269,17 @@ async function main() {
     eq("odds: freshly priced / qualified counts", [r.freshlyPriced, r.qualified], [4, 2]);
     eq("odds: the limit is respected", overlay.qualifyVipPremiumTargets([a, b], q([[a, fresh(78)], [b, fresh(86)]]), NOW, 1).targets.length, 1);
 
+    const experimentDay = a.kickoff.toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" });
+    const experimentQuotes = q([[a, fresh(90)], [b, fresh(78)]]);
+    const expanded = { used: new Map([[experimentDay, 8]]), quota: 8, byDay: new Map([[experimentDay, 16]]) };
+    eq("experiment: additional allowance retains strongest-first ranking including >86.96 favourites", overlay.qualifyVipPremiumTargets([b,a], experimentQuotes, NOW, 1, expanded).targets.map((t: Any)=>t.fixtureApiId), [a.fixtureApiId]);
+    eq("experiment: upper bound 16 is enforced", overlay.qualifyVipPremiumTargets([a,b], experimentQuotes, NOW, 1, {...expanded,used:new Map([[experimentDay,16]])}).targets.length,0);
+    eq("experiment: baseline eight stays closed without per-day activation", overlay.qualifyVipPremiumTargets([a,b], experimentQuotes, NOW, 1, {used:expanded.used,quota:8}).targets.length,0);
+    eq("experiment: missing activation on another day stays closed", overlay.qualifyVipPremiumTargets([a,b], experimentQuotes, NOW, 1, {...expanded,byDay:new Map([["2099-01-01",16]])}).targets.length,0);
+    eq("experiment: thin books are still rejected", overlay.qualifyVipPremiumTargets([a], q([[a,fresh(90,4)]]), NOW, 1, expanded).targets.length,0);
+    eq("experiment: stale quote is still rejected", overlay.qualifyVipPremiumTargets([a], q([[a,fresh(90,6,150)]]), NOW, 1, expanded).targets.length,0);
+    eq("experiment: market floor is still enforced", overlay.qualifyVipPremiumTargets([a], q([[a,fresh(70)]]), NOW, 1, expanded).targets.length,0);
+
     // Supply reliability: the warm-band skip record is diagnostic only.
     eq("warm-band record: one entry per skipped warm-band candidate, with the reason", r.warmBandSkips.map((s: Any) => s.reason).sort(), ["MARKET_BELOW_BAR", "NO_FRESH_QUOTE", "NO_QUOTED_MARKET"]);
     eq("warm-band record: the signal is kept when the quote was read", r.warmBandSkips.find((s: Any) => s.reason === "MARKET_BELOW_BAR")?.signal != null, true);

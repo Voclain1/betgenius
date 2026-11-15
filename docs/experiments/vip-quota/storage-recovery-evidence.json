@@ -1,0 +1,143 @@
+{
+  "verdict": "BLOCKED: malformed Cloudflare R2 endpoint; provider-confirmed configuration required",
+  "source_run": "https://github.com/Voclain1/betgenius/actions/runs/43712813984",
+  "source_job": 132807886618,
+  "source_head": "1861f2920bcd1ba4b7f7b5f47ed1f7da2a94d005",
+  "records": [
+    {
+      "at_utc": "2026-11-15T12:15:49.3186025Z",
+      "kind": "running_app_target",
+      "database": "betgenius",
+      "host": "postgres",
+      "port": "5432",
+      "role": "betgenius",
+      "experiment": "(unset)"
+    },
+    {
+      "at_utc": "2026-11-15T12:15:51.4657094Z",
+      "kind": "production_start",
+      "at": "2026-11-15T12:15:51.307437+00:00",
+      "database": "betgenius",
+      "role": "betgenius",
+      "server_address": "172.20.0.2/32",
+      "server_port": 5432,
+      "server_version": "17.11",
+      "read_only": "on",
+      "cluster_id": "7700210671175110690",
+      "in_recovery": false,
+      "schema_fingerprint": "040be914316fcf7e41ece3ee87220a98",
+      "paid_quota_table_present": false,
+      "ddl_candidates": [],
+      "ddl_locks": [],
+      "counts": {
+        "User": 250,
+        "Prediction": 8012,
+        "Subscription": 185,
+        "PaymentAttempt": 69
+      }
+    },
+    {
+      "at_utc": "2026-11-15T12:15:52.6636540Z",
+      "kind": "repository_target_verified",
+      "database": "betgenius",
+      "cluster_id": "7700210671175110690",
+      "server_version": "17.11",
+      "read_only": "on"
+    },
+    {
+      "at_utc": "2026-11-15T12:16:00.6238150Z",
+      "kind": "read_only_schema_plan",
+      "sha256": "99ee9f0cc4270ca7dbec0842c215545c9023146e8be3335769a1c3795eea15b6",
+      "matches_reviewed": true
+    },
+    {
+      "at_utc": "2026-11-15T12:16:02.7044943Z",
+      "kind": "backup_credential_format",
+      "checks": [
+        "access_key_r2_hex32_shape=true",
+        "secret_key_r2_hex64_shape=false",
+        "bucket_has_template_markers=false"
+      ],
+      "authentication_verified": false
+    },
+    {
+      "at_utc": "2026-11-15T12:16:12.8125478Z",
+      "kind": "storage_configuration",
+      "type": "s3",
+      "provider": "Cloudflare",
+      "region": "auto",
+      "force_path_style": "(unset)",
+      "returned_fields": 6,
+      "endpoint_length": 46,
+      "has_surrounding_whitespace": false,
+      "has_quote_wrappers": false,
+      "has_angle_wrappers": false,
+      "contains_whitespace": false,
+      "contains_template_markers": true,
+      "saved_env_matches_container": true,
+      "host_ops_file_matches_container": true,
+      "container_nameservers": [
+        "127.0.0.11"
+      ],
+      "endpoint_parseable": false,
+      "normalization_would_change": false,
+      "container_control_dns": "resolves",
+      "runner_control_dns": "resolves"
+    },
+    {
+      "at_utc": "2026-11-15T12:16:14.8229895Z",
+      "kind": "backup_environment",
+      "presence": [
+        "BACKUP_BUCKET=set",
+        "RCLONE_CONFIG_BACKUP_TYPE=set",
+        "RCLONE_CONFIG_BACKUP_PROVIDER=set",
+        "RCLONE_CONFIG_BACKUP_ENDPOINT=set",
+        "RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID=set",
+        "RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY=set"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:16:16.8740565Z",
+      "kind": "recent_backup_success_logs",
+      "lines": []
+    },
+    {
+      "at_utc": "2026-11-15T12:16:19.0075781Z",
+      "kind": "backup_inventory_error",
+      "prefix": "daily",
+      "category": "storage-or-transport-error",
+      "error_type": "Error",
+      "exit_status": 1,
+      "signal": null,
+      "safe_error_tokens": [
+        "no such host"
+      ],
+      "stdout_bytes": null,
+      "stderr_bytes": 912
+    },
+    {
+      "at_utc": "2026-11-15T12:16:21.0398806Z",
+      "kind": "backup_dns_evidence",
+      "failed_request_hostname_sha256": "a5cdddc66574a7d7666bd7020980963ae3be6d233091f9817f31b32a3bba8683",
+      "checks": [
+        "endpoint_hostname_sha256=24ed390dead82200d83f18d996e0f28fb227f90e735afb14e9f46c7133a3f028",
+        "reserved_example_or_invalid_domain=false",
+        "dns_tool=getent",
+        "endpoint_dns_resolves=false",
+        "control_dns_resolves=true",
+        "failed_request_host_resolves=false"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:16:21.0475802Z",
+      "kind": "audit_blocked",
+      "reason": "storage-or-transport-error"
+    }
+  ],
+  "authenticated_storage_access_verified": false,
+  "latest_complete_backup_age_hours": null,
+  "isolated_production_backup_restore_performed": false,
+  "production_configuration_changed": false,
+  "production_database_written": false,
+  "sql_hash_guard_changed": false
+}

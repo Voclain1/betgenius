@@ -1,0 +1,56 @@
+name: vip-quota-experiment-checks
+on:
+  pull_request:
+    paths:
+      - 'src/lib/vipQuotaExperiment*'
+      - 'src/lib/vipPremium*'
+      - 'src/lib/generation/worker.ts'
+      - 'src/lib/ai/**'
+      - 'src/lib/football/usage.ts'
+      - 'prisma/schema.prisma'
+      - 'scripts/*vip-quota*'
+      - 'scripts/check-vip-premium-overlay.ts'
+      - '.github/workflows/vip-quota-experiment-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: quota-test-local
+          POSTGRES_DB: quota_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d quota_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:quota-test-local@127.0.0.1:5432/quota_test
+      DATABASE_URL_UNPOOLED: postgresql://postgres:quota-test-local@127.0.0.1:5432/quota_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/ops/validate-backup-settings.mjs --self-test
+      - run: node scripts/ops/readonly-backup-audit.mjs --self-test
+      - run: npx prisma db push --skip-generate
+      - run: npm run check:vip-quota-experiment
+      - run: npm run check:vip-quota-postgres
+      - run: npm run check:vip-premium-overlay
+      - run: npm run check:vip-premium-quota
+      - run: npm run check:paid-spare-quota
+      - run: npm run check:paid-selection
+      - run: npm run check:paid-market-quality
+      - run: npm run check:qualification-research
+      - run: npm run check:european-clubs
+      - run: npx tsc --noEmit
+      - name: Reproduce archived historical capacity bound
+        run: |
+          python3 scripts/simulate-vip-quota.py > /tmp/vip-quota-simulation.json
+          diff -u docs/experiments/vip-quota/historical-simulation.json /tmp/vip-quota-simulation.json
