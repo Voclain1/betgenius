@@ -1,0 +1,188 @@
+session verified read-only; now 2026-11-15T09:10:02.416Z; Lagos kickoff days 2026-11-01 .. 2026-11-14 (14 full days)
+
+== A. Funnel per Lagos kickoff day (unique fixtures; paid scope = core, or widened when the pass widened in the fixture's window) ==
+day         fixt  cov | scope core/wid | priced5  lops75 | ded.att  draft75  promoted  pub | ord>=75  ord.ruleOK | VIP fx (ded/ord)  PREM | attempts/quota
+2026-11-01    88   78 |    16/0        |     16       6 |       6        6         5    5 |      25           0 |      5 (5/0)       4 | 6/8
+2026-11-02    22   22 |     4/0        |      4       1 |       1        1         1    1 |       1           0 |      1 (1/0)       0 | 1/8  <= 2 VIP
+2026-11-03    26   26 |    18/0        |     18       6 |       3        2         1    1 |       3           0 |      1 (1/0)       1 | 3/8  <= 2 VIP
+2026-11-04    16   16 |    13/0        |     13       7 |       5        4         3    3 |       3           0 |      3 (3/0)       2 | 5/8
+2026-11-05    40   40 |    35/0        |     35      24 |      17       13        10   10 |       4           0 |     12 (10/2)      4 | 17/8
+2026-11-06    27   27 |     6/0        |      6       2 |       2        1         0    0 |       2           0 |      0 (0/0)       0 | 2/8  <= 2 VIP
+2026-11-07    80   80 |    30/0        |     30      16 |      10        8         4    4 |       8           0 |      6 (4/2)       3 | 10/8
+2026-11-08   113  113 |    24/2        |     26      11 |       7        3         3    3 |       8           0 |      4 (3/1)       1 | 7/8
+2026-11-09    15   15 |     0/1        |      1       0 |       0        0         0    0 |       0           0 |      0 (0/0)       0 | 0/8  <= 2 VIP
+2026-11-10    20   20 |     0/0        |      0       0 |       0        0         0    0 |       0           0 |      0 (0/0)       0 | 0/8  <= 2 VIP
+2026-11-11     8    8 |     0/1        |      1       1 |       0        0         0    0 |       1           0 |      0 (0/0)       0 | 0/8  <= 2 VIP
+2026-11-12    26   26 |     0/17       |     17      12 |      12        6         4    4 |       5           0 |      4 (4/0)       2 | 12/8
+2026-11-13    24   24 |     0/23       |     23      20 |      14        8         2    2 |       5           1 |      3 (2/1)       1 | 14/8
+2026-11-14    25   25 |     0/14       |     12       9 |       8        3         2    2 |       1           0 |      2 (2/0)       2 | 8/8  <= 2 VIP
+TOTAL: {"fixtures":530,"covered":520,"scoped":204,"priced5":202,"lops":115,"att":85,"d75":55,"prom":35,"pub":35,"ord75":66,"ordOk":1,"vip":41,"vded":35,"prem":20,"thin":7,"zero":4}
+
+== B. First loss per covered paid-scope fixture (pipeline order; supplyFirstLoss) ==
+WIDENED_NOT_IN_SCOPE               180
+MARKET_NOT_LOPSIDED                80
+VIP                                41
+MODEL_BELOW_FLOOR                  29
+QUOTA_SPENT                        20
+GATE_REJECTED                      18
+NOT_ATTEMPTED_LOPSIDED             12
+ORDINARY_RULE_REJECTED             2
+NO_ODDS_IN_SCOPE                   2
+
+== C. Recoverable-candidate detail: every fixture whose first loss is not an intentional rule or genuine scarcity ==
+2026-11-03 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Preston v Sheffield Utd                  ko 11-03T19:45 closing 75.4 quote 1.0h pre-ko err — | covered 38.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 3
+2026-11-03 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    QPR v Burnley                            ko 11-03T19:45 closing 75.0 quote 1.0h pre-ko err — | covered 38.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 3
+2026-11-03 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Villarreal v Paris Saint Germain         ko 11-03T20:00 closing 78.2 quote 0.2h pre-ko err — | covered 42.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 3
+2026-11-04 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Fenerbahçe v Liverpool                   ko 11-04T17:45 closing 83.5 quote 0.7h pre-ko err — | covered 45.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 5
+2026-11-04 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Wrexham v Middlesbrough                  ko 11-04T19:45 closing 79.5 quote 1.2h pre-ko err — | covered 43.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 5
+2026-11-04 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    RB Leipzig v Manchester City             ko 11-04T20:00 closing 82.5 quote 0.2h pre-ko err — | covered 42.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 5
+2026-11-05 QUOTA_SPENT              PAID_CORE    Crystal Palace v 1899 Hoffenheim         ko 11-05T17:45 closing 75.0 quote 0.2h pre-ko err — | covered 44.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    Sparta Praha v Bournemouth               ko 11-05T17:45 closing 86.4 quote 0.2h pre-ko err — | covered 44.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    Aarhus v SC Braga                        ko 11-05T17:45 closing 76.8 quote 0.5h pre-ko err — | covered 40.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    Lincoln Red Imps FC v HNK Hajduk Split   ko 11-05T17:45 closing 88.9 quote 0.7h pre-ko err — | covered 39.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    KuPS v Gent                              ko 11-05T17:45 closing 81.9 quote 0.5h pre-ko err — | covered 40.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    AZ Alkmaar v Juventus                    ko 11-05T20:00 closing 75.1 quote 1.2h pre-ko err — | covered 45.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-05 QUOTA_SPENT              PAID_CORE    Getafe v Brighton                        ko 11-05T20:00 closing 84.2 quote 1.2h pre-ko err — | covered 40.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 6 | day attempts 17
+2026-11-07 QUOTA_SPENT              PAID_CORE    FSV Mainz 05 v Bayern München            ko 11-07T14:30 closing 89.4 quote 0.5h pre-ko err — | covered 46.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-07 QUOTA_SPENT              PAID_CORE    Watford v Middlesbrough                  ko 11-07T15:00 closing 85.4 quote 0.5h pre-ko err — | covered 42.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-07 QUOTA_SPENT              PAID_CORE    Preston v Southampton                    ko 11-07T15:00 closing 82.3 quote 0.5h pre-ko err — | covered 42.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-07 QUOTA_SPENT              PAID_CORE    Blackburn v West Ham                     ko 11-07T15:00 closing 81.2 quote 0.7h pre-ko err — | covered 41.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-07 QUOTA_SPENT              PAID_CORE    Parma v Bologna                          ko 11-07T17:00 closing 81.7 quote 0.7h pre-ko err — | covered 40.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-07 QUOTA_SPENT              PAID_CORE    Auxerre v Paris FC                       ko 11-07T18:00 closing 79.7 quote 0.5h pre-ko err — | covered 40.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 12 | day attempts 10
+2026-11-08 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Genoa v AC Milan                         ko 11-08T14:00 closing 77.2 quote 1.0h pre-ko err — | covered 45.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 7
+2026-11-08 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Crystal Palace v Liverpool               ko 11-08T14:00 closing 81.6 quote 1.0h pre-ko err — | covered 37.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 7
+2026-11-08 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    1. FC Köln v Bayer Leverkusen            ko 11-08T14:30 closing 77.8 quote 0.2h pre-ko err — | covered 46.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 7
+2026-11-08 NOT_ATTEMPTED_LOPSIDED   PAID_CORE    Le Mans v Monaco                         ko 11-08T16:15 closing 81.7 quote 1.2h pre-ko err — | covered 37.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 7
+2026-11-08 NOT_ATTEMPTED_LOPSIDED   PAID_WIDENED Rio Ave v SC Braga                       ko 11-08T20:30 closing 84.8 quote 1.0h pre-ko err — | covered 40.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 7
+2026-11-11 NOT_ATTEMPTED_LOPSIDED   PAID_WIDENED Artis v FK Jablonec                      ko 11-11T17:00 closing 75.1 quote 1.2h pre-ko err — | covered 46.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 0
+2026-11-12 QUOTA_SPENT              PAID_WIDENED Cameroon v Namibia                       ko 11-12T19:00 closing 93.1 quote 0.7h pre-ko err — | covered 43.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 16 | day attempts 12
+2026-11-13 QUOTA_SPENT              PAID_WIDENED Tunisia v Libya                          ko 11-13T16:00 closing 90.4 quote 0.7h pre-ko err — | covered 44.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 35 | day attempts 14
+2026-11-13 QUOTA_SPENT              PAID_WIDENED Shooting Stars v Bendel Insurance        ko 11-13T17:00 closing 88.6 quote 0.5h pre-ko err — | covered 45.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 37 | day attempts 14
+2026-11-13 QUOTA_SPENT              PAID_WIDENED Slovenia v Switzerland                   ko 11-13T19:45 closing 84.1 quote 0.2h pre-ko err — | covered 45.6h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 37 | day attempts 14
+2026-11-13 QUOTA_SPENT              PAID_WIDENED Bulgaria v Iceland                       ko 11-13T19:45 closing 80.2 quote 0.2h pre-ko err — | covered 45.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 37 | day attempts 14
+2026-11-13 QUOTA_SPENT              PAID_WIDENED Serbia v Germany                         ko 11-13T19:45 closing 91.4 quote 0.2h pre-ko err — | covered 44.3h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 37 | day attempts 14
+2026-11-14 NO_ODDS_IN_SCOPE         PAID_WIDENED Angola v South Sudan                     ko 11-14T19:00 closing — quote 44.2h pre-ko err — | covered 44.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 8
+2026-11-14 NO_ODDS_IN_SCOPE         PAID_WIDENED Algeria v Togo                           ko 11-14T19:00 closing — quote 44.2h pre-ko err — | covered 43.8h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 8
+2026-11-14 QUOTA_SPENT              PAID_WIDENED Romania v Poland                         ko 11-14T19:45 closing 76.2 quote 45.5h pre-ko err — | covered 45.1h pre-ko | warm-band runs 48, at warm limit 0, quota stand-downs 0 | day attempts 8
+
+== D. Ordinary curation verdicts (last assessment before kickoff, VIP tier) ==
+shadow-log runs 22 (first 2026-11-13T17:00:05.062Z); verdict fixture-key format "1533-1525-2026-11-13"
+ordinary >= 75 fixtures with a recorded verdict: {"WIDENED_UNPRICED":5,"WIDENED_MARKET_CONFIRMED":1,"NOT_VIP_ROUTE":1}; without a verdict: 61
+
+== E. Allocation and API ==
+dedicated pass runs 1534; quota stand-downs 197; odds calls 119; runs at warm limit (12) 1
+kickoff days with the attempt quota (8) spent: 2026-11-05, 2026-11-07, 2026-11-12, 2026-11-13, 2026-11-14
+api-football per UTC day (all / odds): 2026-11-01 7400/1323, 2026-11-02 6668/578, 2026-11-03 7350/596, 2026-11-04 7400/589, 2026-11-05 7403/859, 2026-11-06 7400/949, 2026-11-07 7400/1459, 2026-11-08 7400/1477, 2026-11-09 6922/316, 2026-11-10 6792/462, 2026-11-11 6979/356, 2026-11-12 6736/612, 2026-11-13 6925/666, 2026-11-14 6801/527, 2026-11-15 2576/204
+
+PREMIUM vs VIP: PREMIUM requires model >= 80 AND market >= 80 on the same gate; every PREMIUM fixture is also VIP (strict subset).
+session verified read-only; pass runs since 2026-10-16: 2877; sellable ceiling 86.96%
+attributable single-target runs 215; multi-target runs skipped 0
+
+band            attempts  promoted (VIP/PREM)  yield   rejection reasons (drafts)
+75-78                 43         9 (3/6)        21%   {"THIN_COVERAGE":3,"MODEL_BELOW_FLOOR":53,"MARKET_BELOW_FLOOR":12,"GAP_TOO_WIDE":6,"TOO_SHORT_TO_SELL":3}
+78-82                 53        15 (10/5)        28%   {"MODEL_BELOW_FLOOR":73,"MARKET_BELOW_FLOOR":19,"THIN_COVERAGE":5,"INELIGIBLE_MARKET":1,"GAP_TOO_WIDE":5,"TOO_SHORT_TO_SELL":1}
+82-ceiling            57        32 (26/6)        56%   {"MODEL_BELOW_FLOOR":71,"MARKET_BELOW_FLOOR":1,"THIN_COVERAGE":3,"TOO_SHORT_TO_SELL":3,"GAP_TOO_WIDE":2}
+above ceiling         62        20 (10/10)        32%   {"GAP_TOO_WIDE":25,"THIN_COVERAGE":4,"MODEL_BELOW_FLOOR":50,"MARKET_BELOW_FLOOR":10,"TOO_SHORT_TO_SELL":6}
+
+above the sellable ceiling: 62 attempts, 20 promoted; promoted picks' markets: {"Double Chance Home/Draw":19,"Match Winner Away":1}
+
+kickoff day   attempts  above ceiling  promoted-above  promoted-within
+2026-10-17         9              1               0                4
+2026-10-18         7              0               0                1
+2026-10-19         1              0               0                0
+2026-10-20         7              1               0                1
+2026-10-21         4              3               0                1
+2026-10-22         7              4               0                1
+2026-10-23         2              0               0                1
+2026-10-24        13              4               1                6
+2026-10-25        11              2               2                6
+2026-10-26         3              0               0                1
+2026-10-27        10              4               1                3
+2026-10-28        13              4               0                2
+2026-10-29         5              3               0                1
+2026-10-30         2              0               0                2
+2026-10-31        17              5               3                3
+2026-11-01         7              2               2                3
+2026-11-02         1              0               0                1
+2026-11-03         3              1               0                1
+2026-11-04         6              0               0                3
+2026-11-05        17              7               5                5
+2026-11-06         2              0               0                0
+2026-11-07        12              4               3                1
+2026-11-08         7              1               0                3
+2026-11-12        12              5               2                2
+2026-11-13        14              6               0                2
+2026-11-14         8              1               0                2
+2026-11-15         7              2               0                0
+2026-11-16         8              2               1                0
+
+runs with a target but no gate verdict (evaluated 0):
+7  succeeded 0 failed 0 held 0 reason soft deadline reached — remaining fixtures deferred to the n error —
+4  succeeded 0 failed 1 held 0 reason — error Every AI provider failed: gemini ({"error":{"code":402,"mess
+2  succeeded 0 failed 1 held 0 reason — error Draft rejected — prohibited certainty language: reasoning:"c
+
+VIP_PREMIUM attempt records 206 on 204 fixtures; fixtures with more than one record 2 (extra records 2)
+
+every attempt above the ceiling:
+2026-10-16T14:05 2026-10-17 Manchester City vs Ipswich               Double Chance Home/Draw  90.9 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"THIN_COVERAGE":1}
+2026-10-19T19:05 2026-10-20 Manchester City vs AEK Athens FC         Match Winner Home        87.1 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-19T22:35 2026-10-21 Inter vs Shakhtar Donetsk                Double Chance Home/Draw  92.7 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":3}
+2026-10-20T18:35 2026-10-22 Union St. Gilloise vs Hapoel Beer Sheva  Double Chance Home/Draw  89.5 -> promoted 0 rejected {}
+2026-10-20T19:05 2026-10-21 Aston Villa vs Viking                    Double Chance Home/Draw  92.1 -> promoted 0 rejected {}
+2026-10-20T19:20 2026-10-22 Ferencvarosi TC vs Torreense             Double Chance Home/Draw  88.2 -> promoted 0 rejected {}
+2026-10-21T01:05 2026-10-21 Aston Villa vs Viking                    Double Chance Home/Draw  92.0 -> promoted 0 rejected {}
+2026-10-21T16:50 2026-10-22 Ferencvarosi TC vs Torreense             Double Chance Home/Draw  89.0 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-21T17:05 2026-10-22 Union St. Gilloise vs Hapoel Beer Sheva  Double Chance Home/Draw  88.2 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MARKET_BELOW_FLOOR":1}
+2026-10-22T17:20 2026-10-24 Arsenal vs Everton                       Double Chance Home/Draw  87.6 -> promoted 1 rejected {"MARKET_BELOW_FLOOR":1}
+2026-10-22T17:50 2026-10-24 Wolves vs Watford                        Double Chance Home/Draw  88.4 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-22T22:05 2026-10-24 Atletico Madrid vs Deportivo La Coruna   Double Chance Home/Draw  90.6 -> promoted 0 rejected {"TOO_SHORT_TO_SELL":1,"MARKET_BELOW_FLOOR":1}
+2026-10-22T22:20 2026-10-24 Lazio vs Parma                           Double Chance Home/Draw  88.7 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":1,"TOO_SHORT_TO_SELL":1,"MARKET_BELOW_FLOOR":1}
+2026-10-23T12:50 2026-10-25 Inter vs Fiorentina                      Double Chance Home/Draw  88.0 -> promoted 1 rejected {"MARKET_BELOW_FLOOR":1}
+2026-10-25T07:50 2026-10-25 Sporting CP vs Academico Viseu           Double Chance Home/Draw  91.2 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-10-26T04:35 2026-10-27 Borussia Mönchengladbach vs Karlsruher S Double Chance Home/Draw  87.3 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-26T18:50 2026-10-27 Manacor vs Villarreal                    Match Winner Away        90.8 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":1,"TOO_SHORT_TO_SELL":1}
+2026-10-26T19:50 2026-10-27 AS Roma vs Cagliari                      Double Chance Home/Draw  89.9 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-27T00:35 2026-10-27 Fleetwood Town vs Arsenal                Match Winner Away        88.3 -> promoted 1 rejected {"TOO_SHORT_TO_SELL":1}
+2026-10-27T16:35 2026-10-28 Anaitasuna vs Alaves                     Match Winner Away        93.6 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-27T17:05 2026-10-28 SSV Jeddeloh vs Hertha BSC               Match Winner Away        89.3 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-28T00:20 2026-10-28 Bayern München vs 1. FC Magdeburg        Match Winner Home        92.0 -> promoted 0 rejected {"THIN_COVERAGE":1,"TOO_SHORT_TO_SELL":1}
+2026-10-28T00:36 2026-10-28 Tarancón vs Levante                      Match Winner Away        89.4 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-29T00:20 2026-10-29 Lebrijana vs Getafe                      Match Winner Away        93.1 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"THIN_COVERAGE":1}
+2026-10-29T00:35 2026-10-29 Atletico Calatayud vs Osasuna            Match Winner Away        92.2 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-10-29T00:50 2026-10-29 Prat vs Athletic Club                    Match Winner Away        92.2 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"THIN_COVERAGE":1}
+2026-10-30T14:20 2026-11-01 Como vs Venezia                          Double Chance Home/Draw  89.6 -> promoted 1 rejected {"MARKET_BELOW_FLOOR":1}
+2026-10-30T14:35 2026-11-01 Lazio vs Cagliari                        Double Chance Home/Draw  87.3 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-10-30T15:05 2026-10-31 Middlesbrough vs Charlton                Double Chance Home/Draw  90.4 -> promoted 0 rejected {}
+2026-10-30T15:20 2026-10-31 Middlesbrough vs Charlton                Double Chance Home/Draw  90.4 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-10-31T00:05 2026-10-31 Real Betis vs Malaga                     Double Chance Home/Draw  89.0 -> promoted 0 rejected {}
+2026-10-31T00:20 2026-10-31 Real Betis vs Malaga                     Double Chance Home/Draw  89.0 -> promoted 1 rejected {}
+2026-10-31T00:35 2026-10-31 Bayern München vs Borussia Dortmund      Double Chance Home/Draw  87.5 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-02T01:35 2026-11-03 Barcelona vs Aston Villa                 Double Chance Home/Draw  90.4 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-11-03T20:50 2026-11-05 AC Milan vs Ferencvarosi TC              Double Chance Home/Draw  89.3 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-04T17:50 2026-11-05 Atalanta vs Kairat Almaty                Double Chance Home/Draw  93.8 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-04T18:05 2026-11-05 FK Crvena Zvezda vs Inter Club d'Escalde Match Winner Home        88.6 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-11-04T20:05 2026-11-05 Benfica vs Lech Poznan                   Double Chance Home/Draw  94.1 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-04T20:20 2026-11-05 FC Copenhagen vs FC Iberia 1999          Double Chance Home/Draw  93.7 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-04T20:35 2026-11-05 FC Lugano vs Kauno Žalgiris              Double Chance Home/Draw  92.8 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-11-04T20:50 2026-11-05 Twente vs Pafos                          Double Chance Home/Draw  88.7 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-06T14:35 2026-11-07 Borussia Dortmund vs SV Elversberg       Double Chance Home/Draw  88.9 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-06T15:05 2026-11-07 Arsenal vs Hull City                     Double Chance Home/Draw  94.5 -> promoted 0 rejected {}
+2026-11-06T15:20 2026-11-07 Arsenal vs Hull City                     Double Chance Home/Draw  94.5 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-11-06T19:50 2026-11-07 AS Roma vs Sassuolo                      Double Chance Home/Draw  89.4 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-11-07T17:35 2026-11-08 Villarreal vs Getafe                     Double Chance Home/Draw  87.1 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":3}
+2026-11-10T17:50 2026-11-12 Ghana vs Somalia                         Match Winner Home        87.2 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":3}
+2026-11-10T18:20 2026-11-12 Congo DR vs Sierra Leone                 Double Chance Home/Draw  93.5 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}
+2026-11-10T22:05 2026-11-12 England vs Croatia                       Double Chance Home/Draw  91.4 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-11-10T22:20 2026-11-12 Montenegro vs Latvia                     Double Chance Home/Draw  90.3 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}
+2026-11-10T23:35 2026-11-12 Ivory Coast vs Gambia                    Double Chance Home/Draw  92.8 -> promoted 1 rejected {"MODEL_BELOW_FLOOR":1}
+2026-11-11T23:05 2026-11-13 Scotland vs FYR Macedonia                Double Chance Home/Draw  94.0 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":1,"MARKET_BELOW_FLOOR":2}
+2026-11-11T23:50 2026-11-13 Slovakia vs Faroe Islands                Double Chance Home/Draw  89.1 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":1,"MARKET_BELOW_FLOOR":1}
+2026-11-12T16:05 2026-11-13 Nigeria vs Tanzania                      Double Chance Home/Draw  93.9 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}
+2026-11-12T23:05 2026-11-13 Gabon vs Lesotho                         Double Chance Home/Draw  92.9 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":1,"MARKET_BELOW_FLOOR":1}
+2026-11-12T23:20 2026-11-13 Morocco vs Niger                         Match Winner Home        89.2 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-11-13T01:20 2026-11-13 Mali vs Rwanda                           Double Chance Home/Draw  90.8 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}
+2026-11-13T17:05 2026-11-14 Norway vs Wales                          Double Chance Home/Draw  91.5 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}
+2026-11-13T22:50 2026-11-15 France vs Türkiye                        Double Chance Home/Draw  90.7 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1}
+2026-11-14T17:05 2026-11-15 Finland vs San Marino                    Match Winner Home        90.8 -> promoted 0 rejected {"GAP_TOO_WIDE":1,"MODEL_BELOW_FLOOR":1,"TOO_SHORT_TO_SELL":1}
+2026-11-14T18:35 2026-11-16 Iceland vs Luxembourg                    Double Chance Home/Draw  90.1 -> promoted 1 rejected {"GAP_TOO_WIDE":1}
+2026-11-15T00:20 2026-11-16 Gibraltar vs Malta                       Double Chance Away/Draw  87.5 -> promoted 0 rejected {"MODEL_BELOW_FLOOR":2}

@@ -1327,3 +1327,22 @@ model ManualPayment {
   @@index([status, submittedAt])
   @@index([userId, createdAt])
 }
+
+// Durable experimental reservations. Never expire/recycle a failed fixture or
+// refund an unknown model charge. No relation cascade may erase cost evidence.
+model PaidQuotaAttempt {
+  fixtureApiId     Int      @id
+  experiment       String
+  kickoffDay       String
+  spendDay         String
+  createdAt        DateTime @default(now())
+  reservedMicroUsd Int
+  actualMicroUsd   Int?
+  configJson       String
+  modelRequests    Int      @default(0)
+  usageReliable    Boolean  @default(false)
+  apiCalls         Int      @default(0)
+
+  @@index([spendDay])
+  @@index([kickoffDay])
+}

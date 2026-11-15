@@ -1,3 +1,4 @@
+import { experimentScope } from "@/lib/vipQuotaExperiment";
 /**
  * Anthropic provider — Claude Haiku 5.5, the primary (see PROVIDER_CHAIN in
  * src/lib/ai/analysis.ts for why, and at what effort). The model comparison
@@ -39,7 +40,9 @@ async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | un
   const model = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
   // 90s per attempt: a high-effort call measured ~21s at p50, and the route's
   // maxDuration has to leave room for the fallback after a hung request.
-  const client = new Anthropic({ timeout: 90_000, maxRetries });
+  const experiment = experimentScope();
+  if (experiment && model !== experiment.config.model) throw new Error("quota experiment: model changed");
+  const client = new Anthropic({ timeout: 90_000, maxRetries: experiment ? 0 : maxRetries });
 
   const res = await client.messages.create({
     model,
@@ -49,6 +52,11 @@ async function completeAnthropic(req: CompletionRequest, e: AnthropicEffort | un
     ...(e ? { output_config: { effort: e } } : {}),
   });
 
+  if (experiment) await experiment.afterModel(`anthropic:${model}`, {
+    promptTokens: res.usage.input_tokens ?? null,
+    outputTokens: res.usage.output_tokens ?? null,
+    totalTokens: null,
+  });
   if (res.stop_reason === "refusal") {
     throw Object.assign(new Error(`anthropic refused (${res.stop_details?.category ?? "no category"})`), { name: "ModelRefusalError" });
   }
