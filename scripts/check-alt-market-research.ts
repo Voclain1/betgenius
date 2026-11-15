@@ -154,7 +154,7 @@ check("7 2-4 incremental is inconclusive", researchDecision(30, 3, 0.2) === "INC
   check("8 the experiment job requires the confirmation string", /job == 'experiment' && needs\.request\.outputs\.confirm == 'RUN-ALT-MARKET-S10'/.test(wf));
   check("8 experiments never run concurrently", /concurrency: alt-market-experiment/.test(wf));
   check("8 only the production Anthropic key is exported to the experiment", /ANTHROPIC_API_KEY=\$K/.test(wf) && !/GEMINI_API_KEY|GROQ_API_KEY/.test(wf));
-  check("8 every job uses a read-only database session", (wf.match(/default_transaction_read_only=on/g) ?? []).length === 3);
+  check("8 every job uses a read-only database session", (wf.match(/default_transaction_read_only=on/g) ?? []).length === (wf.match(/vps-db-tunnel/g) ?? []).length && (wf.match(/vps-db-tunnel/g) ?? []).length >= 4);
 }
 
 // ── 9. Shared code defaults unchanged for production ──────────────────────

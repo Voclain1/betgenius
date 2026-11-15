@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       job:
-        description: "baseline | experiment | settle"
+        description: "baseline | screen | experiment | settle"
         default: "baseline"
       confirm:
         description: "For job=experiment only: type RUN-ALT-MARKET-S10"
@@ -60,7 +60,7 @@ jobs:
           else
             job="$IN_JOB"; confirm="$IN_CONFIRM"; days="${IN_DAYS:-30}"
           fi
-          case "$job" in baseline|experiment|settle) ;; *) echo "::error::unknown job '$job'"; exit 1;; esac
+          case "$job" in baseline|screen|experiment|settle) ;; *) echo "::error::unknown job '$job'"; exit 1;; esac
           echo "job=$job" >> "$GITHUB_OUTPUT"; echo "confirm=$confirm" >> "$GITHUB_OUTPUT"; echo "days=$days" >> "$GITHUB_OUTPUT"
           echo "requested: job=$job days=$days confirm=${confirm:+(set)}"
 
@@ -93,6 +93,40 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/measure-alt-market-baseline.ts "${{ needs.request.outputs.days }}"
+
+  # Sprint 11: eligibility only. No model key is exported and the runner stops
+  # before its credential check, so this spends nothing. Run it first; request
+  # job=experiment only when it lists eligible fixtures.
+  screen:
+    needs: request
+    if: needs.request.outputs.job == 'screen'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Screen eligibility (no model request)
+        env:
+          REQUIRE_READ_ONLY: "1"
+          ALT_MARKET_SCREEN_ONLY: "1"
+        run: npx tsx scripts/run-alt-market-experiment.ts
 
   experiment:
     needs: request
