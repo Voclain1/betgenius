@@ -126,6 +126,9 @@ async function main(){
   assert.equal(repo.cluster_id,live.cluster_id,'repository secret and ops target different clusters');assert.equal(repo.database,app.database);assert.equal(repo.role,app.role);assert.equal(repo.schema_fingerprint,live.schema_fingerprint);
   emit('repository_target_verified',{database:repo.database,cluster_id:repo.cluster_id,server_version:repo.server_version,read_only:repo.read_only});
   const inspectPlan=()=>{
+   // Scheduled recovery is independent of an outstanding PR schema plan.
+   // Approval audits retain the exact reviewed-plan check by default.
+   if(process.env.RECOVERY_ONLY==='yes')return;
    const plan=execFileSync('node_modules/.bin/prisma',['migrate','diff','--from-schema-datasource','prisma/schema.prisma','--to-schema-datamodel','prisma/schema.prisma','--script'],{env:{...process.env,DATABASE_URL:url,DATABASE_URL_UNPOOLED:url},encoding:'utf8',timeout:60000,stdio:['ignore','pipe','pipe']});
    const hash=sha(plan);emit('read_only_schema_plan',{sha256:hash,matches_reviewed:hash===approvedPlan});assert.equal(hash,approvedPlan,'live plan differs from reviewed SQL');return hash;
   };

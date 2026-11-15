@@ -1,4 +1,4 @@
-# Monthly proof that last night's backup restores (deploy/ops/restore-test.sh).
+# Monthly recovery proof. Production is read-only; restore on disposable PG17.
 # Active once VPS_DEPLOY_ENABLED is "true".
 name: db-restore-test
 
@@ -12,10 +12,38 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || vars.VPS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      scratch:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: audit
+          POSTGRES_PASSWORD: isolated_runner_only
+          POSTGRES_DB: restore_audit
+        options: >-
+          --health-cmd "pg_isready -U audit -d restore_audit"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/vps-ssh
+      - uses: ./.github/actions/vps-db-tunnel
         with:
+          enabled: ${{ vars.DB_ON_VPS }}
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - run: ssh vps 'cd /opt/betgenius && docker compose --env-file deploy.env exec -T ops /ops/restore-test.sh'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Read-only source and isolated restore
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          DB_ON_VPS: ${{ vars.DB_ON_VPS }}
+          OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+          RECOVERY_ONLY: 'yes'
+          AUDIT_LOCAL_PG_CONTAINER: ${{ job.services.scratch.id }}
+          AUDIT_DIR: ${{ runner.temp }}/betgenius-backup-audit
+        run: node scripts/ops/readonly-backup-audit.mjs
+      - name: Delete runner-only archive
+        if: always()
+        run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
