@@ -53,3 +53,42 @@ export function supplyFirstLoss(x: {
   if ((x.closing ?? 0) < 75) return x.ordinaryAt75 && x.ordinaryRule ? "ORDINARY_RULE_REJECTED" : "MARKET_NOT_LOPSIDED";
   return x.dayQuotaSpent ? "QUOTA_SPENT" : "NOT_ATTEMPTED_LOPSIDED";
 }
+
+// ── Attempt yield by targeting signal ───────────────────────────────────────
+
+export type AttemptRecord = {
+  ranAt: Date;
+  fixture: string;
+  kickoffDay: string;
+  /** The de-vigged headline (MW/DC) probability that made the fixture a target. */
+  signal: number;
+  market: string;
+  promotedVip: number;
+  promotedPremium: number;
+  rejected: Record<string, number>;
+  evaluated: number;
+};
+
+/** Signal bands; the last is above the price the gate will sell (PAID_MAX_MARKET_PROBABILITY). Pure. */
+export function signalBand(p: number, ceiling: number): string {
+  if (p > ceiling) return "above ceiling";
+  if (p >= 82) return "82-ceiling";
+  if (p >= 78) return "78-82";
+  return "75-78";
+}
+
+/** Yield per band: attempts, promotions and the run-recorded rejection reasons. Pure. */
+export function summariseAttemptYield(attempts: readonly AttemptRecord[], ceiling: number) {
+  const order = ["75-78", "78-82", "82-ceiling", "above ceiling"];
+  const bands = order.map((band) => {
+    const xs = attempts.filter((a) => signalBand(a.signal, ceiling) === band);
+    const rejected: Record<string, number> = {};
+    for (const a of xs) for (const [k, n] of Object.entries(a.rejected)) rejected[k] = (rejected[k] ?? 0) + n;
+    const vip = xs.reduce((s, a) => s + a.promotedVip, 0), premium = xs.reduce((s, a) => s + a.promotedPremium, 0);
+    return { band, attempts: xs.length, vip, premium, promoted: vip + premium, rejected };
+  });
+  const above = attempts.filter((a) => signalBand(a.signal, ceiling) === "above ceiling");
+  const promotedMarkets: Record<string, number> = {};
+  for (const a of above.filter((x) => x.promotedVip + x.promotedPremium > 0)) promotedMarkets[a.market] = (promotedMarkets[a.market] ?? 0) + 1;
+  return { bands, aboveCeiling: { attempts: above.length, promoted: above.reduce((s, a) => s + a.promotedVip + a.promotedPremium, 0), promotedMarkets } };
+}
