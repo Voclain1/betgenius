@@ -19,6 +19,19 @@ function ssh(command,input){
  try{return execFileSync('ssh',['-o','BatchMode=yes','vps',command],{input,encoding:'utf8',timeout:45000,stdio:['pipe','pipe','pipe']});}
  catch(e){const msg=String(e.stderr??'');e.category=/service.*not running/i.test(msg)?'production-service-unavailable':/Permission denied|Could not resolve|Connection refused|timed out/i.test(msg)?'ssh-or-service-access':/env.sh.*(not found|No such file)/i.test(msg)?'ops-environment-file-missing':'remote-read-only-probe-failed';throw e;}
 }
+function backupDnsEvidence(failedHost){
+ const safeHost=/^[a-z0-9][a-z0-9.-]{0,252}$/i.test(failedHost??'')?failedHost:'';
+ const script=[
+  'host=${RCLONE_CONFIG_BACKUP_ENDPOINT-}', 'host=${host#*://}', 'host=${host%%/*}', 'host=${host##*@}', 'host=${host%%:*}',
+  'lower=$(printf %s "$host" | tr "[:upper:]" "[:lower:]")',
+  'echo endpoint_hostname_sha256=$(printf %s "$lower" | sha256sum | cut -d " " -f 1)',
+  'case "$lower" in example.com|*.example.com|example.net|*.example.net|example.org|*.example.org|*.invalid) echo reserved_example_or_invalid_domain=true;; *) echo reserved_example_or_invalid_domain=false;; esac',
+  'if command -v getent >/dev/null; then echo dns_tool=getent; if getent hosts "$host" >/dev/null 2>&1; then echo endpoint_dns_resolves=true; else echo endpoint_dns_resolves=false; fi; if getent hosts example.com >/dev/null 2>&1; then echo control_dns_resolves=true; else echo control_dns_resolves=false; fi; else echo dns_tool=unavailable; fi',
+  ...(safeHost?['if command -v getent >/dev/null; then if getent hosts '+quote(safeHost)+' >/dev/null 2>&1; then echo failed_request_host_resolves=true; else echo failed_request_host_resolves=false; fi; fi']:[]),
+ ].join('; ');
+ try{emit('backup_dns_evidence',{failed_request_hostname_sha256:safeHost?sha(safeHost.toLowerCase()):null,checks:ssh(ops(script)).trim().split('\n')});}
+ catch(e){emit('backup_dns_probe_blocked',{reason:e.category??e.name});}
+}
 function inventory(prefix){
  assert.ok(['daily','weekly'].includes(prefix));let raw;
  try{raw=ssh(ops('exec rclone lsjson "backup:${BACKUP_BUCKET}/'+prefix+'" --files-only'));return JSON.parse(raw);}
@@ -27,6 +40,7 @@ function inventory(prefix){
   const tokens=[...new Set(stderr.match(/AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|NoSuchBucket|InvalidBucketName|ExpiredToken|InvalidToken|AuthorizationHeaderMalformed|RequestTimeTooSkewed|AllAccessDisabled|InvalidArgument|InvalidRequest|NoCredentials|InvalidEndpoint|directory not found|no such host|connection refused|i\/o timeout|TLS handshake|x509|unsupported protocol scheme|unknown flag|unknown command|failed to create file system|didn.t find section|\b(?:400|401|403|404|429|500|502|503)\b/gi)??[])];
   e.category=raw!==undefined?'backup-inventory-invalid-json':classifyError(stderr);
   emit('backup_inventory_error',{prefix,category:e.category,error_type:e.name,exit_status:e.status??null,signal:e.signal??null,safe_error_tokens:tokens,stdout_bytes:raw?.length??null,stderr_bytes:stderr.length});
+  if (/no such host/i.test(stderr)) backupDnsEvidence(stderr.match(/lookup\s+([a-z0-9.-]+)/i)?.[1]);
   throw e;
  }
 }
