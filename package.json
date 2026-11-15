@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:alt-market-research": "tsx scripts/check-alt-market-research.ts",
+    "measure:alt-market-baseline": "tsx --env-file=.env scripts/measure-alt-market-baseline.ts",
     "dev": "next dev",
     "build": "prisma generate && tsx scripts/check-schema-sync.ts && next build",
     "start": "next start",

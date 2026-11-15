@@ -1,0 +1,172 @@
+# VIP/Premium Sprint 10: alternative-market research. EXPLICITLY INVOKED ONLY.
+#
+# Two ways to start it, both deliberate:
+#   - workflow_dispatch (once this file is on the default branch), or
+#   - committing research/alt-market/run-request.json on the Sprint 10 branch
+#     (GitHub only dispatches workflows that exist on the default branch, so
+#     before merge a committed request is the explicit, reviewable trigger).
+# There is no schedule and no pull_request trigger: nothing here recurs.
+#
+# Every database session is forced read-only and verified by the scripts
+# (REQUIRE_READ_ONLY). Nothing is published or written to production.
+#
+#   job=baseline    read-only historical baseline (no provider or model calls)
+#   job=experiment  the pre-registered shadow experiment (src/lib/altMarketResearch.ts):
+#                   at most 30 model requests and $0.30 in total, cache-only
+#                   football data. Requires confirm=RUN-ALT-MARKET-S10.
+#   job=settle      read-only settlement of recorded observations
+
+name: alt-market-research
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "baseline | experiment | settle"
+        default: "baseline"
+      confirm:
+        description: "For job=experiment only: type RUN-ALT-MARKET-S10"
+        default: ""
+      days:
+        description: "baseline look-back in days"
+        default: "30"
+  push:
+    branches: ["ccr-0ae2ea72-2ta0dr-sprint10"]
+    paths: ["research/alt-market/run-request.json"]
+
+permissions:
+  contents: read
+
+jobs:
+  request:
+    runs-on: ubuntu-latest
+    outputs:
+      job: ${{ steps.r.outputs.job }}
+      confirm: ${{ steps.r.outputs.confirm }}
+      days: ${{ steps.r.outputs.days }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        env:
+          IN_JOB: ${{ github.event.inputs.job }}
+          IN_CONFIRM: ${{ github.event.inputs.confirm }}
+          IN_DAYS: ${{ github.event.inputs.days }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            f=research/alt-market/run-request.json
+            job=$(node -e 'console.log(require("./'"$f"'").job||"")')
+            confirm=$(node -e 'console.log(require("./'"$f"'").confirm||"")')
+            days=$(node -e 'console.log(require("./'"$f"'").days||30)')
+          else
+            job="$IN_JOB"; confirm="$IN_CONFIRM"; days="${IN_DAYS:-30}"
+          fi
+          case "$job" in baseline|experiment|settle) ;; *) echo "::error::unknown job '$job'"; exit 1;; esac
+          echo "job=$job" >> "$GITHUB_OUTPUT"; echo "confirm=$confirm" >> "$GITHUB_OUTPUT"; echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "requested: job=$job days=$days confirm=${confirm:+(set)}"
+
+  baseline:
+    needs: request
+    if: needs.request.outputs.job == 'baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Alternative-market baseline (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-alt-market-baseline.ts "${{ needs.request.outputs.days }}"
+
+  experiment:
+    needs: request
+    if: needs.request.outputs.job == 'experiment' && needs.request.outputs.confirm == 'RUN-ALT-MARKET-S10'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # One experiment at a time: caps are cumulative across invocations.
+    concurrency: alt-market-experiment
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Production model credential (the same key production uses; masked)
+        env:
+          ANTHROPIC_KEY_SECRET: ${{ secrets.ANTHROPIC_API_KEY }}
+          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
+        run: |
+          read_env() { printf '%s\n' "$PROD_ENV_FILE" | grep -E "^$1=" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//"; }
+          # deploy-vps.yml: the ANTHROPIC_API_KEY secret wins over PROD_ENV_FILE.
+          K="${ANTHROPIC_KEY_SECRET:-$(read_env ANTHROPIC_API_KEY)}"
+          if [ -z "$K" ]; then echo "::error::no production Anthropic credential available; experiment blocked (no substitute provider)"; exit 1; fi
+          echo "::add-mask::$K"
+          echo "ANTHROPIC_API_KEY=$K" >> "$GITHUB_ENV"
+          M=$(read_env ANTHROPIC_MODEL)
+          [ -z "$M" ] || echo "ANTHROPIC_MODEL=$M" >> "$GITHUB_ENV"
+          # No other provider key is exported: the runner cannot fall back.
+      - name: Pre-registered alternative-market experiment (capped)
+        env:
+          REQUIRE_READ_ONLY: "1"
+          ALT_MARKET_CONFIRM: ${{ needs.request.outputs.confirm }}
+        run: npx tsx scripts/run-alt-market-experiment.ts
+
+  settle:
+    needs: request
+    if: needs.request.outputs.job == 'settle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Settle recorded observations (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/settle-alt-market-experiment.ts

@@ -65,6 +65,8 @@ export type ContextSources = {
   h2h: "cache" | "fetched" | "missing";
   /** api-football calls this assembly actually spent. Zero on a fully warm path. */
   apiCalls: number;
+  /** cacheOnly: parts read from a cache older than its freshness floor. */
+  stale?: string[];
 };
 
 const KEY_PLAYERS_PER_TEAM = 4;
@@ -123,6 +125,7 @@ async function loadTeamDigest(
   kickoff: Date | null,
   sources: ContextSources,
   side: "homeTeam" | "awayTeam",
+  cacheOnly = false,
 ): Promise<TeamDigest | null> {
   if (teamApiId == null) {
     sources[side] = "missing";
@@ -137,6 +140,12 @@ async function loadTeamDigest(
   const fresh = !!row?.fetchedAt && Date.now() - row.fetchedAt.getTime() < TEAM_DIGEST_MAX_AGE_MS;
   if (fresh && row?.teamDigestJson) {
     sources[side] = "cache";
+    return row.teamDigestJson as unknown as TeamDigest;
+  }
+  if (cacheOnly) {
+    if (!row?.teamDigestJson) { sources[side] = "missing"; return null; }
+    sources[side] = "cache";
+    (sources.stale ??= []).push(side);
     return row.teamDigestJson as unknown as TeamDigest;
   }
 
@@ -241,6 +250,13 @@ export type GenerationContextInput = {
   awayApiId: number | null;
   leagueApiId: number | null;
   round?: string | null;
+  /**
+   * Research only (scripts/run-alt-market-experiment.ts): read every cache as
+   * it stands, stale or not, and never refresh. No api-football call and no
+   * write. Production generation never sets it. Stale reads are listed in
+   * sources.stale.
+   */
+  cacheOnly?: boolean;
 };
 
 /**
@@ -266,8 +282,8 @@ export async function buildGenerationDigest(
   const kickoff = isNaN(kickoffDate.getTime()) ? null : kickoffDate;
 
   const [homeDigest, awayDigest] = await Promise.all([
-    loadTeamDigest(input.homeApiId, input.home, input.leagueApiId, kickoff, sources, "homeTeam"),
-    loadTeamDigest(input.awayApiId, input.away, input.leagueApiId, kickoff, sources, "awayTeam"),
+    loadTeamDigest(input.homeApiId, input.home, input.leagueApiId, kickoff, sources, "homeTeam", input.cacheOnly),
+    loadTeamDigest(input.awayApiId, input.away, input.leagueApiId, kickoff, sources, "awayTeam", input.cacheOnly),
   ]);
 
   // --- Standings -----------------------------------------------------------
@@ -285,6 +301,10 @@ export async function buildGenerationDigest(
     if (leagueFresh && leagueRow?.standingsJson) {
       standingsRows = leagueRow.standingsJson as unknown as LeagueStandingRow[];
       sources.standings = "cache";
+    } else if (input.cacheOnly) {
+      standingsRows = (leagueRow?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
+      sources.standings = standingsRows ? "cache" : "missing";
+      if (standingsRows) (sources.stale ??= []).push("standings");
     } else {
       const result = await refreshLeagueCache({ leagueApiId: input.leagueApiId, kickoff });
       sources.apiCalls += 2;
@@ -316,7 +336,7 @@ export async function buildGenerationDigest(
     if (cached?.fetchedAt) {
       meetings = (cached.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
       sources.h2h = "cache";
-    } else {
+    } else if (!input.cacheOnly) {
       const result = await refreshH2HCache({
         pairKey,
         teamAApiId: Math.min(input.homeApiId, input.awayApiId),

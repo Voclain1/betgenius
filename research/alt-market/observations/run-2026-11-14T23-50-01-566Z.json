@@ -1,0 +1,59 @@
+{
+  "summary": {
+    "spec": "alt-market-s10-v1",
+    "runAt": "2026-11-14T23:50:01.566Z",
+    "githubRun": "43655061794",
+    "evaluated": 1,
+    "stopped": null,
+    "ledgerAfter": {
+      "evaluations": 1,
+      "modelRequests": 1,
+      "apiFootballRequests": 0,
+      "costUsd": 0.0029834999999999996,
+      "coreUsed": 0,
+      "secondaryUsed": 0
+    }
+  },
+  "observations": [
+    {
+      "spec": "alt-market-s10-v1",
+      "fixtureApiId": 1528983,
+      "matchKey": "1-768-2026-11-15",
+      "fixture": "Belgium v Italy",
+      "league": "UEFA Nations League",
+      "leagueApiId": 5,
+      "group": "SECONDARY",
+      "dryDay": false,
+      "kickoff": "2026-11-15T19:45:00.000Z",
+      "lagosDay": "2026-11-15",
+      "evaluatedAt": "2026-11-14T23:50:08.371Z",
+      "quoteFetchedAt": "2026-11-14T23:30:04.955Z",
+      "quoteAgeMinutes": 20,
+      "favouriteSignal": 68.24365175332528,
+      "goalsSignal": { "market": "Goals Over/Under", "value": "Over 1.5", "probability": 79.33450087565676, "bookmakers": 6 },
+      "comparison": [
+        { "market": "Goals Over/Under", "value": "Under 2.5", "probability": 41.58163265306122, "bookmakers": 8 },
+        { "market": "Goals Over/Under", "value": "Under 3.5", "probability": 63.14496314496314, "bookmakers": 7 },
+        { "market": "Both Teams Score", "value": "Yes", "probability": 60.86956521739131, "bookmakers": 7 },
+        { "market": "Both Teams Score", "value": "No", "probability": 39.130434782608695, "bookmakers": 7 }
+      ],
+      "existingPaidOnDay": 4,
+      "modelRequests": 1,
+      "costUsd": 0.0029834999999999996,
+      "apiFootballRequests": 0,
+      "context": { "homeTeam": "cache", "awayTeam": "cache", "standings": "cache", "h2h": "cache", "stale": [] },
+      "inputTokensCounted": 9730,
+      "model": "anthropic:claude-haiku-5-5",
+      "usage": { "promptTokens": 9730, "outputTokens": 4021, "totalTokens": 13751 },
+      "rejectedBeforePersist": null,
+      "drafts": [
+        { "marketType": "OVER_UNDER", "selection": { "line": 1.5, "direction": "OVER" }, "pick": "Over 1.5 Goals", "confidence": 80, "gate": "CONFIRMED", "marketProbability": 79.33450087565676, "gapPP": 0.665499124343242, "books": 6, "repeat": false, "tier": "VIP", "entryPrice": 1.18 },
+        { "marketType": "DOUBLE_CHANCE", "selection": { "value": "HOME_OR_DRAW" }, "pick": "Belgium or Draw", "confidence": 57, "gate": "MODEL_BELOW_FLOOR", "marketProbability": null, "gapPP": null, "books": null, "repeat": false, "tier": null, "entryPrice": 1.38 }
+      ],
+      "outcome": "VIP",
+      "best": { "marketType": "OVER_UNDER", "selection": { "line": 1.5, "direction": "OVER" }, "pick": "Over 1.5 Goals", "confidence": 80, "marketProbability": 79.33450087565676, "entryPrice": 1.18, "books": 6 },
+      "existingVipOrPremiumOnFixture": false,
+      "incremental": true
+    }
+  ]
+}
