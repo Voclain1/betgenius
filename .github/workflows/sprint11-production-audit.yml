@@ -36,6 +36,10 @@ on:
         description: "Successful operational-safety recovery run on this PR branch (required for repair)"
         type: string
         default: ""
+      create_fresh_backup_only:
+        description: "Run verified existing backup script only; no settings or database changes"
+        type: boolean
+        default: false
       days:
         description: "look-back in days"
         default: "30"
@@ -135,7 +139,7 @@ jobs:
         run: npx tsx scripts/run-alt-market-experiment.ts
 
   operational-safety:
-    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && !inputs.repair_backup_storage
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && !inputs.repair_backup_storage && !inputs.create_fresh_backup_only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -183,7 +187,7 @@ jobs:
         run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
 
   backup-storage-repair:
-    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && inputs.repair_backup_storage
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && (inputs.repair_backup_storage || inputs.create_fresh_backup_only)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -205,4 +209,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
       - name: Repair only backup storage and test deployed backup script
+        if: ${{ !inputs.create_fresh_backup_only }}
         run: ssh vps 'APPROVED_BACKUP_REPAIR=yes python3 -' < scripts/ops/repair-backup-storage.py
+      - name: Run only the verified scheduled backup script
+        if: inputs.create_fresh_backup_only
+        run: ssh vps 'APPROVED_BACKUP_REPAIR=yes BACKUP_ONLY=yes python3 -' < scripts/ops/repair-backup-storage.py

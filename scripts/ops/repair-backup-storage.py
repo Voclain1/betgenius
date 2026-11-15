@@ -44,6 +44,10 @@ def inventory():
 
 def main():
     assert os.environ.get('APPROVED_BACKUP_REPAIR') == 'yes'
+    if os.environ.get('BACKUP_ONLY') == 'yes':
+        assert ops('printf %s "$BACKUP_BUCKET"').decode() == PREFIX
+        verified_backup()
+        return
     before = {name: service_id(name) for name in ['app', 'postgres']}
     assert all(before.values())
     candidates = run(['docker', 'ps', '--filter', 'label=com.docker.compose.service=ops',
@@ -98,19 +102,7 @@ def main():
         emit('backup_storage_repaired', changed_fields=changed, prefix=PREFIX,
              app_and_postgres_containers_unchanged=True, rollback_file=rollback.name,
              github_secret_synchronized=False)
-        # Run precisely the deployed scheduled backup, only after proving no
-        # pre-existing objects qualify for its retention deletion.
-        expected = 'be27c9893a8d369bff5f44e47673fc1abb0022df223ecf98a77cd767a1cd4ed3'
-        actual = ops('sha256sum /ops/backup.sh').decode().split()[0]
-        assert actual == expected, 'deployed backup script differs from review'
-        for folder, age in [('daily', '15d'), ('weekly', '57d')]:
-            old = ops('rclone lsjson --files-only --min-age ' + age + ' "backup:${BACKUP_BUCKET}/' + folder + '"')
-            assert json.loads(old) == [], 'retention candidates require separate review'
-        result = ops('exec /ops/backup.sh').decode()
-        success = re.findall(r'\d{4}-\d{2}-\d{2}T[0-9:]+Z backup ok: betgenius-[0-9TZ-]+\.dump, \d+ bytes', result)
-        assert len(success) == 1
-        emit('scheduled_backup_script_passed', message=success[0], production_database_written=False)
-        emit('backup_inventory_after', daily=inventory())
+        verified_backup()
     except Exception:
         # Restore original configuration if the repair/test fails. Keep backup
         # objects for recovery; never change the app, postgres or database data.
@@ -119,6 +111,21 @@ def main():
         run(COMPOSE + ['up', '-d', '--no-deps', '--force-recreate', 'ops'])
         emit('repair_rolled_back', app_and_postgres_containers_unchanged={name: service_id(name) for name in before} == before)
         raise
+
+
+def verified_backup():
+    # Reusable after the additive schema application, without reapplying settings.
+    expected = 'be27c9893a8d369bff5f44e47673fc1abb0022df223ecf98a77cd767a1cd4ed3'
+    actual = ops('sha256sum /ops/backup.sh').decode().split()[0]
+    assert actual == expected, 'deployed backup script differs from review'
+    for folder, age in [('daily', '15d'), ('weekly', '57d')]:
+        old = ops('rclone lsjson --files-only --min-age ' + age + ' "backup:${BACKUP_BUCKET}/' + folder + '"')
+        assert json.loads(old) == [], 'retention candidates require separate review'
+    result = ops('exec /ops/backup.sh').decode()
+    success = re.findall(r'\d{4}-\d{2}-\d{2}T[0-9:]+Z backup ok: betgenius-[0-9TZ-]+\.dump, \d+ bytes', result)
+    assert len(success) == 1
+    emit('scheduled_backup_script_passed', message=success[0], production_database_written=False)
+    emit('backup_inventory_after', daily=inventory())
 
 
 try:
