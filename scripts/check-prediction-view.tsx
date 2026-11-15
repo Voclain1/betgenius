@@ -11,8 +11,8 @@
  *      confidence AND the Over/Under line, which is derived from the pick.
  *   4. In-feed ads land at the same positions in both views, and a caller that
  *      does not opt in (the dashboard) gets none in either.
- *   5. The switch server-renders Detailed with an accessible pressed state,
- *      and the stored preference reads, writes and fails safe to Detailed.
+ *   5. The switch server-renders Compact with an accessible pressed state,
+ *      and the stored preference reads, writes and fails safe to Compact.
  *   6. The homepage buttons say "Tips" and include Goals before Multi Bets.
  *
  * Run with the JSX override the automatic runtime needs:
@@ -289,14 +289,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
       compact={<div>COMPACT-VIEW</div>}
     />,
   );
-  check("server render shows Detailed", out.includes("DETAILED-VIEW") && !out.includes("COMPACT-VIEW"), out);
+  check("server render shows Compact", out.includes("COMPACT-VIEW") && !out.includes("DETAILED-VIEW"), out);
   check("controls are a labelled group", out.includes('role="group"') && out.includes('aria-label="Prediction view"'));
-  check("Detailed is pressed, Compact is not",
-    /aria-pressed="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Detailed</.test(out) && /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Compact</.test(out), out);
+  check("Compact is pressed, Detailed is not",
+    /aria-pressed="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Compact</.test(out) && /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Detailed</.test(out), out);
   check("buttons are type=button", count(out, 'type="button"') === 2);
   check("tabs, then intro, then the list",
     out.indexOf("TABS") < out.indexOf("Prediction view") && out.indexOf("Prediction view") < out.indexOf("INTRO") &&
-      out.indexOf("INTRO") < out.indexOf("DETAILED-VIEW"));
+      out.indexOf("INTRO") < out.indexOf("COMPACT-VIEW"));
 }
 {
   const memory = () => {
@@ -309,15 +309,15 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   };
 
   check("the key is the shared one", PREDICTION_VIEW_KEY === "betgenius-prediction-view");
-  check("missing value falls back to detailed", readPredictionView(memory()) === "detailed");
-  check("no storage falls back to detailed", readPredictionView(null) === "detailed" && readPredictionView(undefined) === "detailed");
-  check("throwing storage falls back to detailed", readPredictionView(throwing) === "detailed");
+  check("missing value falls back to compact", readPredictionView(memory()) === "compact");
+  check("no storage falls back to compact", readPredictionView(null) === "compact" && readPredictionView(undefined) === "compact");
+  check("throwing storage falls back to compact", readPredictionView(throwing) === "compact");
   for (const bad of ["Compact", "table", "", "null", "1", " compact"]) {
     const s = memory();
     s.setItem(PREDICTION_VIEW_KEY, bad);
-    check(`invalid value ${JSON.stringify(bad)} falls back to detailed`, readPredictionView(s) === "detailed");
+    check(`invalid value ${JSON.stringify(bad)} falls back to compact`, readPredictionView(s) === "compact");
   }
-  check("parse rejects non-strings", parsePredictionView(1) === "detailed" && parsePredictionView({}) === "detailed");
+  check("parse rejects non-strings", parsePredictionView(1) === "compact" && parsePredictionView({}) === "compact");
 
   // One key for every feed: a choice made on Genius is what Banker/VIP/Goals read.
   const s = memory();

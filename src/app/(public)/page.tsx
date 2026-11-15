@@ -254,8 +254,8 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   });
 
   const ARROW = "inline-flex min-h-9 items-center whitespace-nowrap text-sm font-semibold text-brand hover:underline";
-  // A single scrolling line below sm, wrapping from sm up. The negative margin lets the pills run to the card edge.
-  const PILL_ROW = "-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0";
+  // Keep all category shortcuts visible: wrap naturally on narrow screens instead of sliding.
+  const PILL_ROW = "flex min-w-0 flex-wrap gap-2";
 
   return (
     <div className="space-y-12">
@@ -343,8 +343,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
           <div className="flex min-w-0 flex-col gap-2">
-            {/* One scrolling line on a phone (a wrapped block of pills took ~290px
-                and pushed the first pick two screens down); wraps from sm. */}
+            {/* All category shortcuts remain visible without horizontal scrolling. */}
             <div className={PILL_ROW}>
               {HOME_CATEGORY_LINKS.map((c) => (
                 <HomeLink

@@ -15,10 +15,10 @@ export type PredictionView = (typeof PREDICTION_VIEWS)[number];
 
 /**
  * What the server renders and what any unreadable preference falls back to.
- * Detailed is the page as it was before the toggle existed, so a reader with
- * no storage — private window, blocked site data — sees exactly that.
+ * Compact is the default for new visitors and when storage is unavailable.
+ * Readers can still explicitly choose Detailed and keep that preference.
  */
-export const DEFAULT_PREDICTION_VIEW: PredictionView = "detailed";
+export const DEFAULT_PREDICTION_VIEW: PredictionView = "compact";
 
 export function parsePredictionView(value: unknown): PredictionView {
   return value === "compact" || value === "detailed" ? value : DEFAULT_PREDICTION_VIEW;
