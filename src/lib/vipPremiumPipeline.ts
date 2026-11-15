@@ -66,6 +66,7 @@ import {
   type PaidPublishBlock,
   type PaidTier,
   type VipPremiumTarget,
+  type WarmBandSkip,
 } from "@/lib/vipPremiumOverlay";
 
 export {
@@ -453,6 +454,8 @@ export type TargetSelection = {
   warmed: number;
   /** Why each considered fixture was not targeted. */
   skipped: Partial<Record<OverlaySkipReason | OddsSkipReason, number>>;
+  /** Diagnostic: warm-band candidates skipped on this run and why (vipPremiumOverlay.ts WarmBandSkip). Never read by a decision. */
+  warmBandSkips?: WarmBandSkip[];
   /** The core was thin, so this run also looked at the widened competitions. */
   widened: boolean;
   /** Covered core fixtures inside the window. */
@@ -604,6 +607,7 @@ export async function selectVipPremiumTargets(
     oddsCalls,
     warmed,
     skipped: { ...plan.skipped, ...odds.skipped },
+    warmBandSkips: odds.warmBandSkips,
     widened: plan.widened,
     coreFixtures: plan.coreFixtures,
     ...(spareQuota ? { spareQuota } : {}),
