@@ -16,6 +16,10 @@ name: sprint11-production-audit
 on:
   workflow_dispatch:
     inputs:
+      operational_safety_only:
+        description: "Read-only production target/backup audit; restore only on isolated runner"
+        type: boolean
+        default: false
       days:
         description: "look-back in days"
         default: "30"
@@ -39,6 +43,7 @@ concurrency:
 
 jobs:
   audit:
+    if: ${{ !inputs.operational_safety_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -112,3 +117,44 @@ jobs:
           REQUIRE_READ_ONLY: "1"
           ALT_MARKET_SCREEN_ONLY: "1"
         run: npx tsx scripts/run-alt-market-experiment.ts
+
+  operational-safety:
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      scratch:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: audit
+          POSTGRES_PASSWORD: isolated_runner_only
+          POSTGRES_DB: restore_audit
+        options: >-
+          --health-cmd "pg_isready -U audit -d restore_audit"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Local audit self-test
+        run: node scripts/ops/readonly-backup-audit.mjs --self-test
+      - name: Read-only production audit and isolated backup restore
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          DB_ON_VPS: ${{ vars.DB_ON_VPS }}
+          OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+          AUDIT_LOCAL_PG_CONTAINER: ${{ job.services.scratch.id }}
+          AUDIT_DIR: ${{ runner.temp }}/betgenius-backup-audit
+        run: node scripts/ops/readonly-backup-audit.mjs
+      - name: Delete runner-only temporary archive
+        if: always()
+        run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
