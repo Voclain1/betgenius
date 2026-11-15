@@ -93,6 +93,9 @@ jobs:
           for v in OPS_ENV_FILE POSTGRES_PASSWORD SITE_DOMAIN; do
             [ -n "${!v}" ] || { echo "::error::$v is not set"; exit 1; }
           done
+          # Fail before copying settings: stale R2 templates must not overwrite
+          # the verified on-host backup repair. This does not deploy anything.
+          node scripts/ops/validate-backup-settings.mjs
           umask 077
           mkdir -p out
           # The app always talks to the Postgres beside it; any DATABASE_URL in

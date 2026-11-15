@@ -37,6 +37,8 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - run: node scripts/ops/validate-backup-settings.mjs --self-test
+      - run: node scripts/ops/readonly-backup-audit.mjs --self-test
       - run: npx prisma db push --skip-generate
       - run: npm run check:vip-quota-experiment
       - run: npm run check:vip-quota-postgres
