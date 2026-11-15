@@ -20,9 +20,15 @@ function ssh(command,input){
  catch(e){const msg=String(e.stderr??'');e.category=/service.*not running/i.test(msg)?'production-service-unavailable':/Permission denied|Could not resolve|Connection refused|timed out/i.test(msg)?'ssh-or-service-access':/env.sh.*(not found|No such file)/i.test(msg)?'ops-environment-file-missing':'remote-read-only-probe-failed';throw e;}
 }
 function inventory(prefix){
- assert.ok(['daily','weekly'].includes(prefix));
- try{return JSON.parse(ssh(ops('exec rclone lsjson "backup:${BACKUP_BUCKET}/'+prefix+'" --files-only')));}
- catch(e){emit('backup_inventory_error',{prefix,category:classifyError(String(e.stderr??''))});throw new Error('backup inventory could not be verified');}
+ assert.ok(['daily','weekly'].includes(prefix));let raw;
+ try{raw=ssh(ops('exec rclone lsjson "backup:${BACKUP_BUCKET}/'+prefix+'" --files-only'));return JSON.parse(raw);}
+ catch(e){
+  const stderr=String(e.stderr??'');
+  const tokens=[...new Set(stderr.match(/AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|NoSuchBucket|InvalidBucketName|ExpiredToken|InvalidToken|AuthorizationHeaderMalformed|RequestTimeTooSkewed|AllAccessDisabled|InvalidArgument|InvalidRequest|NoCredentials|InvalidEndpoint|directory not found|no such host|connection refused|i\/o timeout|TLS handshake|x509|unsupported protocol scheme|unknown flag|unknown command|failed to create file system|didn.t find section|\b(?:400|401|403|404|429|500|502|503)\b/gi)??[])];
+  e.category=raw!==undefined?'backup-inventory-invalid-json':classifyError(stderr);
+  emit('backup_inventory_error',{prefix,category:e.category,error_type:e.name,exit_status:e.status??null,signal:e.signal??null,safe_error_tokens:tokens,stdout_bytes:raw?.length??null,stderr_bytes:stderr.length});
+  throw e;
+ }
 }
 function opsSnapshot(){const s=JSON.parse(ssh(ops('export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=15000"; exec psql -XAt -v ON_ERROR_STOP=1'),snapshotSql));assert.equal(s.read_only,'on');return s;}
 function validateSnapshot(s){assert.equal(s.read_only,'on');assert.equal(s.database,'betgenius');assert.equal(s.in_recovery,false);assert.equal(s.ddl_candidates.length,0,'active possible DDL');assert.equal(s.ddl_locks.length,0,'active possible schema lock');}
