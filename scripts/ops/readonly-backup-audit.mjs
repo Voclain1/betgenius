@@ -27,13 +27,14 @@ async function storageConfigurationEvidence(){
  const fields=raw.split('\0');const [endpoint,type,provider,region,pathStyle]=fields;
  const clean=(v,pattern)=>pattern.test(v??'')?v:v?'(set, unexpected format)':'(unset)';
  const settings={type:clean(type,/^(s3|b2|azureblob|sftp)$/),provider:clean(provider,/^(Other|AWS|Backblaze|Cloudflare|DigitalOcean|Wasabi|Minio|Ceph|Dreamhost|Alibaba|TencentCOS|IBMCOS)$/),region:clean(region,/^[a-z0-9-]{1,40}$/),force_path_style:clean(pathStyle,/^(true|false)$/)};
- const trimmed=endpoint.trim();const normalized=trimmed.replace(/^(["'])(.*)\1$/s,'$2').replace(/^<(.*)>$/s,'$1').trim();
- const shape={returned_fields:fields.length,endpoint_length:endpoint.length,has_surrounding_whitespace:trimmed!==endpoint,has_quote_wrappers:/^(["']).*\1$/s.test(trimmed),has_angle_wrappers:/^<.*>$/s.test(trimmed),contains_whitespace:/\s/.test(trimmed),contains_template_markers:/<|>|\$\{|YOUR_|REPLACE|CHANGEME|object storage URL/i.test(trimmed)};
- let u;try{u=new URL(normalized.includes('://')?normalized:'https://'+normalized);}catch{emit('storage_configuration',{...settings,...shape,endpoint_parseable:false,normalization_would_change:normalized!==endpoint});return;}
- emit('storage_endpoint_shape',{...shape,normalization_would_change:normalized!==endpoint});
  const containerEndpoint=ssh(remoteBase+' exec -T ops sh -c '+quote('printf %s "${RCLONE_CONFIG_BACKUP_ENDPOINT-}"'));
  const fileEndpoint=ssh("cd /opt/betgenius && sed -n 's/^RCLONE_CONFIG_BACKUP_ENDPOINT=//p' ops.env").trim().replace(/^(["'])(.*)\1$/,'$2');
  const ns=ssh(ops("awk '$1 == \"nameserver\" {print $2}' /etc/resolv.conf")).trim().split('\n').filter(x=>/^[0-9a-f:.]+$/i.test(x));
+ const configEvidence={saved_env_matches_container:endpoint===containerEndpoint,host_ops_file_matches_container:fileEndpoint===containerEndpoint,container_nameservers:ns};
+ const trimmed=endpoint.trim();const normalized=trimmed.replace(/^(["'])(.*)\1$/s,'$2').replace(/^<(.*)>$/s,'$1').trim();
+ const shape={returned_fields:fields.length,endpoint_length:endpoint.length,has_surrounding_whitespace:trimmed!==endpoint,has_quote_wrappers:/^(["']).*\1$/s.test(trimmed),has_angle_wrappers:/^<.*>$/s.test(trimmed),contains_whitespace:/\s/.test(trimmed),contains_template_markers:/<|>|\$\{|YOUR_|REPLACE|CHANGEME|object storage URL/i.test(trimmed)};
+ let u;try{u=new URL(normalized.includes('://')?normalized:'https://'+normalized);}catch{emit('storage_configuration',{...settings,...shape,...configEvidence,endpoint_parseable:false,normalization_would_change:normalized!==endpoint,container_control_dns:ssh(ops('if getent hosts example.com >/dev/null 2>&1; then echo resolves; else echo unresolved; fi')).trim(),runner_control_dns:await dns.resolve4('example.com').then(()=> 'resolves',e=>e.code)});return;}
+ emit('storage_endpoint_shape',{...shape,normalization_would_change:normalized!==endpoint});
  const probe=host=>`if getent hosts ${quote(host)} >/dev/null 2>&1; then echo resolves; else echo unresolved; fi`;
  const hostDns=ssh(probe(u.hostname)).trim();
  const containerDns=ssh(ops(probe(u.hostname))).trim();
