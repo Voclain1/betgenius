@@ -24,6 +24,9 @@ on:
     paths:
       - scripts/audit-sprint11.ts
       - scripts/diagnose-entry-price-evidence.ts
+      - scripts/measure-supply-funnel.ts
+      - scripts/measure-attempt-yield.ts
+      - src/lib/supplyFunnel.ts
       - src/lib/sprint11Audit.ts
       - .github/workflows/sprint11-production-audit.yml
 
@@ -84,6 +87,14 @@ jobs:
         env:
           REQUIRE_READ_ONLY: "1"
         run: npx tsx scripts/audit-sprint11.ts "${{ github.event.inputs.days || '30' }}"
+      - name: Supply funnel, 14 days (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-supply-funnel.ts 14
+      - name: Dedicated attempt yield by signal, 30 days (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-attempt-yield.ts 30
       - name: Publication-price evidence diagnosis (read-only)
         env:
           REQUIRE_READ_ONLY: "1"

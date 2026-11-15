@@ -429,7 +429,20 @@ export type VipPremiumTarget = OverlayCandidate & {
 /** NO_QUOTED_MARKET: no targetable market quoted by MC_MIN_BOOKMAKERS or more books (lopsidednessSignal drops thinner ones). */
 export type OddsSkipReason = "NO_FRESH_QUOTE" | "NO_QUOTED_MARKET" | "MARKET_BELOW_BAR" | "KICKOFF_DAY_QUOTA";
 
+/**
+ * Why a candidate inside the warm band (kickoff within VIP_PREMIUM_WARM_WITHIN_MS)
+ * was not targeted on this run. Diagnostic only: recorded on the pass's JobRun so
+ * a lopsided fixture that is never attempted can be explained afterwards
+ * (Sprint 09 §5 and the supply-reliability audit could not, because only counts
+ * were stored). Never read by any decision.
+ */
+export type WarmBandSkip = { matchKey: string; kickoff: string; leagueApiId: number; reason: OddsSkipReason; signal: number | null; quoteAgeMinutes: number | null };
+/** At most this many warm-band skips are recorded per run, soonest kickoff first. */
+export const WARM_BAND_SKIP_RECORD_LIMIT = 20;
+
 export type OddsQualification = {
+  /** Diagnostic record of warm-band candidates skipped on this run (WarmBandSkip). */
+  warmBandSkips: WarmBandSkip[];
   targets: VipPremiumTarget[];
   /** Candidates with a quote fresh enough for the gate to read. */
   freshlyPriced: number;
@@ -458,15 +471,26 @@ export function qualifyVipPremiumTargets(
   spareSlots?: ReadonlyMap<string, number>,
 ): OddsQualification {
   const skipped: OddsQualification["skipped"] = {};
-  const skip = (r: OddsSkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
+  const warmBand: WarmBandSkip[] = [];
+  let current: { c: OverlayCandidate; q: OverlayQuote | undefined; signal: number | null } | null = null;
+  const skip = (r: OddsSkipReason) => {
+    skipped[r] = (skipped[r] ?? 0) + 1;
+    if (current && current.c.kickoff.getTime() - now.getTime() <= VIP_PREMIUM_WARM_WITHIN_MS) {
+      const at = current.q?.fetchedAt;
+      warmBand.push({ matchKey: current.c.matchKey, kickoff: current.c.kickoff.toISOString(), leagueApiId: current.c.leagueApiId, reason: r, signal: current.signal,
+        quoteAgeMinutes: at ? Math.round((now.getTime() - at.getTime()) / 60_000) : null });
+    }
+  };
   let freshlyPriced = 0;
   const qualified: VipPremiumTarget[] = [];
   const spareTaken = new Map<string, number>();
   for (const c of candidates) {
     const q = quotes.get(c.matchKey);
+    current = { c, q, signal: null };
     if (!isFresh(q, now)) { skip("NO_FRESH_QUOTE"); continue; }
     freshlyPriced++;
     const best = lopsidednessSignal(q!.oddsJson);
+    current.signal = best ? Number(best.probability.toFixed(1)) : null;
     if (!best) { skip("NO_QUOTED_MARKET"); continue; }
     if (best.probability < VIP_MARKET_FLOOR) { skip("MARKET_BELOW_BAR"); continue; }
     if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= kickoffDayQuota.quota) { skip("KICKOFF_DAY_QUOTA"); continue; }
@@ -496,7 +520,8 @@ export function qualifyVipPremiumTargets(
       a.kickoff.getTime() - b.kickoff.getTime() ||
       a.matchKey.localeCompare(b.matchKey),
   );
-  return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped };
+  warmBand.sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.matchKey.localeCompare(b.matchKey));
+  return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped, warmBandSkips: warmBand.slice(0, WARM_BAND_SKIP_RECORD_LIMIT) };
 }
 
 // ── Spare kickoff-day quota (VIP/Premium Sprint 09) ────────────────────────

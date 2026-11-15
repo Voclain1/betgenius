@@ -269,6 +269,25 @@ async function main() {
     eq("odds: freshly priced / qualified counts", [r.freshlyPriced, r.qualified], [4, 2]);
     eq("odds: the limit is respected", overlay.qualifyVipPremiumTargets([a, b], q([[a, fresh(78)], [b, fresh(86)]]), NOW, 1).targets.length, 1);
 
+    // Supply reliability: the warm-band skip record is diagnostic only.
+    eq("warm-band record: one entry per skipped warm-band candidate, with the reason", r.warmBandSkips.map((s: Any) => s.reason).sort(), ["MARKET_BELOW_BAR", "NO_FRESH_QUOTE", "NO_QUOTED_MARKET"]);
+    eq("warm-band record: the signal is kept when the quote was read", r.warmBandSkips.find((s: Any) => s.reason === "MARKET_BELOW_BAR")?.signal != null, true);
+    eq("warm-band record: ...and null when no fresh quote existed", r.warmBandSkips.find((s: Any) => s.reason === "NO_FRESH_QUOTE")?.signal, null);
+    eq("warm-band record: quote age is recorded", r.warmBandSkips.find((s: Any) => s.reason === "NO_FRESH_QUOTE")?.quoteAgeMinutes, 150);
+    eq("warm-band record: targets are never listed", r.warmBandSkips.some((s: Any) => r.targets.some((t: Any) => t.matchKey === s.matchKey)), false);
+    const [far] = cands([[35, 30]]);
+    const rf = overlay.qualifyVipPremiumTargets([far], q([]), NOW, 6);
+    eq("warm-band record: a candidate 24-48h out is counted but not recorded", [rf.skipped.NO_FRESH_QUOTE, rf.warmBandSkips.length], [1, 0]);
+    const lots = cands(Array.from({ length: 30 }, (_, i) => [200 + i, 13 + i * 0.3] as [number, number]));
+    const rl = overlay.qualifyVipPremiumTargets(lots, q([]), NOW, 6);
+    eq("warm-band record: bounded to WARM_BAND_SKIP_RECORD_LIMIT, soonest first", [rl.warmBandSkips.length, rl.skipped.NO_FRESH_QUOTE, rl.warmBandSkips[0].kickoff <= rl.warmBandSkips[19].kickoff], [overlay.WARM_BAND_SKIP_RECORD_LIMIT, 30, true]);
+    eq("warm-band record: the limit is 20", overlay.WARM_BAND_SKIP_RECORD_LIMIT, 20);
+    const quotaDay = overlay.qualifyVipPremiumTargets([a, b], q([[a, fresh(78)], [b, fresh(86)]]), NOW, 6, { used: new Map([[a.kickoff.toLocaleDateString("en-CA", { timeZone: "Africa/Lagos" }), 8]]), quota: 8 });
+    eq("warm-band record: a quota-spent day records KICKOFF_DAY_QUOTA with the signal", quotaDay.warmBandSkips.every((s: Any) => s.reason === "KICKOFF_DAY_QUOTA" && typeof s.signal === "number"), true);
+    eq("warm-band record: decisions are identical (targets, counts) with the record present", [quotaDay.targets.length, quotaDay.skipped.KICKOFF_DAY_QUOTA], [0, 2]);
+    const pipelineSrc = readFileSync(join(__dirname, "../src/lib/vipPremiumPipeline.ts"), "utf8");
+    eq("warm-band record: no decision reads it (only the report field and its one assignment)", pipelineSrc.split("\n").filter((l) => l.includes("warmBandSkips")).map((l) => l.trim()), ["warmBandSkips?: WarmBandSkip[];", "warmBandSkips: odds.warmBandSkips,"]);
+
     // Kickoff-day ordering and quota. NOW is 09:00 Lagos on 10 Oct: +14h is
     // 23:00 that day, +40h is 01:00 on 12 Oct.
     const [today, later] = cands([[40, 14], [41, 40]]);
