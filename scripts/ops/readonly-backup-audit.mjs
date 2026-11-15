@@ -157,10 +157,14 @@ async function main(){
   timer=setInterval(()=>{try{const s=opsSnapshot();validateSnapshot(s);assert.equal(s.schema_fingerprint,live.schema_fingerprint);observations.push(s);}catch(e){monitoringError=e;}},15000);
   await run('ssh',['-o','BatchMode=yes','vps',(storageReader||ops)('exec rclone cat "backup:${BACKUP_BUCKET}/daily/'+latest.Name+'"')],{outputFile:dump});
   const bytes=readFileSync(dump);assert.equal(bytes.length,latest.Size);emit('download_verified',{bytes:bytes.length,sha256:sha(bytes)});
-  const toc=execFileSync('docker',['exec','-i',localContainer,'pg_restore','--list'],{input:bytes,encoding:'utf8',timeout:60000,stdio:['pipe','pipe','pipe']});
+  // pg_restore --list stops reading after the TOC; piping the entire archive can EPIPE.
+  // Copy only into the disposable service, then read its local file for both operations.
+  const isolatedDump='/tmp/betgenius-restore.dump';
+  execFileSync('docker',['cp',dump,localContainer+':'+isolatedDump],{stdio:'pipe',timeout:60000});
+  const toc=execFileSync('docker',['exec',localContainer,'pg_restore','--list',isolatedDump],{encoding:'utf8',timeout:60000,stdio:['pipe','pipe','pipe']});
   emit('archive_metadata',{lines:toc.split('\n').filter(x=>/^;.*(dbname:|Dumped from database version:|Dumped by pg_dump version:|Dump Version:|TOC Entries:|Archive created at)/.test(x))});
   assert.equal(toc.match(/^;.*dbname:\s+([^\r\n]+)$/m)?.[1].trim(),live.database,'archive belongs to another database');
-  await run('docker',['exec','-i',localContainer,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','audit','-d','restore_audit'],{inputFile:dump});
+  await run('docker',['exec',localContainer,'pg_restore','--exit-on-error','--no-owner','--no-privileges','-U','audit','-d','restore_audit',isolatedDump]);
   const countSql=`SELECT json_build_object('database',current_database(),'User',(SELECT count(*) FROM "User"),'Prediction',(SELECT count(*) FROM "Prediction"),'Subscription',(SELECT count(*) FROM "Subscription"),'PaymentAttempt',(SELECT count(*) FROM "PaymentAttempt"));`;
   const restored=JSON.parse(execFileSync('docker',['exec','-i',localContainer,'psql','-U','audit','-d','restore_audit','-XAt','-v','ON_ERROR_STOP=1'],{input:countSql,encoding:'utf8',timeout:30000}));
   for(const table of Object.keys(live.counts))if(live.counts[table]>0)assert.ok(restored[table]>0,`restored ${table} empty`);
