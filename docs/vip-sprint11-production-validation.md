@@ -131,7 +131,36 @@ The pre-registered rule reads **NO_GO on the interim sample**: 1 incremental aga
 
 ROI is flat stakes. **The estimated ROI uses the last pre-kickoff cached median, a closing reference, not the price a subscriber saw.**
 
-**Observed entry-price ROI cannot be computed.** No settled dedicated pick produced a verifiable publication price under `verifiedEntryPrice`, which requires an explicit pre-kickoff quote and confirmation timestamps. The cause is not established here, and finding it is a next action.
+**Observed entry-price ROI cannot be computed yet.** The root cause is established below (§7a). It is not a defect.
+
+### 7a. Why no settled pick has a verified publication price
+
+**The path traced:**
+
+1. **Bookmaker quote.** `FixtureOddsCache` holds the per-selection median and the named quotes.
+2. **Promotion.** `applyVipPremiumGate` freezes `marketConfirmation`: the verdict, plus `quoteFetchedAt`, `confirmedAt` and `entryValueRecord` (`entryPrice`, `entryPriceBasis`, named quotes). `entryValueRecord` arrived in #176, merged 13 Nov 14:48 UTC.
+3. **Publication.** `publishPaidPredictionAtomically` appends an immutable `publicationQuoteEvidence` snapshot in the same transaction. This arrived in #178, merged 13 Nov 21:02 UTC.
+4. **Audit.** `verifiedEntryPrice` requires:
+   - an entry price above 1,
+   - a quote timestamp no later than the confirmation,
+   - a quote at most 6h old at confirmation,
+   - a confirmation before kickoff.
+
+**Evidence.** `scripts/diagnose-entry-price-evidence.ts` (run 43694289475, read-only) classifies every dedicated row with kickoff in the last 60 days or later. That is 109 rows. Its classifier agrees with `verifiedEntryPrice` on all 109, with 0 disagreements.
+
+| Rows | Promoted | State | Promotion record | Publication snapshot |
+|---|---|---|---|---|
+| 108 | 18 Sep – 13 Nov, before #176 | settled | `NO_ENTRY_PRICE_FIELD` | none (predates #178) |
+| 1 | 14 Nov 18:35 UTC, after #178 | upcoming (kickoff 16 Nov 17:00) | **VERIFIED** (1.23) | **VERIFIED** (1.23) |
+
+**Conclusion:**
+- Every settled dedicated pick was promoted before the code that writes an entry price existed. That code had never run on them.
+- The one pick promoted since then carries complete, verifiable evidence at both levels.
+- The write and read paths are correct, so **no production change is justified.**
+- Observed ROI will start to accumulate as post-#178 picks settle. The first is on 16 Nov.
+- Only one dedicated pick has been promoted in the 2 days since #178. That is a supply observation, not an evidence defect.
+
+**Audit correction.** The Sprint 11 audit's first version read only the promotion record. It now reads the publication snapshot first, because that is the price at publication, and falls back to the promotion record. Both give the same result today.
 
 | Tier | Decided | Strike (95% CI) | Mean conf | Calib (conf − strike) | Gap to closing market | Est. ROI |
 |---|---|---|---|---|---|---|
@@ -199,7 +228,7 @@ The 7,400 days sit at the paid-priority ceiling, so **daily headroom is the bind
 
 - **8.1h of post-deploy observation.** No settled pick has passed through the Double Chance fix or spare quota yet.
 - **Decision-time quotes are not stored.** Double Chance and dry-day reconstructions use the last pre-kickoff quote.
-- **Observed entry prices are missing** for settled dedicated picks. Every ROI here is estimated from closing references.
+- **Observed entry prices do not yet exist for any settled pick.** All 108 settled dedicated picks predate #176 (§7a). Every ROI here is estimated from closing references.
 - **Not checked:** the cron-job.org schedule, provider-side billing, and entitlement leak probes (`verify-paid-production.ts` was not run in this sprint).
 - **Interval width.** Paid samples are 37–86 decided picks, so the Wilson intervals are 15–20pp wide.
 
@@ -221,7 +250,7 @@ The 7,400 days sit at the paid-priority ceiling, so **daily headroom is the bind
 
 ## 12. Three highest-impact next actions
 
-1. **Restore observed entry prices.** Find out why no settled dedicated pick passes `verifiedEntryPrice`, then fix where the evidence is written. Without it, subscriber value is only ever estimated.
+1. **Accumulate observed entry prices.** The cause is resolved (§7a): the path works and the gap is historical. Re-run `diagnose-entry-price-evidence` as post-#178 picks settle, and report observed ROI only once at least 30 verified picks have settled.
 2. **Re-run this audit at 7 and 30 days.** Dispatch `sprint11-production-audit`. At 30 days, compare spare-quota would-be targets against the 3.8/month estimate and count published away-DC picks as incremental.
 3. **Settle Belgium v Italy after 15 Nov.** Screen before any further experiment run, using `alt-market-research` with job `screen`, and never request a billed run on an empty screen.
 
@@ -229,4 +258,5 @@ The 7,400 days sit at the paid-priority ceiling, so **daily headroom is the bind
 
 - **Production audit:** dispatch `sprint11-production-audit` (read-only, no model key, no schedule).
 - **Experiment screen:** `alt-market-research` with `job=screen`. No credential check is made and no model request is sent.
-- **Checks:** `npx tsx scripts/check-sprint11-audit.ts` (40 checks) and `npm run check:alt-market-research` (70 checks).
+- **Publication-price evidence:** `REQUIRE_READ_ONLY=1 npx tsx scripts/diagnose-entry-price-evidence.ts 60` (also a step in `sprint11-production-audit`).
+- **Checks:** `npx tsx scripts/check-sprint11-audit.ts` (70 checks) and `npm run check:alt-market-research` (70 checks).

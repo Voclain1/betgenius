@@ -21,8 +21,9 @@ import { join } from "node:path";
 import type { FixtureOdds, OddsSelection } from "../src/lib/odds";
 import { lopsidednessSignal } from "../src/lib/marketConfirmed";
 import {
-  classifyDryDay, compareDcSignals, legacyLopsidednessSignal, summariseSpareQuotaRuns, wilsonPct, type DryDayInput,
+  ENTRY_EVIDENCE_ERAS, classifyDryDay, compareDcSignals, entryEvidenceEra, entryEvidenceStatus, legacyLopsidednessSignal, summariseSpareQuotaRuns, wilsonPct, type DryDayInput,
 } from "../src/lib/sprint11Audit";
+import { verifiedEntryPrice } from "../src/lib/paidEntryEvidence";
 
 let passed = 0, failed = 0;
 function check(name: string, ok: boolean, detail?: unknown) {
@@ -113,6 +114,58 @@ console.log("3. Spare-quota run summary");
   check("would-be targets deduplicated by fixture+kickoff", s.wouldTarget.length === 1 && s.wouldTarget[0].runs === 2 && s.wouldTarget[0].maxMarket === 80, s.wouldTarget);
   check("slots per day: maximum seen", s.slotsByDay["2026-11-16"] === 2);
   check("no 'on' mode reported", !s.modes.on);
+}
+
+console.log("3b. Publication-price evidence (shapes copied from production rows, run 43694289475)");
+{
+  const kickoff = new Date("2026-11-16T17:00:00.000Z");
+  // Promoted 14 Nov after #178: promotion record plus publication snapshot.
+  const record = {
+    bookmakers: 6, gapPP: 1.2, market: "Goals Over/Under", value: "Over 1.5", marketProbability: 80.1, modelProbability: 78, tier: "VIP",
+    quoteFetchedAt: "2026-11-14T17:45:04.761Z", confirmedAt: "2026-11-14T18:35:24.578Z",
+    entryPrice: 1.23, entryBookmakers: 6, entryPriceBasis: "BOOKMAKER_MEDIAN_INDICATIVE", entryQuoteSelection: { market: "Goals Over/Under", value: "Over 1.5" },
+    entryQuoteSources: [{ bookmaker: "b", odd: 1.25 }],
+  };
+  const modern = { ...record, publicationQuoteEvidence: { ...record, confirmedAt: "2026-11-14T18:35:24.600Z", evidenceKind: "PUBLICATION_INDICATIVE" } };
+  // Promoted 18 Sep, before #176: no entry price was ever written.
+  const legacy = { bookmakers: 6, confirmedAt: "2026-09-18T18:20:16.050Z", gapPP: 2, market: "Double Chance", marketProbability: 79, modelProbability: 77, quoteFetchedAt: "2026-09-18T18:20:06.956Z", tier: "VIP", value: "Home/Draw" };
+  const legacyKickoff = new Date("2026-09-20T16:30:00.000Z");
+
+  check("post-#178 promotion record: VERIFIED", entryEvidenceStatus(modern, kickoff) === "VERIFIED");
+  check("post-#178 publication snapshot: VERIFIED", entryEvidenceStatus(modern.publicationQuoteEvidence, kickoff) === "VERIFIED");
+  check("post-#178: verifiedEntryPrice reads 1.23 from both records", verifiedEntryPrice(modern, kickoff) === 1.23 && verifiedEntryPrice(modern.publicationQuoteEvidence, kickoff) === 1.23);
+  check("pre-#176 shape: NO_ENTRY_PRICE_FIELD and verifiedEntryPrice null", entryEvidenceStatus(legacy, legacyKickoff) === "NO_ENTRY_PRICE_FIELD" && verifiedEntryPrice(legacy, legacyKickoff) === null);
+  check("pre-#176 shape: era classified as before #176", entryEvidenceEra(new Date(legacy.confirmedAt)) === ENTRY_EVIDENCE_ERAS[0].name);
+  check("14 Nov promotion: era classified as after #178", entryEvidenceEra(new Date(record.confirmedAt)) === ENTRY_EVIDENCE_ERAS[2].name);
+
+  // Every failure branch, and agreement with the production verifier on each.
+  const variants: Array<[string, unknown, Date, string]> = [
+    ["null confirmation", null, kickoff, "NO_CONFIRMATION"],
+    ["entry price null (no direct line)", { ...record, entryPrice: null, entryPriceBasis: "UNAVAILABLE" }, kickoff, "ENTRY_PRICE_UNAVAILABLE"],
+    ["entry price 1.0", { ...record, entryPrice: 1 }, kickoff, "ENTRY_PRICE_UNAVAILABLE"],
+    ["no quote timestamp", { ...record, quoteFetchedAt: null }, kickoff, "MISSING_QUOTE_TIMESTAMP"],
+    ["no confirmedAt", { ...record, confirmedAt: undefined }, kickoff, "MISSING_CONFIRMED_AT"],
+    ["quote after confirmation", { ...record, quoteFetchedAt: "2026-11-14T19:00:00.000Z" }, kickoff, "QUOTE_AFTER_CONFIRMATION"],
+    ["quote 7h older than confirmation", { ...record, quoteFetchedAt: "2026-11-14T11:30:00.000Z" }, kickoff, "QUOTE_OLDER_THAN_6H"],
+    ["confirmed at kickoff", record, new Date(record.confirmedAt), "CONFIRMED_AT_OR_AFTER_KICKOFF"],
+    ["invalid kickoff", record, new Date(NaN), "INVALID_KICKOFF"],
+  ];
+  for (const [name, c, k, want] of variants) {
+    const got = entryEvidenceStatus(c, k);
+    check(`${name} -> ${want}`, got === want, got);
+    check(`${name}: agrees with verifiedEntryPrice`, (verifiedEntryPrice(c, k) != null) === (got === "VERIFIED"));
+  }
+
+  const audit = read("scripts/audit-sprint11.ts");
+  check("audit reads the publication snapshot first, promotion record second", /verifiedEntryPrice\(mc\?\.publicationQuoteEvidence \?\? mc, /.test(audit));
+  const diag = read("scripts/diagnose-entry-price-evidence.ts");
+  check("diagnosis cross-checks its classifier against verifiedEntryPrice", /verifiedEntryPrice\(mc, r\.kickoff\)/.test(diag) && /disagrees on/.test(diag));
+  check("diagnosis is read-only", /REQUIRE_READ_ONLY !== "1"/.test(diag) && !/prisma\.\w+\.(create|update|upsert|delete|createMany|updateMany|deleteMany)\(|\$executeRaw/.test(diag));
+  // The write path still produces every field the verifier needs.
+  const pipeline = read("src/lib/vipPremiumPipeline.ts");
+  check("promotion writes quoteFetchedAt, confirmedAt and the entry record", /quoteFetchedAt: entry\?\.fetchedAt\?\.toISOString\(\) \?\? null,\s*confirmedAt: now\.toISOString\(\),[\s\S]{0,300}\.\.\.entryValueRecord\(winner\.row, odds\)/.test(pipeline));
+  check("publication snapshot carries quoteFetchedAt and confirmedAt", /\.\.\.publicationRecord,\s*quoteFetchedAt: quote\?\.fetchedAt\?\.toISOString\(\) \?\? null,\s*confirmedAt: now\.toISOString\(\)/.test(pipeline));
+  check("entry record writes entryPrice and basis", /entryPrice: executable\?\.median \?\? null[\s\S]{0,80}entryPriceBasis: executable \? "BOOKMAKER_MEDIAN_INDICATIVE" : "UNAVAILABLE"/.test(pipeline));
 }
 
 console.log("4. Guards the audit found missing");
