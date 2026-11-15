@@ -20,6 +20,10 @@ on:
         description: "Read-only production target/backup audit; restore only on isolated runner"
         type: boolean
         default: false
+      verify_backup_bucket_only:
+        description: "Read-only BetGenius/School Kit bucket and prefix verification"
+        type: boolean
+        default: false
       days:
         description: "look-back in days"
         default: "30"
@@ -146,7 +150,13 @@ jobs:
       - run: npm ci
       - name: Local audit self-test
         run: node scripts/ops/readonly-backup-audit.mjs --self-test
+      - name: Read-only bucket verification
+        if: inputs.verify_backup_bucket_only
+        env:
+          OPERATIONAL_READ_ONLY_AUDIT: 'yes'
+        run: node scripts/ops/verify-backup-bucket.mjs
       - name: Read-only production audit and isolated backup restore
+        if: ${{ !inputs.verify_backup_bucket_only }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
