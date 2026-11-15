@@ -296,7 +296,7 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   check("buttons are type=button", count(out, 'type="button"') === 2);
   check("tabs, then intro, then the list",
     out.indexOf("TABS") < out.indexOf("Prediction view") && out.indexOf("Prediction view") < out.indexOf("INTRO") &&
-      out.indexOf("INTRO") < out.indexOf("DETAILED-VIEW"));
+      out.indexOf("INTRO") < out.indexOf("COMPACT-VIEW"));
 }
 {
   const memory = () => {
@@ -310,14 +310,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
 
   check("the key is the shared one", PREDICTION_VIEW_KEY === "betgenius-prediction-view");
   check("missing value falls back to compact", readPredictionView(memory()) === "compact");
-  check("no storage falls back to compact", readPredictionView(null) === "detailed" && readPredictionView(undefined) === "compact");
+  check("no storage falls back to compact", readPredictionView(null) === "compact" && readPredictionView(undefined) === "compact");
   check("throwing storage falls back to compact", readPredictionView(throwing) === "compact");
   for (const bad of ["Compact", "table", "", "null", "1", " compact"]) {
     const s = memory();
     s.setItem(PREDICTION_VIEW_KEY, bad);
     check(`invalid value ${JSON.stringify(bad)} falls back to compact`, readPredictionView(s) === "compact");
   }
-  check("parse rejects non-strings", parsePredictionView(1) === "detailed" && parsePredictionView({}) === "compact");
+  check("parse rejects non-strings", parsePredictionView(1) === "compact" && parsePredictionView({}) === "compact");
 
   // One key for every feed: a choice made on Genius is what Banker/VIP/Goals read.
   const s = memory();
