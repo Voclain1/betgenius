@@ -28,6 +28,14 @@ on:
         description: "Use existing authenticated School Kit remote for isolated BetGenius recovery proof"
         type: boolean
         default: false
+      repair_backup_storage:
+        description: "Approved ops-only storage repair and scheduled backup test; requires successful isolated recovery run ID"
+        type: boolean
+        default: false
+      recovery_proof_run_id:
+        description: "Successful operational-safety recovery run on this PR branch (required for repair)"
+        type: string
+        default: ""
       days:
         description: "look-back in days"
         default: "30"
@@ -127,7 +135,7 @@ jobs:
         run: npx tsx scripts/run-alt-market-experiment.ts
 
   operational-safety:
-    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && !inputs.repair_backup_storage
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -173,3 +181,28 @@ jobs:
       - name: Delete runner-only temporary archive
         if: always()
         run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
+
+  backup-storage-repair:
+    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && inputs.repair_backup_storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful isolated recovery proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROOF_RUN: ${{ inputs.recovery_proof_run_id }}
+        run: |
+          [[ "$PROOF_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN" > "$RUNNER_TEMP/proof.json"
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/proof.json")); if(r.conclusion!=="success" || r.path!==".github/workflows/sprint11-production-audit.yml" || r.head_branch!=="codex/vip-controlled-quota" || Date.now()-Date.parse(r.updated_at)>3600000) process.exit(1)'
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PROOF_RUN/jobs" --jq '.jobs[] | select(.name=="operational-safety") | .conclusion' | grep -x success
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Repair only backup storage and test deployed backup script
+        run: ssh vps 'APPROVED_BACKUP_REPAIR=yes python3 -' < scripts/ops/repair-backup-storage.py
