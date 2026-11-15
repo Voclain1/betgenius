@@ -1,0 +1,103 @@
+# VIP/Premium Sprint 11: production validation audit. READ-ONLY.
+#
+# No schedule: runs on demand (workflow_dispatch) or when the audit itself
+# changes on the Sprint 11 branch. Every database session is forced read-only
+# and verified by the scripts. No model key is exported and nothing here calls
+# a model provider or api-football.
+#
+#   probe   the running container: deployed tag, image, start time, health and
+#           allowlisted flag values (names only from a fixed list, never secrets)
+#   audit   scripts/audit-sprint11.ts (job health, Double Chance, spare quota,
+#           subscriber value, dry days, spend), the existing paid-performance
+#           audit, and the alternative-market settlement (read-only)
+
+name: sprint11-production-audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "look-back in days"
+        default: "30"
+  push:
+    branches: ["ccr-0ae2ea72-2ta0dr"]
+    paths:
+      - scripts/audit-sprint11.ts
+      - scripts/diagnose-entry-price-evidence.ts
+      - src/lib/sprint11Audit.ts
+      - .github/workflows/sprint11-production-audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprint11-production-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Running deployment (allowlisted names only)
+        if: vars.DB_ON_VPS == 'true'
+        run: |
+          ssh vps 'bash -s' <<'PROBE'
+          set -u
+          cd /opt/betgenius || exit 0
+          echo "deployed APP_TAG=$(grep '^APP_TAG=' deploy.env | cut -d= -f2)"
+          docker compose --env-file deploy.env ps --format '{{.Service}} {{.State}} {{.Status}}' 2>/dev/null || true
+          C=$(docker compose --env-file deploy.env ps -q app 2>/dev/null | head -1)
+          [ -n "$C" ] || { echo "app container not found"; exit 0; }
+          echo "app started $(docker inspect -f '{{.State.StartedAt}}' "$C") image $(docker inspect -f '{{.Config.Image}}' "$C") health $(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$C") restarts $(docker inspect -f '{{.RestartCount}}' "$C")"
+          for n in PAID_SPARE_QUOTA_WIDENING COVERAGE_ROLLOUT PAID_QUALITY_POLICY PAID_SELECTION_MODE PAID_ROUTE_PRIMARY_PROVIDER PAID_CALIBRATION_DISABLED API_FOOTBALL_DAILY_LIMIT API_FOOTBALL_DAILY_RESERVE API_FOOTBALL_PAID_RESERVE ANTHROPIC_MODEL APP_ENV; do
+            v=$(docker exec "$C" printenv "$n" 2>/dev/null || true)
+            echo "running $n=${v:-(unset)}"
+          done
+          echo "app log lines in the last 6h matching error: $(docker logs --since 6h "$C" 2>&1 | grep -ciE 'error' || true)"
+          O=$(docker compose --env-file deploy.env ps -q ops 2>/dev/null | head -1)
+          [ -z "$O" ] || { echo "ops cron calls, last 12h:"; docker logs --since 12h "$O" 2>&1 | grep -E 'cron /|-> [0-9]{3}' | tail -20; }
+          PROBE
+      - name: Public health
+        run: |
+          for p in / /api/health; do printf '%s -> ' "$p"; curl -s -o /dev/null -m 20 -w '%{http_code}\n' "https://${{ vars.SITE_DOMAIN }}$p" || echo failed; done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Read-only database URL
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          RO=$(node -e 'const u=new URL(process.env.DATABASE_URL);u.searchParams.set("options","-c default_transaction_read_only=on");console.log(u.toString())')
+          echo "::add-mask::$RO"
+          echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
+          echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Sprint 11 audit
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/audit-sprint11.ts "${{ github.event.inputs.days || '30' }}"
+      - name: Publication-price evidence diagnosis (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/diagnose-entry-price-evidence.ts 60
+      - name: Paid performance (existing audit, 60 days)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/measure-paid-performance.ts 60
+      - name: Alternative-market settlement (read-only)
+        env:
+          REQUIRE_READ_ONLY: "1"
+        run: npx tsx scripts/settle-alt-market-experiment.ts
+      - name: Alternative-market screen (no model request)
+        env:
+          REQUIRE_READ_ONLY: "1"
+          ALT_MARKET_SCREEN_ONLY: "1"
+        run: npx tsx scripts/run-alt-market-experiment.ts

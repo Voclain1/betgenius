@@ -63,19 +63,23 @@ function priorObservations(): Observation[] {
 }
 
 async function main() {
-  if (process.env.ALT_MARKET_CONFIRM !== "RUN-ALT-MARKET-S10") throw new Error("refusing: ALT_MARKET_CONFIRM must be RUN-ALT-MARKET-S10 (explicit invocation only)");
+  // Sprint 11: ALT_MARKET_SCREEN_ONLY=1 lists eligibility and stops before the
+  // credential check and any model request, so a billed run is requested only
+  // when there is something to evaluate.
+  const screenOnly = process.env.ALT_MARKET_SCREEN_ONLY === "1";
+  if (!screenOnly && process.env.ALT_MARKET_CONFIRM !== "RUN-ALT-MARKET-S10") throw new Error("refusing: ALT_MARKET_CONFIRM must be RUN-ALT-MARKET-S10 (explicit invocation only)");
   if (process.env.REQUIRE_READ_ONLY !== "1") throw new Error("refusing: REQUIRE_READ_ONLY=1 is required");
   const [ro] = await prisma.$queryRawUnsafe<{ transaction_read_only: string }[]>("SHOW transaction_read_only");
   if (ro?.transaction_read_only !== "on") throw new Error("refusing: session is not read-only");
   console.log(`session verified read-only; spec ${SPEC_VERSION}`);
 
   const primary = makeAnthropicProvider({ effort: "high", maxRetries: 0 });
-  if (!primary.isConfigured()) throw new Error("blocked: the configured production provider (anthropic) has no credential in this environment; no substitute provider is used");
+  if (!screenOnly && !primary.isConfigured()) throw new Error("blocked: the configured production provider (anthropic) has no credential in this environment; no substitute provider is used");
   const modelId = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
   // Free pre-checks before any billed request: the credential works and the
   // model exists. Token counting below is also free. A failure here spends nothing.
   const admin = new Anthropic({ maxRetries: 0, timeout: 30_000 });
-  try {
+  if (!screenOnly) try {
     const info = await admin.models.retrieve(modelId);
     console.log(`credential verified; model ${info.id} available`);
   } catch (err: any) {
@@ -136,6 +140,11 @@ async function main() {
     eligibleList.push({ fixtureApiId: r.fixtureApiId!, matchKey: r.matchKey, leagueApiId: r.leagueApiId!, kickoff: r.kickoff, group: facts.group!, dryDay: (paidByDay.get(day)?.size ?? 0) <= ALLOCATION.DRY_DAY_MAX_PAID, row: r, facts });
   }
   console.log(`covered paid-scope fixtures 12-24h out: ${rows.length}; eligible ${eligibleList.length}; ineligible ${JSON.stringify(reasons)}`);
+  if (screenOnly) {
+    for (const c of eligibleList) console.log(`  eligible: ${c.group} fixture ${c.fixtureApiId} kickoff ${c.kickoff.toISOString()}${c.dryDay ? " (dry day)" : ""}`);
+    console.log(`screen only: no model request made; evaluations left ${CAPS.MAX_EVALUATIONS - ledger.evaluations}, cost left ${(CAPS.MAX_COST_USD - ledger.costUsd).toFixed(4)} USD`);
+    return;
+  }
   const sample = sampleCandidates(eligibleList, { evaluationsLeft: CAPS.MAX_EVALUATIONS - ledger.evaluations, coreUsed: ledger.coreUsed, secondaryUsed: ledger.secondaryUsed });
   console.log(`sampled ${sample.length} (deterministic: dry days first, then sha256(${SPEC_VERSION}:fixtureId))`);
 
