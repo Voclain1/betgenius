@@ -16,11 +16,12 @@ function check(name: string, ok: boolean, detail?: unknown) {
   else { failed++; console.log(`  FAIL ${name}${detail === undefined ? "" : ` -> ${JSON.stringify(detail)}`}`); }
 }
 
-const base = {
-  vip: false, group: "PAID_CORE" as const, inScope: true, priced5: true, closing: 80, attempted: false, draftMax: null as number | null,
-  promoted: false, published: false, dayQuotaSpent: false, coveredLate: false, ordinaryAt75: false, ordinaryRule: null as string | null,
+type In = Parameters<typeof supplyFirstLoss>[0];
+const base: In = {
+  vip: false, group: "PAID_CORE", inScope: true, priced5: true, closing: 80, attempted: false, draftMax: null,
+  promoted: false, published: false, dayQuotaSpent: false, coveredLate: false, ordinaryAt75: false, ordinaryRule: null,
 };
-const cases: Array<[string, Partial<typeof base> & Record<string, unknown>, string]> = [
+const cases: Array<[string, Partial<In>, string]> = [
   ["in VIP", { vip: true }, "VIP"],
   ["promoted and published", { attempted: true, promoted: true, published: true, draftMax: 80 }, "VIP"],
   ["promoted, never published", { attempted: true, promoted: true, draftMax: 80 }, "PROMOTED_NOT_PUBLISHED"],
@@ -36,7 +37,7 @@ const cases: Array<[string, Partial<typeof base> & Record<string, unknown>, stri
   ["lopsided, quota left, never attempted", {}, "NOT_ATTEMPTED_LOPSIDED"],
 ];
 for (const [name, patch, want] of cases) {
-  const got = supplyFirstLoss({ ...base, ...patch } as typeof base);
+  const got = supplyFirstLoss({ ...base, ...patch });
   check(`${name} -> ${want}`, got === want, got);
 }
 check("attempt outcome wins over scope (a widened attempt is judged by its result)", supplyFirstLoss({ ...base, group: "PAID_WIDENED", inScope: false, attempted: true, draftMax: 70 }) === "MODEL_BELOW_FLOOR");
