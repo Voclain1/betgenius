@@ -220,7 +220,8 @@ async function main() {
     const price = pre ? pickPrice(q!.odds, p.marketType, p.selection) : null;
     const mc = p.marketConfirmation as any;
     return { conf: p.confidence, outcome: p.outcome, est: price?.median ?? null, fair: price?.fair ?? null, books: price?.bookmakers ?? null,
-      entry: verifiedEntryPrice(mc, p.kickoff!), mkt: typeof mc?.marketProbability === "number" ? mc.marketProbability : null };
+      // Publication evidence is nested since #178 (publishPaidPredictionAtomically); older rows carry it top-level.
+      entry: verifiedEntryPrice(mc?.publicationQuoteEvidence ?? mc, p.kickoff!), mkt: typeof mc?.marketProbability === "number" ? mc.marketProbability : null };
   };
   const once = (rows: typeof settled) => { const m = new Map<string, (typeof settled)[number]>(); for (const r of rows) { const k = matchKey(r) ?? r.id; if (!m.has(k) || r.confidence > m.get(k)!.confidence) m.set(k, r); } return [...m.values()]; };
   const isDed = (p: (typeof settled)[number]) => (DEDICATED_PAID_PROVENANCES as readonly string[]).includes(p.provenance ?? "");
