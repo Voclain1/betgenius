@@ -27,6 +27,14 @@ async function main(){
  const remotes=ssh(schoolExec('rclone listremotes')).trim().split('\n').map(s=>s.trim());
  const remote=['backup:','r2:'].find(s=>remotes.includes(s));
  if(!remote){emit('bucket_verification_blocked',{reason:'expected backup/r2 remote unavailable in School Kit ops'});process.exitCode=1;return;}
+ const alias=remote.slice(0,-1);assert.match(alias,/^(backup|r2)$/);
+ const key='RCLONE_CONFIG_'+alias.toUpperCase()+'_';
+ const metadata=ssh(schoolExec('printf "%s\\0" "${'+key+'TYPE-}" "${'+key+'PROVIDER-}" "${'+key+'ENDPOINT-}"')).split('\0');
+ const [storageType,storageProvider,storageEndpoint]=metadata;
+ let endpointHost=null;try{endpointHost=new URL(storageEndpoint.includes('://')?storageEndpoint:'https://'+storageEndpoint).hostname;}catch{}
+ const cloudflare=!!endpointHost&&/(^|\.)r2\.cloudflarestorage\.com$/i.test(endpointHost);
+ emit('schoolkit_storage_backend',{remote,type:/^[a-z0-9_-]{1,30}$/i.test(storageType||'')?storageType:'(not in environment)',provider:/^[a-z0-9_-]{1,40}$/i.test(storageProvider||'')?storageProvider:'(not in environment)',endpoint_hostname:endpointHost,cloudflare_r2_endpoint:cloudflare});
+
  function list(path,dirsOnly=false){
   assert.ok(path===''||safePath(path));
   try{const entries=JSON.parse(ssh(schoolExec('rclone lsjson '+quote(remote+path)+(dirsOnly?' --dirs-only':'')+' --max-depth 1')));return{ok:true,entries};}
@@ -38,9 +46,9 @@ async function main(){
   const found=list(target);
   emit('bucket_root_check',found.ok?{bucket:target,authenticated_listing:true,entry_count:found.entries.length,backup_related_directories:found.entries.filter(e=>e.IsDir&&/^(betgenius|backups?|daily|weekly)([-_/].*)?$/i.test(e.Name)).map(e=>e.Name)}:{bucket:target,authenticated_listing:false,reason:found.reason});
  }
- for(const target of [...new Set([configured,'scholkit/betgenius'])]){
+ for(const target of [...new Set([configured,configured+'/daily',configured+'/weekly','scholkit/betgenius'])]){
   const found=list(target);
-  emit('betgenius_prefix_check',found.ok?{path:target,authenticated_listing:true,entry_count:found.entries.length,backup_directories:found.entries.filter(e=>e.IsDir&&/^(daily|weekly)$/i.test(e.Name)).map(e=>e.Name),dump_count:found.entries.filter(e=>!e.IsDir&&/^betgenius-.*\.dump$/.test(e.Name)).length}:{path:target,authenticated_listing:false,reason:found.reason});
+  emit('betgenius_prefix_check',found.ok?{path:target,authenticated_listing:true,entry_count:found.entries.length,backup_directories:found.entries.filter(e=>e.IsDir&&/^(daily|weekly)$/i.test(e.Name)).map(e=>e.Name),dump_count:found.entries.filter(e=>!e.IsDir&&/^betgenius-.*\.dump$/.test(e.Name)).length,latest_dump:found.entries.filter(e=>!e.IsDir&&/^betgenius-.*\.dump$/.test(e.Name)).sort((a,b)=>a.Name.localeCompare(b.Name)).slice(-1).map(e=>({name:e.Name,bytes:e.Size,modified:e.ModTime}))}:{path:target,authenticated_listing:false,reason:found.reason});
  }
  emit('read_only_verification_complete',{production_written:false,credentials_printed:false,objects_created:false});
 }
