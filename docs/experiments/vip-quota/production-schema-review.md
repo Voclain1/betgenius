@@ -1,8 +1,8 @@
 # PR #202 production schema review
 
-Reviewed on 15 November 2026. Master remains `35015264` (#201), an ancestor of PR implementation `7c1374b`. PR #202 remains draft. **No production database write, deployment, merge or experiment enablement is authorized by this document or has been performed during this review.**
+Reviewed on 15 November 2026. Master remains `35015264` (#201), an ancestor of PR implementation `7c1374b`. PR #202 remains draft. **After subsequent explicit owner approval and successful isolated backup recovery, the exact hash-bound additive schema operation was applied. No app deployment, merge or experiment enablement occurred.**
 
-Operational follow-up: [live target, schema activity and backup/DNS evidence](operational-safety-check.md). **Backup access/recovery is currently a remaining blocker; schema-only production safety is not cleared.**
+Current operational follow-up: [backup repair, isolated recovery and schema outcome](backup-recovery-resolution.md). This supersedes the earlier [blocked operational investigation](operational-safety-check.md).
 
 ## Verdict and exact plan
 
