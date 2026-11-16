@@ -73,20 +73,25 @@ async function main() {
     for (const variant of ["hero", "page"] as const) {
       const html = renderToStaticMarkup(BetOfTheDayCard({ data, variant }) as any);
       console.log(`\n  [${variant}]`);
+      if (variant === "hero") {
+        // The homepage teaser shows the fixture only; the details are on the page.
+        check("hero: teams are rendered", html.includes(data.row.homeTeam!) && html.includes(data.row.awayTeam!), html);
+        check("hero: no price, pick, market or confidence", !html.includes(data.gate!.price!.toFixed(2)) && !html.includes(data.row.pick) && !html.includes(`${data.row.confidence}% confidence`), html);
+        check("hero: reasoning omitted", !html.includes(data.row.reasoning.slice(0, 40)));
+        continue;
+      }
       check(`${variant}: price is rendered`, html.includes(data.gate!.price!.toFixed(2)), html);
       check(`${variant}: bookmaker count is rendered`, html.includes(`best of ${data.gate!.bookmakers}`), html);
       check(`${variant}: staleness age is rendered`, /·\s*(just now|\d+[mhd] ago)/.test(html), html);
       check(`${variant}: the pick and market are rendered`, html.includes(data.row.pick) && html.includes(data.row.market), html);
       check(`${variant}: confidence is rendered`, html.includes(`${data.row.confidence}% confidence`), html);
       check(`${variant}: no placeholder price is shown`, !html.includes("Price not available yet"), html);
-      // The page variant carries the reasoning; the hero deliberately does not.
-      const hasReasoning = html.includes(data.row.reasoning.slice(0, 40));
-      check(`${variant}: reasoning ${variant === "page" ? "present" : "omitted"}`, variant === "page" ? hasReasoning : !hasReasoning);
+      check(`${variant}: reasoning present`, html.includes(data.row.reasoning.slice(0, 40)));
     }
 
     // And the degraded path: a pick with no cached prices must still render.
     const degraded = renderToStaticMarkup(
-      BetOfTheDayCard({ data: { ...data, odds: null, oddsFetchedAt: null, gate: { qualifies: false, reasons: [], price: null, bookmakers: null, impliedProbability: null, edgePP: null } }, variant: "hero" }) as any,
+      BetOfTheDayCard({ data: { ...data, odds: null, oddsFetchedAt: null, gate: { qualifies: false, reasons: [], price: null, bookmakers: null, impliedProbability: null, edgePP: null } }, variant: "page" }) as any,
     );
     console.log("\n  [no cached price]");
     check("renders the pick without inventing a price", degraded.includes("Price not available yet") && degraded.includes(data.row.pick), degraded);
