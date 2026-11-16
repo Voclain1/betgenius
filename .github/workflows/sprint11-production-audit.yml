@@ -18,6 +18,18 @@ name: sprint11-production-audit
 on:
   workflow_dispatch:
     inputs:
+      paid_supply_readiness_only:
+        description: "SELECT-only cached paid supply, publication, budget and runtime pricing audit"
+        type: boolean
+        default: false
+      paid_supply_expected_commit:
+        description: "Expected running 40-character commit (optional)"
+        type: string
+        default: ""
+      paid_supply_deployed_at:
+        description: "Deployment timestamp for publication evidence"
+        type: string
+        default: "2026-11-15T14:19:29Z"
       operational_safety_only:
         description: "Read-only production target/backup audit; restore only on isolated runner"
         type: boolean
@@ -69,7 +81,7 @@ concurrency:
 
 jobs:
   audit:
-    if: ${{ !inputs.operational_safety_only && !inputs.verify_deployment_settings_only }}
+    if: ${{ !inputs.operational_safety_only && !inputs.verify_deployment_settings_only && !inputs.paid_supply_readiness_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -145,7 +157,7 @@ jobs:
         run: npx tsx scripts/run-alt-market-experiment.ts
 
   operational-safety:
-    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && !inputs.repair_backup_storage && !inputs.create_fresh_backup_only && !inputs.verify_deployment_settings_only
+    if: github.event_name == 'workflow_dispatch' && !inputs.paid_supply_readiness_only && inputs.operational_safety_only && !inputs.repair_backup_storage && !inputs.create_fresh_backup_only && !inputs.verify_deployment_settings_only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -193,7 +205,7 @@ jobs:
         run: rm -f "${{ runner.temp }}/betgenius-backup-audit/restore.dump"
 
   backup-storage-repair:
-    if: github.event_name == 'workflow_dispatch' && inputs.operational_safety_only && (inputs.repair_backup_storage || inputs.create_fresh_backup_only) && !inputs.verify_deployment_settings_only
+    if: github.event_name == 'workflow_dispatch' && !inputs.paid_supply_readiness_only && inputs.operational_safety_only && (inputs.repair_backup_storage || inputs.create_fresh_backup_only) && !inputs.verify_deployment_settings_only
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -225,7 +237,7 @@ jobs:
         run: ssh vps 'APPROVED_BACKUP_REPAIR=yes BACKUP_ONLY=yes python3 -' < scripts/ops/repair-backup-storage.py
 
   deployment-settings-verification:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify_deployment_settings_only
+    if: github.event_name == 'workflow_dispatch' && !inputs.paid_supply_readiness_only && inputs.verify_deployment_settings_only
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -246,3 +258,27 @@ jobs:
         run: |
           node scripts/ops/verify-deployment-backup-settings.mjs
           node scripts/ops/validate-backup-settings.mjs
+
+  paid-supply-readiness:
+    if: github.event_name == 'workflow_dispatch' && inputs.paid_supply_readiness_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: SELECT-only paid supply readiness; no warming or provider calls
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          PAID_SUPPLY_EXPECTED_COMMIT: ${{ inputs.paid_supply_expected_commit }}
+          PAID_SUPPLY_DEPLOYED_AT: ${{ inputs.paid_supply_deployed_at }}
+        run: npx tsx scripts/audit-vip-premium-readiness.ts

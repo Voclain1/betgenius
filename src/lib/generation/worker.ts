@@ -780,7 +780,7 @@ async function runVipPremiumGenerationInner(opts: { authorId: string; limit?: nu
         const config = quotaExperimentConfig();
         const extra = used >= 8;
         if (extra && (!config || !selection.experiment?.quotas[lagosDateKey(t.kickoff)])) continue;
-        if (extra && !await reserveExtraAttempt(t, config!)) continue;
+        if (extra && !await reserveExtraAttempt(t, config!, selection.experiment?.eligibleFixtures ?? [])) continue;
         const avoidPicks = await existingPicksOnFixture(t);
         const generate = () => generateAndPersistPrediction({
           home: t.homeTeam,

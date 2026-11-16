@@ -1,5 +1,7 @@
 # Controlled VIP/Premium quota experiment v1
 
+Current follow-up: [paid supply reliability, verified causes, readiness and secret-safe attestation procedure](paid-supply-reliability.md). Earlier production snapshots and illustrative prices below are historical; they do not authorize activation.
+
 Base: master `35015264` (includes #201). **Experiment disabled; PR stays draft. Merge, app deployment and enablement require separate owner approval. No supply improvement is claimed.**
 
 Production schema package: [compatibility review, exact operation and rollback](production-schema-review.md), with the [reviewed SQL](production-schema.sql). Following owner approval and successful isolated recovery, the hash-bound additive schema operation succeeded on 15 November. [Current backup recovery and operational evidence](backup-recovery-resolution.md) supersedes earlier blocker reports. The live storage configuration is repaired; GitHub `OPS_ENV_FILE` synchronization remains required before app deployment.
