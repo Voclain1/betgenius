@@ -59,7 +59,7 @@ const MEASURE = `(() => {
   var vw = document.documentElement.clientWidth;
   function vis(e) { var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }
   var sections = {};
-  ["pick", "saved", "paid", "combo", "trend", "botd"].forEach(function (id) {
+  ["pick", "saved", "paid", "combo", "trend", "botd", "botdTeaser"].forEach(function (id) {
     var s = document.getElementById(id);
     var over = Array.prototype.slice.call(s.querySelectorAll("*")).filter(function (e) { return vis(e) && e.getBoundingClientRect().right > vw + 1; }).length;
     var figs = Array.prototype.slice.call(s.querySelectorAll(".sr-only")).filter(function (e) { return /Decimal odds/.test(e.textContent); });
@@ -91,7 +91,8 @@ async function main() {
       <section id="paid"><PredictionCard p={paid("entry")} /><PredictionCard p={paid("current")} /><PredictionCard p={paid("closing")} /></section>
       <section id="combo"><ComboCard combo={combo} locked={false} categoryLabel="Premium" bookmakers={[]} /></section>
       <section id="trend"><TrendCard card={trend} /></section>
-      <section id="botd"><BetOfTheDayCard data={botd} variant="hero" /></section>
+      <section id="botd"><BetOfTheDayCard data={botd} variant="page" /></section>
+      <section id="botdTeaser"><BetOfTheDayCard data={botd} variant="hero" /></section>
     </main>,
   );
   const html = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><style>${css}</style></head><body>${markup}</body></html>`;
@@ -105,6 +106,11 @@ async function main() {
       console.log(`\n${width}px:`);
       check("no horizontal page overflow", m.page <= width, `scrollWidth ${m.page}`);
       for (const [id, s] of Object.entries<any>(m.sections)) {
+        if (id === "botdTeaser") {
+          // The homepage teaser carries no price by design: it only has to fit.
+          check("botdTeaser: no overflow, and no price, pick or confidence", s.over === 0 && s.figs === 0 && !/Both Teams to Score|confidence|77%/.test(s.text), `over ${s.over}, figs ${s.figs}`);
+          continue;
+        }
         check(`${id}: prices present, none overflowing, none clipped`, s.figs > 0 && s.over === 0 && s.clipped === 0, `figs ${s.figs}, over ${s.over}, clipped ${s.clipped}`);
         check(`${id}: price text ≥ 11px; screen-reader text hidden`, s.minFont >= 11 && s.hidden, `min ${s.minFont}px, hidden ${s.hidden}`);
       }
