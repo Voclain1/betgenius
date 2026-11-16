@@ -239,7 +239,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // time anyone saved an unrelated field. mergeEditedCategories carries both
     // through; only the pin action moves BET_OF_THE_DAY. GOALS is not carried
     // at all: it is re-derived from effectiveMarket on every write.
-    await setPredictionCategories(params.id, categoriesToWrite, effectiveMarket, tx);
+    await setPredictionCategories(params.id, categoriesToWrite, effectiveMarket, tx, { manual: true });
   }
     const row = await tx.prediction.update({ where: { id: params.id }, data, include: { categories: true } });
     if (correction) await tx.jobRun.create({data:{job:"settlement-correction",summary:`Authorized correction ${params.id}`,detail:{actorId:session!.user.id,reason:correctionReason,before:{outcome:before.outcome,home:before.finalHomeScore,away:before.finalAwayScore,settledAt:before.settledAt?.toISOString()??null,evidence:before.marketConfirmation},after:{outcome:row.outcome,home:row.finalHomeScore,away:row.finalAwayScore}}}});

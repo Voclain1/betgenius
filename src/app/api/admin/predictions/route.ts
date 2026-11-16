@@ -100,6 +100,6 @@ export async function POST(req: Request) {
       status: "PENDING_REVIEW",
     },
   });
-  await setPredictionCategories(p.id, categories);
+  await setPredictionCategories(p.id, categories, undefined, undefined, { manual: true });
   return NextResponse.json({ prediction: p });
 }

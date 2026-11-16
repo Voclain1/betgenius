@@ -107,7 +107,7 @@ async function main() {
   const patch = code("src/app/api/admin/predictions/[id]/route.ts");
   check("PATCH derives GOALS from the post-edit market", /effectiveMarket/.test(patch) && /data\.marketType === "OTHER" \? null : data\.selection/.test(patch));
   check("PATCH rewrites categories on a market edit even when categories were not sent", /marketEdited \? heldCategories : null/.test(patch));
-  check("PATCH passes that market to the category write", /setPredictionCategories\(params\.id, categoriesToWrite, effectiveMarket, tx\)/.test(patch));
+  check("PATCH passes that market to the category write", /setPredictionCategories\(params\.id, categoriesToWrite, effectiveMarket, tx, \{ manual: true \}\)/.test(patch));
   check("PATCH refuses an edit that would leave no category, before writing", patch.indexOf("At least one category is required") < patch.indexOf("setPredictionCategories("));
   const patchSchema = /categories: z\.array\(z\.enum\(\[([^\]]*)\]\)\)/.exec(patch)?.[1] ?? "";
   check("GOALS cannot be ticked through the PATCH schema", patchSchema.length > 0 && !patchSchema.includes("GOALS"));
@@ -124,7 +124,7 @@ async function main() {
   check("setPredictionCategories reads the stored market when none is passed", /const persisted = await client\.prediction\.findUnique\(/.test(predictions) && /const resolvedMarket = market \?\? persisted \?\? \{ marketType: null, selection: null \};/.test(predictions));
   check("generation passes the persisted market", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(code("src/lib/ai/generate.ts")));
   check("a rewrite re-derives from its new market", /setPredictionCategories\(predictionId, updated\.categories\.map\(\(c\) => c\.category\), updated\)/.test(code("src/lib/ai/rewrite.ts")));
-  check("bulk category edits pass the row's market", /setPredictionCategories\(row\.id, next, row\)/.test(bulk));
+  check("bulk category edits pass the row's market", /setPredictionCategories\(row\.id, next, row, undefined, \{ manual: true \}\)/.test(bulk));
   const writers = ["src/lib/geniusCuration.ts", "src/lib/betOfTheDay.ts"];
   for (const w of writers) check(`${w} writes only its own tag (cannot touch GOALS)`, !/GOALS/.test(read(w)));
 

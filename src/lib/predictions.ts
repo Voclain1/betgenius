@@ -46,11 +46,18 @@ export function applyCategoryChanges(
  * change it and has not written it yet; otherwise the stored market is used.
  */
 type CategoryDb = Pick<typeof prisma, "prediction" | "predictionCategoryLink">;
-export async function setPredictionCategories(predictionId: string, categories: string[], market?: GoalsMarket, db?: CategoryDb) {
+export async function setPredictionCategories(
+  predictionId: string,
+  categories: string[],
+  market?: GoalsMarket,
+  db?: CategoryDb,
+  /** `manual`: an admin is saving these; tags they ADD are recorded as hand-assigned and survive curation. */
+  opts: { manual?: boolean } = {},
+) {
   const client = db ?? prisma;
   const persisted = await client.prediction.findUnique({
     where: { id: predictionId },
-    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, provenance: true, categories: { select: { category: true } } },
+    select: { marketType: true, selection: true, createdAt: true, status: true, outcome: true, provenance: true, categories: { select: { category: true, manual: true } } },
   });
   const resolvedMarket = market ?? persisted ?? { marketType: null, selection: null };
   const held = persisted?.categories.map((c) => c.category) ?? [];
@@ -61,11 +68,17 @@ export async function setPredictionCategories(predictionId: string, categories: 
   const derived = isPaidOnlyProvenance(persisted?.provenance) ? [...new Set(categories)] : withGoalsCategory(categories, resolvedMarket);
   const unique = withHiddenLegCategories(derived, resolvedMarket.marketType, held);
   if (unique.length === 0) throw new Error("At least one category is required");
+  // Hand-assigned tags: ones already marked stay marked while they remain, and an
+  // admin save marks the tags it adds. Tags curation placed and the admin left
+  // alone stay automatic, so saving an unrelated field freezes nothing.
+  const heldManual = new Set(persisted?.categories.filter((c) => c.manual).map((c) => c.category) ?? []);
+  const heldAll = new Set(held);
+  const isManual = (category: string) => heldManual.has(category) || (!!opts.manual && categories.includes(category) && !heldAll.has(category));
 
   const writes = [
     client.predictionCategoryLink.deleteMany({ where: { predictionId } }),
     client.predictionCategoryLink.createMany({
-      data: unique.map((category) => ({ predictionId, category })),
+      data: unique.map((category) => ({ predictionId, category, manual: isManual(category) })),
     }),
     // A row in any free category is primarily that free category, so no
     // surface that labels or locks by the primary shows it as VIP/PREMIUM.
