@@ -1,0 +1,71 @@
+/** Audit branch only: SELECTs, pure qualification, no warming/providers/writers. */
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {PrismaClient} from '@prisma/client';
+import {lagosDateKey,lagosTodayBounds} from '../../src/lib/lagosDate';
+import {planVipPremiumCandidates,qualifyVipPremiumTargets,paidScopeFor,spareQuotaSlotsByDay,spareQuotaWideningMode,readVipPremiumAttempt,attemptsByKickoffDay,attemptKickoffDay,VIP_PREMIUM_BACKOFF_LOCK_PREFIX} from '../../src/lib/vipPremiumOverlay';
+import {quotaExperimentConfig} from '../../src/lib/vipQuotaExperiment';
+import {lopsidednessSignal} from '../../src/lib/marketConfirmed';
+import {PAID_ONLY_PROVENANCES} from '../../src/lib/paidOnly';
+import type {FixtureOdds} from '../../src/lib/odds';
+const H=3600000,DEPLOY=new Date('2026-11-15T14:19:29Z');
+const emit=(kind:string,data:object)=>console.log(JSON.stringify({kind,...data}));
+const quote=(s:string)=>"'"+s.replaceAll("'","'\\''")+"'";
+let stage='runtime-configuration',db:PrismaClient|undefined;
+function ssh(command:string){return execFileSync('ssh',['-o','BatchMode=yes','vps',command],{encoding:'utf8',timeout:45000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});}
+async function main(){
+ const probe=`const keys=['VIP_QUOTA_EXPERIMENT','VIP_QUOTA_EXTRA_ATTEMPTS','VIP_QUOTA_INCREMENTAL_DAILY_USD','VIP_QUOTA_INPUT_USD_PER_MILLION','VIP_QUOTA_OUTPUT_USD_PER_MILLION','VIP_QUOTA_PRICE_VALID_UNTIL','ANTHROPIC_MODEL','PAID_ROUTE_PRIMARY_PROVIDER','PAID_SPARE_QUOTA_WIDENING','API_FOOTBALL_DAILY_LIMIT','API_FOOTBALL_DAILY_RESERVE','API_FOOTBALL_PAID_RESERVE']; const out={}; for(const k of keys){const v=process.env[k];const numeric=/ATTEMPTS|USD|MILLION|LIMIT|RESERVE/.test(k);const valid=!v||(numeric?/^[0-9]+(?:\\.[0-9]+)?$/.test(v):k.endsWith('VALID_UNTIL')?/^\\d{4}-\\d{2}-\\d{2}T[0-9:.]+(?:Z|[+-][0-9:]+)$/.test(v):/^(?:on|off|shadow|anthropic|gemini|groq|claude-[a-z0-9-]+)$/.test(v));out[k]=v?(valid?v:'(invalid; value withheld)'):'(unset)';}out.anthropicKeyPresent=!!process.env.ANTHROPIC_API_KEY;console.log(JSON.stringify(out));`;
+ const runtime=JSON.parse(ssh('cd /opt/betgenius && docker compose --env-file deploy.env exec -T app node -e '+quote(probe)));
+ const tag=ssh("sed -n 's/^APP_TAG=//p' /opt/betgenius/deploy.env").trim();assert.equal(tag,'929305a965cedacc7754f71cd376753e297321bf');
+ const env:Record<string,string|undefined>={};for(const [k,v] of Object.entries(runtime))if(typeof v==='string'&&v!=='(unset)')env[k]=v;
+ if(runtime.anthropicKeyPresent)env.ANTHROPIC_API_KEY='presence-only';
+ const now=new Date(),from=new Date(+now+12*H),until=new Date(+now+48*H);
+ const num=(k:string)=>{const n=Number(env[k]);return env[k]&&Number.isFinite(n)&&n>0?n:null;};
+ const ir=num('VIP_QUOTA_INPUT_USD_PER_MILLION'),orr=num('VIP_QUOTA_OUTPUT_USD_PER_MILLION'),expiry=Date.parse(env.VIP_QUOTA_PRICE_VALID_UNTIL??'');
+ emit('runtime_configuration',{at:now,deployedCommit:tag,settings:runtime,effectiveModel:env.ANTHROPIC_MODEL||'claude-haiku-5-5',experimentDisabled:env.VIP_QUOTA_EXPERIMENT!=='on',activeExperimentConfigValid:!!quotaExperimentConfig(env,now),attestation:{inputRate:ir,outputRate:orr,expiry:env.VIP_QUOTA_PRICE_VALID_UNTIL??null,expiryFuture:Number.isFinite(expiry)&&expiry>+now,expiryWithin31Days:Number.isFinite(expiry)&&expiry<=+now+31*24*H,reservationUsd:ir&&orr?Math.ceil(200000*ir+16000*orr)/1e6:null,coversUpperTier:ir!==null&&orr!==null&&ir>=0.5&&orr>=2.5}});
+ assert.notEqual(env.VIP_QUOTA_EXPERIMENT,'on','unexpected enabled experiment');
+ stage='read-only-guard';const url=new URL(process.env.DATABASE_URL_UNPOOLED||process.env.DATABASE_URL||'');url.searchParams.set('options','-c default_transaction_read_only=on -c statement_timeout=20000');
+ db=new PrismaClient({datasources:{db:{url:url.toString()}},log:[]});
+ const evidence=await db.$transaction(async tx=>{
+  await tx.$executeRawUnsafe('SET TRANSACTION READ ONLY');
+  const [guard]=await tx.$queryRawUnsafe<any[]>("SELECT current_database() AS database,current_setting('transaction_read_only') AS read_only");assert.equal(guard.database,'betgenius');assert.equal(guard.read_only,'on');
+  stage='historical-reconciliation';
+  const history=await tx.jobRun.findFirst({where:{job:'generate-vip-premium',ranAt:{gte:new Date('2026-11-15T17:50:00Z'),lt:new Date('2026-11-15T17:51:00Z')}},orderBy:{ranAt:'desc'},select:{ranAt:true,detail:true}});assert.ok(history);
+  const skips=((history.detail as any)?.vipPremium?.warmBandSkips??[]).filter((s:any)=>s.reason==='KICKOFF_DAY_QUOTA');assert.equal(skips.length,4);
+  const historicalLedger=await tx.generationAttempt.findMany({where:{matchKey:{in:skips.map((s:any)=>s.matchKey)}}});
+  const jobs=await tx.aIJob.findMany({where:{createdAt:{gte:new Date(+now-8*24*H)},prompt:{contains:'"intent":"VIP_PREMIUM"'}},select:{id:true,createdAt:true,prompt:true,model:true}});
+  const parsed=jobs.flatMap(j=>{const a=readVipPremiumAttempt(j.prompt,j.createdAt);return a?[a]:[];});
+  const historicalAttempts=parsed.filter(a=>a.createdAt<=history.ranAt&&+a.createdAt>=+history.ranAt-4*24*H),attempts=parsed.filter(a=>+a.createdAt>=+now-4*24*H),used=attemptsByKickoffDay(attempts);
+  stage='current-eligibility';
+  const ledger=await tx.generationAttempt.findMany({where:{OR:[{kickoff:{gte:from,lte:new Date(+until+24*H)}},{matchKey:{in:skips.map((s:any)=>s.matchKey)}}]}});
+  const currentLedger=ledger.filter(l=>l.status==='SUCCEEDED'&&l.fixtureApiId!==null&&l.kickoff&&l.kickoff>=from&&l.kickoff<=until);
+  const ids=historicalLedger.flatMap(l=>l.fixtureApiId===null?[]:[l.fixtureApiId]);
+  const rows=await tx.prediction.findMany({where:{status:{not:'ARCHIVED'},OR:[{kickoff:{gte:from,lte:until}},{fixtureApiId:{in:ids}}]},select:{id:true,fixtureApiId:true,homeTeamApiId:true,awayTeamApiId:true,kickoff:true,status:true,provenance:true,contextComplete:true}});
+  const locks=await tx.appLock.findMany({where:{key:{startsWith:VIP_PREMIUM_BACKOFF_LOCK_PREFIX},expiresAt:{gt:now}},select:{key:true}}),backoffs=new Set(locks.map(l=>Number(l.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))));
+  const mode=spareQuotaWideningMode(env),scope=paidScopeFor(currentLedger as any,now);
+  const slots=spareQuotaSlotsByDay({days:currentLedger.map(l=>lagosDateKey(l.kickoff!)),coreLedger:ledger.filter(l=>l.kickoff&&l.kickoff>=from&&l.kickoff<=new Date(+until+24*H)) as any,attempted:new Set(attempts.flatMap(a=>a.fixtureApiId===null?[]:[a.fixtureApiId])),used,quota:8,now});
+  const plan=planVipPremiumCandidates({ledger:currentLedger as any,rows,attempts,backingOff:backoffs,now,scope,spareQuota:{mode,slots}});
+  const quotes=await tx.fixtureOddsCache.findMany({where:{matchKey:{in:[...new Set([...plan.candidates.map(c=>c.matchKey),...skips.map((s:any)=>s.matchKey)])]}}});
+  const qm=new Map(quotes.map(q=>[q.matchKey,{oddsJson:q.oddsJson as unknown as FixtureOdds|null,fetchedAt:q.fetchedAt,lastAttemptAt:q.lastAttemptAt}]));
+  // Exact production eligibility before applying the baseline eight-slot quota.
+  const uncapped=qualifyVipPremiumTargets(plan.candidates,qm,now,plan.candidates.length,undefined,slots),baseline=qualifyVipPremiumTargets(plan.candidates,qm,now,plan.candidates.length,{used,quota:8},slots);
+  const reservations=await tx.paidQuotaAttempt.findMany({select:{fixtureApiId:true,spendDay:true,createdAt:true,reservedMicroUsd:true,modelRequests:true,usageReliable:true}}),eligibleIds=new Set(uncapped.targets.filter(t=>!reservations.some(r=>r.fixtureApiId===t.fixtureApiId)).map(t=>t.fixtureApiId));
+  const historicalCandidates=skips.map((s:any)=>{
+   const matches=historicalLedger.filter(l=>l.matchKey===s.matchKey);assert.equal(matches.length,1);const l=matches[0];assert.ok(l.fixtureApiId);
+   const q=qm.get(s.matchKey),signal=q?.oddsJson?lopsidednessSignal(q.oddsJson):null;
+   const singlePlan=planVipPremiumCandidates({ledger:[l] as any,rows,attempts,backingOff:backoffs,now,scope,spareQuota:{mode,slots}}),single=qualifyVipPremiumTargets(singlePlan.candidates,qm,now,1,undefined,slots);
+   return {fixtureApiId:l.fixtureApiId,fixture:l.homeTeam+' vs '+l.awayTeam,leagueApiId:l.leagueApiId,matchKey:s.matchKey,historicalKickoff:s.kickoff,historicalKickoffDay:lagosDateKey(s.kickoff),historicalReason:s.reason,historicalSignal:s.signal,historicalQuoteAgeMinutes:s.quoteAgeMinutes,historicallyAlreadyAttempted:historicalAttempts.some(a=>a.fixtureApiId===l.fixtureApiId),currentKickoff:l.kickoff,currentKickoffDay:lagosDateKey(l.kickoff!),hoursToKickoff:(+l.kickoff!-+now)/H,currentQuoteFetchedAt:q?.fetchedAt??null,currentQuoteAgeMinutes:q?.fetchedAt?(+now-+q.fetchedAt)/60000:null,currentSignal:signal?.probability??null,currentBookmakers:signal?.bookmakers??null,currentQuoteFresh:!!q?.fetchedAt&&+now-+q.fetchedAt<=2*H,currentAttemptEligible:eligibleIds.has(l.fixtureApiId),currentReasons:[...Object.keys(singlePlan.skipped),...Object.keys(single.skipped)],alreadyReserved:reservations.some(r=>r.fixtureApiId===l.fixtureApiId)};
+  });assert.equal(new Set(historicalCandidates.map((c:any)=>c.fixtureApiId)).size,4);
+  const historicalDays=[...new Set(historicalCandidates.map((c:any)=>c.historicalKickoffDay))].map(day=>{const a=historicalAttempts.filter(a=>attemptKickoffDay(a)===day),aIds=a.flatMap(a=>a.fixtureApiId===null?[]:[a.fixtureApiId]),eIds=historicalCandidates.filter((c:any)=>c.historicalKickoffDay===day&&!c.historicallyAlreadyAttempted).map((c:any)=>c.fixtureApiId),n=new Set([...aIds,...eIds]).size;return {day,usedAttemptRecords:a.length,uniqueUsedFixtureIds:[...new Set(aIds)],uniqueQuotaBlockedFixtureIds:[...new Set(eIds)],uniqueUsedPlusEligible:n,richThresholdMet:n>=10};});
+  const days=[...new Set([...used.keys(),...uncapped.targets.map(t=>lagosDateKey(t.kickoff))])].filter(d=>d>=lagosDateKey(now)).sort().map(day=>{const aIds=attempts.filter(a=>attemptKickoffDay(a)===day).flatMap(a=>a.fixtureApiId===null?[]:[a.fixtureApiId]),eIds=uncapped.targets.filter(t=>lagosDateKey(t.kickoff)===day&&eligibleIds.has(t.fixtureApiId)).map(t=>t.fixtureApiId),n=new Set([...aIds,...eIds]).size;return {day,usedAttemptRecords:used.get(day)??0,uniqueUsedFixtureIds:[...new Set(aIds)],uniqueEligibleUnattemptedFixtureIds:[...new Set(eIds)],uniqueUsedPlusEligible:n,richThresholdMet:n>=10};});
+  stage='publication-and-budgets';
+  const published=await tx.prediction.findMany({where:{status:'PUBLISHED',provenance:{in:[...PAID_ONLY_PROVENANCES]},publishedAt:{gte:DEPLOY}},orderBy:{publishedAt:'asc'},select:{id:true,fixtureApiId:true,homeTeam:true,awayTeam:true,kickoff:true,publishedAt:true,createdAt:true,provenance:true,confidence:true,marketConfirmation:true,categories:{select:{category:true}}}});
+  const latest=await tx.prediction.findFirst({where:{status:'PUBLISHED',provenance:{in:[...PAID_ONLY_PROVENANCES]}},orderBy:{publishedAt:'desc'},select:{id:true,fixtureApiId:true,homeTeam:true,awayTeam:true,kickoff:true,publishedAt:true,confidence:true,provenance:true}});
+  const bounds=lagosTodayBounds(now),today=jobs.filter(j=>j.createdAt>=bounds.start&&j.createdAt<bounds.end),extra=reservations.filter(r=>r.spendDay===lagosDateKey(now)),missing=extra.filter(r=>!today.some(j=>readVipPremiumAttempt(j.prompt,j.createdAt)?.fixtureApiId===r.fixtureApiId)),spendCount=today.length+missing.length;
+  const usage=await tx.apiUsage.findMany({where:{day:now.toISOString().slice(0,10)}}),calls=usage.reduce((s,r)=>s+r.count,0);
+  const recent=await tx.jobRun.findMany({where:{job:'generate-vip-premium'},orderBy:{ranAt:'desc'},take:6,select:{ranAt:true,ok:true,detail:true}});
+  return {snapshot:{at:now,readOnly:guard.read_only,windowFrom:from,windowUntil:until},historical:{at:history.ranAt,candidates:historicalCandidates,days:historicalDays},current:{covered:plan.considered,inScope:plan.candidates.length,scopeWidened:plan.widened,planSkips:plan.skipped,quoteSkips:uncapped.skipped,eligibleBeforeQuotaUnique:eligibleIds.size,baselineTargets:baseline.targets.map(t=>t.fixtureApiId),baselineSkips:baseline.skipped,days,eligibleTargets:uncapped.targets.map(t=>({fixtureApiId:t.fixtureApiId,fixture:t.homeTeam+' vs '+t.awayTeam,kickoff:t.kickoff,kickoffDay:lagosDateKey(t.kickoff),marketSignal:t.marketProbability,bookmakers:t.bookmakers,quoteAgeMinutes:t.quoteAgeMs/60000,usedForKickoffDay:used.get(lagosDateKey(t.kickoff))??0}))},publication:{sinceDeployment:DEPLOY,newDedicatedPublished:published.length,rows:published.map(p=>{const m=p.marketConfirmation as any;return {id:p.id,fixtureApiId:p.fixtureApiId,fixture:p.homeTeam+' vs '+p.awayTeam,kickoff:p.kickoff,createdAt:p.createdAt,publishedAt:p.publishedAt,provenance:p.provenance,confidence:p.confidence,categories:p.categories.map(c=>c.category),marketProbability:m?.marketProbability??null,publicationSnapshotPresent:!!m?.publicationQuoteEvidence,publishedBeforeKickoff:!!p.kickoff&&!!p.publishedAt&&p.publishedAt<p.kickoff};}),latestDedicated:latest},budget:{creationDay:lagosDateKey(now),creationDayAttemptsAndMissingReservations:spendCount,creationDaySlotsRemaining:Math.max(0,12-spendCount),apiUtcDay:now.toISOString().slice(0,10),recordedApiCalls:calls,configuredApiLimit:num('API_FOOTBALL_DAILY_LIMIT')??7500,paidHeadroom:(num('API_FOOTBALL_DAILY_LIMIT')??7500)-(num('API_FOOTBALL_DAILY_RESERVE')??100)-calls,extraReservationsToday:extra.length,reservedExtraUsd:extra.reduce((s,r)=>s+r.reservedMicroUsd,0)/1e6,unreliableExtraRequests:extra.filter(r=>r.modelRequests>0&&!r.usageReliable).length},recentCycles:recent.map(r=>{const v=(r.detail as any)?.vipPremium;return {at:r.ranAt,ok:r.ok,covered:v?.considered,inScope:v?.inScope,freshlyPriced:v?.freshlyPriced,qualified:v?.qualified,skipped:v?.skipped,published:v?.published,targets:(v?.targets??[]).map((t:any)=>({fixture:t.fixture,kickoff:t.kickoff,signal:t.marketProbability}))};})};
+ },{isolationLevel:'RepeatableRead',timeout:90000,maxWait:15000});
+ emit('readiness_snapshot',evidence);emit('audit_complete',{productionWritten:false,providerCalls:0,quotesWarmed:0,configurationChanged:false,featureActivated:false});
+}
+main().catch(()=>{console.error(JSON.stringify({kind:'audit_failed',stage,valuesWithheld:true}));process.exitCode=1;}).finally(()=>db?.$disconnect());
