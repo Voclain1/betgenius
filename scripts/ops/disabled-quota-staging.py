@@ -21,10 +21,10 @@ def parse(text):
 try:
     payload=json.load(sys.stdin)
     root=Path('/opt/betgenius')
-    current=(root/'app.env').read_text()
+    current=(root/'app.env').read_bytes().decode('utf-8')
     incoming=payload['incoming']
-    deploy=(root/'deploy.env').read_text()
-    ops=(root/'ops.env').read_text()
+    deploy=(root/'deploy.env').read_bytes().decode('utf-8')
+    ops=(root/'ops.env').read_bytes().decode('utf-8')
     app_values=parse(current); incoming_values=parse(incoming); deployment=parse(deploy)
     assert deployment['APP_TAG']=='5a0fd20e7d374c0ce854b20cc86b0275de2f59ea'
     assert app_values.get('VIP_QUOTA_EXPERIMENT') in (None,'','off')
@@ -59,18 +59,43 @@ try:
         fd=os.open(str(directory/name),os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
         with os.fdopen(fd,'w') as handle:
             handle.write(content); handle.flush(); os.fsync(handle.fileno())
-        assert (directory/name).read_text()==content
+        assert (directory/name).read_bytes().decode('utf-8')==content
         assert stat.S_IMODE((directory/name).stat().st_mode)==0o600
     with (directory/'metadata.json').open('x') as handle:
         json.dump({'baseline':baseline,'approvedCommit':deployment['APP_TAG']},handle)
+    stage='prepare-disabled-incoming-file'
+    approved={'VIP_QUOTA_EXPERIMENT':'off','VIP_QUOTA_EXTRA_ATTEMPTS':'2','VIP_QUOTA_INCREMENTAL_DAILY_USD':'0.30','VIP_QUOTA_INPUT_USD_PER_MILLION':'0.50','VIP_QUOTA_OUTPUT_USD_PER_MILLION':'2.50'}
+    kept=[]
+    for line in incoming.splitlines(keepends=True):
+        m=re.match(r'\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=',line)
+        if not m or m[1] not in approved: kept.append(line)
+    staged=''.join(kept)
+    if staged and not staged.endswith('\n'): staged+='\n'
+    staged+=''.join(k+'='+v+'\n' for k,v in approved.items())
+    assert parse(staged)==dict(incoming_values,**approved)
+    assert not parse(staged).get('VIP_QUOTA_PRICE_VALID_UNTIL')
+    with (directory/'incoming-staged.env').open('x') as handle:
+        handle.write(staged); handle.flush(); os.fsync(handle.fileno())
+    assert stat.S_IMODE((directory/'incoming-staged.env').stat().st_mode)==0o600
+    assert (directory/'app.env').read_bytes()==(root/'app.env').read_bytes()
+    assert (directory/'deploy.env').read_bytes()==(root/'deploy.env').read_bytes()
+    assert (directory/'ops.env').read_bytes()==(root/'ops.env').read_bytes()
     stage='authorized-github-capability'
     gh=shutil.which('gh')
     authorized=False
+    authenticated=False
+    permission_result='GH_NOT_INSTALLED'
     if gh:
+        authenticated=run([gh,'auth','status']).returncode==0
         check=run([gh,'api','repos/Voclain1/betgenius/actions/secrets/public-key'])
         if check.returncode==0:
             obj=json.loads(check.stdout); authorized=bool(obj.get('key_id') and obj.get('key'))
-    print(json.dumps({'kind':'backup_preflight','backupDirectory':str(directory),'directoryMode':'0700','fileMode':'0600','backupContentsVerified':True,'incomingMatchesCurrentAppFile':True,'opsSettingsUnchanged':True,'experimentDisabled':True,'priceExpiryAbsent':True,'baseline':baseline,'vpsGhInstalled':bool(gh),'vpsGhRepositorySecretsAccess':authorized,'productionConfigurationChanged':False,'applicationRestarted':False}))
+            permission_result='ACCESSIBLE'
+        elif not authenticated: permission_result='NO_USABLE_AUTHENTICATED_ACCOUNT'
+        elif re.search(r'HTTP 403',check.stderr): permission_result='HTTP_403'
+        elif re.search(r'HTTP 401',check.stderr): permission_result='HTTP_401'
+        else: permission_result='REQUEST_FAILED_VALUES_WITHHELD'
+    print(json.dumps({'kind':'backup_preflight','backupDirectory':str(directory),'directoryMode':'0700','fileMode':'0600','backupContentsVerified':True,'incomingMatchesCurrentAppFile':True,'opsSettingsUnchanged':True,'experimentDisabled':True,'priceExpiryAbsent':True,'baseline':baseline,'vpsGhInstalled':bool(gh),'vpsGhAuthenticated':authenticated,'vpsGhAccessResult':permission_result,'preparedIncomingFile':str(directory/'incoming-staged.env'),'preparedSettings':approved,'onlyApprovedFieldsChanged':True,'backupByteEqualityVerified':True,'vpsGhRepositorySecretsAccess':authorized,'productionConfigurationChanged':False,'applicationRestarted':False}))
 except Exception:
     print(json.dumps({'kind':'backup_preflight_failed','stage':stage,'valuesWithheld':True}))
     sys.exit(1)
