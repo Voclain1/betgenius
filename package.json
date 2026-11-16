@@ -57,6 +57,7 @@
     "check:prediction-slugs": "tsx scripts/check-prediction-slugs.ts",
     "preflight": "tsx scripts/preflight.ts",
     "check:tier-provenance": "tsx scripts/check-tier-provenance.ts",
+    "check:manual-category": "tsx scripts/check-manual-category-survives-curation.ts",
     "check:banker-curation": "tsx scripts/check-banker-curation.ts",
     "check:period-predictions": "tsx scripts/check-period-predictions.ts",
     "check:live-snapshot": "tsx scripts/check-live-snapshot.ts",

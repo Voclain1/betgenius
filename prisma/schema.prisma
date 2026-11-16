@@ -577,6 +577,10 @@ model PredictionCategoryLink {
   predictionId String
   prediction   Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
   category     String
+  // True when an admin put this tag on by hand. Automatic curation
+  // (src/lib/geniusCuration.ts) re-ranks and removes the tags it did not choose
+  // itself; a manual tag is a fixed point it must never remove.
+  manual       Boolean    @default(false)
 
   @@unique([predictionId, category])
   @@index([category])

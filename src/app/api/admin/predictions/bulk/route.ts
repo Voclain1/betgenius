@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         }
         const next = applyCategoryChanges(current, parsed.data.add, parsed.data.remove);
         // The row already carries its market, so GOALS is derived without a re-read.
-        await setPredictionCategories(row.id, next, row);
+        await setPredictionCategories(row.id, next, row, undefined, { manual: true });
       } else {
         // Same transaction and events as the single-row route: a bulk publish
         // is how most tips go live, so it must notify followers too.

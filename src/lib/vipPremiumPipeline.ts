@@ -875,7 +875,8 @@ export async function autoPublishVipPremiumPrediction(
     : others.filter((r) => !isDedicated(r.provenance) && r.categories.some((c) => (PAID_TIER_CATEGORIES as readonly string[]).includes(c.category)));
   if (ordinaryPaid.length) {
     await prisma.predictionCategoryLink.deleteMany({
-      where: { predictionId: { in: ordinaryPaid.map((r) => r.id) }, category: { in: [...PAID_TIER_CATEGORIES] } },
+      // manual: false — an admin's hand-assigned paid tag is never taken out.
+      where: { predictionId: { in: ordinaryPaid.map((r) => r.id) }, category: { in: [...PAID_TIER_CATEGORIES] }, manual: false },
     });
   }
   return { published: true, blocks: [], ordinaryPaidTagsRemoved: ordinaryPaid.length };
