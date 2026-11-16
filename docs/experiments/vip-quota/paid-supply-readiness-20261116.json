@@ -1,0 +1,772 @@
+{
+  "workflow": "https://github.com/Voclain1/betgenius/actions/runs/43968772472",
+  "rows": [
+    {
+      "kind": "runtime_configuration",
+      "at": "2026-11-16T22:19:48.138Z",
+      "deployedCommit": "f3b15455b6e4e1edc27d94388d16873910856219",
+      "settings": {
+        "VIP_QUOTA_EXPERIMENT": "(unset)",
+        "VIP_QUOTA_EXTRA_ATTEMPTS": "(unset)",
+        "VIP_QUOTA_INCREMENTAL_DAILY_USD": "(unset)",
+        "VIP_QUOTA_INPUT_USD_PER_MILLION": "(unset)",
+        "VIP_QUOTA_OUTPUT_USD_PER_MILLION": "(unset)",
+        "VIP_QUOTA_PRICE_VALID_UNTIL": "(unset)",
+        "ANTHROPIC_MODEL": "(unset)",
+        "PAID_ROUTE_PRIMARY_PROVIDER": "(unset)",
+        "PAID_SPARE_QUOTA_WIDENING": "(unset)",
+        "API_FOOTBALL_DAILY_LIMIT": "(unset)",
+        "API_FOOTBALL_DAILY_RESERVE": "(unset)",
+        "API_FOOTBALL_PAID_RESERVE": "(unset)",
+        "anthropicKeyPresent": true
+      },
+      "experimentDisabled": true,
+      "activeExperimentConfigValid": false,
+      "reservationUsd": null
+    },
+    {
+      "kind": "readiness_snapshot",
+      "at": "2026-11-16T22:19:48.138Z",
+      "database": "betgenius",
+      "readOnly": "on",
+      "windowFrom": "2026-11-17T10:19:48.138Z",
+      "windowUntil": "2026-11-18T22:19:48.138Z",
+      "funnel": {
+        "covered": 29,
+        "inScope": 20,
+        "planSkips": {
+          "OUT_OF_SCOPE": 2,
+          "ALREADY_ATTEMPTED": 7
+        },
+        "qualificationSkips": {
+          "MARKET_BELOW_BAR": 12
+        },
+        "baselineSkips": {
+          "KICKOFF_DAY_QUOTA": 8,
+          "MARKET_BELOW_BAR": 12
+        },
+        "eligible": [
+          {
+            "fixtureApiId": 1545907,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "quoteAgeMinutes": 34.72998333333334,
+            "marketSignal": 88.50820842255531,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545895,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "quoteAgeMinutes": 49.724383333333336,
+            "marketSignal": 86.96166587789872,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545901,
+            "kickoff": "2026-11-17T20:00:00.000Z",
+            "quoteAgeMinutes": 4.6681333333333335,
+            "marketSignal": 86.43641607809785,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528992,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "quoteAgeMinutes": 4.6809,
+            "marketSignal": 86.16090677660763,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1545902,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "quoteAgeMinutes": 49.71083333333333,
+            "marketSignal": 79.61783439490448,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545896,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "quoteAgeMinutes": 49.70588333333333,
+            "marketSignal": 78.65690767326194,
+            "bookmakers": 6
+          },
+          {
+            "fixtureApiId": 1528995,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "quoteAgeMinutes": 4.6847666666666665,
+            "marketSignal": 77.38952235825758,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528999,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "quoteAgeMinutes": 4.693216666666666,
+            "marketSignal": 76.11847804129816,
+            "bookmakers": 8
+          }
+        ]
+      },
+      "fixtureDays": [
+        {
+          "day": "2026-11-13",
+          "attemptRecords": 4,
+          "uniqueUsedFixtureIds": [
+            1545872,
+            1545878,
+            1545867,
+            1545877
+          ],
+          "missingIdentityRecords": 0,
+          "repeatedIdentityRecords": 0,
+          "uniqueEligibleFixtureIds": [],
+          "uniqueUsedPlusEligible": 4,
+          "fixtureRich": false
+        },
+        {
+          "day": "2026-11-14",
+          "attemptRecords": 8,
+          "uniqueUsedFixtureIds": [
+            1528974,
+            1528978,
+            1528976,
+            1492455,
+            1528971,
+            1545884,
+            1528972,
+            1628591
+          ],
+          "missingIdentityRecords": 0,
+          "repeatedIdentityRecords": 0,
+          "uniqueEligibleFixtureIds": [],
+          "uniqueUsedPlusEligible": 8,
+          "fixtureRich": false
+        },
+        {
+          "day": "2026-11-15",
+          "attemptRecords": 8,
+          "uniqueUsedFixtureIds": [
+            1528982,
+            1528985,
+            1528984,
+            1528981,
+            1628597,
+            1528980,
+            1628595
+          ],
+          "missingIdentityRecords": 0,
+          "repeatedIdentityRecords": 1,
+          "uniqueEligibleFixtureIds": [],
+          "uniqueUsedPlusEligible": 7,
+          "fixtureRich": false
+        },
+        {
+          "day": "2026-11-16",
+          "attemptRecords": 8,
+          "uniqueUsedFixtureIds": [
+            1545906,
+            1528987,
+            1528989,
+            1545617,
+            1545904,
+            1528991,
+            1545652,
+            1545618
+          ],
+          "missingIdentityRecords": 0,
+          "repeatedIdentityRecords": 0,
+          "uniqueEligibleFixtureIds": [],
+          "uniqueUsedPlusEligible": 8,
+          "fixtureRich": false
+        },
+        {
+          "day": "2026-11-17",
+          "attemptRecords": 8,
+          "uniqueUsedFixtureIds": [
+            1545898,
+            1545892,
+            1545903,
+            1545894,
+            1545908,
+            1545893,
+            1528996
+          ],
+          "missingIdentityRecords": 0,
+          "repeatedIdentityRecords": 1,
+          "uniqueEligibleFixtureIds": [
+            1545907,
+            1545895,
+            1545901,
+            1528992,
+            1545902,
+            1545896,
+            1528995,
+            1528999
+          ],
+          "uniqueUsedPlusEligible": 15,
+          "fixtureRich": true
+        }
+      ],
+      "odds": {
+        "candidateObservations": 20,
+        "uniqueFixtures": 20,
+        "cache": {
+          "FRESH": 20
+        },
+        "warming": {
+          "FRESH": 20
+        },
+        "provider": {
+          "NONE": 20
+        },
+        "market": {
+          "MEETS_MARKET_FLOOR": 8,
+          "BELOW_MARKET_FLOOR": 12
+        },
+        "sampleLimit": 20,
+        "samples": [
+          {
+            "fixtureApiId": 1545907,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 35,
+            "lastAttemptAgeMinutes": 35,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 88.51,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545905,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 35,
+            "lastAttemptAgeMinutes": 35,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 74.21,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1545891,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 35,
+            "lastAttemptAgeMinutes": 35,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 66.23,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545895,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 86.96,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545887,
+            "kickoff": "2026-11-17T13:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 35,
+            "lastAttemptAgeMinutes": 35,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 72.46,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1628598,
+            "kickoff": "2026-11-17T15:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 35,
+            "lastAttemptAgeMinutes": 35,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 66.18,
+            "bookmakers": 5
+          },
+          {
+            "fixtureApiId": 1545897,
+            "kickoff": "2026-11-17T16:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 74.19,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545899,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 69.31,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545902,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 79.62,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545889,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 73.39,
+            "bookmakers": 7
+          },
+          {
+            "fixtureApiId": 1545886,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 69.73,
+            "bookmakers": 5
+          },
+          {
+            "fixtureApiId": 1545896,
+            "kickoff": "2026-11-17T19:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 50,
+            "lastAttemptAgeMinutes": 50,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 78.66,
+            "bookmakers": 6
+          },
+          {
+            "fixtureApiId": 1528999,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 76.12,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528993,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 65.17,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528998,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 68.28,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528992,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 86.16,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528995,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 77.39,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528994,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 71.81,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1528997,
+            "kickoff": "2026-11-17T19:45:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "BELOW_MARKET_FLOOR",
+            "signal": 74.69,
+            "bookmakers": 8
+          },
+          {
+            "fixtureApiId": 1545901,
+            "kickoff": "2026-11-17T20:00:00.000Z",
+            "kickoffDay": "2026-11-17",
+            "cacheState": "FRESH",
+            "quoteAgeMinutes": 5,
+            "lastAttemptAgeMinutes": 5,
+            "warmReason": "FRESH",
+            "providerFailure": "NONE",
+            "marketState": "MEETS_MARKET_FLOOR",
+            "signal": 86.44,
+            "bookmakers": 8
+          }
+        ]
+      },
+      "publication": {
+        "sinceDeployment": "2026-11-15T14:19:29.000Z",
+        "rowsAcrossAllStatuses": [],
+        "latePublications": 0,
+        "lifecycle": {
+          "cycles": 128,
+          "failedCycles": 0,
+          "evaluated": 12,
+          "promotedVip": 0,
+          "promotedPremium": 0,
+          "published": 0,
+          "heldForRequote": 0,
+          "publishHeld": 0,
+          "duplicateFixture": 0,
+          "rejectedReasons": {
+            "MODEL_BELOW_FLOOR": 11,
+            "MARKET_BELOW_FLOOR": 1
+          }
+        },
+        "generation": {
+          "scheduled": {
+            "COMPLETED": 5,
+            "REJECTED": 1
+          },
+          "manual": {
+            "COMPLETED": 1
+          },
+          "predictionRows": 14,
+          "dedicatedRows": 0,
+          "draftConfidenceBelow75": 11
+        }
+      },
+      "budget": {
+        "creationDay": "2026-11-16",
+        "attemptCharges": 1,
+        "remainingCreationSlots": 11,
+        "apiUtcDay": "2026-11-16",
+        "calls": 6236,
+        "paidApiHeadroom": 1164,
+        "extraReservedUsd": 0,
+        "unreliableExtraRequests": 0
+      },
+      "recentCycles": [
+        {
+          "at": "2026-11-16T22:05:01.333Z",
+          "ok": true,
+          "considered": 29,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 2,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T21:50:03.516Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T21:35:01.329Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T21:20:04.069Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T21:05:01.759Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T20:50:03.397Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T20:35:01.573Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T20:20:03.470Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T20:05:01.472Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 20,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 8
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T19:50:03.090Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 19,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "NO_FRESH_QUOTE": 1,
+            "MARKET_BELOW_BAR": 12,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 7
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T19:35:01.477Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 12,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "NO_FRESH_QUOTE": 8,
+            "MARKET_BELOW_BAR": 8,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 4
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        },
+        {
+          "at": "2026-11-16T19:20:03.826Z",
+          "ok": true,
+          "considered": 30,
+          "inScope": 20,
+          "freshlyPriced": 12,
+          "qualified": 0,
+          "skipped": {
+            "OUT_OF_SCOPE": 3,
+            "NO_FRESH_QUOTE": 8,
+            "MARKET_BELOW_BAR": 8,
+            "ALREADY_ATTEMPTED": 7,
+            "KICKOFF_DAY_QUOTA": 4
+          },
+          "evaluated": 0,
+          "published": 0,
+          "rejectedReasons": {},
+          "publishHeld": [],
+          "heldForRequote": 0
+        }
+      ]
+    },
+    {
+      "kind": "audit_complete",
+      "productionWritten": false,
+      "providerCalls": 0,
+      "quotesWarmed": 0,
+      "configurationChanged": false,
+      "featureActivated": false
+    }
+  ]
+}

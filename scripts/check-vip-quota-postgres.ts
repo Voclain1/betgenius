@@ -32,11 +32,23 @@ async function main(){
  const user=await prisma.user.upsert({where:{email:"quota-test@example.invalid"},create:{email:"quota-test@example.invalid"},update:{}});
  await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
  const target=(id:number)=>({fixtureApiId:id,kickoff} as VipPremiumTarget);
+ const pool=Array.from({length:310},(_,i)=>({day,fixtureApiId:i+100}));
+ // Duplicated paid records consume spend, but cannot manufacture a rich day.
+ await prisma.aIJob.deleteMany({where:{prompt:{contains:'"fixtureApiId":8,'}}});
+ const duplicate=await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:1,kickoff:kickoff.toISOString()}),model:"manual-retry-test",rawOutput:"{}"}});
+ const thinProof=[{day,fixtureApiId:100},{day,fixtureApiId:101}];
+ const thin=await Promise.all(Array.from({length:10},(_,i)=>reserveExtraAttempt(target(100+i%2),cfg,thinProof)));
+ assert.equal(thin.filter(Boolean).length,0,"7 unique used plus 2 candidates cannot reserve concurrently");
+ assert.equal(await prisma.paidQuotaAttempt.count(),0);
+ assert.equal(await prisma.aIJob.count(),8,"paid duplicate records must remain counted");
+ await prisma.aIJob.delete({where:{id:duplicate.id}});
+ await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:8,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}});
+ assert.equal(await reserveExtraAttempt(target(100),cfg,[...Array.from({length:8},(_,i)=>({day,fixtureApiId:i+1})),{day,fixtureApiId:100}]),null,"used/candidate overlap must not inflate richness");
  // An old baseline attempt still blocks an extra after a distant reschedule.
  await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:777,kickoff:new Date(Date.now()-10*86400_000).toISOString()}),createdAt:new Date(Date.now()-10*86400_000),model:"test",rawOutput:"{}"}});
- assert.equal(await reserveExtraAttempt(target(777),cfg),null);
+ assert.equal(await reserveExtraAttempt(target(777),cfg,[...pool,{day,fixtureApiId:777}]),null);
  // Concurrent reservations cannot double-charge a fixture or overrun the ceiling.
- const results=await Promise.all(Array.from({length:12},(_,i)=>reserveExtraAttempt(target(100+i%3),cfg)));
+ const results=await Promise.all(Array.from({length:12},(_,i)=>reserveExtraAttempt(target(100+i%3),cfg,pool)));
  assert.equal(results.filter(Boolean).length,2);
  assert.equal((await prisma.paidQuotaAttempt.aggregate({_sum:{reservedMicroUsd:true}}))._sum.reservedMicroUsd,56000);
  const row=results.find(Boolean)!;
@@ -46,7 +58,7 @@ async function main(){
  }),/unknown transport/);
  process.env.VIP_QUOTA_INCREMENTAL_DAILY_USD="1";
  const unknownCfg=quotaExperimentConfig()!;
- assert.equal(await reserveExtraAttempt(target(200),unknownCfg),null);
+ assert.equal(await reserveExtraAttempt(target(200),unknownCfg,pool),null);
  process.env.VIP_QUOTA_INCREMENTAL_DAILY_USD="0.056";
  assert.equal((await prisma.paidQuotaAttempt.findUniqueOrThrow({where:{fixtureApiId:row.fixtureApiId}})).reservedMicroUsd,28000);
  await assert.rejects(runExtraAttempt(row.fixtureApiId,cfg,()=>beforeExperimentalModel("anthropic",200)),/already reserved/);
@@ -64,7 +76,7 @@ async function main(){
  // Daily model-call cap includes reservations with no AIJob (crashed request).
  await prisma.paidQuotaAttempt.deleteMany();
  Object.assign(process.env,{VIP_QUOTA_INCREMENTAL_DAILY_USD:"1"}); const larger=quotaExperimentConfig()!;
- const cap=await Promise.all(Array.from({length:8},(_,i)=>reserveExtraAttempt(target(300+i),larger)));
+ const cap=await Promise.all(Array.from({length:8},(_,i)=>reserveExtraAttempt(target(300+i),larger,pool)));
  assert.equal(cap.filter(Boolean).length,4);
  assert.ok((await prisma.paidQuotaAttempt.findMany()).every(r=>r.kickoffDay===day));
  // Real publish-time gate: an attributable extra can publish, but rollback,
@@ -104,6 +116,23 @@ async function main(){
  assert.equal(selected.experiment?.quotas[day],16);
  assert.equal(selected.targets[0]?.fixtureApiId,600);
  assert.equal(selected.oddsCalls,0);
+ // Exercise the complete selector with the production failure shape, not only
+ // the pure counting helper: 8 calls / 7 identities plus 2 fresh candidates.
+ await prisma.prediction.updateMany({where:{aiJobId:job.id},data:{aiJobId:null}});
+ await prisma.generationAttempt.delete({where:{matchKey:key}});
+ await prisma.paidQuotaAttempt.deleteMany(); await prisma.aIJob.deleteMany();
+ await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i===7?1:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
+ const thinSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
+ assert.equal(thinSelection.experiment?.quotas[day],undefined);
+ assert.equal(thinSelection.targets.length,0,"duplicate attempt records must not unlock a ninth attempt");
+ const identity=thinSelection.readiness?.fixtureDays.find(d=>d.day===day);
+ assert.equal(identity?.attemptRecords,8); assert.equal(identity?.uniqueUsedFixtureIds.length,7);
+ assert.equal(identity?.uniqueUsedPlusEligible,9); assert.equal(identity?.fixtureRich,false);
+ process.env.VIP_QUOTA_EXPERIMENT="off";
+ const offSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
+ assert.equal(offSelection.experiment,undefined); assert.equal(offSelection.targets.length,0);
+ assert.equal(offSelection.oddsCalls,0); assert.deepEqual(offSelection.readiness?.fixtureDays,thinSelection.readiness?.fixtureDays);
+ process.env.VIP_QUOTA_EXPERIMENT="on";
  // A crashed extra's identity must survive rescheduling beyond the lookback.
  await prisma.paidQuotaAttempt.create({data:{fixtureApiId:999,experiment:"vip-quota-v1",kickoffDay:"2026-01-01",spendDay:"2026-01-01",createdAt:new Date(Date.now()-10*86400_000),reservedMicroUsd:28000,configJson:JSON.stringify(larger)}});
  assert.ok((await loadVipPremiumAttempts()).some(a=>a.fixtureApiId===999));
@@ -116,7 +145,7 @@ async function main(){
  const hardLimitOutput=execFileSync(process.execPath,["--import","tsx","scripts/check-vip-quota-postgres.ts","--hard-api-ceiling"],{env:{...process.env,API_FOOTBALL_DAILY_LIMIT:"999999"},encoding:"utf8"});
  assert.match(hardLimitOutput,/7500 enforced/);
  delete process.env.VIP_QUOTA_EXPERIMENT;
- assert.equal(await reserveExtraAttempt(target(400),larger),null);
+ assert.equal(await reserveExtraAttempt(target(400),larger,pool),null);
  console.log("quota postgres: concurrent dedupe, budget reservation, unknown cost, no refunds, API ceiling, 12-call cap, rollback/publication/notification integrity and API fail-closed checks passed");
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>prisma.$disconnect());

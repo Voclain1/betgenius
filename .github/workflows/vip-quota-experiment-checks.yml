@@ -10,16 +10,22 @@ on:
       - 'prisma/schema.prisma'
       - 'scripts/*vip-quota*'
       - 'scripts/check-vip-premium-overlay.ts'
+      - 'scripts/check-vip-premium-readiness.ts'
+      - 'scripts/audit-vip-premium-readiness.ts'
+      - 'scripts/ops/paid-supply-config-probe.mjs'
       - '.github/workflows/vip-quota-experiment-checks.yml'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   checks:
+    strategy:
+      matrix:
+        postgres: [16, 17]
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:${{ matrix.postgres }}-alpine
         env:
           POSTGRES_PASSWORD: quota-test-local
           POSTGRES_DB: quota_test
@@ -42,6 +48,7 @@ jobs:
       - run: npx prisma db push --skip-generate
       - run: npm run check:vip-quota-experiment
       - run: npm run check:vip-quota-postgres
+      - run: npm run check:vip-premium-readiness
       - run: npm run check:vip-premium-overlay
       - run: npm run check:vip-premium-quota
       - run: npm run check:paid-spare-quota

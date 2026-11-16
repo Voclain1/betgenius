@@ -5,6 +5,7 @@ import type { FixtureOdds } from "@/lib/odds";
 import { lagosDateKey } from "@/lib/lagosDate";
 import {
   lopsidednessSignal,
+  MC_MIN_BOOKMAKERS,
   MC_MAX_QUOTE_AGE_MS,
   MC_MIN_MARKET_PROBABILITY,
   MC_MIN_MODEL_CONFIDENCE,
@@ -386,6 +387,45 @@ export type OverlayQuote = { oddsJson: FixtureOdds | null; fetchedAt: Date | nul
 const isFresh = (q: OverlayQuote | undefined, now: Date) =>
   !!q?.fetchedAt && now.getTime() - q.fetchedAt.getTime() <= MC_MAX_QUOTE_AGE_MS;
 
+export type OddsWarmReason = "OUTSIDE_WARMING_WINDOW" | "FRESH" | "FETCH_BACKOFF" | "DUE";
+/** Shared execution/diagnostic policy; never fetches or changes backoff. */
+export function vipPremiumOddsWarmReason(c: Pick<OverlayCandidate, "kickoff">, q: OverlayQuote | undefined, now: Date): OddsWarmReason {
+  if (c.kickoff.getTime() - now.getTime() > VIP_PREMIUM_WARM_WITHIN_MS) return "OUTSIDE_WARMING_WINDOW";
+  if (isFresh(q, now)) return "FRESH";
+  const failedSinceLastQuote = !!q?.lastAttemptAt && (!q.fetchedAt || q.lastAttemptAt.getTime() > q.fetchedAt.getTime());
+  if (failedSinceLastQuote && now.getTime() - q!.lastAttemptAt!.getTime() < VIP_PREMIUM_WARM_RETRY_MS) return "FETCH_BACKOFF";
+  return "DUE";
+}
+
+export type PaidOddsDiagnostic = {
+  fixtureApiId: number; kickoff: string; kickoffDay: string;
+  cacheState: "MISSING_CACHE" | "NO_SUCCESSFUL_QUOTE" | "FRESH" | "STALE";
+  quoteAgeMinutes: number | null; lastAttemptAgeMinutes: number | null;
+  warmReason: OddsWarmReason;
+  providerFailure: "NONE" | "NO_BOOKMAKER_PRICES" | "RATE_OR_QUOTA" | "AUTHORIZATION" | "TIMEOUT" | "OTHER";
+  marketState: "NO_PAYLOAD" | "INSUFFICIENT_BOOKMAKERS" | "NO_TARGETABLE_MARKET" | "BELOW_MARKET_FLOOR" | "MEETS_MARKET_FLOOR";
+  signal: number | null; bookmakers: number | null;
+};
+
+/** Cache-only facts, not another qualification gate or provider call. */
+export function vipPremiumOddsDiagnostic(c: Pick<OverlayCandidate, "fixtureApiId" | "kickoff">, q: (OverlayQuote & { lastError?: string | null }) | undefined, now: Date): PaidOddsDiagnostic {
+  const signal = lopsidednessSignal(q?.oddsJson ?? null);
+  const targetBooks = (q?.oddsJson?.markets ?? []).filter(m => m.market === "Match Winner" || m.market === "Double Chance")
+    .flatMap(m => m.selections.filter(s => m.market === "Match Winner" ? /^(Home|Away)$/i.test(s.value) : /^(Home\/Draw|Away\/Draw)$/i.test(s.value)).map(s => s.bookmakers));
+  const err = q?.lastError ?? "";
+  return {
+    fixtureApiId: c.fixtureApiId, kickoff: c.kickoff.toISOString(), kickoffDay: lagosDateKey(c.kickoff),
+    cacheState: !q ? "MISSING_CACHE" : !q.fetchedAt ? "NO_SUCCESSFUL_QUOTE" : isFresh(q, now) ? "FRESH" : "STALE",
+    quoteAgeMinutes: q?.fetchedAt ? Math.round((now.getTime() - q.fetchedAt.getTime()) / 60000) : null,
+    lastAttemptAgeMinutes: q?.lastAttemptAt ? Math.round((now.getTime() - q.lastAttemptAt.getTime()) / 60000) : null,
+    warmReason: vipPremiumOddsWarmReason(c, q, now),
+    // Never include raw provider messages or account details in JobRun.
+    providerFailure: !err ? "NONE" : /no bookmaker|no.*prices|no.*odds/i.test(err) ? "NO_BOOKMAKER_PRICES" : /429|quota|rate.limit/i.test(err) ? "RATE_OR_QUOTA" : /401|403|unauthor|forbidden/i.test(err) ? "AUTHORIZATION" : /timeout|timed.out/i.test(err) ? "TIMEOUT" : "OTHER",
+    marketState: !q?.oddsJson ? "NO_PAYLOAD" : !signal ? (targetBooks.length > 0 && Math.max(...targetBooks) < MC_MIN_BOOKMAKERS ? "INSUFFICIENT_BOOKMAKERS" : "NO_TARGETABLE_MARKET") : signal.probability < VIP_MARKET_FLOOR ? "BELOW_MARKET_FLOOR" : "MEETS_MARKET_FLOOR",
+    signal: signal ? Number(signal.probability.toFixed(2)) : null, bookmakers: signal?.bookmakers ?? null,
+  };
+}
+
 /**
  * Which candidates this run should price itself, nearest kickoff first, at most
  * `limit` (VIP_PREMIUM_ODDS_WARM_LIMIT).
@@ -403,14 +443,7 @@ export function vipPremiumOddsToWarm(
   limit = VIP_PREMIUM_ODDS_WARM_LIMIT,
 ): OverlayCandidate[] {
   return candidates
-    .filter((c) => {
-      if (c.kickoff.getTime() - now.getTime() > VIP_PREMIUM_WARM_WITHIN_MS) return false;
-      const q = quotes.get(c.matchKey);
-      if (isFresh(q, now)) return false;
-      const failedSinceLastQuote = !!q?.lastAttemptAt && (!q.fetchedAt || q.lastAttemptAt.getTime() > q.fetchedAt.getTime());
-      if (failedSinceLastQuote && now.getTime() - q!.lastAttemptAt!.getTime() < VIP_PREMIUM_WARM_RETRY_MS) return false;
-      return true;
-    })
+    .filter(c => vipPremiumOddsWarmReason(c, quotes.get(c.matchKey), now) === "DUE")
     // Spare-quota candidates are priced only after every in-scope candidate, so
     // they can never take a core fixture's place in the warm budget.
     .sort((a, b) => Number(!!a.viaSpareQuota) - Number(!!b.viaSpareQuota) || a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey))

@@ -21,7 +21,9 @@ export function quotaExperimentConfig(env: Record<string, string | undefined> = 
   const valid = env.VIP_QUOTA_PRICE_VALID_UNTIL;
   const expires = Date.parse(valid ?? "");
   // A short-lived attestation must be reviewed before a price/model change.
-  if (!extra || !Number.isInteger(extra) || extra > EXTRA_ATTEMPT_MAX || !usd || !inputRate || !outputRate || !valid || !Number.isFinite(expires) || expires <= now.getTime() || expires > now.getTime() + 31 * 86400_000) return null;
+  if (!extra || !Number.isInteger(extra) || extra > EXTRA_ATTEMPT_MAX || !usd || !inputRate || !outputRate || !valid
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(valid)
+    || !Number.isFinite(expires) || expires <= now.getTime() || expires > now.getTime() + 31 * 86400_000) return null;
   const model = env.ANTHROPIC_MODEL || "claude-haiku-5-5";
   if (model !== "claude-haiku-5-5" || !env.ANTHROPIC_API_KEY || (env.PAID_ROUTE_PRIMARY_PROVIDER && env.PAID_ROUTE_PRIMARY_PROVIDER !== "anthropic")) return null;
   const dailyMicroUsd = Math.floor(usd * 1_000_000);
@@ -30,19 +32,33 @@ export function quotaExperimentConfig(env: Record<string, string | undefined> = 
   return { extra, dailyMicroUsd, inputRate, outputRate, model, priceValidUntil: valid, reservationMicroUsd };
 }
 
-/** Uses only already-qualified, unique, unattempted candidates, with the existing ranking. */
-export function experimentalDays(used: ReadonlyMap<string, number>, eligibleDays: readonly { day: string; fixtureApiId: number }[], extra: number): Map<string, number> {
+export type RichnessFixture = { day: string; fixtureApiId: number | null };
+/** Identity evidence, deliberately separate from attempt/spend counters. */
+export function fixtureRichnessByDay(used: readonly RichnessFixture[], eligible: readonly RichnessFixture[]): Map<string, Set<number>> {
   const fixtures = new Map<string, Set<number>>();
-  for (const c of eligibleDays) {
+  const valid = (c: RichnessFixture) => Number.isSafeInteger(c.fixtureApiId) && c.fixtureApiId! > 0 && /^\d{4}-\d{2}-\d{2}$/.test(c.day);
+  const usedIds = new Set(used.filter(valid).map(c => c.fixtureApiId!));
+  for (const c of used.filter(valid)) {
     if (!fixtures.has(c.day)) fixtures.set(c.day, new Set());
-    fixtures.get(c.day)!.add(c.fixtureApiId);
+    fixtures.get(c.day)!.add(c.fixtureApiId!);
   }
+  for (const c of eligible.filter(valid)) {
+    // A rescheduled or overlapping candidate cannot supply a second identity.
+    if (usedIds.has(c.fixtureApiId!)) continue;
+    if (!fixtures.has(c.day)) fixtures.set(c.day, new Set());
+    fixtures.get(c.day)!.add(c.fixtureApiId!);
+  }
+  return fixtures;
+}
+
+/** Uses the union of real fixture identities; repeated paid calls still cost quota. */
+export function experimentalDays(used: readonly RichnessFixture[], eligibleDays: readonly RichnessFixture[], extra: number): Map<string, number> {
   const quotas = new Map<string, number>();
   if (!Number.isInteger(extra) || extra < 1 || extra > 8) return quotas;
-  for (const [day, ids] of fixtures) {
-    // At least ten eligible fixtures across spent slots and remaining pool;
-    // never activate merely because an empty/sparse calendar used its quota.
-    if ((used.get(day) ?? 0) + ids.size >= 10) quotas.set(day, 8 + extra);
+  const usedIds = new Set(used.filter(c => Number.isSafeInteger(c.fixtureApiId) && c.fixtureApiId! > 0).map(c => c.fixtureApiId));
+  const eligibleDaysWithIds = new Set(eligibleDays.filter(c => Number.isSafeInteger(c.fixtureApiId) && c.fixtureApiId! > 0 && !usedIds.has(c.fixtureApiId)).map(c => c.day));
+  for (const [day, ids] of fixtureRichnessByDay(used, eligibleDays)) {
+    if (eligibleDaysWithIds.has(day) && ids.size >= 10) quotas.set(day, 8 + extra);
   }
   return quotas;
 }

@@ -1,4 +1,5 @@
 import { experimentalDays, quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
+import { paidFixtureReadiness, summarisePaidOdds } from "@/lib/vipPremiumReadiness";
 import { reliabilityControls } from "@/lib/reliabilitySnapshot";
 import { recordReliability } from "@/lib/reliabilityStore";
 import { captureReliabilityPrice } from "@/lib/reliabilityPrice";
@@ -56,6 +57,7 @@ import {
   PREMIUM_MARKET_FLOOR,
   VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
+  vipPremiumOddsDiagnostic,
   spareQuotaSlotsByDay,
   spareQuotaWideningMode,
   PAID_CORE_LEAGUE_IDS,
@@ -459,8 +461,14 @@ export async function recordPaidSelectionShadow(input: {
 }
 
 export type TargetSelection = {
+  /** Cache-only observability, present even while experimental attempts are off. */
+  readiness?: {
+    fixtureDays: ReturnType<typeof paidFixtureReadiness>;
+    oddsBeforeWarming: ReturnType<typeof summarisePaidOdds>;
+    oddsAfterWarming: ReturnType<typeof summarisePaidOdds>;
+  };
   /** Cache-qualified rich-day allowance; absent when the experiment switch is off. */
-  experiment?: { enabled: boolean; quotas: Record<string, number> };
+  experiment?: { enabled: boolean; quotas: Record<string, number>; eligibleFixtures: { day: string; fixtureApiId: number }[] };
   targets: VipPremiumTarget[];
   /** Covered (ledger SUCCEEDED) fixtures inside the paid-generation window. */
   considered: number;
@@ -568,16 +576,17 @@ export async function selectVipPremiumTargets(
     keys.length
       ? await prisma.fixtureOddsCache.findMany({
           where: { matchKey: { in: keys } },
-          select: { matchKey: true, oddsJson: true, fetchedAt: true, lastAttemptAt: true },
+          select: { matchKey: true, oddsJson: true, fetchedAt: true, lastAttemptAt: true, lastError: true },
         })
       : [];
-  const quotes = new Map<string, OverlayQuote>(
+  const quotes = new Map<string, OverlayQuote & { lastError: string | null }>(
     (await readQuotes(plan.candidates.map((c) => c.matchKey))).map((q) => [
       q.matchKey,
-      { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt },
+      { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError },
     ]),
   );
 
+  const oddsBeforeWarming = summarisePaidOdds(plan.candidates.map(c => vipPremiumOddsDiagnostic(c, quotes.get(c.matchKey), now)));
   let oddsCalls = 0;
   let warmed = 0;
   if (options.warmOdds) {
@@ -596,15 +605,16 @@ export async function selectVipPremiumTargets(
         }
       }
       for (const q of await readQuotes(due.map((c) => c.matchKey))) {
-        quotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt });
+        quotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError });
       }
     }
   }
 
   const experiment = options.anyLeague ? null : quotaExperimentConfig(process.env, now);
   // Cache-only eligibility: no extra warming budget and no threshold changes.
-  const eligible = experiment ? qualifyVipPremiumTargets(plan.candidates, quotes, now, plan.candidates.length, undefined, spareSlots).targets : [];
-  const quotas = experimentalDays(used, eligible.map(c => ({ day: lagosDateKey(c.kickoff), fixtureApiId: c.fixtureApiId })), experiment?.extra ?? 0);
+  const eligible = qualifyVipPremiumTargets(plan.candidates, quotes, now, plan.candidates.length, undefined, spareSlots).targets;
+  const eligibleFixtures = eligible.map(c => ({ day: lagosDateKey(c.kickoff), fixtureApiId: c.fixtureApiId }));
+  const quotas = experimentalDays(attempts.map(a => ({ day: attemptKickoffDay(a), fixtureApiId: a.fixtureApiId })), eligibleFixtures, experiment?.extra ?? 0);
   const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used, quota: VIP_PREMIUM_DAILY_QUOTA, byDay: quotas }, spareSlots);
 
   let spareQuota: TargetSelection["spareQuota"];
@@ -613,7 +623,7 @@ export async function selectVipPremiumTargets(
     // Shadow reads the cache only; "on" candidates were already priced above.
     const shadowQuotes = new Map(quotes);
     for (const q of await readQuotes(eligible.filter((c) => !shadowQuotes.has(c.matchKey)).map((c) => c.matchKey))) {
-      shadowQuotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt });
+      shadowQuotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError });
     }
     const would = qualifyVipPremiumTargets(eligible, shadowQuotes, now, eligible.length, { used, quota: VIP_PREMIUM_DAILY_QUOTA }, spareSlots);
     spareQuota = {
@@ -625,7 +635,12 @@ export async function selectVipPremiumTargets(
     };
   }
   return {
-    ...(process.env.VIP_QUOTA_EXPERIMENT === "on" ? { experiment: { enabled: !!experiment, quotas: Object.fromEntries(quotas) } } : {}),
+    readiness: {
+      fixtureDays: paidFixtureReadiness(attempts.map(a => ({ day: attemptKickoffDay(a), fixtureApiId: a.fixtureApiId })), eligibleFixtures),
+      oddsBeforeWarming,
+      oddsAfterWarming: summarisePaidOdds(plan.candidates.map(c => vipPremiumOddsDiagnostic(c, quotes.get(c.matchKey), now))),
+    },
+    ...(process.env.VIP_QUOTA_EXPERIMENT === "on" ? { experiment: { enabled: !!experiment, quotas: Object.fromEntries(quotas), eligibleFixtures } } : {}),
     targets: odds.targets,
     considered: plan.considered,
     inScope: plan.candidates.length,

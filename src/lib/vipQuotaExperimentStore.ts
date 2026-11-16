@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey } from "@/lib/lagosDate";
-import { QUOTA_EXPERIMENT, quotaExperimentConfig, reliableUsageCost, type QuotaExperimentConfig, withQuotaExperiment } from "@/lib/vipQuotaExperiment";
+import { QUOTA_EXPERIMENT, quotaExperimentConfig, reliableUsageCost, experimentalDays, type RichnessFixture, type QuotaExperimentConfig, withQuotaExperiment } from "@/lib/vipQuotaExperiment";
 import { attemptKickoffDay, readVipPremiumAttempt, type VipPremiumTarget } from "@/lib/vipPremiumOverlay";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 
 /** Reservations are retained on crash/failure; writes serialize across instances. */
-export async function reserveExtraAttempt(target: VipPremiumTarget, config: QuotaExperimentConfig, now = new Date()) {
+export async function reserveExtraAttempt(target: VipPremiumTarget, config: QuotaExperimentConfig, eligibleFixtures: readonly RichnessFixture[], now = new Date()) {
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(760016)`;
     // Re-read the switch and pricing expiry at the actual reservation. API
@@ -29,6 +29,14 @@ export async function reserveExtraAttempt(target: VipPremiumTarget, config: Quot
     if (attempts.some(a => a.fixtureApiId === target.fixtureApiId) || all.some(a => a.fixtureApiId === target.fixtureApiId)) return null;
     const kickoffDay = lagosDateKey(target.kickoff), spendDay = lagosDateKey(now);
     const missing = all.filter(a => !attempts.some(j => j.fixtureApiId === a.fixtureApiId));
+    // Reconcile the selector's eligible pool with identities re-read under the
+    // reservation lock. Records still count separately toward the spend caps.
+    const identities = [
+      ...attempts.map(a => ({ day: attemptKickoffDay(a), fixtureApiId: a.fixtureApiId })),
+      ...missing.map(a => ({ day: a.kickoffDay, fixtureApiId: a.fixtureApiId })),
+    ];
+    if (!eligibleFixtures.some(c => c.day === kickoffDay && c.fixtureApiId === target.fixtureApiId)
+      || !experimentalDays(identities, eligibleFixtures, config.extra).has(kickoffDay)) return null;
     const kickoffCount = attempts.filter(a => attemptKickoffDay(a) === kickoffDay).length + missing.filter(a => a.kickoffDay === kickoffDay).length;
     const spendCount = attempts.filter(a => a.createdAt >= start && a.createdAt < end).length + missing.filter(a => a.spendDay === spendDay).length;
     const today = all.filter(a => a.spendDay === spendDay);
