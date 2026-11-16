@@ -61,6 +61,28 @@ async function main() {
     stage = 'publication-and-budgets';
     const published = await tx.prediction.findMany({ where: { provenance: { in: [...PAID_ONLY_PROVENANCES] }, publishedAt: { gte: deploy } }, orderBy: { publishedAt: 'asc' }, select: { id: true, status: true, fixtureApiId: true, kickoff: true, publishedAt: true, provenance: true, confidence: true } });
     const recent = await tx.jobRun.findMany({ where: { job: 'generate-vip-premium' }, orderBy: { ranAt: 'desc' }, take: 12, select: { ranAt: true, ok: true, detail: true } });
+    // Trace the whole deployment interval, not just the latest quota standdowns.
+    // Return counts and reason codes only; never saved prompts or raw errors.
+    const cycles = await tx.jobRun.findMany({ where: { job: 'generate-vip-premium', ranAt: { gte: deploy } }, select: { ok: true, detail: true } });
+    const lifecycle = { cycles: cycles.length, failedCycles: cycles.filter(c => !c.ok).length, evaluated: 0, promotedVip: 0, promotedPremium: 0, published: 0, heldForRequote: 0, publishHeld: 0, duplicateFixture: 0, rejectedReasons: {} as Record<string, number> };
+    for (const cycle of cycles) {
+      const v = (cycle.detail as any)?.vipPremium;
+      if (!v) continue;
+      for (const key of ['evaluated', 'published', 'heldForRequote', 'duplicateFixture'] as const) if (Number.isSafeInteger(v[key]) && v[key] >= 0) lifecycle[key] += v[key];
+      for (const key of ['promotedVip', 'promotedPremium', 'publishHeld'] as const) if (Array.isArray(v[key])) lifecycle[key] += v[key].length;
+      for (const [reason, count] of Object.entries(v.rejectedReasons ?? {})) if (/^[A-Z_]{1,80}$/.test(reason) && typeof count === 'number' && Number.isSafeInteger(count) && count >= 0) lifecycle.rejectedReasons[reason] = (lifecycle.rejectedReasons[reason] ?? 0) + count;
+    }
+    const deploymentJobs = await tx.aIJob.findMany({ where: { createdAt: { gte: deploy }, prompt: { contains: '"intent":"VIP_PREMIUM"' } }, select: { prompt: true, createdAt: true, status: true, predictions: { select: { provenance: true, status: true, confidence: true } } } });
+    const generation = { scheduled: {} as Record<string, number>, manual: {} as Record<string, number>, predictionRows: 0, dedicatedRows: 0, draftConfidenceBelow75: 0 };
+    for (const job of deploymentJobs) {
+      if (!readVipPremiumAttempt(job.prompt, job.createdAt)) continue;
+      let manual = false; try { manual = JSON.parse(job.prompt).manual === true; } catch { continue; }
+      const counts = manual ? generation.manual : generation.scheduled;
+      counts[job.status] = (counts[job.status] ?? 0) + 1;
+      generation.predictionRows += job.predictions.length;
+      generation.dedicatedRows += job.predictions.filter(p => PAID_ONLY_PROVENANCES.includes(p.provenance as any)).length;
+      generation.draftConfidenceBelow75 += job.predictions.filter(p => p.confidence < 75).length;
+    }
     const bounds = lagosTodayBounds(now), today = attempts.filter(a => a.createdAt >= bounds.start && a.createdAt < bounds.end);
     const extras = reservations.filter(r => r.spendDay === lagosDateKey(now));
     const spend = today.length + extras.filter(r => !today.some(a => a.fixtureApiId === r.fixtureApiId)).length;
@@ -69,7 +91,7 @@ async function main() {
     return { at: now, database: guard.database, readOnly: guard.read_only, windowFrom: from, windowUntil: until,
       funnel: { covered: plan.considered, inScope: plan.candidates.length, planSkips: plan.skipped, qualificationSkips: uncapped.skipped, baselineSkips: baseline.skipped, eligible: eligible.map(t => ({ fixtureApiId: t.fixtureApiId, kickoff: t.kickoff, quoteAgeMinutes: t.quoteAgeMs / 60_000, marketSignal: t.marketProbability, bookmakers: t.bookmakers })) },
       fixtureDays, odds: summarisePaidOdds(plan.candidates.map(c => vipPremiumOddsDiagnostic(c, qm.get(c.matchKey), now))),
-      publication: { sinceDeployment: deploy, rowsAcrossAllStatuses: published, latePublications: published.filter(p => !p.kickoff || !p.publishedAt || p.publishedAt >= p.kickoff).length },
+      publication: { sinceDeployment: deploy, rowsAcrossAllStatuses: published, latePublications: published.filter(p => !p.kickoff || !p.publishedAt || p.publishedAt >= p.kickoff).length, lifecycle, generation },
       budget: { creationDay: lagosDateKey(now), attemptCharges: spend, remainingCreationSlots: Math.max(0, 12 - spend), apiUtcDay: now.toISOString().slice(0, 10), calls, paidApiHeadroom: Math.max(0, Math.min(num('API_FOOTBALL_DAILY_LIMIT') ?? 7500, 7500) - (num('API_FOOTBALL_DAILY_RESERVE') ?? 100) - calls), extraReservedUsd: extras.reduce((sum, r) => sum + r.reservedMicroUsd, 0) / 1e6, unreliableExtraRequests: extras.filter(r => r.modelRequests > 0 && !r.usageReliable).length },
       recentCycles: recent.map(r => { const v = (r.detail as any)?.vipPremium; return { at: r.ranAt, ok: r.ok, considered: v?.considered, inScope: v?.inScope, freshlyPriced: v?.freshlyPriced, qualified: v?.qualified, skipped: v?.skipped, evaluated: v?.evaluated, published: v?.published, rejectedReasons: v?.rejectedReasons, publishHeld: v?.publishHeld, heldForRequote: v?.heldForRequote, publicationOutcome: v?.publicationOutcome }; }),
     };
