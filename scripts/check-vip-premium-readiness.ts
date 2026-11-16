@@ -1,9 +1,16 @@
 /** Pure regression tests: no database, HTTP or model calls. */
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {vipPremiumOddsDiagnostic,vipPremiumOddsToWarm,vipPremiumOddsWarmReason,VIP_PREMIUM_WARM_WITHIN_MS,VIP_PREMIUM_WARM_RETRY_MS,type OverlayCandidate,type OverlayQuote} from '../src/lib/vipPremiumOverlay';
 import {paidFixtureReadiness,summarisePaidOdds,paidPublicationOutcome,PAID_ODDS_SAMPLE_LIMIT} from '../src/lib/vipPremiumReadiness';
 import type {FixtureOdds} from '../src/lib/odds';
 const H=3600000,now=new Date('2026-11-16T10:00:00Z'),day='2026-11-17';
+// Production probe must return presence only, and withhold malformed values.
+const probeText=execFileSync(process.execPath,['scripts/ops/paid-supply-config-probe.mjs'],{encoding:'utf8',env:{...process.env,ANTHROPIC_API_KEY:'secret-sentinel',DATABASE_URL:'secret-url-sentinel',VIP_QUOTA_INPUT_USD_PER_MILLION:'secret-invalid-rate',VIP_QUOTA_EXPERIMENT:'off'}});
+const probe=JSON.parse(probeText);
+assert.equal(probe.anthropicKeyPresent,true); assert.equal(probe.VIP_QUOTA_EXPERIMENT,'off');
+assert.equal(probe.VIP_QUOTA_INPUT_USD_PER_MILLION,'(invalid; value withheld)');
+assert.ok(!probeText.includes('secret-')); assert.equal(probe.DATABASE_URL,undefined);
 const c=(id=1,h=20)=>({fixtureApiId:id,kickoff:new Date(+now+h*H),matchKey:`test-${id}`} as OverlayCandidate);
 function odds(p=.82,books=6):FixtureOdds {
  const selections=[['Home',p],['Draw',(1-p)*.6],['Away',(1-p)*.4]].map(([value,p])=>({value,bookmakers:books,median:1/Number(p),best:1/Number(p),bestBookmaker:'test'}));

@@ -116,6 +116,23 @@ async function main(){
  assert.equal(selected.experiment?.quotas[day],16);
  assert.equal(selected.targets[0]?.fixtureApiId,600);
  assert.equal(selected.oddsCalls,0);
+ // Exercise the complete selector with the production failure shape, not only
+ // the pure counting helper: 8 calls / 7 identities plus 2 fresh candidates.
+ await prisma.prediction.updateMany({where:{aiJobId:job.id},data:{aiJobId:null}});
+ await prisma.generationAttempt.delete({where:{matchKey:key}});
+ await prisma.paidQuotaAttempt.deleteMany(); await prisma.aIJob.deleteMany();
+ await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i===7?1:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
+ const thinSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
+ assert.equal(thinSelection.experiment?.quotas[day],undefined);
+ assert.equal(thinSelection.targets.length,0,"duplicate attempt records must not unlock a ninth attempt");
+ const identity=thinSelection.readiness?.fixtureDays.find(d=>d.day===day);
+ assert.equal(identity?.attemptRecords,8); assert.equal(identity?.uniqueUsedFixtureIds.length,7);
+ assert.equal(identity?.uniqueUsedPlusEligible,9); assert.equal(identity?.fixtureRich,false);
+ process.env.VIP_QUOTA_EXPERIMENT="off";
+ const offSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
+ assert.equal(offSelection.experiment,undefined); assert.equal(offSelection.targets.length,0);
+ assert.equal(offSelection.oddsCalls,0); assert.deepEqual(offSelection.readiness?.fixtureDays,thinSelection.readiness?.fixtureDays);
+ process.env.VIP_QUOTA_EXPERIMENT="on";
  // A crashed extra's identity must survive rescheduling beyond the lookback.
  await prisma.paidQuotaAttempt.create({data:{fixtureApiId:999,experiment:"vip-quota-v1",kickoffDay:"2026-01-01",spendDay:"2026-01-01",createdAt:new Date(Date.now()-10*86400_000),reservedMicroUsd:28000,configJson:JSON.stringify(larger)}});
  assert.ok((await loadVipPremiumAttempts()).some(a=>a.fixtureApiId===999));
