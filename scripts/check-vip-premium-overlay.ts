@@ -133,6 +133,7 @@ stub("../src/lib/predictions", {
   // Sprint 04's atomic paid publication: recorded the same way, so the tests
   // still prove a dedicated pick is published through the shared transition.
   KickoffPassedError: class KickoffPassedError extends Error {},
+  PaidPublicationEvidenceError: class PaidPublicationEvidenceError extends Error {},
   publishPaidPredictionAtomically: async (row: Any, actorId: string) => {
     writes.push(`review:PUBLISH:${row.id}:${actorId}`);
     const r = db.byId.get(row.id);

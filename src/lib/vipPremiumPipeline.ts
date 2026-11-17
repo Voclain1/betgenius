@@ -8,7 +8,7 @@ import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
 import { paidQualityPolicyMode } from "@/lib/paidQualityPolicy";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
 import { lagosDateKey, lagosTodayBounds } from "@/lib/lagosDate";
-import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
+import { publishPaidPredictionAtomically, KickoffPassedError, PaidPublicationEvidenceError, setPredictionCategories } from "@/lib/predictions";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
@@ -881,6 +881,7 @@ export async function autoPublishVipPremiumPrediction(
     if (!published) return { published: false, blocks: ["CONCURRENT_OR_STALE_PUBLISH"], ordinaryPaidTagsRemoved: 0 };
   } catch (error) {
     if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
+    if (error instanceof PaidPublicationEvidenceError) return { published: false, blocks: ["INVALID_PUBLICATION_EVIDENCE"], ordinaryPaidTagsRemoved: 0 };
     throw error;
   }
 

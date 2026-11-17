@@ -98,6 +98,18 @@ async function main(){
  await prisma.paidQuotaAttempt.update({where:{fixtureApiId:fx},data:{usageReliable:false}});
  assert.equal((await autoPublishVipPremiumPrediction(paid.id,user.id)).published,false);
  await prisma.paidQuotaAttempt.update({where:{fixtureApiId:fx},data:{usageReliable:true}});
+ // An otherwise valid paid pick must be held, not turn the scheduled cycle
+ // into an error, when PR #206 removes its only retained named quote.
+ const originalQuote=await prisma.fixtureOddsCache.findUniqueOrThrow({where:{matchKey:key}});
+ const unattributed=JSON.parse(JSON.stringify(originalQuote.oddsJson));
+ Object.assign(unattributed.markets[0].selections[0],{best:3.5,bestBookmaker:"Outlier",quotes:[{bookmaker:"Outlier",odd:3.5}]});
+ await prisma.fixtureOddsCache.update({where:{matchKey:key},data:{oddsJson:unattributed}});
+ const beforeHold=await prisma.prediction.findUniqueOrThrow({where:{id:paid.id}});
+ const held=await autoPublishVipPremiumPrediction(paid.id,user.id);
+ assert.equal(held.published,false); assert.deepEqual(held.blocks,["INVALID_PUBLICATION_EVIDENCE"]);
+ assert.deepEqual(await prisma.prediction.findUniqueOrThrow({where:{id:paid.id}}),beforeHold);
+ assert.equal(await prisma.notificationEvent.count({where:{predictionId:paid.id}}),0);
+ await prisma.fixtureOddsCache.update({where:{matchKey:key},data:{oddsJson:originalQuote.oddsJson as any}});
  const published=await autoPublishVipPremiumPrediction(paid.id,user.id);
  assert.equal(published.published,true,JSON.stringify(published));
  assert.equal((await autoPublishVipPremiumPrediction(paid.id,user.id)).published,false);

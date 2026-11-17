@@ -787,6 +787,7 @@ export type PaidPublishBlock =
   | "OVER_DAILY_QUOTA"
   | "KICKED_OFF" // the match started before publication could complete
   | "CONCURRENT_OR_STALE_PUBLISH" // another worker claimed the row or the draft changed
+  | "INVALID_PUBLICATION_EVIDENCE" // the atomic boundary rejected the quote snapshot
   | "TOO_CLOSE_TO_KICKOFF"; // under PAID_MIN_PUBLISH_LEAD_MS to kickoff
 
 export type PaidPublishRow = {

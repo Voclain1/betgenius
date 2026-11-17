@@ -1,7 +1,7 @@
 import { publicationStatusProblem } from "./predictionOperations";
 import { isValidSelection, type MarketType } from "./markets";
 import { prisma } from "@/lib/prisma";
-import { appendPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
+import { appendPublicationQuoteEvidence, auditPublicationQuoteEvidence } from "@/lib/paidEntryEvidence";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { presentedCategory } from "@/lib/access";
 import { PREDICTION_CATEGORIES, type PredictionCategory } from "@/lib/enums";
@@ -152,6 +152,13 @@ export class KickoffPassedError extends Error {
   }
 }
 
+export class PaidPublicationEvidenceError extends Error {
+  constructor(readonly reason: string) {
+    super(`Paid publication evidence rejected: ${reason}`);
+    this.name = "PaidPublicationEvidenceError";
+  }
+}
+
 /** Cached authoritative fixture data is a veto, never an invented pre-match confirmation. */
 export async function assertPublicationFixture(row: { kickoff: Date | null; fixtureApiId?: number | null; marketType?: string; selection?: unknown }, db: Pick<typeof prisma, "fixture"> = prisma) {
   const fixture = row.fixtureApiId != null ? await db.fixture.findUnique({where:{apiId:row.fixtureApiId}}) : null;
@@ -218,6 +225,11 @@ export async function publishPaidPredictionAtomically(
     await assertPublicationFixture(before, tx);
     const snapshot = appendPublicationQuoteEvidence(before.marketConfirmation, publicationEvidence);
     if (!snapshot) throw new Error("Paid publication requires an unrecorded confirmation snapshot");
+    // Validate the exact publication snapshot against the locked row, never
+    // substitute promotion evidence. Throw so the claim also rolls back.
+    if (!before.kickoff) throw new PaidPublicationEvidenceError("MISSING_KICKOFF");
+    const evidence = auditPublicationQuoteEvidence(snapshot, before.kickoff);
+    if (!evidence.usable) throw new PaidPublicationEvidenceError(evidence.reason);
     const updated = await tx.prediction.update({
       where: { id: row.id },
       data: {
