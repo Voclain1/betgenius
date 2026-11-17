@@ -9,6 +9,7 @@ import { normalizeName } from "@/lib/slug";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { z } from "zod";
 import { COMBO_MARKET_TYPE } from "@/lib/comboAdmin";
+import { leagueTeamMismatch, LEAGUE_TEAM_MISMATCH } from "@/lib/leagueTeamCheck";
 
 /**
  * ?marketType=SAME_GAME_DOUBLE returns assembled doubles only: the admin
@@ -54,6 +55,7 @@ const CreateBody = z.object({
   confidence: z.number().min(0).max(100),
   reasoning: z.string(),
   matchPreview: z.string().optional(),
+  leagueConfirmed: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -61,7 +63,11 @@ export async function POST(req: Request) {
   if (!isAdmin(session?.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = CreateBody.safeParse(await req.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
-  const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, ...rest } = parsed.data;
+  const { categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, leagueConfirmed, ...rest } = parsed.data;
+  if (!leagueConfirmed) {
+    const mismatch = await leagueTeamMismatch({ leagueApiId: rest.leagueApiId, leagueName: rest.leagueName, home: rest.homeTeam, away: rest.awayTeam });
+    if (mismatch) return NextResponse.json({ error: mismatch, code: LEAGUE_TEAM_MISMATCH }, { status: 409 });
+  }
   const leagueName = rest.leagueName == null ? rest.leagueName : normalizeLeagueName(rest.leagueName);
   if (rest.leagueName != null && !leagueName) {
     return NextResponse.json({ error: "leagueName must be a real competition name, not a placeholder" }, { status: 400 });

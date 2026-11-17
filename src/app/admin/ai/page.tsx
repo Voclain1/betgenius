@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { LEAGUE_CATALOGUE, LEAGUE_TIER_LABELS } from "@/lib/leagues";
 import { LeagueBadge } from "@/components/LeagueBadge";
+import { withLeagueConfirm } from "@/lib/leagueConfirm";
 import { RewriteRequest } from "@/components/RewriteRequest";
 
 const CATS = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
@@ -19,11 +20,15 @@ export default function AIPanel() {
   const [form, setForm] = useState({
     home: "",
     away: "",
-    league: LEAGUE_CATALOGUE[0].name as string,
-    leagueApiId: LEAGUE_CATALOGUE[0].id as number | undefined,
+    // No competition is pre-selected: the first catalogue entry used to be, and
+    // a hand-typed match (Ecuador v Bolivia) kept Premier League and showed on
+    // the England Premier League page. The admin must choose, or choose Other.
+    league: "",
+    leagueApiId: undefined as number | undefined,
     kickoff: new Date().toISOString().slice(0, 16),
     category: "FEATURED" as (typeof CATS)[number],
   });
+  const [leagueChosen, setLeagueChosen] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,11 +38,13 @@ export default function AIPanel() {
     setError(null);
     setResult(null);
     try {
-      const res = await fetch("/api/admin/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+      const res = await withLeagueConfirm((leagueConfirmed) =>
+        fetch("/api/admin/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, leagueConfirmed }),
+        }),
+      );
       const j = await res.json();
       if (!res.ok) throw new Error(j.error?.message || j.error || "Failed");
       setResult(j);
@@ -139,13 +146,15 @@ export default function AIPanel() {
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
         </label>
         <label className="text-sm">League
-          <select value={form.leagueApiId ?? "Other"}
+          <select value={leagueChosen ? (form.leagueApiId ?? "Other") : ""}
             onChange={(e) => {
+              setLeagueChosen(true);
               if (e.target.value === "Other") { setForm({ ...form, league: "Other", leagueApiId: undefined }); return; }
               const found = LEAGUE_CATALOGUE.find((l) => l.id === Number(e.target.value));
               setForm({ ...form, league: found?.name ?? "Other", leagueApiId: found?.id });
             }}
             className="mt-1 w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2">
+            <option value="" disabled>Select a league…</option>
             {LEAGUE_TIERS.map((g) => (
               <optgroup key={g.tier} label={g.label}>
                 {g.leagues.map((l) => <option key={l.id} value={l.id}>{l.name}{l.country !== "World" ? ` (${l.country})` : ""}</option>)}
@@ -166,7 +175,7 @@ export default function AIPanel() {
           </select>
         </label>
         <div className="md:col-span-2 flex justify-end">
-          <button disabled={busy || !form.home || !form.away} onClick={generate}
+          <button disabled={busy || !form.home || !form.away || !leagueChosen} onClick={generate}
             className="btn btn-primary disabled:opacity-50">
             {busy ? "Generating…" : "Generate predictions"}
           </button>

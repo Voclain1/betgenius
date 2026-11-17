@@ -1,4 +1,5 @@
 "use client";
+import { withLeagueConfirm } from "@/lib/leagueConfirm";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -52,10 +53,11 @@ export default function NewPrediction() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/predictions", {
+      const res = await withLeagueConfirm((leagueConfirmed) => fetch("/api/admin/predictions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          leagueConfirmed,
           homeTeam: form.homeTeam || undefined,
           awayTeam: form.awayTeam || undefined,
           kickoff: form.kickoff ? new Date(form.kickoff).toISOString() : undefined,
@@ -72,7 +74,7 @@ export default function NewPrediction() {
           matchPreview: form.matchPreview || undefined,
           categories: form.categories,
         }),
-      });
+      }));
       const j = await res.json();
       if (!res.ok) throw new Error(j.error?.message || j.error || "Failed to create prediction");
       router.push(`/admin/predictions/${j.prediction.id}`);
