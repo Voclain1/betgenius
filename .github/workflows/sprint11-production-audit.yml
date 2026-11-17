@@ -1,4 +1,4 @@
-name: disabled-quota-staging-backup
+name: disabled-quota-staging-verify
 on:
   workflow_dispatch:
 permissions:
@@ -7,7 +7,7 @@ concurrency:
   group: disabled-quota-staging-ops
   cancel-in-progress: false
 jobs:
-  backup-preflight:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -16,10 +16,10 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Approved restricted backup and read-only staging preflight
+      - name: Read-only prepared, incoming and running settings verification
         env:
           PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
-        run: python3 scripts/ops/disabled-quota-staging.py
+        run: python3 scripts/ops/verify-disabled-quota-staging.py
