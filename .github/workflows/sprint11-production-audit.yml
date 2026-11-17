@@ -1,25 +1,38 @@
-name: disabled-quota-staging-verify
+name: seven-day-paid-opportunity-readonly
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: disabled-quota-staging-ops
+  group: seven-day-paid-opportunity-readonly
   cancel-in-progress: false
 jobs:
-  verify:
+  assess:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/vps-ssh
+      - uses: actions/checkout@v4
         with:
+          ref: 4d23e7fd2fa369c8557f48c97ab071cf4dc8a4f9
+          path: production-source
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Read-only prepared, incoming and running settings verification
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: production-source/package-lock.json
+      - run: npm ci
+        working-directory: production-source
+      - name: Place one-off assessment beside the accepted production source
+        run: cp scripts/ops/seven-day-paid-opportunity.ts production-source/scripts/seven-day-paid-opportunity.ts
+      - name: Seven-day SELECT-only cached opportunity assessment
+        working-directory: production-source
         env:
-          PROD_ENV_FILE: ${{ secrets.PROD_ENV_FILE }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          OPS_ENV_FILE: ${{ secrets.OPS_ENV_FILE }}
-        run: python3 scripts/ops/verify-disabled-quota-staging.py
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        run: npx tsx scripts/seven-day-paid-opportunity.ts
