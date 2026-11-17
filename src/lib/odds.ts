@@ -125,6 +125,47 @@ export type FixtureOdds = {
   update: string | null;
 };
 
+/**
+ * How far above the bookmakers' median a single quote may sit before it is
+ * ignored when picking the "best" price.
+ *
+ * The best price is the highest quote, which makes it the one number a single
+ * wrong bookmaker controls. Measured on production (17 Nov 2026): Denmark v
+ * Norway, Both Teams Score "Yes", Betfair 3.50 against Bet365 1.40, Betano
+ * 1.39, 1xBet 1.36, Marathonbet 1.36 (median 1.36). That one quote was shown as
+ * "best odds 3.50", put a 1.4 market inside the 2.2-4.5 Bet of the Day band, and
+ * made a pick the market had at 73% look like 29%. Genuine differences
+ * between bookmakers are far smaller than 1.5x the median.
+ */
+export const OUTLIER_RATIO = 1.5;
+
+/** Below this many bookmakers a median says too little to call a quote an outlier. */
+export const OUTLIER_MIN_BOOKMAKERS = 4;
+
+/**
+ * The selection with any single wildly-off quote removed from "best".
+ *
+ * Pure and idempotent. The median is taken over EVERY bookmaker's quote (it is
+ * computed before the top five are kept), so one bad quote cannot move it. If
+ * the best quote is more than OUTLIER_RATIO times the median, the best is
+ * re-taken from the retained quotes that are not outliers, falling back to the
+ * median when none is left. Applied when odds are trimmed AND whenever a cached
+ * selection is read, so rows stored before this rule are corrected too.
+ */
+export function trustedSelection(sel: OddsSelection): OddsSelection {
+  if (sel.bookmakers < OUTLIER_MIN_BOOKMAKERS || !(sel.median > 0)) return sel;
+  const ceiling = sel.median * OUTLIER_RATIO;
+  if (sel.best <= ceiling) return sel;
+  const kept = (sel.quotes ?? []).filter((q) => q.odd <= ceiling);
+  const top = kept.reduce<{ bookmaker: string; odd: number } | null>((a, q) => (!a || q.odd > a.odd ? q : a), null);
+  return {
+    ...sel,
+    best: top ? top.odd : sel.median,
+    bestBookmaker: top ? top.bookmaker : "market median",
+    quotes: kept,
+  };
+}
+
 const median = (values: number[]): number => {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -167,14 +208,14 @@ export function trimOdds(response: OddsResponse | null | undefined): FixtureOdds
     const selections: OddsSelection[] = [];
     for (const [value, quotes] of bySelection) {
       const top = quotes.reduce((a, b) => (b.odd > a.odd ? b : a));
-      selections.push({
+      selections.push(trustedSelection({
         value,
         best: Number(top.odd.toFixed(2)),
         median: Number(median(quotes.map((q) => q.odd)).toFixed(2)),
         bookmakers: quotes.length,
         bestBookmaker: top.bookmaker,
         quotes: [...quotes].sort((a,b) => b.odd-a.odd || a.bookmaker.localeCompare(b.bookmaker)).slice(0,5).map(q => ({ bookmaker: q.bookmaker, odd: Number(q.odd.toFixed(2)) })),
-      });
+      }));
     }
 
     if (selections.length > 0) {
@@ -284,7 +325,7 @@ export function findSelection(odds: FixtureOdds | null, market: string, value: s
   if (!found) return null;
   const normalised = value.trim().toLowerCase();
   const exact = found.selections.find((s) => s.value.trim().toLowerCase() === normalised);
-  if (exact) return exact;
+  if (exact) return trustedSelection(exact);
 
   // Goals Over/Under labels carry a number, and the two sides format it
   // differently: a line of 3 renders as "Over 3" from deriveMarketAndPick and
@@ -297,12 +338,11 @@ export function findSelection(odds: FixtureOdds | null, market: string, value: s
   };
   const want = parse(normalised);
   if (!want) return null;
-  return (
-    found.selections.find((s) => {
-      const got = parse(s.value);
-      return got && got.direction === want.direction && got.line === want.line;
-    }) ?? null
-  );
+  const line = found.selections.find((s) => {
+    const got = parse(s.value);
+    return got && got.direction === want.direction && got.line === want.line;
+  });
+  return line ? trustedSelection(line) : null;
 }
 
 export type OddsGateResult = {
@@ -441,8 +481,9 @@ export function affordsBetOfDayPrice(odds: FixtureOdds | null): { affords: boole
   let best: OddsSelection | null = null;
   let market: TrimmedMarket | null = null;
   for (const m of odds.markets) {
-    for (const sel of m.selections) {
-      if (!isProducibleSelection(m.market, sel.value)) continue;
+    for (const raw of m.selections) {
+      if (!isProducibleSelection(m.market, raw.value)) continue;
+      const sel = trustedSelection(raw);
       if (sel.best < MIN_ODDS || sel.best > MAX_ODDS) continue;
       if (sel.bookmakers < MIN_BOOKMAKERS) continue;
       // Prefer the shortest qualifying price: within the band, the shorter side

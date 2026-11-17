@@ -1,4 +1,4 @@
-import { toBookmakerSelection, type FixtureOdds } from "./odds";
+import { toBookmakerSelection, trustedSelection, type FixtureOdds } from "./odds";
 import { matchOddsState } from "./matchOdds";
 
 export function discoveryQuote(
@@ -44,7 +44,7 @@ export function discoveryQuote(
               Number.isFinite(s.bookmakers) &&
               s.bookmakers > 0,
           )
-          .map((s) => ({
+          .map((s) => trustedSelection({
             ...s,
             quotes: Array.isArray(s.quotes)
               ? s.quotes.filter(
