@@ -22,7 +22,7 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
     where: { id: params.id },
     include: {
       reassessment: true,
-      revisions: { orderBy: { recordedAt: "desc" }, take: 30 },
+      revisions: { where: { publiclyVisible: true }, orderBy: { recordedAt: "desc" }, take: 30 },
       categories: true,
     },
   });
@@ -34,7 +34,7 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
     c => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role));
   const title = [row.homeTeam, row.awayTeam].filter(Boolean).join(" vs ") || "Match prediction";
   const withdrawn = row.reassessment?.status === "WITHDRAWN";
-  const flagged = row.reassessment?.status === "REVIEW_REQUIRED";
+  const flagged = row.reassessment?.status === "REVIEW_REQUIRED" && row.reassessment.publicHold;
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-8 px-4 py-10 sm:px-6">
@@ -74,7 +74,7 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
                 A prediction is an assessment, not a guaranteed outcome.
               </p>
             )}
-            {row.reassessment?.checkedAt && (
+            {row.reassessment?.checkedAt && row.revisions.length > 0 && (
               <p className="mt-3 text-xs text-gray-500">Latest evidence check: {when(row.reassessment.checkedAt)}</p>
             )}
           </section>

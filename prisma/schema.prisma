@@ -719,6 +719,9 @@ model PredictionReassessment {
   predictionId      String      @id
   prediction        Prediction  @relation(fields: [predictionId], references: [id], onDelete: Cascade)
   status            String      @default("UNASSESSED") // CURRENT | REVIEW_REQUIRED | WITHDRAWN | UNKNOWN
+  // Shadow records cases without impacting public feeds. Only live reviews
+  // can put an already-published FREE pick on public qualification hold.
+  publicHold        Boolean     @default(false)
   checkedAt         DateTime?
   nextCheckAt       DateTime?
   lastEvidence      Json?
@@ -747,6 +750,8 @@ model PredictionRevision {
   predictionId  String
   prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
   kind          String     // EVIDENCE_CHANGED | REVIEW_REQUIRED | WITHDRAWN | CONFIRMED
+  // Shadow evidence snapshots remain internal even if later enabled live.
+  publiclyVisible Boolean  @default(false)
   reason        String
   beforeJson    Json
   afterJson     Json?

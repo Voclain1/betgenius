@@ -55,7 +55,7 @@ try {
       await tx.predictionReassessment.upsert({
         where: { predictionId: prediction.id },
         create: {
-          predictionId: prediction.id, status: "REVIEW_REQUIRED", checkedAt: new Date(),
+          predictionId: prediction.id, status: "REVIEW_REQUIRED", publicHold: true, checkedAt: new Date(),
           lastChangeHash: "verified-change", summary: "New important injury",
           lastOddsMedian: 1.82, lastOddsAt: new Date("2026-11-19T08:30:00.000Z"),
           lastEvidence: { fixture: "home-v-away", source: "provider" },
@@ -64,7 +64,7 @@ try {
       });
       await tx.predictionRevision.create({
         data: {
-          predictionId: prediction.id, kind: "REVIEW_REQUIRED",
+          predictionId: prediction.id, kind: "REVIEW_REQUIRED", publiclyVisible: true,
           reason: "Important injury now verified",
           beforeJson: { market: "Both Teams Score", pick: "Yes", confidence: 82 },
           afterJson: { proposedPick: "No", confidence: 75 },
@@ -86,14 +86,14 @@ try {
 
       await tx.predictionRevision.create({
         data: {
-          predictionId: prediction.id, kind: "CONFIRMED",
+          predictionId: prediction.id, kind: "CONFIRMED", publiclyVisible: true,
           reason: "Admin reviewed supporting evidence and retained the tip",
           beforeJson: { pick: "Yes", confidence: 82 },
         },
       });
       await tx.predictionReassessment.update({
         where: { predictionId: prediction.id },
-        data: { status: "CURRENT", summary: "Admin reviewed and retained" },
+        data: { status: "CURRENT", publicHold: false, summary: "Admin reviewed and retained" },
       });
       const revisions = await tx.predictionRevision.findMany({
         where: { predictionId: prediction.id }, orderBy: { recordedAt: "asc" },

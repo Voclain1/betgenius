@@ -60,12 +60,12 @@ export async function POST(req: NextRequest) {
         });
         if (latestFixture && latestFixture.status !== "NS") throw new Error("FIXTURE_NOT_SCHEDULED");
         await tx.predictionReassessment.update({
-          where: { predictionId }, data: { status: "CURRENT", summary: "Reviewed and retained: " + note,
+          where: { predictionId }, data: { status: "CURRENT", publicHold: false, summary: "Reviewed and retained: " + note,
             proposedMarket: null, proposedSelection: Prisma.DbNull, proposedConfidence: null,
             checkedAt: new Date(), nextCheckAt: new Date(Date.now() + 60 * 60_000) },
         });
         await tx.predictionRevision.create({
-          data: { predictionId, kind: "CONFIRMED", reason: note, beforeJson: previous as Prisma.InputJsonValue },
+          data: { predictionId, kind: "CONFIRMED", publiclyVisible: true, reason: note, beforeJson: previous as Prisma.InputJsonValue },
         });
         return { action, predictionId, replacementId: null };
       }
@@ -138,12 +138,12 @@ export async function POST(req: NextRequest) {
       });
       await recordPredictionEvents(tx, before, after, "ARCHIVE");
       await tx.predictionReassessment.update({
-        where: { predictionId }, data: { status: "WITHDRAWN", summary: note,
+        where: { predictionId }, data: { status: "WITHDRAWN", publicHold: false, summary: note,
           checkedAt: new Date(), nextCheckAt: null },
       });
       await tx.predictionRevision.create({
         data: {
-          predictionId, kind: action === "REPLACE" ? "REPLACED" : "WITHDRAWN",
+          predictionId, kind: action === "REPLACE" ? "REPLACED" : "WITHDRAWN", publiclyVisible: true,
           reason: note, beforeJson: previous as Prisma.InputJsonValue,
           afterJson: replacementId ? ({ replacementId } as Prisma.InputJsonValue) : undefined,
         },

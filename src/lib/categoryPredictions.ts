@@ -151,7 +151,7 @@ export function categoryFeedWhere(cat: PredictionCategory) {
     // active recommendation. Suppress it across all public category/period
     // feeds until an admin confirms or replaces it. Paid feeds keep their
     // separate subscriber-safe review and publication protections.
-    ...(!PAID_FEEDS.has(cat) ? { NOT: { reassessment: { is: { status: "REVIEW_REQUIRED" } } } } : {}),
+    ...(!PAID_FEEDS.has(cat) ? { NOT: { reassessment: { is: { publicHold: true } } } } : {}),
     // TODAY ignores category tags. Include the assembled double as part of
     // the regular mix, but continue excluding its internally tagged source
     // legs so one fixture never appears as three loose public picks.

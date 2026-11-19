@@ -201,7 +201,7 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   // The public match route must not leak a restricted VIP/Premium decision.
   const reviewableIds = shaped.filter(r => !("locked" in r && r.locked)).map(r => r.id);
   const reviewNotices = reviewableIds.length ? await prisma.predictionReassessment.findMany({
-    where: { predictionId: { in: reviewableIds }, status: "REVIEW_REQUIRED" },
+    where: { predictionId: { in: reviewableIds }, status: "REVIEW_REQUIRED", publicHold: true },
     select: { predictionId: true, summary: true },
     take: 8,
   }) : [];

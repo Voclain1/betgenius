@@ -70,9 +70,9 @@ assert.equal(reassessmentIntervalMinutes(now, inHours(3)), 60);
 assert.equal(reassessmentIntervalMinutes(now, inHours(1)), 15);
 assert.equal(reassessmentIntervalMinutes(now, inHours(-1)), 0);
 
-assert.ok(JSON.stringify(categoryFeedWhere("TODAY")).includes("REVIEW_REQUIRED"),
+assert.ok(JSON.stringify(categoryFeedWhere("TODAY")).includes("publicHold"),
   "challenged free predictions must leave active feeds");
-assert.ok(!JSON.stringify(categoryFeedWhere("VIP")).includes("REVIEW_REQUIRED"),
+assert.ok(!JSON.stringify(categoryFeedWhere("VIP")).includes("publicHold"),
   "dedicated paid feeds retain separate audit and subscriber protections");
 
 assert.equal(reassessmentMode("bad"), "off");

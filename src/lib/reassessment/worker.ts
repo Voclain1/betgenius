@@ -245,6 +245,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         const archived = mode === "on" && !!criticalStatus && !isPaid;
         const signalPayload = unique.map(s => ({ code: s.code, severity: s.severity, source: s.source, message: s.message }));
         const assessmentStatus = archived ? "WITHDRAWN" : "REVIEW_REQUIRED";
+        const publicHold = mode === "on" && !archived;
         await prisma.$transaction(async tx => {
           if (archived) {
             // Strict conditional claim: simultaneous runners cannot archive
@@ -259,12 +260,12 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           }
           await tx.predictionReassessment.upsert({
             where: { predictionId: row.id },
-            create: { predictionId: row.id, status: assessmentStatus, checkedAt: now,
+            create: { predictionId: row.id, status: assessmentStatus, publicHold, checkedAt: now,
               nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns,
               lastChangeHash: newSignature, summary,
               proposedMarket: proposed?.marketType ?? null,
               proposedSelection: proposedJson, proposedConfidence: proposed?.confidence ?? null },
-            update: { status: assessmentStatus, checkedAt: now, nextCheckAt,
+            update: { status: assessmentStatus, publicHold, checkedAt: now, nextCheckAt,
               lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns,
               lastChangeHash: newSignature, summary, lastError: null,
               proposedMarket: proposed?.marketType ?? null,
@@ -275,6 +276,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           if (!alreadyRecorded) {
             await tx.predictionRevision.create({
               data: { predictionId: row.id, kind: archived ? "WITHDRAWN" : "REVIEW_REQUIRED",
+                publiclyVisible: mode === "on",
                 reason: summary, beforeJson: before as unknown as Prisma.InputJsonValue,
                 ...(proposedJson ? { afterJson: proposedJson } : {}),
                 evidenceJson: signalPayload as unknown as Prisma.InputJsonValue },
