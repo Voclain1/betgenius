@@ -21,7 +21,7 @@
 
 import { MIN_SETTLED_SAMPLE_SIZE, type WinRateStat } from "@/lib/trackRecord";
 import { SITE_NAME } from "@/lib/seo";
-import type { FeedDay } from "@/lib/categoryPredictions";
+import { feedDayText, type FeedDay } from "@/lib/feedDays";
 
 const count = (n: number, singular: string, plural = `${singular}s`) => `${n} ${n === 1 ? singular : plural}`;
 
@@ -47,7 +47,7 @@ function belowGatePhrase(stat: WinRateStat): string {
   return `We publish a win rate once ${MIN_SETTLED_SAMPLE_SIZE} picks have settled in a scope this narrow — ${stat.decided} ${stat.decided === 1 ? "has" : "have"} so far`;
 }
 
-const DAY_WORD: Record<FeedDay, string> = { yesterday: "yesterday", today: "today", tomorrow: "tomorrow" };
+const whenDay = (day: FeedDay) => feedDayText(day);
 
 /**
  * Homepage H1.
@@ -70,7 +70,9 @@ const DAY_WORD: Record<FeedDay, string> = { yesterday: "yesterday", today: "toda
  */
 export function homeHeadline(input: { day: FeedDay; bankerCount: number }): string {
   const base = "Football Predictions Today";
-  if (input.day !== "today" || input.bankerCount < 1) return base;
+  if (input.day !== "today" || input.bankerCount < 1) {
+    return input.day.startsWith("day-") ? `Football Predictions — ${feedDayText(input.day)}` : base;
+  }
   return `${base} — Including Today's Banker`;
 }
 
@@ -84,7 +86,7 @@ export function homeHeadline(input: { day: FeedDay; bankerCount: number }): stri
  * points at the page that does own the record.
  */
 export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCount: number; topLeagues: string[]; bankerCount: number }): string {
-  const when = input.day === "today" ? "for today" : input.day === "tomorrow" ? "for tomorrow" : "for yesterday";
+  const when = `for ${whenDay(input.day)}`;
 
   if (input.pickCount === 0) {
     return `No football predictions are published ${when} yet — each day's card goes up once its fixtures and team data are in. Every pick we have settled stays published, win or lose, on our track record.`;
@@ -111,7 +113,7 @@ export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCoun
   // 80-odd picks is a real state here, not a hypothetical, so the word appears
   // when it is earned and is simply absent when it is not.
   const banker = input.bankerCount > 0
-    ? `${input.day === "today" ? "Today" : input.day === "tomorrow" ? "Tomorrow" : "Yesterday"}'s banker is on the card. `
+    ? (input.day.startsWith("day-") ? "A banker selection is on the card. " : `${input.day === "today" ? "Today" : input.day === "tomorrow" ? "Tomorrow" : "Yesterday"}'s banker is on the card. `)
     : "";
   // The closing sentence stays out of the way of the hero's own tagline
   // directly beneath it, which already says what a pick carries.
@@ -125,7 +127,7 @@ export function homeSummary(input: { day: FeedDay; pickCount: number; leagueCoun
  */
 export function categorySummary(input: { name: string; blurb: string; pickCount: number; day: FeedDay }): string {
   const when =
-    input.day === "yesterday" ? "settled yesterday" : input.day === "tomorrow" ? "published for tomorrow" : "published for today";
+    input.day === "yesterday" ? "settled yesterday" : `published for ${whenDay(input.day)}`;
 
   // "N picks in <name>" throughout, rather than bending the category name into
   // a plural — CATEGORY_NAMES holds "Banker" and "Bet of the Day" alongside
@@ -136,7 +138,7 @@ export function categorySummary(input: { name: string; blurb: string; pickCount:
     const none =
       input.day === "yesterday"
         ? `No picks in ${input.name} settled yesterday`
-        : `No picks in ${input.name} are published for ${DAY_WORD[input.day]} yet`;
+        : `No picks in ${input.name} are published for ${whenDay(input.day)} yet`;
     return `${none} — ${blurb}`;
   }
 

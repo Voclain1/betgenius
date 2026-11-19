@@ -43,6 +43,7 @@ jobs:
       - run: npm run check:match-centre-render
       - run: npm run check:prediction-experience
       - run: npm run check:prediction-experience-render
+      - run: npm run check:prediction-view
       - run: npm run check:category-navigation
       - run: npm run check:category-navigation-render
       - run: npm run check:odds-presentation
@@ -52,6 +53,7 @@ jobs:
       - run: npx tsx --tsconfig scripts/tsconfig.render.json scripts/check-sitemap-scoping.tsx
       - run: npx tsc --noEmit
       - run: npx prisma db push --skip-generate
+      - run: npm run check:feed-days
       - name: Guarded discovery search database regression
         run: npm run check:discovery-search-db
         env:

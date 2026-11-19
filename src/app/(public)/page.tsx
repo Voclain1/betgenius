@@ -18,6 +18,7 @@ import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
+import { feedDayOffset, feedDayTabLabel } from "@/lib/feedDays";
 import { HeroSlider } from "@/components/HeroSlider";
 import { getHeroSlides } from "@/lib/heroSlides";
 import { AnswerSummary } from "@/components/AnswerSummary";
@@ -82,7 +83,7 @@ export function generateMetadata({ searchParams }: { searchParams?: { date?: str
  * ranking an arbitrary subset rather than the day's best picks.
  */
 async function fetchCategoryDay(category: string, day: FeedDay) {
-  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   return prisma.prediction.findMany({
     where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
@@ -153,7 +154,7 @@ async function fetchGeniusPreview(day: FeedDay) {
  * fixture happened to sort first.
  */
 async function fetchDaySlate(day: FeedDay) {
-  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
     select: { leagueName: true, leagueApiId: true },
@@ -201,7 +202,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getPublishedMatchIndex(),
     // Today's top picks, fixed for the day once chosen (lib/heroSlides).
     getHeroSlides().catch(() => []),
-    getHomepageBetOfTheDay(),
+    day === "today" ? getHomepageBetOfTheDay() : Promise.resolve(null),
     fetchDaySlate(day),
     // Never throws: a failed read serves the last stored copy, or nothing.
     getRecentResults(),
@@ -468,7 +469,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           competitions we publish most for (src/lib/dayCompetitions.ts). */}
       {dayCompetitions.length > 0 && (
         <PremiumPanel
-          kicker={day === "today" ? "Playing today" : day === "tomorrow" ? "Playing tomorrow" : "Played yesterday"}
+          kicker={day === "today" ? "Playing today" : day === "tomorrow" ? "Playing tomorrow" : day === "yesterday" ? "Played yesterday" : `Playing ${feedDayTabLabel(day)}`}
           title="Predictions by competition"
           id="home-competitions"
           aside={
