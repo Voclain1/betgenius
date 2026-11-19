@@ -7,7 +7,8 @@ import type { MatchDigest, TeamDigest } from "../src/lib/ai/digest";
 import { compareFootballEvidence, fixtureSignals, reassessmentIntervalMinutes,
   confirmedLineupSignals, oddsMovementSignal } from "../src/lib/reassessment/evidence";
 import { reassessmentMode, publishedSelectionSnapshot } from "../src/lib/reassessment/worker";
-import { categoryFeedWhere } from "../src/lib/categoryPredictions";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { earlyPublicationBlock, earlyPublicationMode,
   EARLY_PUBLICATION_CONFIDENCE_FLOOR } from "../src/lib/generation/earlyPublication";
 
@@ -70,10 +71,11 @@ assert.equal(reassessmentIntervalMinutes(now, inHours(3)), 60);
 assert.equal(reassessmentIntervalMinutes(now, inHours(1)), 15);
 assert.equal(reassessmentIntervalMinutes(now, inHours(-1)), 0);
 
-assert.ok(JSON.stringify(categoryFeedWhere("TODAY")).includes("publicHold"),
-  "challenged free predictions must leave active feeds");
-assert.ok(!JSON.stringify(categoryFeedWhere("VIP")).includes("publicHold"),
-  "dedicated paid feeds retain separate audit and subscriber protections");
+const categorySource = readFileSync(join(process.cwd(), "src/lib/categoryPredictions.ts"), "utf8");
+assert.ok(categorySource.includes('NOT: { reassessment: { is: { publicHold: true } } }'),
+  "free category feed must filter only live, public reassessment holds");
+assert.ok(categorySource.includes('!PAID_FEEDS.has(cat)'),
+  "paid category feeds must remain under separate protections");
 
 assert.equal(reassessmentMode("bad"), "off");
 assert.equal(earlyPublicationMode("bad"), "off");

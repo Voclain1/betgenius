@@ -18,6 +18,7 @@ if (process.env.BETGENIUS_DISPOSABLE_PG !== "yes"
 const prisma = new PrismaClient();
 const rollback = "ROLLBACK_EARLY_READINESS_SMOKE_TEST";
 let validated = false;
+async function main() {
 try {
   try {
     await prisma.$transaction(async tx => {
@@ -111,3 +112,6 @@ try {
 } finally {
   await prisma.$disconnect();
 }
+}
+
+void main().catch(error => { console.error(error); process.exit(1); });
