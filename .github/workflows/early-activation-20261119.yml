@@ -1,7 +1,7 @@
-# Stage 4: one controlled FREE early-generation validation on the fixed build.
-# Requires PR #210 exact production commit and on-host cron. Auto-publish stays
+# Stage 5: one controlled PR #211 genuine FREE early-generation validation.
+# Requires PR #211 exact production commit and on-host cron. Auto-publish stays
 # SHADOW, reassessment stays SHADOW; paid routes and picks are never touched.
-name: Early activation - guarded early generation and shadow publication
+name: Early activation - true free routing and shadow publication qualification
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -25,12 +25,12 @@ jobs:
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          EXPECTED=c36410e36dede49f4b4162fff256b3efce9ae697
+          EXPECTED=b484bdd9588fb7b9d5731dd4dd908cc101d2eb65
           C=$(docker compose --env-file deploy.env ps -q app)
           test -n "$C"
           FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
           echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED" ||
-            { echo "REFUSED: PR #210 build not deployed"; exit 1; }
+            { echo "REFUSED: PR #211 build not deployed"; exit 1; }
           ACTUAL=$(echo "$FLAGS" | sed -n 's/^EARLY_FIXTURE_MODE=//p')
           PUBLISH=$(echo "$FLAGS" | sed -n 's/^EARLY_FREE_PUBLICATION_MODE=//p')
           REASSESS=$(echo "$FLAGS" | sed -n 's/^PREDICTION_REASSESSMENT_MODE=//p')
@@ -46,7 +46,7 @@ jobs:
             . /ops/env.sh && test -n "$CRON_SECRET" &&
             echo "PASS: four scheduled, authenticated, staggered internal jobs"
           ' < /dev/null
-          BACKUP=/opt/betgenius/app.env.before-controlled-early-on-20261119
+          BACKUP=/opt/betgenius/app.env.before-controlled-early-on-pr211-20261119
           if [ -e "$BACKUP" ]; then echo "REFUSED: rollout backup already present"; exit 1; fi
           cp -p app.env "$BACKUP"
           chmod 600 "$BACKUP"
@@ -107,7 +107,7 @@ jobs:
               queued+=d.candidatesQueued||0;
               if(queued>0)break;
             }
-            const gen=await get("/api/admin/generate/early-run?limit=1");
+            const gen=await get("/api/admin/generate/early-run?limit=3");
             if(gen.ok!==true)throw Error("Early generation failure");
             const pub=await get("/api/admin/generate/early-publish?limit=8");
             if(pub.mode!=="shadow"||pub.published!==0)throw Error("Automatic publication was not shadow only");
@@ -125,6 +125,8 @@ jobs:
             SELECT '"'"'early_attributed_queued'"'"',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
             SELECT '"'"'public_holds'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
             SELECT '"'"'public_revisions'"'"',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
+            SELECT '"'"'early_free_generations'"'"',count(*) FROM "AIJob" WHERE "prompt" LIKE '%"intent":"EARLY_FREE"%';
+            SELECT '"'"'early_free_provenance'"'"',COALESCE(p.provenance,'"'"'NULL'"'"'),count(*) FROM "Prediction" p JOIN "AIJob" j ON p."aiJobId"=j.id WHERE j."prompt" LIKE '%"intent":"EARLY_FREE"%' GROUP BY p.provenance ORDER BY p.provenance;
             COMMIT;' < /dev/null
           trap - ERR
           echo "PASS: guarded activation finished with automatic publication still SHADOW"
