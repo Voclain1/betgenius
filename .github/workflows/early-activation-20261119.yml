@@ -42,7 +42,7 @@ jobs:
             BEGIN READ ONLY;
             SELECT '"'"'eligible_published'"'"',count(*) FROM "Prediction" WHERE status='"'"'PUBLISHED'"'"' AND kickoff > NOW() AND kickoff < NOW() + interval '"'"'7 days'"'"' AND "fixtureApiId" IS NOT NULL;
             SELECT '"'"'public_holds_before'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
-            COMMIT;'
+            COMMIT;' < /dev/null
           BACKUP=/opt/betgenius/app.env.before-reassess-shadow-20261119
           if [ -e "$BACKUP" ]; then echo "REFUSED: snapshot exists; inspect before rerun"; exit 1; fi
           cp -p app.env "$BACKUP"
@@ -102,5 +102,5 @@ jobs:
             SELECT '"'"'monitor_state'"'"',"status",count(*) FROM "PredictionReassessment" GROUP BY "status" ORDER BY "status";
             SELECT '"'"'public_holds'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
             SELECT '"'"'visible_revisions'"'"',count(*) FROM "PredictionRevision" WHERE "publiclyVisible" = true;
-            COMMIT;'
+            COMMIT;' < /dev/null
           REMOTE
