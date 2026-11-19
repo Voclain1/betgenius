@@ -62,14 +62,14 @@ export async function generateMetadata(
     // The two lines the feed holds are the searched terms; "Goals" alone is not.
     : cat === "GOALS" ? "Over 1.5 & Over 2.5 Goals Predictions"
     : name;
-  const seoPhrase = cat === "TODAY" ? "today's predictions"
+  const seoPhrase = cat === "TODAY" ? (day === "today" ? "today's predictions" : "football predictions")
     : cat === "VIP" ? "VIP predictions"
     : cat === "BANKER" ? "banker predictions"
     : cat === "SAME_GAME_DOUBLE" ? "combo bet predictions — two picks on the same match"
     : cat === "GOALS" ? "over 1.5 and over 2.5 goals predictions"
     : name.toLowerCase();
   const emptyDescription = cat === "TODAY"
-    ? "Today's predictions are not published yet — check back soon for our latest football picks."
+    ? (day === "today" ? "Today's predictions are not published yet — check back soon for our latest football picks." : `No football predictions are published for ${dayText} yet. Check the other days for available picks.`)
     : `No ${seoPhrase} published yet — check back soon for our latest football predictions.`;
   // VIP and PREMIUM: one description every day, with no count in it. Search
   // results would otherwise say "No VIP predictions published yet" on a quiet
