@@ -31,5 +31,6 @@ jobs:
         env:
           DATABASE_URL: "postgresql://user:pass@localhost:5432/betgenius"
           DATABASE_URL_UNPOOLED: "postgresql://user:pass@localhost:5432/betgenius"
+      - run: npx tsc --noEmit
       - run: npm run check:early-fixtures
       - run: npm run check:period-predictions
