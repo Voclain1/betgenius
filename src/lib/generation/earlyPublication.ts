@@ -13,6 +13,7 @@ import { DEDICATED_PAID_PROVENANCES } from "@/lib/geniusCuration";
 import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 import { earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { getUsageSnapshot } from "@/lib/football/usage";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 
 export type EarlyPublicationMode = "off" | "shadow" | "on";
 export function earlyPublicationMode(value: string | undefined = process.env.EARLY_FREE_PUBLICATION_MODE): EarlyPublicationMode {
@@ -23,11 +24,32 @@ export function earlyPublicationMode(value: string | undefined = process.env.EAR
 export const EARLY_PUBLICATION_CONFIDENCE_FLOOR = 80;
 export const EARLY_PUBLISH_MAX_PER_RUN = 8;
 
+/** Trust the immutable saved input of the dedicated job, not only shared
+ * fixture cache membership. An admin or paid draft for the same fixture must
+ * never inherit this publication authority.
+ */
+export function isDedicatedEarlyFreeJob(prompt: string | null | undefined, fixtureApiId: number | null): boolean {
+  if (!prompt || fixtureApiId == null) return false;
+  try {
+    const job: unknown = JSON.parse(prompt);
+    if (!job || typeof job !== "object") return false;
+    const recorded = job as Record<string, unknown>;
+    return recorded.intent === EARLY_FREE_GENERATION_INTENT
+      && recorded.fixtureApiId === fixtureApiId
+      && Array.isArray(recorded.categories)
+      && recorded.categories.length === 1
+      && recorded.categories[0] === "FEATURED";
+  } catch {
+    return false;
+  }
+}
+
 export type EarlyPublicationCandidate = {
   id: string; status: string; provenance: string | null; fixtureApiId: number | null;
   kickoff: Date | null; contextComplete: boolean; confidence: number;
   marketType: string; selection: unknown; manualSettlementOnly: boolean;
   categories: string[];
+  earlyJobVerified: boolean;
 };
 export function earlyPublicationBlock(
   row: EarlyPublicationCandidate,
@@ -42,6 +64,7 @@ export function earlyPublicationBlock(
   if (row.marketType === "SAME_GAME_DOUBLE" || row.categories.includes("SAME_GAME_DOUBLE")) return "combo-source-or-double";
   if (row.categories.some((category) => ["VIP", "PREMIUM", "BET_OF_THE_DAY"].includes(category))) return "reserved-category";
   if ([...DEDICATED_PAID_PROVENANCES, GOALS_GENERATED_PROVENANCE, "VIP_ROUTE_CONFIRMED"].includes(row.provenance as never)) return "protected-provenance";
+  if (!row.earlyJobVerified) return "not-dedicated-early-free-job";
   if (row.confidence < EARLY_PUBLICATION_CONFIDENCE_FLOOR) return "below-early-confidence-floor";
   // Both teams require actual recent matches and season-level data. A model
   // confidence number without corroborating football evidence is insufficient.
@@ -96,7 +119,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
       status: "PENDING_REVIEW",
       kickoff: { gt: from, lte: until },
     },
-    include: { categories: true, aiJob: { select: { context: true } } },
+    include: { categories: true, aiJob: { select: { context: true, prompt: true } } },
     orderBy: [{ confidence: "desc" }, { kickoff: "asc" }],
     take: 100,
   });
@@ -111,7 +134,10 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
     }
     const categories = row.categories.map((c) => c.category);
     const digest = parseStoredContext(row.aiJob?.context);
-    const reason = earlyPublicationBlock({ ...row, categories }, digest, now);
+    const reason = earlyPublicationBlock({
+      ...row, categories,
+      earlyJobVerified: isDedicatedEarlyFreeJob(row.aiJob?.prompt, row.fixtureApiId),
+    }, digest, now);
     if (reason) { report.blocked[reason] = (report.blocked[reason] ?? 0) + 1; continue; }
     report.qualifying++;
     if (mode !== "on") continue;

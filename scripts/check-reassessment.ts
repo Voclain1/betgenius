@@ -9,7 +9,7 @@ import { compareFootballEvidence, fixtureSignals, reassessmentIntervalMinutes,
 import { reassessmentMode, publishedSelectionSnapshot } from "../src/lib/reassessment/worker";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { earlyPublicationBlock, earlyPublicationMode,
+import { earlyPublicationBlock, earlyPublicationMode, isDedicatedEarlyFreeJob,
   EARLY_PUBLICATION_CONFIDENCE_FLOOR } from "../src/lib/generation/earlyPublication";
 
 const now = new Date("2026-11-19T09:00:00.000Z");
@@ -92,13 +92,19 @@ const candidate = {
   id: "p1", status: "PENDING_REVIEW", provenance: "STANDARD_CURATED", fixtureApiId: 1,
   kickoff: inHours(120), contextComplete: true, confidence: 83,
   marketType: "BTTS", selection: { value: "YES" }, manualSettlementOnly: false,
-  categories: ["FEATURED"],
+  categories: ["FEATURED"], earlyJobVerified: true,
 };
 assert.equal(earlyPublicationBlock({ ...candidate, marketType: "OTHER" }, prior, now), "invalid-market");
 assert.equal(earlyPublicationBlock({ ...candidate, confidence: 74 }, prior, now), "below-early-confidence-floor");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["VIP"] }, prior, now), "reserved-category");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["SAME_GAME_DOUBLE"] }, prior, now), "combo-source-or-double");
 assert.equal(earlyPublicationBlock(candidate, null, now), "no-reliable-evidence");
+assert.equal(earlyPublicationBlock({ ...candidate, earlyJobVerified: false }, prior, now), "not-dedicated-early-free-job");
+assert.equal(isDedicatedEarlyFreeJob(JSON.stringify({ intent: "EARLY_FREE", fixtureApiId: 1, categories: ["FEATURED"] }), 1), true);
+assert.equal(isDedicatedEarlyFreeJob(JSON.stringify({ intent: "EARLY_FREE", fixtureApiId: 2, categories: ["FEATURED"] }), 1), false);
+assert.equal(isDedicatedEarlyFreeJob(JSON.stringify({ intent: "VIP_PREMIUM", fixtureApiId: 1, categories: ["FEATURED"] }), 1), false);
+assert.equal(isDedicatedEarlyFreeJob(JSON.stringify({ intent: "EARLY_FREE", fixtureApiId: 1, categories: ["VIP"] }), 1), false);
+assert.equal(isDedicatedEarlyFreeJob("not-json", 1), false);
 assert.equal(earlyPublicationBlock({ ...candidate, kickoff: inHours(24) }, prior, now), "outside-early-window");
 assert.deepEqual(publishedSelectionSnapshot({ marketType: "BTTS", selection: { value: "YES" }, confidence: 83,
   market: "BTTS", pick: "Yes", publishedAt: now, status: "PUBLISHED", odds: null }).publishedAt, now.toISOString());
