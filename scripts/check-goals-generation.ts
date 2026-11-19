@@ -374,11 +374,27 @@ async function publicationAndProbe() {
   const callers = walk("src").filter((f) => /autoPublishGoalsPrediction\(/.test(read(f)) && !f.endsWith("goalsPipeline.ts"));
   check("auto-publish is reachable only from the Goals run", callers.length === 1 && callers[0].endsWith("generation/worker.ts"), callers);
   const reviewCallers = walk("src").filter((f) => /applyReviewAction\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
+  // The separately gated week-ahead FREE publisher is a third supported
+  // caller. It must keep the original transactional publication path and must
+  // not widen the Goals-only or VIP/Premium publication lane.
+  const earlyPublication = code("src/lib/generation/earlyPublication.ts");
   check(
-    "applyReviewAction is used only by the bulk route and the gated Goals auto-publish",
-    reviewCallers.length === 2 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$/.test(f)),
+    "applyReviewAction is used only by bulk review, gated Goals and gated early FREE publication",
+    reviewCallers.length === 3 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$|generation\/earlyPublication\.ts$/.test(f)),
     reviewCallers,
   );
+  check("early FREE publisher is off by default and uses the shared transactional publisher",
+    /if \(mode === "off" \|\| earlyFixtureMode\(\) !== "on"\) return finish\(\)/.test(earlyPublication) &&
+    /await applyReviewAction\(row, "PUBLISH", input\.actorId\)/.test(earlyPublication) &&
+    !/status: "PUBLISHED"|prisma\.prediction\.update\(/.test(earlyPublication));
+  check("early FREE publisher excludes dedicated Goals and VIP/Premium picks",
+    /GOALS_GENERATED_PROVENANCE/.test(earlyPublication) &&
+    /DEDICATED_PAID_PROVENANCES/.test(earlyPublication) &&
+    /reserved-category/.test(earlyPublication) &&
+    /protected-provenance/.test(earlyPublication) &&
+    /below-early-confidence-floor/.test(earlyPublication) &&
+    /no-reliable-evidence/.test(earlyPublication));
+
   // Since Sprint 04 the dedicated VIP/PREMIUM gate publishes through the atomic
   // paid publication instead, and only from vipPremiumPipeline.
   const atomicCallers = walk("src").filter((f) => /publishPaidPredictionAtomically\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
