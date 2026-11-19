@@ -15,7 +15,6 @@ import {
   CATEGORY_BLURBS as BLURBS,
   CATEGORY_CHIP_LABELS,
   getCategoryPredictions,
-  getUpcomingWeekPredictions,
   parseFeedDay,
   dayShowsOutcomes,
   feedDayHref,
@@ -32,6 +31,7 @@ import { TodayPredictionsEvidence, TodayPredictionsGuide } from "@/components/To
 import { BankerPredictionsEvidence, BankerPredictionsIntro } from "@/components/BankerPredictionsGuide";
 import { matchKey } from "@/lib/slug";
 import { lagosDayLabel } from "@/lib/lagosDate";
+import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { FeedResults } from "@/components/FeedResults";
 import { PaidFeedCover, PaidResultsCover } from "@/components/PaidFeedCover";
 import { PREMIUM_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
@@ -39,8 +39,6 @@ import { firstResultsDay } from "@/lib/feedResults";
 import { MarketChips } from "@/components/MarketChips";
 import { loadPaidCardDetails, getPaidPerformance } from "@/lib/paidFeedData";
 import { PaidFeedIntro, PaidPerformancePanel } from "@/components/PaidPerformancePanel";
-
-const DAY_OFFSETS = { yesterday: -1, today: 0, tomorrow: 1 } as const;
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: DiscoveryParams },
@@ -50,13 +48,14 @@ export async function generateMetadata(
   // Same resolved day as the page body, so cache() serves ONE query for both.
   const day = parseFeedDay(typeof searchParams?.date === "string" ? searchParams.date : undefined);
   const name = NAMES[cat];
+  const dayText = feedDayText(day);
   // Only categories with a term behind them get one. VIP has measured demand
   // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
   // Featured, Genius and Premium showed near-zero volume, so they keep their
   // plain product names rather than being bent around a keyword nobody types.
   const seoTitle = cat === "TODAY" ? "Football Predictions Today"
     : cat === "VIP" ? "VIP Predictions"
-    : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : "Banker Predictions Today")
+    : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : day === "today" ? "Banker Predictions Today" : `Banker Predictions — ${feedDayTitle(day)}`)
     // Grounded in the term readers actually search, same approach as the
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
@@ -109,8 +108,8 @@ export async function generateMetadata(
   return {
     title: seoTitle,
     description: cat === "BANKER"
-      ? `${rows.length} banker ${rows.length === 1 ? "prediction" : "predictions"} for ${day}. Sign up free to see the picks and reasoning. Review the selection method and past results.`
-      : `${rows.length} ${day === "yesterday" ? "settled " : day === "tomorrow" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+      ? `${rows.length} banker ${rows.length === 1 ? "prediction" : "predictions"} for ${dayText}. Sign up free to see the picks and reasoning. Review the selection method and past results.`
+      : `${rows.length} ${day === "yesterday" ? "settled " : day !== "today" && day !== "yesterday" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase} for ${dayText}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     // Relative query states change meaning every day: yesterday's URL becomes a
     // different slate after midnight. Keep them available for users and links,
     // but do not let search engines retain them as unstable landing pages.
@@ -127,7 +126,7 @@ export default async function CategoryPage(
   if (!cat) return notFound();
   const day = parseFeedDay(typeof searchParams?.date === "string" ? searchParams.date : undefined);
   const showOutcomes = dayShowsOutcomes(day);
-  const dateLabel = lagosDayLabel(DAY_OFFSETS[day]);
+  const dateLabel = lagosDayLabel(feedDayOffset(day));
 
   const session = await getServerSession(authOptions);
   const viewer = await getViewerEntitlement();
@@ -179,16 +178,8 @@ export default async function CategoryPage(
         },
   );
 
-  // Browse early FREE publications without changing the established 3-day tabs.
-  // Locked Banker selections remain locked until the normal entitlement passes.
-  const earlyRows = day === "today" && !hasDiscoveryFilters(searchParams)
-    ? await getUpcomingWeekPredictions(cat, new Date().toISOString()) : [];
-  const earlyShaped = earlyRows.map(r => canView
-    ? { ...r, category: cat, outcome: null }
-    : { ...r, category: cat, outcome: null, pick: "LOCKED",
-        reasoning: lockReason, matchPreview: null, confidence: null,
-        odds: null, overUnder: null, locked: true,
-        unlockHref: needsRegistration ? "/register" : "/pricing" });
+  // Published early picks now live under their own future day tabs.
+  // All dates retain the exact same paid and registered-user protections.
 
   const slug = params.category;
   // TODAY's shared blurb says "every match happening today", which is the one
@@ -267,7 +258,7 @@ export default async function CategoryPage(
       />
       <CategoryMasthead
         kicker="Predictions"
-        title={cat === "TODAY" ? "Football predictions today" : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's banker predictions" : day === "tomorrow" ? "Banker predictions tomorrow" : "Banker predictions today") : NAMES[cat]}
+        title={cat === "TODAY" ? (day === "today" ? "Football predictions today" : `Football predictions — ${feedDayTitle(day)}`) : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's banker predictions" : day === "tomorrow" ? "Banker predictions tomorrow" : day === "today" ? "Banker predictions today" : `Banker predictions — ${feedDayTitle(day)}`) : NAMES[cat]}
         blurb={blurb}
         dateLabel={`${dateLabel} · West Africa Time`}
         stats={stats}
@@ -341,16 +332,6 @@ export default async function CategoryPage(
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
         />
         )
-      )}
-
-      {earlyShaped.length > 0 && !paidFeed && (
-        <section className="space-y-4 border-t border-brand-border pt-7" aria-label="Upcoming predictions">
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold">Upcoming predictions — next seven days</h2>
-            <p className="text-sm text-gray-400">Published selections for matches after tomorrow. Each remains subject to new match information before kickoff.</p>
-          </div>
-          <CategoryPredictionsList category={cat} rows={earlyShaped as any} view="compact" linkRows />
-        </section>
       )}
 
       {paidPerformance && <PaidPerformancePanel tier={cat === "PREMIUM" ? "Premium" : "VIP"} perf={paidPerformance} />}
