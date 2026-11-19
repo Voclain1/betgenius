@@ -138,7 +138,11 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           kickoff: row.kickoff.toISOString(), homeApiId: row.homeTeamApiId,
           awayApiId: row.awayTeamApiId, leagueApiId: row.leagueApiId, round: null,
         });
-        if (sources.homeTeam === "missing" || sources.awayTeam === "missing") {
+        // Provider-verified cancellation overrides missing statistical feeds:
+        // a postponed fixture must not stay recommended because its teams'
+        // enrichment requests failed. Other changes still fail closed.
+        const criticalFixtureAlreadyKnown = signals.some(s => s.source === "fixture" && s.severity === "CRITICAL");
+        if ((sources.homeTeam === "missing" || sources.awayTeam === "missing") && !criticalFixtureAlreadyKnown) {
           await prisma.predictionReassessment.upsert({
             where: { predictionId: row.id },
             create: { predictionId: row.id, status: "UNKNOWN", checkedAt: now,
