@@ -1,4 +1,5 @@
 import { onePerFixture } from "@/lib/fixtureIdentity";
+import { earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 import { cache } from "react";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { prisma } from "@/lib/prisma";
@@ -209,4 +210,25 @@ export const getCategoryPredictions = cache(async (cat: PredictionCategory, day:
   // The Banker feed is one call per match: the best-ranked pick on each
   // (src/lib/fixtureIdentity.ts). Every other category lists every pick.
   return cat === "BANKER" ? onePerFixture(ordered) : ordered;
+});
+
+
+/**
+ * Week-ahead published free category selections. Existing Yesterday/Today/
+ * Tomorrow tabs remain unchanged. Date starts AFTER tomorrow to avoid doubles.
+ */
+export const getUpcomingWeekPredictions = cache(async (cat: PredictionCategory, anchor: string) => {
+  if (earlyFixtureMode() !== "on" || ["VIP", "PREMIUM", "BET_OF_THE_DAY", "SAME_GAME_DOUBLE"].includes(cat)) return [];
+  const now = new Date(anchor);
+  const afterTomorrow = lagosDayBounds(1, now).end;
+  const horizon = new Date(now.getTime() + 7 * 86_400_000);
+  if (horizon <= afterTomorrow) return [];
+  const rows = await prisma.prediction.findMany({
+    where: { ...categoryFeedWhere(cat), kickoff: { gte: afterTomorrow, lt: horizon } },
+    orderBy: [{ kickoff: "asc" }, { id: "asc" }],
+    include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
+    take: 70,
+  });
+  const ranked = orderForDisplay(cat === "GOALS" ? goalsFeedRows(rows) : rows);
+  return cat === "BANKER" ? onePerFixture(ranked) : ranked;
 });

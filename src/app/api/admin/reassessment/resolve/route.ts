@@ -17,6 +17,7 @@ import { parseStoredContext } from "@/lib/ai/context";
 import { deriveMarketAndPick, isValidSelection, type MarketType, type Selection } from "@/lib/markets";
 import { createNotificationEvent, recordPredictionEvents } from "@/lib/notifications";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { assertPublicationFixture } from "@/lib/predictions";
 
 export const dynamic = "force-dynamic";
 const Action = z.object({
@@ -88,6 +89,10 @@ export async function POST(req: NextRequest) {
           || typeof proposal.reasoning !== "string" || proposal.reasoning.length < 20) {
           throw new Error("REPLACEMENT_EVIDENCE_OR_SELECTION_NOT_QUALIFIED");
         }
+        // Publication verifies fixture identity, status and selected market
+        // against live stored state, not an earlier approval snapshot.
+        await assertPublicationFixture({ kickoff: before.kickoff, fixtureApiId: before.fixtureApiId,
+          marketType: nextMarket, selection: nextSelection }, tx);
         const { market, pick } = deriveMarketAndPick(nextMarket as MarketType, nextSelection as Selection,
           before.homeTeam ?? undefined, before.awayTeam ?? undefined, { market: "Other", pick: "" });
         const stamped = new Date();
