@@ -80,6 +80,7 @@ jobs:
             sleep 1
           done
           exit 1
+      - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npx tsx scripts/check-feed-day-slider-browser.ts
       - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npm run check:category-navigation-browser
       - run: BASE_URL=http://127.0.0.1:3000 REQUIRE_BROWSER=1 npm run check:discovery-search-browser
       - run: npm run check:release-browser
