@@ -54,6 +54,7 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   // Only expected after the external scheduler has been configured.
   "early-fixture-discovery": 120,
   "early-free-publication": 120,
+  "early-free-generation": 120,
   "prediction-reassessment": 120,
   "refresh-odds": 60,
   "generate-vip-premium": 60,
@@ -79,6 +80,7 @@ const LABEL: Record<string, string> = {
   "generation-discovery": "Candidate discovery & coverage",
   "early-fixture-discovery": "Early fixture capture (optional rollout)",
   "early-free-publication": "Early free publication",
+  "early-free-generation": "Early free singles generation",
   "prediction-reassessment": "Published prediction monitoring",
   "refresh-odds": "Odds refresh",
   "generate-vip-premium": "VIP / Premium pass",
