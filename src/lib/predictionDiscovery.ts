@@ -58,7 +58,8 @@ export function parseDiscovery(
   const relative = new Date(`${today}T12:00:00Z`);
   relative.setUTCDate(
     relative.getUTCDate() +
-      (fallbackDay === "yesterday" ? -1 : fallbackDay === "tomorrow" ? 1 : 0),
+      (fallbackDay === "yesterday" ? -1 : fallbackDay === "tomorrow" ? 1
+        : /^day-[2-7]$/.test(fallbackDay) ? Number(fallbackDay.slice(4)) : 0),
   );
   const defaultDate = relative.toISOString().slice(0, 10);
   let date = first(p.d_date) || defaultDate;

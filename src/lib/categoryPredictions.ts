@@ -5,6 +5,9 @@ import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { prisma } from "@/lib/prisma";
 import type { PredictionCategory } from "@/lib/enums";
 import { lagosDayBounds } from "@/lib/lagosDate";
+import { feedDayOffset, type FeedDay } from "@/lib/feedDays";
+export { FEED_DAYS, parseFeedDay, dayShowsOutcomes, dayHref, feedDayHref } from "@/lib/feedDays";
+export type { FeedDay } from "@/lib/feedDays";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { goalsFeedRows } from "@/lib/goalsCategory";
 import { tagFeedHiddenLegExclusion } from "@/lib/comboLegs";
@@ -95,49 +98,7 @@ export const CATEGORY_TO_SLUG = Object.fromEntries(
   Object.entries(CATEGORY_SLUGS).map(([slug, cat]) => [cat, slug]),
 ) as Record<PredictionCategory, string>;
 
-/**
- * The three days a category feed can be browsed on.
- *
- * Deliberately three fixed options rather than a calendar. Each is one scoped
- * query against the same indexed kickoff range the page already ran, so the
- * cost profile does not change. Open-ended history is a different feature —
- * it needs paging and a story for old data — and is not bundled here.
- */
-export const FEED_DAYS = ["yesterday", "today", "tomorrow"] as const;
-export type FeedDay = (typeof FEED_DAYS)[number];
-
-const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow: 1 };
-
-/** Anything unrecognised (or absent) resolves to today, so a junk param cannot 404. */
-export function parseFeedDay(value: string | string[] | undefined): FeedDay {
-  const raw = Array.isArray(value) ? value[0] : value;
-  return (FEED_DAYS as readonly string[]).includes(raw ?? "") ? (raw as FeedDay) : "today";
-}
-
-/**
- * Yesterday and today carry WON/LOST/VOID as soon as a pick is settled (the
- * results pass settles within minutes of the final whistle). Today used to
- * hide them until the day rolled over, so a finished match read as still
- * pending all evening. Tomorrow has nothing settled to show.
- */
-export function dayShowsOutcomes(day: FeedDay): boolean {
-  return day !== "tomorrow";
-}
-
-/**
- * The URL for a day on any surface that supports the switch, keeping "today" as
- * the bare path so the default view has one canonical URL rather than two that
- * render identically.
- */
-export function dayHref(basePath: string, day: FeedDay): string {
-  return day === "today" ? basePath : `${basePath}?date=${day}`;
-}
-
-/** Category-feed convenience wrapper over dayHref. */
-export function feedDayHref(slug: string, day: FeedDay): string {
-  return dayHref(`/predictions/${slug}`, day);
-}
-
+/** Date token and navigation helpers come from the pure feedDays module. */
 /**
  * Which published rows belong to a feed, apart from the day: the tag, the
  * hidden-combo-leg exclusion and the paid-only rule. Shared by the feed itself
@@ -199,7 +160,7 @@ export function categoryFeedWhere(cat: PredictionCategory) {
 // explicitly. Calling this once with and once without the argument would be
 // two keys and therefore two queries for the same rows.
 export const getCategoryPredictions = cache(async (cat: PredictionCategory, day: FeedDay = "today") => {
-  const today = lagosDayBounds(DAY_OFFSETS[day]);
+  const today = lagosDayBounds(feedDayOffset(day));
   const found = await prisma.prediction.findMany({
     where: { ...categoryFeedWhere(cat), kickoff: { gte: today.start, lt: today.end } },
     // Deterministic, but not the order the page renders in — the ranking in
