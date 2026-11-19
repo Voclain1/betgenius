@@ -109,7 +109,7 @@ export async function generateMetadata(
     title: seoTitle,
     description: cat === "BANKER"
       ? `${rows.length} banker ${rows.length === 1 ? "prediction" : "predictions"} for ${dayText}. Sign up free to see the picks and reasoning. Review the selection method and past results.`
-      : `${rows.length} ${day === "yesterday" ? "settled " : day !== "today" && day !== "yesterday" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase} for ${dayText}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
+      : `${rows.length} ${day === "yesterday" ? "settled " : day !== "today" ? "upcoming " : cat === "TODAY" ? "of " : "live "}${seoPhrase} for ${dayText}${sample ? ` — including ${sample}` : ""}. Football predictions with confidence ratings, updated daily.`,
     // Relative query states change meaning every day: yesterday's URL becomes a
     // different slate after midnight. Keep them available for users and links,
     // but do not let search engines retain them as unstable landing pages.
