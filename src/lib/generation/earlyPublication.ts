@@ -83,9 +83,10 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
   const until = new Date(now.getTime() + 168 * 3_600_000);
   const previouslyQueued = await prisma.upcomingFixture.findMany({
     where: { earlyQueuedAt: { not: null }, kickoff: { gt: from, lte: until }, status: "NS" },
-    select: { fixtureApiId: true },
+    select: { fixtureApiId: true, kickoff: true },
     take: 200,
   });
+  const verifiedKickoffs = new Map(previouslyQueued.map(row => [row.fixtureApiId, row.kickoff]));
   const fixtureIds = previouslyQueued.map((row) => row.fixtureApiId);
   if (!fixtureIds.length) return finish();
 
@@ -103,6 +104,11 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
   for (const row of rows) {
     if (report.published >= limit) break;
     report.considered++;
+    const captured = row.fixtureApiId != null ? verifiedKickoffs.get(row.fixtureApiId) : null;
+    if (!captured || !row.kickoff || Math.abs(captured.getTime() - row.kickoff.getTime()) > 15 * 60_000) {
+      report.blocked["kickoff-changed"] = (report.blocked["kickoff-changed"] ?? 0) + 1;
+      continue;
+    }
     const categories = row.categories.map((c) => c.category);
     const digest = parseStoredContext(row.aiJob?.context);
     const reason = earlyPublicationBlock({ ...row, categories }, digest, now);

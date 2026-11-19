@@ -723,6 +723,9 @@ model PredictionReassessment {
   nextCheckAt       DateTime?
   lastEvidence      Json?
   lastEvidenceAt    DateTime?
+  // Exact-pick median from a current provider-timestamped 5+ book quote.
+  lastOddsMedian    Float?
+  lastOddsAt        DateTime?
   lastChangeHash    String?
   summary           String?
   proposedMarket    String?

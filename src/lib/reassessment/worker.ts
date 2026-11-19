@@ -19,8 +19,11 @@ import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { recordPredictionEvents, createNotificationEvent } from "@/lib/notifications";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { matchKey } from "@/lib/slug";
+import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
+import { matchOddsState } from "@/lib/matchOdds";
 import {
-  compareFootballEvidence, confirmedLineupSignals, fixtureSignals, reassessmentIntervalMinutes,
+  compareFootballEvidence, confirmedLineupSignals, fixtureSignals, reassessmentIntervalMinutes, oddsMovementSignal,
   type EvidenceSignal, type FixtureEvidence,
 } from "@/lib/reassessment/evidence";
 
@@ -156,6 +159,25 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         }
 
         signals.push(...compareFootballEvidence(old, digest, now));
+        // Cache-only, verified consensus for the exact ORIGINAL selection.
+        // No quote is an unknown state, not a false confirmation.
+        const key = matchKey({ homeTeamApiId: row.homeTeamApiId, awayTeamApiId: row.awayTeamApiId, kickoff: row.kickoff });
+        const quoteCache = key ? await prisma.fixtureOddsCache.findUnique({
+          where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true },
+        }) : null;
+        const odds = (quoteCache?.oddsJson as FixtureOdds | null) ?? null;
+        const oddsState = quoteCache?.fetchedAt && odds ? matchOddsState({
+          odds, fetchedAt: quoteCache.fetchedAt, kickoff: row.kickoff, now,
+        }) : null;
+        const mapped = toBookmakerSelection(row.marketType, row.selection);
+        const quote = oddsState?.state === "current" && mapped ? findSelection(odds, mapped.market, mapped.value) : null;
+        const latestOdds = quote && oddsState?.asOf && quote.bookmakers >= 5
+          && Number.isFinite(quote.median) && quote.median > 1
+          ? { median: quote.median, bookmakers: quote.bookmakers, at: oddsState.asOf } : null;
+        const previousOdds = row.reassessment?.lastOddsMedian && row.reassessment.lastOddsAt
+          ? { median: row.reassessment.lastOddsMedian, at: row.reassessment.lastOddsAt, bookmakers: 5 } : null;
+        signals.push(...oddsMovementSignal(previousOdds, latestOdds, now));
+        const oddsColumns = latestOdds ? { lastOddsMedian: latestOdds.median, lastOddsAt: latestOdds.at } : {};
         // Only official starting XI data, close to kickoff, can trigger this.
         if (row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
           const lineups = await getFixtureLineups(row.fixtureApiId).catch(() => null);
@@ -177,9 +199,9 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           await prisma.predictionReassessment.upsert({
             where: { predictionId: row.id },
             create: { predictionId: row.id, status: preservedStatus, checkedAt: now,
-              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, summary: preservedSummary },
+              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns, summary: preservedSummary },
             update: { status: preservedStatus, checkedAt: now, nextCheckAt,
-              lastEvidence: evidence, lastEvidenceAt: now, summary: preservedSummary, lastError: null },
+              lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns, summary: preservedSummary, lastError: null },
           });
           if (unresolved) report.flagged++;
           else report.current++;
@@ -238,12 +260,12 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           await tx.predictionReassessment.upsert({
             where: { predictionId: row.id },
             create: { predictionId: row.id, status: assessmentStatus, checkedAt: now,
-              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now,
+              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns,
               lastChangeHash: newSignature, summary,
               proposedMarket: proposed?.marketType ?? null,
               proposedSelection: proposedJson, proposedConfidence: proposed?.confidence ?? null },
             update: { status: assessmentStatus, checkedAt: now, nextCheckAt,
-              lastEvidence: evidence, lastEvidenceAt: now,
+              lastEvidence: evidence, lastEvidenceAt: now, ...oddsColumns,
               lastChangeHash: newSignature, summary, lastError: null,
               proposedMarket: proposed?.marketType ?? null,
               ...(proposedJson ? { proposedSelection: proposedJson } : {}),

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import type { MatchDigest, TeamDigest } from "../src/lib/ai/digest";
 import { compareFootballEvidence, fixtureSignals, reassessmentIntervalMinutes,
-  confirmedLineupSignals } from "../src/lib/reassessment/evidence";
+  confirmedLineupSignals, oddsMovementSignal } from "../src/lib/reassessment/evidence";
 import { reassessmentMode, publishedSelectionSnapshot } from "../src/lib/reassessment/worker";
 import { earlyPublicationBlock, earlyPublicationMode,
   EARLY_PUBLICATION_CONFIDENCE_FLOOR } from "../src/lib/generation/earlyPublication";
@@ -54,6 +54,13 @@ assert.deepEqual(fixtureSignals(inHours(120), { fixtureApiId: 1, kickoff: inHour
   seenAt: new Date(now.getTime() - 24 * 3_600_000), status: "CANC" }, now), [], "stale status cannot cause withdrawal");
 assert.equal(confirmedLineupSignals([{ teamId: 1, starters: Array.from({ length: 11 }, (_, i) => ({ id: i + 1, name: "Starter " + i })) },
   { teamId: 2, starters: Array.from({ length: 11 }, (_, i) => ({ id: 11 + i, name: "Player " + i })) }], prior)[0]?.severity, "CRITICAL");
+
+const oldOdds = { median: 1.75, bookmakers: 6, at: new Date(now.getTime() - 3 * 3_600_000) };
+const recentOdds = { median: 2.1, bookmakers: 8, at: new Date(now.getTime() - 30 * 60_000) };
+assert.equal(oddsMovementSignal(oldOdds, recentOdds, now)[0]?.source, "odds");
+assert.equal(oddsMovementSignal(oldOdds, { ...recentOdds, bookmakers: 1 }, now).length, 0);
+assert.equal(oddsMovementSignal(oldOdds, { ...recentOdds, at: oldOdds.at }, now).length, 0);
+assert.equal(oddsMovementSignal(oldOdds, { ...recentOdds, at: new Date(now.getTime() - 6 * 3_600_000) }, now).length, 0);
 
 assert.equal(reassessmentIntervalMinutes(now, inHours(120)), 1440);
 assert.equal(reassessmentIntervalMinutes(now, inHours(48)), 720);

@@ -9,10 +9,27 @@ export type EvidenceSignal = {
   code: string;
   severity: "MODERATE" | "CRITICAL";
   message: string;
-  source: "fixture" | "availability" | "form" | "coach" | "lineup";
+  source: "fixture" | "availability" | "form" | "coach" | "lineup" | "odds";
 };
 
 export type FixtureEvidence = { status: string; kickoff: Date; seenAt: Date; fixtureApiId: number };
+export type OddsObservation = { median: number; bookmakers: number; at: Date };
+
+/** Only compare current provider-timestamped prices for the original pick. */
+export function oddsMovementSignal(previous: OddsObservation | null, latest: OddsObservation | null, now: Date): EvidenceSignal[] {
+  if (!previous || !latest || previous.bookmakers < 5 || latest.bookmakers < 5
+    || !Number.isFinite(previous.median) || !Number.isFinite(latest.median)
+    || previous.median <= 1 || latest.median <= 1
+    || previous.at >= latest.at || latest.at > now
+    || now.getTime() - latest.at.getTime() > 2 * 3_600_000) return [];
+  const pp = Math.abs(100 / latest.median - 100 / previous.median);
+  if (pp < 7) return [];
+  return [{ code: "market-movement-" + latest.at.toISOString(),
+    severity: pp >= 12 ? "CRITICAL" : "MODERATE",
+    source: "odds", message: "Bookmaker median for the original selection moved by " + pp.toFixed(1)
+      + " implied-probability points (at least five bookmakers, current quote)." }];
+}
+
 
 export function reassessmentIntervalMinutes(now: Date, kickoff: Date): number {
   const minutes = (kickoff.getTime() - now.getTime()) / 60_000;
