@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "src/lib/generation/earlyFixturePolicy.ts"
+      - "src/lib/generation/queue.ts"
+      - "src/lib/generation/queueWindow.ts"
+      - "deploy/ops/crontab"
       - "src/lib/generation/earlyFixtureDiscovery.ts"
       - "src/lib/generation/earlyPublication.ts"
       - "src/lib/generation/earlyGeneration.ts"

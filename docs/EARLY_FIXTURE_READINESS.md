@@ -34,7 +34,20 @@ must remain *unknown*: do not infer a fit player or favourable weather. Do not
 claim weather-driven revision until coverage, coordinates, timing, provenance,
 cost and tests are available.
 
-### Required staged release — NOT EXECUTED
+### Controlled activation progress (19 November 2026)
+
+- PR #209 merged as `fb4b1bec`; production deploy and live schema-sync passed.
+- Runtime capture set to **SHADOW** on the VPS, while auto-publication stays **OFF**.
+- First capture: 2 leagues, 65 fixtures, no queued attempts, 0 failures.
+- Second capture: 3 leagues, 22 fixtures; total unique cached fixtures 87,
+  of which 43 were 48–168h away (a later kickoff may be missing or moved).
+- Reassessment SHADOW: three real published rows checked; zero public holds,
+  zero publicly visible revisions, zero withdrawals.
+- Weekend, Genius, Banker, Today, Midweek and Goals pages all answered HTTP 200.
+- These are operational smoke results, **not** evidence of reliable multi-day
+  tip publication or change detection. Keep publication ON disabled.
+
+### Next controlled release gates
 - Run typecheck, all dedicated CI, paid entitlement/quote integrity tests and
   preview Postgres integration tests with the updated schema.
 - Review and apply Prisma schema additions to an isolated/preview database
@@ -43,12 +56,16 @@ cost and tests are available.
 - Deploy all three flags initially OFF:
   `EARLY_FIXTURE_MODE=off`, `EARLY_FREE_PUBLICATION_MODE=off`,
   `PREDICTION_REASSESSMENT_MODE=off`.
-- With the existing CRON_SECRET, configure these jobs in cron-job.org AFTER
-  database deployment (no external scheduler was modified in this PR):
-  1. `/api/admin/generate/early-discover?batch=3` every 30min;
-  2. `/api/admin/generate/early-run?limit=3` every 30min after discovery;
-  3. `/api/admin/generate/early-publish?limit=6` every 30min after generation;
-  4. `/api/admin/generate/reassess?limit=3` every 15min.
+- This release adds the four internal VPS operations cron entries in
+  `deploy/ops/crontab` (staggered discovery, generation, publication,
+  monitoring). **Do not also add these endpoints in cron-job.org.** Calls
+  remain gated by runtime flags, so installing the scheduler is inert with OFF.
+  The on-VPS ops container must be rebuilt/restarted by `deploy-vps` for the
+  entries to take effect. Verify scheduler logs and `JobRun` outcomes.
+- After each `deploy-vps`, `app.env` is copied from the GitHub
+  `PROD_ENV_FILE` secret. Manual SHADOW flags in the running VPS are therefore
+  not durable across deploys and must be reapplied/verified. Do not silently
+  assume activation persists.
 - Turn on capture SHADOW first; verify recorded fixture counts and API headroom.
   Then enable early capture ON + early publication SHADOW, inspect qualifying
   reasons, and enable publication ON only when results meet thresholds.
@@ -68,4 +85,5 @@ cost and tests are available.
 4. Real production end-to-end run, accurate timestamps, limited API spend,
    no duplicate generation and no errors not accounted for by job diagnostics.
 
-**Keep PR #209 in DRAFT and do not merge as complete until the above is proven.**
+**Public automatic publication remains OFF until end-to-end, non-leaking,
+provider-grounded quality and monitoring gates are verified on live fixtures.**

@@ -4,3 +4,12 @@
 30 10 * * * /ops/cron-call.sh /api/admin/curate-accumulators
 # Nightly backup at 02:30 UTC (03:30 Lagos), the quietest hour.
 30 2 * * * /ops/backup.sh
+
+# Controlled early-fixture rollout: these routes are opt-in inside the app.
+# Defaults are OFF, so scheduling alone cannot create or publish new tips.
+# The work is internal to the VPS and uses the existing CRON_SECRET; do NOT
+# duplicate the same endpoints in cron-job.org.
+3,33 * * * * /ops/cron-call.sh /api/admin/generate/early-discover?batch=3
+9,39 * * * * /ops/cron-call.sh /api/admin/generate/early-run?limit=3
+16,46 * * * * /ops/cron-call.sh /api/admin/generate/early-publish?limit=6
+6,21,36,51 * * * * /ops/cron-call.sh /api/admin/generate/reassess?limit=3

@@ -71,6 +71,14 @@ assert.equal(reassessmentIntervalMinutes(now, inHours(3)), 60);
 assert.equal(reassessmentIntervalMinutes(now, inHours(1)), 15);
 assert.equal(reassessmentIntervalMinutes(now, inHours(-1)), 0);
 
+const monitorSource = readFileSync(join(process.cwd(), "src/lib/reassessment/worker.ts"), "utf8");
+assert.ok(monitorSource.includes("if (!freshFixture) {") &&
+  monitorSource.includes('lastError: "FIXTURE_STATE_UNAVAILABLE"') &&
+  monitorSource.indexOf("if (!freshFixture) {") < monitorSource.indexOf("buildGenerationDigest({"),
+  "missing provider fixture must remain UNKNOWN before any updated-form comparison");
+assert.ok(monitorSource.includes('lastError: "PUBLISHED_BASELINE_UNAVAILABLE"') &&
+  monitorSource.includes('const keepReview = row.reassessment?.status === "REVIEW_REQUIRED"'),
+  "missing original context cannot certify CURRENT or clear a pending review");
 const categorySource = readFileSync(join(process.cwd(), "src/lib/categoryPredictions.ts"), "utf8");
 assert.ok(categorySource.includes('NOT: { reassessment: { is: { publicHold: true } } }'),
   "free category feed must filter only live, public reassessment holds");

@@ -5,6 +5,8 @@
 import assert from "node:assert/strict";
 import { leaguesInTiers } from "../src/lib/leagues";
 import { GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
+import { maxQueuedKickoff } from "../src/lib/generation/queueWindow";
+import { readFileSync } from "node:fs";
 import {
   EARLY_FIXTURE_POLICY,
   discoveryHorizonDays,
@@ -36,7 +38,19 @@ assert.equal(earlyFixtureMode("shadow"), "shadow");
 assert.equal(earlyFixtureMode("on"), "on");
 assert.equal(earlyFixtureMode("invalid"), "off");
 
-// The existing 48h paid/final lane stays entirely independent.
+// The existing 48h final/paid lane cannot steal new 2–7d rows merely
+// because discovery put them in the shared ledger before their normal window.
 assert.equal(GENERATE_UNTIL_HOURS, 48);
+assert.equal(maxQueuedKickoff(now)?.toISOString(), hoursLater(48).toISOString());
+assert.equal(maxQueuedKickoff(now, [])?.toISOString(), hoursLater(48).toISOString());
+assert.equal(maxQueuedKickoff(now, ["explicit-early-match"]), undefined);
+const ordinaryQueue = readFileSync("src/lib/generation/queue.ts", "utf8");
+assert.ok(ordinaryQueue.includes("const ordinaryUntil = maxQueuedKickoff(now, opts.matchKeys)"));
+assert.ok(ordinaryQueue.includes("kickoff: { gt: now, ...(ordinaryUntil ? { lte: ordinaryUntil } : {}) }"));
+const queueCapture = readFileSync("src/lib/generation/earlyFixtureDiscovery.ts", "utf8");
+assert.ok(queueCapture.includes("await tx.generationAttempt.create(") &&
+  queueCapture.includes("await tx.upcomingFixture.updateMany(") &&
+  queueCapture.includes('if (marked.count !== 1) throw new Error("EARLY_FIXTURE_ALREADY_QUEUED")'),
+  "new queue provenance is atomic, never bulk-stamped after partial dedupe");
 
 console.log("PASS: early fixture policy, bounded windows, quota, rollout and 48h isolation");
