@@ -123,6 +123,27 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           ? parseStoredContext(row.reassessment.lastEvidence)
           : parseStoredContext(row.aiJob?.context);
         const freshFixture = byId.get(row.fixtureApiId);
+        // A provider omission/error is UNKNOWN, never proof that the fixture
+        // and its original prediction remain current. Preserve any existing
+        // review hold until a human resolves it.
+        if (!freshFixture) {
+          const keepReview = row.reassessment?.status === "REVIEW_REQUIRED";
+          await prisma.predictionReassessment.upsert({
+            where: { predictionId: row.id },
+            create: { predictionId: row.id, status: keepReview ? "REVIEW_REQUIRED" : "UNKNOWN",
+              checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
+              summary: keepReview ? row.reassessment?.summary ?? "Material change still requires review."
+                : "Latest fixture status could not be verified; no unchanged-state inference.",
+              lastError: "FIXTURE_STATE_UNAVAILABLE" },
+            update: { status: keepReview ? "REVIEW_REQUIRED" : "UNKNOWN",
+              checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
+              summary: keepReview ? row.reassessment?.summary ?? "Material change still requires review."
+                : "Latest fixture status could not be verified; no unchanged-state inference.",
+              lastError: "FIXTURE_STATE_UNAVAILABLE" },
+          });
+          report.skipped++;
+          continue;
+        }
         let fixture: FixtureEvidence | null = null;
         if (freshFixture) {
           fixture = { fixtureApiId: row.fixtureApiId, status: freshFixture.fixture.status.short,
@@ -136,6 +157,26 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         }
 
         const signals: EvidenceSignal[] = fixtureSignals(row.kickoff, fixture, now);
+        // Without the published baseline there is nothing verifiable to compare.
+        // A confirmed cancellation/fixture shift can still be acted on safely.
+        if (!old && !signals.some(s => s.source === "fixture" && s.severity === "CRITICAL")) {
+          const keepReview = row.reassessment?.status === "REVIEW_REQUIRED";
+          await prisma.predictionReassessment.upsert({
+            where: { predictionId: row.id },
+            create: { predictionId: row.id, status: keepReview ? "REVIEW_REQUIRED" : "UNKNOWN",
+              checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
+              summary: keepReview ? row.reassessment?.summary ?? "Material change still requires review."
+                : "Original publication context missing; no unchanged-state inference.",
+              lastError: "PUBLISHED_BASELINE_UNAVAILABLE" },
+            update: { status: keepReview ? "REVIEW_REQUIRED" : "UNKNOWN",
+              checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
+              summary: keepReview ? row.reassessment?.summary ?? "Material change still requires review."
+                : "Original publication context missing; no unchanged-state inference.",
+              lastError: "PUBLISHED_BASELINE_UNAVAILABLE" },
+          });
+          report.skipped++;
+          continue;
+        }
         const { digest, sources } = await buildGenerationDigest({
           home: row.homeTeam ?? "", away: row.awayTeam ?? "", league: row.leagueName,
           kickoff: row.kickoff.toISOString(), homeApiId: row.homeTeamApiId,

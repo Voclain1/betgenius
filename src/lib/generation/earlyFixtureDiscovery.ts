@@ -6,6 +6,7 @@
  * "on" additionally seeds a small number of already-quality-filtered free
  * candidates into the existing generation ledger. It NEVER publishes picks.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { lagosDayBounds } from "@/lib/lagosDate";
 import { leaguesInTiers } from "@/lib/leagues";
@@ -141,28 +142,34 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
         untilHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS,
       });
       if (!selected.candidates.length) continue;
-      const created = await prisma.generationAttempt.createMany({
-        data: selected.candidates.map((c) => ({
-          matchKey: c.matchKey,
-          fixtureApiId: c.fixtureApiId,
-          leagueApiId: c.leagueApiId,
-          leagueName: c.leagueName,
-          homeTeam: c.homeTeam,
-          awayTeam: c.awayTeam,
-          kickoff: c.kickoff,
-          round: c.round,
-          status: "PENDING",
-        })),
-        skipDuplicates: true,
-      });
-      if (created.count) {
-        const fixtureIds = selected.candidates.map((c) => c.fixtureApiId);
-        await prisma.upcomingFixture.updateMany({
-          where: { fixtureApiId: { in: fixtureIds }, earlyQueuedAt: null },
-          data: { earlyQueuedAt: now },
-        });
-        todayQueued += created.count;
-        base.candidatesQueued += created.count;
+      // Tag ONLY newly inserted attempts as early. createMany(skipDuplicates)
+      // followed by marking every candidate can falsely authorize manual or
+      // preexisting ordinary rows for early publication.
+      for (const c of selected.candidates) {
+        if (todayQueued >= EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY) break;
+        try {
+          await prisma.$transaction(async tx => {
+            await tx.generationAttempt.create({
+              data: {
+                matchKey: c.matchKey, fixtureApiId: c.fixtureApiId,
+                leagueApiId: c.leagueApiId, leagueName: c.leagueName,
+                homeTeam: c.homeTeam, awayTeam: c.awayTeam,
+                kickoff: c.kickoff, round: c.round, status: "PENDING",
+              },
+            });
+            const marked = await tx.upcomingFixture.updateMany({
+              where: { fixtureApiId: c.fixtureApiId, earlyQueuedAt: null },
+              data: { earlyQueuedAt: now },
+            });
+            if (marked.count !== 1) throw new Error("EARLY_FIXTURE_ALREADY_QUEUED");
+          });
+          todayQueued++;
+          base.candidatesQueued++;
+        } catch (error) {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
+          if (error instanceof Error && error.message === "EARLY_FIXTURE_ALREADY_QUEUED") continue;
+          throw error;
+        }
       }
     } catch (error) {
       base.failures.push({ leagueApiId, reason: error instanceof Error ? error.message.slice(0, 180) : String(error) });
