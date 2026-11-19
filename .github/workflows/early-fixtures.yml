@@ -1,0 +1,35 @@
+name: Early fixture readiness checks
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/generation/earlyFixturePolicy.ts"
+      - "src/lib/generation/earlyFixtureDiscovery.ts"
+      - "src/lib/generation/selector.ts"
+      - "src/lib/periodPredictions.ts"
+      - "src/app/api/admin/generate/early-discover/route.ts"
+      - "scripts/check-early-fixtures.ts"
+      - "scripts/check-period-predictions.ts"
+      - "prisma/schema.prisma"
+      - ".github/workflows/early-fixtures.yml"
+  workflow_dispatch:
+
+jobs:
+  early-fixtures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      EARLY_FIXTURE_MODE: off
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate
+        env:
+          DATABASE_URL: "postgresql://user:pass@localhost:5432/betgenius"
+          DATABASE_URL_UNPOOLED: "postgresql://user:pass@localhost:5432/betgenius"
+      - run: npm run check:early-fixtures
+      - run: npm run check:period-predictions
