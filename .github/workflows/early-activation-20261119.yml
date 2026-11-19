@@ -1,7 +1,6 @@
-# Stage 6: restore controlled capture and shadow monitors after PR #211.
-# The earlier model sample was successful but the post-test SQL failed to parse,
-# causing an automatic configuration rollback. This repair avoids a model rerun.
-name: Early activation - restore safe shadow operations and verify records
+# One-shot read-only operational audit of early prediction rollout.
+# No feature flags, scheduled jobs, predictions or database records are changed.
+name: Early prediction production audit - read only
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -11,105 +10,66 @@ concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  safe-restore:
+  evidence:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/vps-ssh
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Restore safe runtime flags and evaluate early publication only in SHADOW
+      - name: Verify live flags, scheduled execution, free-tip thresholds and protections
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          EXPECTED=b484bdd9588fb7b9d5731dd4dd908cc101d2eb65
+          echo "=== Exact deployed build, running state, and activation flags ==="
           C=$(docker compose --env-file deploy.env ps -q app)
           test -n "$C"
-          FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED" ||
-            { echo "REFUSED: production differs from validated PR #211 build"; exit 1; }
-          CAPTURE=$(echo "$FLAGS" | sed -n 's/^EARLY_FIXTURE_MODE=//p')
-          PUB=$(echo "$FLAGS" | sed -n 's/^EARLY_FREE_PUBLICATION_MODE=//p')
-          MON=$(echo "$FLAGS" | sed -n 's/^PREDICTION_REASSESSMENT_MODE=//p')
-          case "$CAPTURE" in ""|off|shadow|on) ;; *) echo "REFUSED: unexpected capture mode"; exit 1 ;; esac
-          case "$PUB" in ""|off|shadow) ;; *) echo "REFUSED: live publication is already enabled"; exit 1 ;; esac
-          case "$MON" in ""|off|shadow) ;; *) echo "REFUSED: live reassessment is already enabled"; exit 1 ;; esac
-          curl -fsS --max-time 10 http://127.0.0.1:3000/api/health > /dev/null
-          BACKUP=/opt/betgenius/app.env.before-early-pr211-shadow-final
-          if [ -e "$BACKUP" ]; then echo "REFUSED: backup exists; rerun requires review"; exit 1; fi
-          cp -p app.env "$BACKUP"
-          chmod 600 "$BACKUP"
-          rollback() {
-            echo "SAFE RESTART FAILED: restoring prior runtime configuration"
-            cp -p "$BACKUP" app.env
-            docker compose --env-file deploy.env up -d --no-deps --force-recreate app || true
-          }
-          trap rollback ERR
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("app.env")
-          names={"EARLY_FIXTURE_MODE":"on","EARLY_FREE_PUBLICATION_MODE":"shadow",
-            "PREDICTION_REASSESSMENT_MODE":"shadow"}
-          data=p.read_text().splitlines()
-          data=[line for line in data if not any(line.startswith(k+"=") for k in names)]
-          data.extend(k+"="+v for k,v in names.items())
-          p.write_text("\n".join(data)+"\n")
-          PY
-          docker compose --env-file deploy.env up -d --no-deps --force-recreate app
-          HEALTHY=no
-          for attempt in $(seq 1 36); do
-            if curl -fsS --max-time 6 http://127.0.0.1:3000/api/health > /dev/null 2>&1; then HEALTHY=yes; break; fi
-            sleep 3
-          done
-          test "$HEALTHY" = yes
-          C=$(docker compose --env-file deploy.env ps -q app)
-          FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED"
-          echo "$FLAGS" | grep -qx "EARLY_FIXTURE_MODE=on"
-          echo "$FLAGS" | grep -qx "EARLY_FREE_PUBLICATION_MODE=shadow"
-          echo "$FLAGS" | grep -qx "PREDICTION_REASSESSMENT_MODE=shadow"
-          echo "PASS: capture ON, publication SHADOW, monitoring SHADOW; app healthy"
-          echo "=== Repeat free publication qualification + one monitoring check with ZERO model generation ==="
-          docker compose --env-file deploy.env exec -T app node - <<'NODE'
-          (async()=>{
-            if(!process.env.CRON_SECRET)throw Error("Scheduler auth unavailable");
-            async function get(path){
-              const r=await fetch("http://127.0.0.1:3000"+path,{
-                headers:{authorization:"Bearer "+process.env.CRON_SECRET},
-                cache:"no-store",signal:AbortSignal.timeout(90000)});
-              const body=await r.json();
-              console.log(JSON.stringify({endpoint:path,http:r.status,ok:body.ok,mode:body.mode,
-                considered:body.considered,qualifying:body.qualifying,published:body.published,
-                blocked:body.blocked,checked:body.checked,current:body.current,
-                withdrawn:body.withdrawn,failures:body.failures,summary:body.summary}));
-              if(!r.ok||body.ok!==true)throw Error("endpoint failed: "+path);
-              return body;
-            }
-            const pub=await get("/api/admin/generate/early-publish?limit=8");
-            if(pub.mode!=="shadow"||pub.published!==0)throw Error("Public early publishing activated unexpectedly");
-            const mon=await get("/api/admin/generate/reassess?limit=1");
-            if(mon.mode!=="shadow"||mon.withdrawn!==0)throw Error("Public reassessment activated unexpectedly");
-          })().catch(e=>{console.error("SHADOW_VALIDATION_FAILED",e.message);process.exitCode=1;});
-          NODE
-          echo "=== Production read-only counts, with safe literal quoting ==="
+          docker inspect --format 'app_state={{.State.Status}} build={{range .Config.Env}}{{if (eq (slice . 0 0) "")}}{{end}}{{end}}' "$C" 2>/dev/null || true
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" |
+            grep -E '^(APP_BUILD_ID|EARLY_FIXTURE_MODE|EARLY_FREE_PUBLICATION_MODE|PREDICTION_REASSESSMENT_MODE)='
+          echo "=== Health ==="
+          curl -fsS --max-time 8 http://127.0.0.1:3000/api/health
+          echo
+          echo "=== Ops container + installed schedule ==="
+          docker compose --env-file deploy.env ps ops
+          docker compose --env-file deploy.env exec -T ops sh -c 'grep -E "early-(discover|run|publish)|/generate/reassess" /etc/crontabs/root'
+          echo "=== Durable scheduler history and qualification aggregates ==="
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
-          SELECT 'early_free_jobs', count(*) FROM "AIJob" WHERE position('"intent":"EARLY_FREE"' in "prompt") > 0;
-          SELECT 'early_free_provenance',coalesce(p.provenance,'NULL'),count(*)
-            FROM "Prediction" p JOIN "AIJob" j ON p."aiJobId"=j.id
-            WHERE position('"intent":"EARLY_FREE"' in j."prompt") > 0
-            GROUP BY p.provenance ORDER BY p.provenance;
-          SELECT 'early_queued_fixtures',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
-          SELECT 'early_window_cached',count(*) FROM "UpcomingFixture"
+          SELECT 'server_time_utc', TO_CHAR(NOW() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS');
+          SELECT 'run_3h',job,count(*),sum(case when ok then 0 else 1 end)
+            FROM "JobRun"
+            WHERE "ranAt" > NOW()-interval '3 hours'
+              AND job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
+            GROUP BY job ORDER BY job;
+          SELECT 'latest_job',job,to_char("ranAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),ok,
+            left(coalesce(summary,'NULL'),155)
+            FROM (SELECT DISTINCT ON (job) job,"ranAt",ok,summary FROM "JobRun"
+              WHERE job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
+              ORDER BY job,"ranAt" DESC) runs ORDER BY job;
+          SELECT 'cache_2to7d',count(*) FROM "UpcomingFixture"
             WHERE kickoff > NOW()+interval '48 hours' AND kickoff <= NOW()+interval '168 hours' AND status='NS';
+          SELECT 'total_early_queued',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
+          SELECT 'early_free_predictions',count(*),coalesce(min(p.confidence),0),coalesce(max(p.confidence),0),
+            count(*) FILTER (WHERE p.confidence>=80),count(*) FILTER (WHERE p.status='PENDING_REVIEW')
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0;
+          SELECT 'early_free_highconfidence_pending',count(*) FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+              AND p.status='PENDING_REVIEW' AND p.confidence>=80
+              AND p.kickoff > NOW()+interval '48 hours' AND p.kickoff <= NOW()+interval '168 hours';
+          SELECT 'early_free_provenance',coalesce(p.provenance,'NULL'),count(*)
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+            GROUP BY p.provenance ORDER BY p.provenance;
+          SELECT 'monitor_status',status,count(*) FROM "PredictionReassessment" GROUP BY status ORDER BY status;
           SELECT 'public_holds',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
-          SELECT 'visible_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
+          SELECT 'public_visible_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
           COMMIT;
           SQL
-          trap - ERR
-          echo "PASS: safe activation and evidence audit complete; public auto-publication remains SHADOW"
+          echo "PASS: production audit ran read-only"
           REMOTE
