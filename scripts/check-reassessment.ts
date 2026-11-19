@@ -36,16 +36,16 @@ const digest = (home: TeamDigest, away: TeamDigest) => ({
 }) as MatchDigest;
 
 const prior = digest(team(1), team(2));
-assert.deepEqual(compareFootballEvidence(prior, prior), [], "unchanged evidence stays quiet");
+assert.deepEqual(compareFootballEvidence(prior, prior, now), [], "unchanged evidence stays quiet");
 const withoutCoverage = digest(team(1, { availabilityAsOf: null }), team(2));
 const injured = digest(team(1, { availabilityAsOf: "2026-11-19",
   availability: [{ player: "Main Striker", kind: "injury", reason: "Hamstring" }] }), team(2));
-assert.equal(compareFootballEvidence(prior, injured)[0]?.severity, "CRITICAL", "new important injury alerts");
-assert.equal(compareFootballEvidence(withoutCoverage, injured).length, 0, "missing original injury feed is not proof of new injury");
+assert.equal(compareFootballEvidence(prior, injured, now)[0]?.severity, "CRITICAL", "new important injury alerts");
+assert.equal(compareFootballEvidence(withoutCoverage, injured, now).length, 0, "missing original injury feed is not proof of new injury");
 const newResult = digest(team(1, { last5: [...five, { ...five[0], date: "2026-11-18" }] }), team(2));
-assert.ok(compareFootballEvidence(prior, newResult).some(s => s.source === "form"));
+assert.ok(compareFootballEvidence(prior, newResult, now).some(s => s.source === "form"));
 const changedCoach = digest(team(1, { coach: { name: "Coach Two" } }), team(2));
-assert.ok(compareFootballEvidence(prior, changedCoach).some(s => s.source === "coach"));
+assert.ok(compareFootballEvidence(prior, changedCoach, now).some(s => s.source === "coach"));
 
 assert.equal(fixtureSignals(inHours(120), { fixtureApiId: 1, kickoff: inHours(120), seenAt: now, status: "NS" }, now).length, 0);
 assert.equal(fixtureSignals(inHours(120), { fixtureApiId: 1, kickoff: inHours(120), seenAt: now, status: "PST" }, now)[0]?.severity, "CRITICAL");
