@@ -1,6 +1,6 @@
-# One-shot controlled activation of early fixture capture in SHADOW only.
-# Rollback on health failure; no free publication/reassessment activation.
-name: Early activation - capture shadow and bounded live probe
+# One-shot activation stage 2: read-only-to-public reassessment SHADOW only.
+# Capture stays SHADOW; auto-publication and automatic withdrawals stay OFF.
+name: Early activation - reassessment shadow validation
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -11,7 +11,7 @@ concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  shadow-capture:
+  shadow-reassessment:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -20,7 +20,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Check running commit and set capture shadow only, with rollback
+      - name: Set monitoring to SHADOW only with health rollback and one live test
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
@@ -29,52 +29,38 @@ jobs:
           EXPECTED=fb4b1becd844db2909a833ba158c4d9414918fac
           C=$(docker compose --env-file deploy.env ps -q app)
           test -n "$C"
-          RUNNING=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" | sed -n 's/^APP_BUILD_ID=//p')
-          test "$RUNNING" = "$EXPECTED" || { echo "REFUSED: running build differs from approved PR #209"; exit 1; }
-          CURRENT=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" | sed -n 's/^EARLY_FIXTURE_MODE=//p')
-          PUBLISH=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" | sed -n 's/^EARLY_FREE_PUBLICATION_MODE=//p')
-          REASSESS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" | sed -n 's/^PREDICTION_REASSESSMENT_MODE=//p')
-          if [ "$CURRENT" != "" ] && [ "$CURRENT" != "off" ] && [ "$CURRENT" != "shadow" ]; then
-            echo "REFUSED: existing capture mode not off/shadow"; exit 1
-          fi
-          if [ "$PUBLISH" != "" ] && [ "$PUBLISH" != "off" ]; then
-            echo "REFUSED: publication is not off"; exit 1
-          fi
-          if [ "$REASSESS" != "" ] && [ "$REASSESS" != "off" ]; then
-            echo "REFUSED: reassessment is not off"; exit 1
+          FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
+          echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED"
+          echo "$FLAGS" | grep -qx "EARLY_FIXTURE_MODE=shadow"
+          echo "$FLAGS" | grep -qx "EARLY_FREE_PUBLICATION_MODE=off"
+          if echo "$FLAGS" | grep -q '^PREDICTION_REASSESSMENT_MODE='; then
+            echo "$FLAGS" | grep -qx "PREDICTION_REASSESSMENT_MODE=off"
           fi
           curl -fsS --max-time 10 http://127.0.0.1:3000/api/health > /dev/null
-          BACKUP="/opt/betgenius/app.env.before-early-shadow-20261119"
-          if [ -e "$BACKUP" ]; then echo "REFUSED: activation backup already exists; manual review required"; exit 1; fi
+          echo "=== Published candidates for shadow monitor (aggregate only) ==="
+          docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -Atc '
+            BEGIN READ ONLY;
+            SELECT '"'"'eligible_published'"'"',count(*) FROM "Prediction" WHERE status='"'"'PUBLISHED'"'"' AND kickoff > NOW() AND kickoff < NOW() + interval '"'"'7 days'"'"' AND "fixtureApiId" IS NOT NULL;
+            SELECT '"'"'public_holds_before'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
+            COMMIT;'
+          BACKUP=/opt/betgenius/app.env.before-reassess-shadow-20261119
+          if [ -e "$BACKUP" ]; then echo "REFUSED: snapshot exists; inspect before rerun"; exit 1; fi
           cp -p app.env "$BACKUP"
           chmod 600 "$BACKUP"
           rollback() {
-            echo "SHADOW ACTIVATION FAILED: restoring prior runtime configuration"
+            echo "MONITOR SHADOW FAILURE: restoring previous configuration"
             cp -p "$BACKUP" app.env
             docker compose --env-file deploy.env up -d --no-deps --force-recreate app || true
           }
           trap rollback ERR
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("app.env")
-          data = p.read_text()
-          replacements = {
-            "EARLY_FIXTURE_MODE": "shadow",
-            "EARLY_FREE_PUBLICATION_MODE": "off",
-            "PREDICTION_REASSESSMENT_MODE": "off",
-          }
-          seen = set()
-          out = []
-          for line in data.splitlines():
-            name = line.split("=", 1)[0] if "=" in line else ""
-            if name in replacements:
-              if name not in seen:
-                out.append(f"{name}={replacements[name]}")
-                seen.add(name)
-            else:
-              out.append(line)
-          out.extend(f"{key}={value}" for key, value in replacements.items() if key not in seen)
-          p.write_text("\n".join(out) + "\n")
+          p=Path("app.env")
+          original=p.read_text().splitlines()
+          key="PREDICTION_REASSESSMENT_MODE"
+          result=[line for line in original if not line.startswith(key+"=")]
+          result.append(key+"=shadow")
+          p.write_text("\n".join(result)+"\n")
           PY
           docker compose --env-file deploy.env up -d --no-deps --force-recreate app
           HEALTHY=no
@@ -85,40 +71,36 @@ jobs:
           test "$HEALTHY" = yes
           C=$(docker compose --env-file deploy.env ps -q app)
           FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$FLAGS" | grep -qx 'EARLY_FIXTURE_MODE=shadow'
-          echo "$FLAGS" | grep -qx 'EARLY_FREE_PUBLICATION_MODE=off'
-          echo "$FLAGS" | grep -qx 'PREDICTION_REASSESSMENT_MODE=off'
           echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED"
+          echo "$FLAGS" | grep -qx "EARLY_FIXTURE_MODE=shadow"
+          echo "$FLAGS" | grep -qx "EARLY_FREE_PUBLICATION_MODE=off"
+          echo "$FLAGS" | grep -qx "PREDICTION_REASSESSMENT_MODE=shadow"
           trap - ERR
-          echo "PASS: exact deployed build healthy; capture=shadow, publication=off, reassessment=off"
-          echo "=== Run exactly one bounded live discovery (2 leagues, shadow only) ==="
+          echo "PASS: capture shadow, monitoring shadow, automatic publication off, healthy"
+          echo "=== One bounded real reassessment (limit=1, shadow) ==="
           docker compose --env-file deploy.env exec -T app node - <<'NODE'
           (async () => {
-            if (!process.env.CRON_SECRET) throw new Error("Scheduler token missing in running app");
-            const response = await fetch("http://127.0.0.1:3000/api/admin/generate/early-discover?batch=2", {
+            if (!process.env.CRON_SECRET) throw new Error("Scheduler secret absent");
+            const response = await fetch("http://127.0.0.1:3000/api/admin/generate/reassess?limit=1", {
               headers: { authorization: "Bearer " + process.env.CRON_SECRET },
-              cache: "no-store",
-              signal: AbortSignal.timeout(60000),
+              cache: "no-store", signal: AbortSignal.timeout(95000),
             });
             const body = await response.json();
-            // Only operational counts: never print credentials, predictions, or personal data.
             console.log(JSON.stringify({
-              httpStatus: response.status, mode: body.mode,
-              ok: body.ok, scanned: body.scanned, fixturesSeen: body.fixturesSeen,
-              cached: body.cached, candidatesQueued: body.candidatesQueued,
-              quotaRemaining: body.quotaRemaining, elapsedMs: body.elapsedMs,
-              failures: body.failures, summary: body.summary,
+              status: response.status, mode: body.mode, ok: body.ok,
+              checked: body.checked, current: body.current,
+              flagged: body.flagged, withdrawn: body.withdrawn,
+              skipped: body.skipped, failures: body.failures, summary: body.summary,
             }));
-            if (!response.ok || body.mode !== "shadow" || body.ok !== true || body.candidatesQueued !== 0)
+            if (!response.ok || body.mode !== "shadow" || body.ok !== true || body.withdrawn !== 0)
               process.exitCode = 1;
-          })().catch(e => { console.error("SHADOW_PROBE_ERROR:", e.message); process.exitCode = 1; });
+          })().catch(e => { console.error("MONITOR_SHADOW_ERROR:", e.message); process.exitCode = 1; });
           NODE
-          echo "=== Aggregate verification: safe shadow data only ==="
+          echo "=== No public withdrawals, holds or revisions from SHADOW ==="
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -Atc '
-          BEGIN READ ONLY;
-          SELECT '"'"'upcomingFixture'"'"',count(*) FROM "UpcomingFixture";
-          SELECT '"'"'early_queued'"'"',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
-          SELECT '"'"'reassessment'"'"',count(*) FROM "PredictionReassessment";
-          SELECT '"'"'revisions'"'"',count(*) FROM "PredictionRevision";
-          COMMIT;'
+            BEGIN READ ONLY;
+            SELECT '"'"'monitor_state'"'"',"status",count(*) FROM "PredictionReassessment" GROUP BY "status" ORDER BY "status";
+            SELECT '"'"'public_holds'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
+            SELECT '"'"'visible_revisions'"'"',count(*) FROM "PredictionRevision" WHERE "publiclyVisible" = true;
+            COMMIT;'
           REMOTE
