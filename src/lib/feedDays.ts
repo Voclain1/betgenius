@@ -53,3 +53,21 @@ export function feedDayTitle(day: FeedDay, anchor = new Date()): string {
   const s = feedDayText(day, anchor);
   return s[0].toUpperCase() + s.slice(1);
 }
+
+/** Consistent two-line date tiles, with a fully expanded screen-reader label. */
+export function feedDayTile(day: FeedDay, anchor = new Date()): {
+  eyebrow: string; date: string; fullDate: string;
+} {
+  const start = lagosDayBounds(feedDayOffset(day), anchor).start;
+  const parts = SHORT.formatToParts(start);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find(item => item.type === type)?.value ?? "";
+  const eyebrow = day === "today" ? "Today"
+    : day === "yesterday" ? "Yesterday"
+    : day === "tomorrow" ? "Tomorrow" : part("weekday");
+  return {
+    eyebrow,
+    date: `${part("day")} ${part("month")}`,
+    fullDate: lagosDayLabel(feedDayOffset(day), anchor),
+  };
+}

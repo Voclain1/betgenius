@@ -526,3 +526,17 @@ html:not([data-top-banner-closed]) body:has([data-top-banner-page]) .top-banner-
     height: 90px;
   }
 }
+
+
+/* The prediction-date rail scrolls by touch or trackpad without a thick
+   platform scrollbar. Only this component hides the scrollbar: keyboard and
+   pointer users still have fully accessible links and desktop arrow buttons. */
+.feed-day-track {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-padding-inline: 0.5rem;
+}
+.feed-day-track::-webkit-scrollbar { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .feed-day-track { scroll-behavior: auto; }
+}

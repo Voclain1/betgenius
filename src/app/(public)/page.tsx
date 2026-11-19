@@ -387,13 +387,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
 
       {genius.length > 0 && (
         <section aria-labelledby="home-genius">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="mb-4 space-y-3">
             <SectionHead kicker="Our strongest calls" title="Genius tips" id="home-genius" />
-            {/* self-start so the control keeps its natural width in the stacked
-                mobile layout, matching Featured. */}
-            <div className="self-start sm:mb-4 sm:self-auto">
-              <FeedDayTabs basePath="/" active={day} />
-            </div>
+            <FeedDayTabs basePath="/" active={day} />
           </div>
           {/* The same tip table as every feed (crests, Score column, rows
               that open the match), so the homepage never falls behind it. */}
@@ -430,20 +426,14 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       )}
 
       <section aria-labelledby="home-featured">
-        {/* Stacks below sm. On one row at phone width the heading wrapped to two
-            lines and "View all" broke across three, with the pills squeezed
-            between them. The day control needs a full-width row of its own on a
-            narrow screen. */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
-          <div className="flex flex-wrap items-center justify-between gap-4 sm:mb-4 sm:justify-end">
-            {/* The two excerpts share one ?date=, so both controls show the same
-                active day. Repeated rather than hoisted because the sections are
-                far apart on the page — a reader at Featured should not have to
-                scroll back to the Genius header to change day. */}
-            <FeedDayTabs basePath="/" active={day} />
+        {/* Keep the heading/actions separate from the swipe rail at every
+            width. Both homepage excerpts share the same selected URL date. */}
+        <div className="mb-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
             <Link href="/predictions/featured" className={ARROW}>View all →</Link>
           </div>
+          <FeedDayTabs basePath="/" active={day} />
         </div>
         {/* Two different empty states. With nothing tagged FEATURED for the
             day, the original message. With FEATURED picks published but none
