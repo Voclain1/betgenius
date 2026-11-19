@@ -1,17 +1,15 @@
-# One-shot activation stage 2: read-only-to-public reassessment SHADOW only.
-# Capture stays SHADOW; auto-publication and automatic withdrawals stay OFF.
-name: Early activation - reassessment shadow validation
+# Stage 3: bounded real-world verification, ALL NEW FEATURES SHADOW/OFF.
+name: Early activation - verified shadow discovery and site smoke
 on:
   push:
     branches: ["claude/early-activation-20261119"]
     paths: [".github/workflows/early-activation-20261119.yml"]
-permissions:
-  contents: read
+permissions: { contents: read }
 concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  shadow-reassessment:
+  live-validation:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -20,87 +18,57 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Set monitoring to SHADOW only with health rollback and one live test
-        shell: bash
+      - name: Sample additional leagues and predictions safely, verify public pages
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          EXPECTED=fb4b1becd844db2909a833ba158c4d9414918fac
-          C=$(docker compose --env-file deploy.env ps -q app)
-          test -n "$C"
-          FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED"
-          echo "$FLAGS" | grep -qx "EARLY_FIXTURE_MODE=shadow"
-          echo "$FLAGS" | grep -qx "EARLY_FREE_PUBLICATION_MODE=off"
-          if echo "$FLAGS" | grep -q '^PREDICTION_REASSESSMENT_MODE='; then
-            echo "$FLAGS" | grep -qx "PREDICTION_REASSESSMENT_MODE=off"
-          fi
-          curl -fsS --max-time 10 http://127.0.0.1:3000/api/health > /dev/null
-          echo "=== Published candidates for shadow monitor (aggregate only) ==="
-          docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -Atc '
-            BEGIN READ ONLY;
-            SELECT '"'"'eligible_published'"'"',count(*) FROM "Prediction" WHERE status='"'"'PUBLISHED'"'"' AND kickoff > NOW() AND kickoff < NOW() + interval '"'"'7 days'"'"' AND "fixtureApiId" IS NOT NULL;
-            SELECT '"'"'public_holds_before'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
-            COMMIT;' < /dev/null
-          BACKUP=/opt/betgenius/app.env.before-reassess-shadow-20261119
-          if [ -e "$BACKUP" ]; then echo "REFUSED: snapshot exists; inspect before rerun"; exit 1; fi
-          cp -p app.env "$BACKUP"
-          chmod 600 "$BACKUP"
-          rollback() {
-            echo "MONITOR SHADOW FAILURE: restoring previous configuration"
-            cp -p "$BACKUP" app.env
-            docker compose --env-file deploy.env up -d --no-deps --force-recreate app || true
-          }
-          trap rollback ERR
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("app.env")
-          original=p.read_text().splitlines()
-          key="PREDICTION_REASSESSMENT_MODE"
-          result=[line for line in original if not line.startswith(key+"=")]
-          result.append(key+"=shadow")
-          p.write_text("\n".join(result)+"\n")
-          PY
-          docker compose --env-file deploy.env up -d --no-deps --force-recreate app
-          HEALTHY=no
-          for attempt in $(seq 1 36); do
-            if curl -fsS --max-time 5 http://127.0.0.1:3000/api/health > /dev/null 2>&1; then HEALTHY=yes; break; fi
-            sleep 3
-          done
-          test "$HEALTHY" = yes
           C=$(docker compose --env-file deploy.env ps -q app)
           FLAGS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$FLAGS" | grep -qx "APP_BUILD_ID=$EXPECTED"
-          echo "$FLAGS" | grep -qx "EARLY_FIXTURE_MODE=shadow"
-          echo "$FLAGS" | grep -qx "EARLY_FREE_PUBLICATION_MODE=off"
-          echo "$FLAGS" | grep -qx "PREDICTION_REASSESSMENT_MODE=shadow"
-          trap - ERR
-          echo "PASS: capture shadow, monitoring shadow, automatic publication off, healthy"
-          echo "=== One bounded real reassessment (limit=1, shadow) ==="
+          echo "$FLAGS" | grep -qx 'APP_BUILD_ID=fb4b1becd844db2909a833ba158c4d9414918fac'
+          echo "$FLAGS" | grep -qx 'EARLY_FIXTURE_MODE=shadow'
+          echo "$FLAGS" | grep -qx 'EARLY_FREE_PUBLICATION_MODE=off'
+          echo "$FLAGS" | grep -qx 'PREDICTION_REASSESSMENT_MODE=shadow'
+          curl -fsS --max-time 6 http://127.0.0.1:3000/api/health > /dev/null
+          echo "=== Bounded shadow discovery and reassessment ==="
           docker compose --env-file deploy.env exec -T app node - <<'NODE'
           (async () => {
-            if (!process.env.CRON_SECRET) throw new Error("Scheduler secret absent");
-            const response = await fetch("http://127.0.0.1:3000/api/admin/generate/reassess?limit=1", {
-              headers: { authorization: "Bearer " + process.env.CRON_SECRET },
-              cache: "no-store", signal: AbortSignal.timeout(95000),
-            });
-            const body = await response.json();
-            console.log(JSON.stringify({
-              status: response.status, mode: body.mode, ok: body.ok,
-              checked: body.checked, current: body.current,
-              flagged: body.flagged, withdrawn: body.withdrawn,
-              skipped: body.skipped, failures: body.failures, summary: body.summary,
-            }));
-            if (!response.ok || body.mode !== "shadow" || body.ok !== true || body.withdrawn !== 0)
-              process.exitCode = 1;
-          })().catch(e => { console.error("MONITOR_SHADOW_ERROR:", e.message); process.exitCode = 1; });
+            if (!process.env.CRON_SECRET) throw Error("Cron auth unavailable");
+            async function get(url) {
+              const r=await fetch("http://127.0.0.1:3000"+url, {
+                headers: {authorization:"Bearer "+process.env.CRON_SECRET},
+                cache:"no-store",signal:AbortSignal.timeout(95000),
+              });
+              const p=await r.json();
+              console.log(JSON.stringify({endpoint:url,status:r.status,mode:p.mode,ok:p.ok,
+                scanned:p.scanned,fixturesSeen:p.fixturesSeen,cached:p.cached,candidatesQueued:p.candidatesQueued,
+                quotaRemaining:p.quotaRemaining,checked:p.checked,current:p.current,flagged:p.flagged,
+                withdrawn:p.withdrawn,failures:p.failures,summary:p.summary}));
+              if(!r.ok||p.ok!==true)throw Error(url+" failed");
+              return p;
+            }
+            const discovery=await get("/api/admin/generate/early-discover?batch=3");
+            if(discovery.mode!=="shadow"||discovery.candidatesQueued!==0)throw Error("Unsafe capture mode or queued work");
+            const assessment=await get("/api/admin/generate/reassess?limit=2");
+            if(assessment.mode!=="shadow"||assessment.withdrawn!==0)throw Error("Unsafe monitoring mode or withdrawal");
+            for(const path of ["/predictions/weekend","/predictions/genius","/predictions/banker",
+              "/predictions/today","/predictions/midweek","/predictions/goals"]) {
+              const r=await fetch("http://127.0.0.1:3000"+path, {signal:AbortSignal.timeout(20000)});
+              const html=await r.text();
+              console.log(JSON.stringify({page:path,status:r.status,length:html.length,
+                hasTitle:/<title>[^<]+<\\/title>/.test(html)}));
+              if(r.status!==200||!html.includes("BetGenius"))throw Error("Public page regression: "+path);
+            }
+          })().catch(e=>{console.error("VALIDATION_FAILURE",e.message);process.exitCode=1;});
           NODE
-          echo "=== No public withdrawals, holds or revisions from SHADOW ==="
+          echo "=== Forward-horizon cache and public isolation ==="
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -Atc '
-            BEGIN READ ONLY;
-            SELECT '"'"'monitor_state'"'"',"status",count(*) FROM "PredictionReassessment" GROUP BY "status" ORDER BY "status";
-            SELECT '"'"'public_holds'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
-            SELECT '"'"'visible_revisions'"'"',count(*) FROM "PredictionRevision" WHERE "publiclyVisible" = true;
-            COMMIT;' < /dev/null
+          BEGIN READ ONLY;
+          SELECT '"'"'cache_total'"'"',count(*) FROM "UpcomingFixture";
+          SELECT '"'"'cache_48_to_168h'"'"',count(*) FROM "UpcomingFixture" WHERE kickoff > NOW()+interval '"'"'48 hours'"'"' AND kickoff <= NOW()+interval '"'"'168 hours'"'"' AND status='"'"'NS'"'"';
+          SELECT '"'"'early_queued'"'"',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
+          SELECT '"'"'reassessment_states'"'"',"status",count(*) FROM "PredictionReassessment" GROUP BY "status" ORDER BY "status";
+          SELECT '"'"'public_holds'"'"',count(*) FROM "PredictionReassessment" WHERE "publicHold" = true;
+          SELECT '"'"'visible_revisions'"'"',count(*) FROM "PredictionRevision" WHERE "publiclyVisible" = true;
+          COMMIT;' < /dev/null
           REMOTE
