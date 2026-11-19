@@ -140,6 +140,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
         fromHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS,
         untilHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS,
       });
+      if (!selected.candidates.length) continue;
       const created = await prisma.generationAttempt.createMany({
         data: selected.candidates.map((c) => ({
           matchKey: c.matchKey,
