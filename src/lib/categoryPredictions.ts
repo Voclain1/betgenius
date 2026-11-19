@@ -147,6 +147,11 @@ export function feedDayHref(slug: string, day: FeedDay): string {
 export function categoryFeedWhere(cat: PredictionCategory) {
   return {
     status: "PUBLISHED" as const,
+    // A materially challenged FREE selection is historical evidence, not an
+    // active recommendation. Suppress it across all public category/period
+    // feeds until an admin confirms or replaces it. Paid feeds keep their
+    // separate subscriber-safe review and publication protections.
+    ...(!PAID_FEEDS.has(cat) ? { NOT: { reassessment: { is: { status: "REVIEW_REQUIRED" } } } } : {}),
     // TODAY ignores category tags. Include the assembled double as part of
     // the regular mix, but continue excluding its internally tagged source
     // legs so one fixture never appears as three loose public picks.
