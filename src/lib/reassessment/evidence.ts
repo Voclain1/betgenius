@@ -53,12 +53,17 @@ export function fixtureSignals(originalKickoff: Date, fixture: FixtureEvidence |
 
 function normalized(name: string): string { return name.trim().toLocaleLowerCase("en").replace(/\s+/g, " "); }
 
-function unavailableSignals(side: string, oldTeam: TeamDigest, nextTeam: TeamDigest): EvidenceSignal[] {
+function unavailableSignals(side: string, oldTeam: TeamDigest, nextTeam: TeamDigest, now: Date): EvidenceSignal[] {
   // A null availabilityAsOf is missing data, not an empty injury list.
   if (!oldTeam.availabilityAsOf || !nextTeam.availabilityAsOf) return [];
   // Only consider genuinely newer provider snapshots. Old injury data is
   // historically noisy and can list players who have already returned.
   if (nextTeam.availabilityAsOf <= oldTeam.availabilityAsOf) return [];
+  const observationTime = Date.parse(nextTeam.availabilityAsOf);
+  // A provider can return last season's injury rows when no recent matches
+  // exist. Do not announce them as newly confirmed team news.
+  if (!Number.isFinite(observationTime) || observationTime > now.getTime() + 86_400_000
+    || now.getTime() - observationTime > 21 * 86_400_000) return [];
   const before = new Set(oldTeam.availability.map(p => normalized(p.player)));
   const fresh = nextTeam.availability.filter(p => !before.has(normalized(p.player)));
   const keyPlayers = new Set(nextTeam.keyPlayers.map(p => normalized(p.name)));
@@ -83,12 +88,12 @@ function formSignals(side: string, oldTeam: TeamDigest, nextTeam: TeamDigest): E
   }];
 }
 
-export function compareFootballEvidence(before: MatchDigest | null, after: MatchDigest | null): EvidenceSignal[] {
+export function compareFootballEvidence(before: MatchDigest | null, after: MatchDigest | null, now: Date = new Date()): EvidenceSignal[] {
   if (!before || !after) return [];
   const all: EvidenceSignal[] = [];
   for (const side of ["home", "away"] as const) {
     const oldTeam = before.teams[side], newTeam = after.teams[side];
-    all.push(...unavailableSignals(side, oldTeam, newTeam));
+    all.push(...unavailableSignals(side, oldTeam, newTeam, now));
     all.push(...formSignals(side, oldTeam, newTeam));
     if (oldTeam.coach?.name && newTeam.coach?.name
       && normalized(oldTeam.coach.name) !== normalized(newTeam.coach.name)) {
