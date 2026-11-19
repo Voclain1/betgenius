@@ -707,6 +707,31 @@ model AIJob {
 // everywhere. The unique constraint is also what makes concurrent or repeated
 // runs idempotent: bulk generation previously had NO duplicate guard at all and
 // would happily produce a second set of predictions for the same fixture.
+// Independent rolling fixture schedule. Unlike GenerationAttempt, a known
+// future match can exist here without implying it is ready for predictions.
+// Provider fixture id stays stable through postponements and kickoff changes.
+// No public or paid prediction is changed by a schedule synchronization.
+model UpcomingFixture {
+  fixtureApiId   Int       @id
+  leagueApiId    Int
+  leagueName     String
+  homeTeamApiId  Int
+  awayTeamApiId  Int
+  homeTeam       String
+  awayTeam       String
+  kickoff        DateTime
+  status         String
+  round          String?
+  discoveredAt   DateTime  @default(now())
+  lastSeenAt     DateTime
+  earlyQueuedAt  DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@index([kickoff, status])
+  @@index([leagueApiId, kickoff])
+  @@index([earlyQueuedAt])
+}
+
 model GenerationAttempt {
   id            String    @id @default(cuid())
   matchKey      String    @unique
