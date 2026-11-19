@@ -71,7 +71,7 @@ export async function periodMetadata(kind: PeriodKind): Promise<Metadata> {
   if (count === 0) {
     return {
       title: period.title,
-      description: `${period.name} are not published yet. Picks for each day are added up to two days before kickoff, and only those at ${PERIOD_PICK_FLOOR}% confidence or more are listed.`,
+      description: `${period.name} are not published yet. Picks for each day are added as qualifying selections become available, and only those at ${PERIOD_PICK_FLOOR}% confidence or more are listed.`,
       robots: { index: false, follow: true },
       alternates: { canonical: period.path },
     };
@@ -182,7 +182,7 @@ export async function PeriodPredictionsPage({ kind }: { kind: PeriodKind }) {
             ) : (
               <div className="card text-sm text-gray-400">
                 {notYet
-                  ? `${WEEKDAY.format(day.start)}'s picks are added from ${WEEKDAY.format(picksArriveFrom(day))}, as matches come inside two days of kickoff.`
+                  ? `${WEEKDAY.format(day.start)}'s picks are added from ${WEEKDAY.format(picksArriveFrom(day))}, as qualifying predictions become available.`
                   : `No other pick for this day cleared the ${PERIOD_PICK_FLOOR}% bar.`}
               </div>
             )}
