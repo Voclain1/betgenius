@@ -51,6 +51,8 @@ const TIERS: Array<keyof TierCounts> = ["CORE", "SECONDARY", "FALLBACK", "DEEP_F
 // catch "not scheduled at all", not to alert on a single missed tick.
 const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "generation-discovery": 60,
+  // Only expected after the external scheduler has been configured.
+  "early-fixture-discovery": 120,
   "refresh-odds": 60,
   "generate-vip-premium": 60,
   "generate-goals": 60,
@@ -73,6 +75,7 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
 
 const LABEL: Record<string, string> = {
   "generation-discovery": "Candidate discovery & coverage",
+  "early-fixture-discovery": "Early fixture capture (optional rollout)",
   "refresh-odds": "Odds refresh",
   "generate-vip-premium": "VIP / Premium pass",
   "generate-goals": "Goals pass",
