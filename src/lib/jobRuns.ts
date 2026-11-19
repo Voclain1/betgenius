@@ -48,6 +48,8 @@ export const JOB_REFRESH_ODDS = "refresh-odds" as const;
  * or stayed narrow) that /admin/jobs shows.
  */
 export const JOB_GENERATION_DISCOVERY = "generation-discovery" as const;
+/** Advance fixture availability independently of 48h generation. */
+export const JOB_EARLY_FIXTURE_DISCOVERY = "early-fixture-discovery" as const;
 /**
  * The notification jobs. Same reason as above: their schedules live in
  * cron-job.org, so the run history is the only way to tell a cron that never
@@ -71,6 +73,7 @@ export const JOB_REFRESH_INSIGHTS = "refresh-insights" as const;
 /** Every job this app records, for the admin view's benefit. */
 export const KNOWN_JOBS = [
   JOB_GENERATION_DISCOVERY,
+  JOB_EARLY_FIXTURE_DISCOVERY,
   JOB_REFRESH_ODDS,
   JOB_GENERATE_VIP_PREMIUM,
   JOB_GENERATE_GOALS,
