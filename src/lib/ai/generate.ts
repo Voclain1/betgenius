@@ -207,7 +207,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   });
 
   const startedAt = Date.now();
-  const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId);
+  const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId, input.intent);
   /**
    * The calibration route this row was ACTUALLY generated under, recorded on
    * the row itself.

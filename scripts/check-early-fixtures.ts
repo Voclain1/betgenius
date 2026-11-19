@@ -7,6 +7,7 @@ import { leaguesInTiers } from "../src/lib/leagues";
 import { GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
 import { maxQueuedKickoff } from "../src/lib/generation/queueWindow";
 import { readFileSync } from "node:fs";
+import { resolveGenerationRisk, EARLY_FREE_GENERATION_INTENT, VIP_ROUTE_LEAGUE_IDS } from "../src/lib/ai/generationRisk";
 import {
   EARLY_FIXTURE_POLICY,
   discoveryHorizonDays,
@@ -31,6 +32,18 @@ assert.equal(inEarlyGenerationWindow(hoursLater(168), now), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(169), now), false);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
 assert.equal(EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY, 20);
+
+// A paid CORE fixture remains VIP for the normal worker but a dedicated
+// early FREE job must be genuinely free-generated rather than re-labelled.
+const corePaidRoute = VIP_ROUTE_LEAGUE_IDS[0];
+assert.equal(resolveGenerationRisk(["FEATURED"], corePaidRoute).calibration, "vip");
+assert.equal(resolveGenerationRisk(["FEATURED"], corePaidRoute, EARLY_FREE_GENERATION_INTENT).calibration, "genius");
+assert.deepEqual(resolveGenerationRisk(["FEATURED"], corePaidRoute, EARLY_FREE_GENERATION_INTENT).promptTiers, ["GENIUS"]);
+assert.equal(resolveGenerationRisk(["VIP"], corePaidRoute, EARLY_FREE_GENERATION_INTENT).calibration, "vip");
+assert.equal(resolveGenerationRisk(["BANKER"], corePaidRoute, EARLY_FREE_GENERATION_INTENT).calibration, "legacy");
+assert.ok(readFileSync("src/lib/generation/earlyGeneration.ts", "utf8").includes("intent: EARLY_FREE_GENERATION_INTENT"),
+  "dedicated early worker must provide intent explicitly");
+assert.ok(readFileSync("src/lib/ai/generate.ts", "utf8").includes("resolveGenerationRisk(input.categories, input.leagueApiId, input.intent)"));
 
 assert.equal(earlyFixtureMode(undefined), earlyFixtureMode(process.env.EARLY_FIXTURE_MODE));
 assert.equal(earlyFixtureMode("off"), "off");
