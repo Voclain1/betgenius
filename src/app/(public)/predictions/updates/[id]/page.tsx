@@ -29,7 +29,7 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
   if (!row || !row.publishedAt) notFound();
   const viewer = await getViewerEntitlement();
   const category = presentedCategory(row.category, row.categories);
-  const visible = rowViewable({ ...row, category },
+  const visible = rowViewable(row,
     canViewCategory(category, viewer.tier, viewer.status, viewer.role),
     c => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role));
   const title = [row.homeTeam, row.awayTeam].filter(Boolean).join(" vs ") || "Match prediction";
