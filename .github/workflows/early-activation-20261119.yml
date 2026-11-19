@@ -56,7 +56,7 @@ jobs:
               const r=await fetch("http://127.0.0.1:3000"+path, {signal:AbortSignal.timeout(20000)});
               const html=await r.text();
               console.log(JSON.stringify({page:path,status:r.status,length:html.length,
-                hasTitle:/<title>[^<]+<\\/title>/.test(html)}));
+                hasTitle:html.includes('<title>')}));
               if(r.status!==200||!html.includes("BetGenius"))throw Error("Public page regression: "+path);
             }
           })().catch(e=>{console.error("VALIDATION_FAILURE",e.message);process.exitCode=1;});
