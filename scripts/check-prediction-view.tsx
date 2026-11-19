@@ -27,6 +27,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 // module load. Nothing here queries — the shim only lets the module load.
 import "./lib/reactCacheShim";
 import { CategoryPredictionsList } from "../src/components/CategoryPredictionsList";
+import { FeedDayTabs } from "../src/components/FeedDayTabs";
+import { FEED_DAYS, feedDayTabLabel, parseFeedDay } from "../src/lib/feedDays";
 import { PredictionViewSwitch } from "../src/components/PredictionViewSwitch";
 import { BankerPredictionsEvidence } from "../src/components/BankerPredictionsGuide";
 import {
@@ -76,6 +78,18 @@ const order = (s: string) => [...s.matchAll(/Home(\d+)Side/g)].map((m) => Number
 const ADS = 'aria-label="Advertisement"';
 const CARD = /<article\b/g;
 const TABLE = /<table\b/g;
+
+// The new date switcher must expose every day without scrolling horizontally.
+{
+  const output = html(<FeedDayTabs basePath="/predictions/genius" active="day-5" />);
+  check("all nine dates are links", count(output, 'href="/predictions/genius') === 9);
+  check("future day active state", /href="\/predictions\/genius\?date=day-5" aria-current="page"/.test(output));
+  check("mobile grid no sliding", output.includes("grid-cols-3") && !output.includes("overflow-x-auto"));
+  const anchor = new Date("2026-11-19T12:00:00Z");
+  check("future tabs show weekday and date", FEED_DAYS.slice(3).every(day =>
+    /^[A-Za-z]{3} \d{1,2} [A-Za-z]{3}$/.test(feedDayTabLabel(day, anchor))));
+  check("invalid date cannot expand scope", parseFeedDay("day-8") === "today");
+}
 
 // ===========================================================================
 // 1. TODAY is table-only

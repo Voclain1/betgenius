@@ -19,6 +19,8 @@ import { matchState } from "../src/lib/matchState";
 import { matchState as matchStateViaCentre } from "../src/lib/matchCentre";
 import { matchesSavedFilter, savedPredictionView } from "../src/lib/personalization";
 import { lockedPredictionView } from "../src/lib/lockedPrediction";
+import { FEED_DAYS, feedDayOffset, feedDayText, parseFeedDay } from "../src/lib/feedDays";
+import { lagosDayBounds } from "../src/lib/lagosDate";
 
 // categoryPredictions uses React's server-only cache(); the pure tier shims it.
 const react = require("react");
@@ -42,6 +44,12 @@ const MIN = 60_000;
 
 async function main() {
   const { CATEGORY_CHIP_LABELS, CATEGORY_NAMES } = await import("../src/lib/categoryPredictions");
+  const anchor = new Date("2026-11-19T23:30:00Z"); // Friday 20 Nov in Lagos.
+  eq("nine bounded dates", FEED_DAYS.length, 9);
+  eq("offsets -1 to +7", FEED_DAYS.map(feedDayOffset), [-1,0,1,2,3,4,5,6,7]);
+  eq("last date crosses week in Lagos", lagosDayBounds(feedDayOffset("day-7"), anchor).start.toISOString(), "2026-11-26T23:00:00.000Z");
+  eq("future days show human date", !feedDayText("day-4",anchor).includes("day-"), true);
+  eq("tampered future param falls back", parseFeedDay("day-99"), "today");
 console.log("status wording from the clock alone:");
 {
   const s = (nowOffset: number, extra: Record<string, unknown> = {}) => rowStatus({ kickoff: KICK, now: at(nowOffset), ...extra });
