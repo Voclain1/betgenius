@@ -1,3 +1,4 @@
+import { earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
@@ -714,7 +715,8 @@ export const GENIUS_CURATION_DAYS = 3;
 export async function curateGeniusTips(now: Date = new Date()) {
   const today = await curateCategory("GENIUS", now, 0);
   const ahead: Array<{ dayOffset: number; selected: number; added: number }> = [];
-  for (let d = 1; d < GENIUS_CURATION_DAYS; d++) {
+  const dayCount = earlyFixtureMode() === "on" ? 7 : GENIUS_CURATION_DAYS;
+  for (let d = 1; d < dayCount; d++) {
     const plan = await curateCategory("GENIUS", now, d);
     ahead.push({ dayOffset: d, selected: plan.selected, added: plan.added.length });
   }
@@ -889,7 +891,8 @@ async function curateBankerDay(now: Date, dayOffset: number): Promise<BankerPlan
 export async function curateBankerTips(now: Date = new Date()) {
   const today = await curateBankerDay(now, 0);
   const ahead: Array<{ dayOffset: number; selected: number; added: number; removed: number }> = [];
-  for (let d = 1; d < BANKER_CURATION_DAYS; d++) {
+  const dayCount = earlyFixtureMode() === "on" ? 7 : BANKER_CURATION_DAYS;
+  for (let d = 1; d < dayCount; d++) {
     const plan = await curateBankerDay(now, d);
     ahead.push({ dayOffset: d, selected: plan.selectedIds.length, added: plan.added.length, removed: plan.removed.length });
   }

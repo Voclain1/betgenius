@@ -395,6 +395,8 @@ model Prediction {
   category             String // primary category — kept in sync with `categories[0]` for backward compat
   categories           PredictionCategoryLink[]
   savedBy              SavedPrediction[]
+  reassessment         PredictionReassessment?
+  revisions            PredictionRevision[]
   leagueApiId          Int? // API-Football league id — see src/lib/leagues.ts for the known list
   leagueName           String?
   homeTeam             String? // free-text match info — not tied to the Fixture ingestion table
@@ -707,6 +709,79 @@ model AIJob {
 // everywhere. The unique constraint is also what makes concurrent or repeated
 // runs idempotent: bulk generation previously had NO duplicate guard at all and
 // would happily produce a second set of predictions for the same fixture.
+// Independent rolling fixture schedule. Unlike GenerationAttempt, a known
+// future match can exist here without implying it is ready for predictions.
+// Provider fixture id stays stable through postponements and kickoff changes.
+// No public or paid prediction is changed by a schedule synchronization.
+// Latest monitoring state for a published prediction. A missing or stale feed
+// is UNKNOWN, not evidence that the original prediction is still valid.
+model PredictionReassessment {
+  predictionId      String      @id
+  prediction        Prediction  @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  status            String      @default("UNASSESSED") // CURRENT | REVIEW_REQUIRED | WITHDRAWN | UNKNOWN
+  // Shadow records cases without impacting public feeds. Only live reviews
+  // can put an already-published FREE pick on public qualification hold.
+  publicHold        Boolean     @default(false)
+  checkedAt         DateTime?
+  nextCheckAt       DateTime?
+  lastEvidence      Json?
+  lastEvidenceAt    DateTime?
+  // Exact-pick median from a current provider-timestamped 5+ book quote.
+  lastOddsMedian    Float?
+  lastOddsAt        DateTime?
+  lastChangeHash    String?
+  summary           String?
+  proposedMarket    String?
+  proposedSelection Json?
+  proposedConfidence Int?
+  lastError         String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status, nextCheckAt])
+  @@index([checkedAt])
+}
+
+// Append-only record of a material post-publication decision or discovery.
+// Includes the original public choice so the recommendation cannot silently
+// change even when a replacement proposal is under review.
+model PredictionRevision {
+  id            String     @id @default(cuid())
+  predictionId  String
+  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  kind          String     // EVIDENCE_CHANGED | REVIEW_REQUIRED | WITHDRAWN | CONFIRMED
+  // Shadow evidence snapshots remain internal even if later enabled live.
+  publiclyVisible Boolean  @default(false)
+  reason        String
+  beforeJson    Json
+  afterJson     Json?
+  evidenceJson  Json?
+  recordedAt    DateTime   @default(now())
+
+  @@index([predictionId, recordedAt])
+}
+
+model UpcomingFixture {
+  fixtureApiId   Int       @id
+  leagueApiId    Int
+  leagueName     String
+  homeTeamApiId  Int
+  awayTeamApiId  Int
+  homeTeam       String
+  awayTeam       String
+  kickoff        DateTime
+  status         String
+  round          String?
+  discoveredAt   DateTime  @default(now())
+  lastSeenAt     DateTime
+  earlyQueuedAt  DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  @@index([kickoff, status])
+  @@index([leagueApiId, kickoff])
+  @@index([earlyQueuedAt])
+}
+
 model GenerationAttempt {
   id            String    @id @default(cuid())
   matchKey      String    @unique

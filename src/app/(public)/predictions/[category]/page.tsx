@@ -15,6 +15,7 @@ import {
   CATEGORY_BLURBS as BLURBS,
   CATEGORY_CHIP_LABELS,
   getCategoryPredictions,
+  getUpcomingWeekPredictions,
   parseFeedDay,
   dayShowsOutcomes,
   feedDayHref,
@@ -178,6 +179,17 @@ export default async function CategoryPage(
         },
   );
 
+  // Browse early FREE publications without changing the established 3-day tabs.
+  // Locked Banker selections remain locked until the normal entitlement passes.
+  const earlyRows = day === "today" && !hasDiscoveryFilters(searchParams)
+    ? await getUpcomingWeekPredictions(cat, new Date().toISOString()) : [];
+  const earlyShaped = earlyRows.map(r => canView
+    ? { ...r, category: cat, outcome: null }
+    : { ...r, category: cat, outcome: null, pick: "LOCKED",
+        reasoning: lockReason, matchPreview: null, confidence: null,
+        odds: null, overUnder: null, locked: true,
+        unlockHref: needsRegistration ? "/register" : "/pricing" });
+
   const slug = params.category;
   // TODAY's shared blurb says "every match happening today", which is the one
   // line that stops being true on the yesterday/tomorrow tabs. Every other
@@ -329,6 +341,16 @@ export default async function CategoryPage(
           compact={<CategoryPredictionsList category={cat} rows={shaped as any} withAds view="compact" />}
         />
         )
+      )}
+
+      {earlyShaped.length > 0 && !paidFeed && (
+        <section className="space-y-4 border-t border-brand-border pt-7" aria-label="Upcoming predictions">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">Upcoming predictions — next seven days</h2>
+            <p className="text-sm text-gray-400">Published selections for matches after tomorrow. Each remains subject to new match information before kickoff.</p>
+          </div>
+          <CategoryPredictionsList category={cat} rows={earlyShaped as any} view="compact" linkRows />
+        </section>
       )}
 
       {paidPerformance && <PaidPerformancePanel tier={cat === "PREMIUM" ? "Premium" : "VIP"} perf={paidPerformance} />}

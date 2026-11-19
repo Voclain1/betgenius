@@ -60,6 +60,8 @@
     "check:manual-category": "tsx scripts/check-manual-category-survives-curation.ts",
     "check:banker-curation": "tsx scripts/check-banker-curation.ts",
     "check:period-predictions": "tsx scripts/check-period-predictions.ts",
+    "check:early-fixtures": "tsx scripts/check-early-fixtures.ts",
+    "check:reassessment": "tsx scripts/check-reassessment.ts",
     "check:live-snapshot": "tsx scripts/check-live-snapshot.ts",
     "check:bulk-generation-dedupe": "tsx scripts/check-bulk-generation-dedupe.ts",
     "check:short-price-guard": "tsx scripts/check-short-price-guard.ts",
