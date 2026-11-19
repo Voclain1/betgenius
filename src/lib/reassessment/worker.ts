@@ -155,7 +155,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           continue;
         }
 
-        signals.push(...compareFootballEvidence(old, digest));
+        signals.push(...compareFootballEvidence(old, digest, now));
         // Only official starting XI data, close to kickoff, can trigger this.
         if (row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
           const lineups = await getFixtureLineups(row.fixtureApiId).catch(() => null);
