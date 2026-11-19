@@ -1,0 +1,48 @@
+# One-time operator-run early-fixture activation assessment.
+# Only runs when this workflow is changed on its dedicated branch.
+name: Early activation - production baseline (read only)
+on:
+  push:
+    branches: ["claude/early-activation-20261119"]
+    paths: [".github/workflows/early-activation-20261119.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: early-activation-production
+  cancel-in-progress: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Verify deployed build, runtime flags, database readiness, health
+        shell: bash
+        run: |
+          ssh vps 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/betgenius
+          echo "=== Deployed commit and container ==="
+          sed -n 's/^APP_TAG=/APP_TAG=/p' deploy.env
+          C=$(docker compose --env-file deploy.env ps -q app)
+          test -n "$C"
+          docker inspect --format 'container_status={{.State.Status}} started={{.State.StartedAt}}' "$C"
+          echo "=== Explicit allowlist of non-secret runtime feature flags ==="
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" |
+            grep -E '^(APP_BUILD_ID|EARLY_FIXTURE_MODE|EARLY_FREE_PUBLICATION_MODE|PREDICTION_REASSESSMENT_MODE)=' || true
+          echo "=== Local application health ==="
+          curl -fsS --max-time 8 http://127.0.0.1:3000/api/health | head -c 400
+          echo
+          echo "=== Live schema and aggregate baseline ==="
+          docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -Atc '
+            BEGIN READ ONLY;
+            SELECT '"'"'upcomingFixture'"'"',count(*) FROM "UpcomingFixture";
+            SELECT '"'"'reassessment'"'"',count(*) FROM "PredictionReassessment";
+            SELECT '"'"'revisions'"'"',count(*) FROM "PredictionRevision";
+            SELECT '"'"'early_queued'"'"',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
+            COMMIT;'
+          REMOTE
