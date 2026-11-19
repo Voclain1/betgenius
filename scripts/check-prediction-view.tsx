@@ -83,7 +83,8 @@ const TABLE = /<table\b/g;
 {
   const output = html(<FeedDayTabs basePath="/predictions/genius" active="day-5" />);
   check("all nine dates are links", count(output, 'href="/predictions/genius') === 9);
-  check("future day active state", /href="\/predictions\/genius\?date=day-5" aria-current="page"/.test(output));
+  check("future day active state", [...output.matchAll(/<a\\b[^>]*>/g)].some(m =>
+    m[0].includes('href="/predictions/genius?date=day-5"') && m[0].includes('aria-current="page"')));
   check("mobile grid no sliding", output.includes("grid-cols-3") && !output.includes("overflow-x-auto"));
   const anchor = new Date("2026-11-19T12:00:00Z");
   check("future tabs show weekday and date", FEED_DAYS.slice(3).every(day =>
