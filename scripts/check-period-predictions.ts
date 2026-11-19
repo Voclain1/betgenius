@@ -77,7 +77,7 @@ for (const [date, want] of Object.entries(MIDWEEK)) {
   check("early mode opens weekend on Monday", monday.state === "upcoming" && monday.days[0].key === "2026-10-16");
   const friday = periodWindow("midweek", at("2026-10-16"));
   check("early mode opens next midweek on Friday", friday.state === "upcoming" && friday.days[0].key === "2026-10-20");
-  check("early-mode arrival spans a week", lagosDateKey(picksArriveFrom(monday.days[0])) === "2026-10-08");
+  check("early-mode arrival spans a week", lagosDateKey(picksArriveFrom(monday.days[0])) === "2026-10-09");
   if (oldMode === undefined) delete process.env.EARLY_FIXTURE_MODE;
   else process.env.EARLY_FIXTURE_MODE = oldMode;
 }
