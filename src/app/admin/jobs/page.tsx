@@ -53,6 +53,8 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
   "generation-discovery": 60,
   // Only expected after the external scheduler has been configured.
   "early-fixture-discovery": 120,
+  "early-free-publication": 120,
+  "prediction-reassessment": 120,
   "refresh-odds": 60,
   "generate-vip-premium": 60,
   "generate-goals": 60,
@@ -76,6 +78,8 @@ const EXPECTED_WITHIN_MIN: Record<string, number> = {
 const LABEL: Record<string, string> = {
   "generation-discovery": "Candidate discovery & coverage",
   "early-fixture-discovery": "Early fixture capture (optional rollout)",
+  "early-free-publication": "Early free publication",
+  "prediction-reassessment": "Published prediction monitoring",
   "refresh-odds": "Odds refresh",
   "generate-vip-premium": "VIP / Premium pass",
   "generate-goals": "Goals pass",
@@ -131,6 +135,8 @@ export default function AdminJobs() {
           is told apart from one that was never scheduled — both produce nothing, and only one is a code problem.
         </p>
       </div>
+
+      <a href="/admin/reassessment" className="inline-flex text-sm font-semibold text-emerald-300 underline underline-offset-4 hover:text-white">View prediction health and reassessment cases →</a>
 
       {err && <div className="card text-red-400">{err}</div>}
 
