@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { leaguesInTiers } from "../src/lib/leagues";
+import { GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
 import {
   EARLY_FIXTURE_POLICY,
   discoveryHorizonDays,
@@ -36,7 +37,6 @@ assert.equal(earlyFixtureMode("on"), "on");
 assert.equal(earlyFixtureMode("invalid"), "off");
 
 // The existing 48h paid/final lane stays entirely independent.
-const { GENERATE_UNTIL_HOURS } = await import("../src/lib/generation/window");
 assert.equal(GENERATE_UNTIL_HOURS, 48);
 
 console.log("PASS: early fixture policy, bounded windows, quota, rollout and 48h isolation");
