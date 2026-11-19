@@ -5,6 +5,14 @@ on:
     paths:
       - "src/lib/generation/earlyFixturePolicy.ts"
       - "src/lib/generation/earlyFixtureDiscovery.ts"
+      - "src/lib/generation/earlyPublication.ts"
+      - "src/lib/reassessment/**"
+      - "src/app/api/admin/generate/early-publish/**"
+      - "src/app/api/admin/generate/reassess/**"
+      - "src/app/api/admin/reassessment/**"
+      - "src/app/admin/reassessment/**"
+      - "src/app/(public)/predictions/updates/**"
+      - "scripts/check-reassessment.ts"
       - "src/lib/generation/selector.ts"
       - "src/lib/periodPredictions.ts"
       - "src/app/api/admin/generate/early-discover/route.ts"
@@ -33,4 +41,5 @@ jobs:
           DATABASE_URL_UNPOOLED: "postgresql://user:pass@localhost:5432/betgenius"
       - run: npx tsc --noEmit
       - run: npm run check:early-fixtures
+      - run: npm run check:reassessment
       - run: npm run check:period-predictions
