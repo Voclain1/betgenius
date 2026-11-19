@@ -395,6 +395,8 @@ model Prediction {
   category             String // primary category — kept in sync with `categories[0]` for backward compat
   categories           PredictionCategoryLink[]
   savedBy              SavedPrediction[]
+  reassessment         PredictionReassessment?
+  revisions            PredictionRevision[]
   leagueApiId          Int? // API-Football league id — see src/lib/leagues.ts for the known list
   leagueName           String?
   homeTeam             String? // free-text match info — not tied to the Fixture ingestion table
@@ -711,6 +713,46 @@ model AIJob {
 // future match can exist here without implying it is ready for predictions.
 // Provider fixture id stays stable through postponements and kickoff changes.
 // No public or paid prediction is changed by a schedule synchronization.
+// Latest monitoring state for a published prediction. A missing or stale feed
+// is UNKNOWN, not evidence that the original prediction is still valid.
+model PredictionReassessment {
+  predictionId      String      @id
+  prediction        Prediction  @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  status            String      @default("UNASSESSED") // CURRENT | REVIEW_REQUIRED | WITHDRAWN | UNKNOWN
+  checkedAt         DateTime?
+  nextCheckAt       DateTime?
+  lastEvidence      Json?
+  lastEvidenceAt    DateTime?
+  lastChangeHash    String?
+  summary           String?
+  proposedMarket    String?
+  proposedSelection Json?
+  proposedConfidence Int?
+  lastError         String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status, nextCheckAt])
+  @@index([checkedAt])
+}
+
+// Append-only record of a material post-publication decision or discovery.
+// Includes the original public choice so the recommendation cannot silently
+// change even when a replacement proposal is under review.
+model PredictionRevision {
+  id            String     @id @default(cuid())
+  predictionId  String
+  prediction    Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  kind          String     // EVIDENCE_CHANGED | REVIEW_REQUIRED | WITHDRAWN | CONFIRMED
+  reason        String
+  beforeJson    Json
+  afterJson     Json?
+  evidenceJson  Json?
+  recordedAt    DateTime   @default(now())
+
+  @@index([predictionId, recordedAt])
+}
+
 model UpcomingFixture {
   fixtureApiId   Int       @id
   leagueApiId    Int
