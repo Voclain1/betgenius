@@ -11,14 +11,59 @@ type Dashboard = {
     proposedConfidence: number | null; predictionStatus: string; provenance: string }>;
 };
 
+function ReviewActions({ id, allowReplacement, onResolved }: { id: string; allowReplacement: boolean; onResolved: () => void }) {
+  const [action, setAction] = useState<"KEEP" | "WITHDRAW" | "REPLACE">("KEEP");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function submit() {
+    if (note.trim().length < 10) { setError("Please include a reason of at least 10 characters."); return; }
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/reassessment/resolve", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ predictionId: id, action, note }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(typeof payload.error === "string" ? payload.error : "Review decision failed.");
+      }
+      onResolved();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="space-y-3 border-t border-brand-border pt-4">
+      <label className="block text-xs font-semibold text-gray-400">Decision
+        <select value={action} onChange={e => setAction(e.target.value as "KEEP" | "WITHDRAW" | "REPLACE")}
+          className="mt-1 block w-full rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200">
+          <option value="KEEP">Retain original after review</option>
+          <option value="WITHDRAW">Withdraw original selection</option>
+          {allowReplacement && <option value="REPLACE">Approve replacement and archive original</option>}
+        </select>
+      </label>
+      <label className="block text-xs font-semibold text-gray-400">Reason
+        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+          placeholder="What changed and why is this decision justified?"
+          className="mt-1 block w-full rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" />
+      </label>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      <button type="button" disabled={busy || note.trim().length < 10}
+        onClick={() => void submit()}
+        className="rounded-lg border border-brand-border px-4 py-2 text-sm font-semibold text-gray-200 hover:bg-brand-card disabled:opacity-50">
+        {busy ? "Saving decision…" : "Record review decision"}
+      </button>
+    </div>
+  );
+}
+
 export default function ReassessmentDashboard() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
-    fetch("/api/admin/reassessment/health", { cache: "no-store" })
-      .then(r => { if (!r.ok) throw new Error("Could not load prediction health."); return r.json(); })
-      .then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  const refresh = () => fetch("/api/admin/reassessment/health", { cache: "no-store" })
+    .then(r => { if (!r.ok) throw new Error("Could not load prediction health."); return r.json(); })
+    .then(setData).catch(e => setError(e instanceof Error ? e.message : String(e)));
+  useEffect(() => { void refresh(); }, []);
 
   return (
     <main className="space-y-7">
@@ -72,6 +117,8 @@ export default function ReassessmentDashboard() {
                   <Link className="font-medium underline" href={"/admin/predictions/" + p.id}>Review prediction</Link>
                   <Link className="text-gray-400 underline" href={"/predictions/updates/" + p.id}>View public history</Link>
                 </div>
+                <ReviewActions id={p.id} allowReplacement={p.proposedConfidence != null && p.proposedConfidence >= 80}
+                  onResolved={() => void refresh()} />
               </article>
             ))}
           </section>
