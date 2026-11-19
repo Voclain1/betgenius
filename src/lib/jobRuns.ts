@@ -52,6 +52,8 @@ export const JOB_GENERATION_DISCOVERY = "generation-discovery" as const;
 export const JOB_EARLY_FIXTURE_DISCOVERY = "early-fixture-discovery" as const;
 /** Quality-gated early publishing of free picks. */
 export const JOB_EARLY_FREE_PUBLICATION = "early-free-publication" as const;
+/** Dedicated 2-7 day ordinary singles generation pass. */
+export const JOB_EARLY_GENERATION = "early-free-generation" as const;
 /** Evidence-aware post-publication monitoring. */
 export const JOB_PREDICTION_REASSESSMENT = "prediction-reassessment" as const;
 /**
@@ -79,6 +81,7 @@ export const KNOWN_JOBS = [
   JOB_GENERATION_DISCOVERY,
   JOB_EARLY_FIXTURE_DISCOVERY,
   JOB_EARLY_FREE_PUBLICATION,
+  JOB_EARLY_GENERATION,
   JOB_PREDICTION_REASSESSMENT,
   JOB_REFRESH_ODDS,
   JOB_GENERATE_VIP_PREMIUM,
