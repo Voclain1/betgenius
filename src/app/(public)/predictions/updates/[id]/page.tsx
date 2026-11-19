@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { canViewCategory, presentedCategory } from "@/lib/access";
+import { getViewerEntitlement } from "@/lib/viewerEntitlement";
+import { rowViewable } from "@/lib/lockedPrediction";
+import type { PredictionCategory } from "@/lib/enums";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +27,11 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
     },
   });
   if (!row || !row.publishedAt) notFound();
-  const paid = isPaidOnlyProvenance(row.provenance)
-    || row.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
+  const viewer = await getViewerEntitlement();
+  const category = presentedCategory(row.category, row.categories);
+  const visible = rowViewable({ ...row, category },
+    canViewCategory(category, viewer.tier, viewer.status, viewer.role),
+    c => canViewCategory(c as PredictionCategory, viewer.tier, viewer.status, viewer.role));
   const title = [row.homeTeam, row.awayTeam].filter(Boolean).join(" vs ") || "Match prediction";
   const withdrawn = row.reassessment?.status === "WITHDRAWN";
   const flagged = row.reassessment?.status === "REVIEW_REQUIRED";
@@ -41,12 +47,12 @@ export default async function PredictionUpdatePage({ params }: { params: { id: s
         </p>
       </div>
 
-      {paid ? (
+      {!visible ? (
         <section className="rounded-2xl border border-brand-border p-6">
-          <h2 className="text-xl font-semibold">Subscriber prediction</h2>
+          <h2 className="text-xl font-semibold">Restricted prediction</h2>
           <p className="mt-3 text-sm text-gray-400">
-            This recommendation belongs to a subscriber category. Its selection
-            and reassessment details are not available on the public page.
+            This selection and its detailed review history require the appropriate
+            account access. Original recommendations are preserved for authorized readers.
           </p>
           <Link href="/pricing" className="mt-4 inline-block text-sm font-semibold underline">View membership options</Link>
         </section>
