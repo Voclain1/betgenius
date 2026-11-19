@@ -39,7 +39,9 @@ export function feedDayTabLabel(day: FeedDay, anchor = new Date()): string {
   if (day === "yesterday") return "Yesterday";
   if (day === "today") return "Today";
   if (day === "tomorrow") return "Tomorrow";
-  return SHORT.format(lagosDayBounds(feedDayOffset(day), anchor).start);
+  const parts = SHORT.formatToParts(lagosDayBounds(feedDayOffset(day), anchor).start);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? "";
+  return `${get("weekday")} ${get("day")} ${get("month")}`;
 }
 
 /** Human-friendly copy instead of a raw day-4 query token. */
