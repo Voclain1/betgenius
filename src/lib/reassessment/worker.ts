@@ -163,20 +163,28 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         const nextCheckAt = new Date(now.getTime() + Math.max(15, next) * 60_000);
         const evidence = buildStoredContext(digest) as unknown as Prisma.InputJsonValue;
         if (!unique.length) {
+          // A prior material change is NOT resolved just because it hasn't
+          // changed again. Only a recorded review decision can clear the hold.
+          const unresolved = row.reassessment?.status === "REVIEW_REQUIRED";
+          const preservedStatus = unresolved ? "REVIEW_REQUIRED" : "CURRENT";
+          const preservedSummary = unresolved
+            ? row.reassessment?.summary ?? "A material change still requires review."
+            : "No verified material changes detected.";
           await prisma.predictionReassessment.upsert({
             where: { predictionId: row.id },
-            create: { predictionId: row.id, status: "CURRENT", checkedAt: now,
-              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, summary: "No verified material changes detected." },
-            update: { status: "CURRENT", checkedAt: now, nextCheckAt,
-              lastEvidence: evidence, lastEvidenceAt: now, summary: "No verified material changes detected.", lastError: null },
+            create: { predictionId: row.id, status: preservedStatus, checkedAt: now,
+              nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now, summary: preservedSummary },
+            update: { status: preservedStatus, checkedAt: now, nextCheckAt,
+              lastEvidence: evidence, lastEvidenceAt: now, summary: preservedSummary, lastError: null },
           });
-          report.current++;
+          if (unresolved) report.flagged++;
+          else report.current++;
           continue;
         }
 
         const newSignature = digestSignature(unique.map(s => s.code).sort());
         const alreadyRecorded = newSignature === row.reassessment?.lastChangeHash;
-        const criticalStatus = unique.find(s => s.source === "fixture" && s.code.startsWith("fixture-status-"));
+        const criticalStatus = unique.find(s => s.source === "fixture" && s.severity === "CRITICAL");
         const isPaid = isPaidOnlyProvenance(row.provenance) || row.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
         const summary = unique.map(s => s.message).join(" ").slice(0, 1000);
         let proposed: { marketType: string; selection: unknown; confidence: number; reasoning: string } | null = null;
