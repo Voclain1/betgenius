@@ -36,7 +36,7 @@ jobs:
           echo
           echo "=== Ops container + installed schedule ==="
           docker compose --env-file deploy.env ps ops
-          docker compose --env-file deploy.env exec -T ops sh -c 'grep -E "early-(discover|run|publish)|/generate/reassess" /etc/crontabs/root'
+          docker compose --env-file deploy.env exec -T ops sh -c 'grep -E "early-(discover|run|publish)|/generate/reassess" /etc/crontabs/root' < /dev/null
           echo "=== Durable scheduler history and qualification aggregates ==="
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
