@@ -118,30 +118,9 @@ T0=$(date +%s)
 
 # ── host ───────────────────────────────────────────────────────────────────
 step host "refuse the production VPS"
-listening_on() { # $1 = port; reads /proc so it needs no ss/netstat
-  # Only files that exist are read: a missing /proc/net/tcp6 (IPv6 disabled) must not make this
-  # fail open, which a `cat a b | awk` pipeline under pipefail would.
-  local hex f files=()
-  hex=$(printf '%04X' "$1")
-  for f in /proc/net/tcp /proc/net/tcp6; do [ -r "$f" ] && files+=("$f"); done
-  [ ${#files[@]} -gt 0 ] || die "cannot read /proc/net/tcp to check for production listeners"
-  awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p { found = 1 } END { exit !found }' "${files[@]}"
-}
-for marker in ${BGF_TEST_PROD_MARKERS:-/opt/betgenius /opt/school-kit /opt/schoolkit}; do
-  [ ! -e "$marker" ] || die "$marker exists: this looks like the production VPS. Run on an isolated machine (docs section 11)."
-done
-DOCKER="${BGF_TEST_DOCKER:-docker}"
-if command -v "$DOCKER" >/dev/null 2>&1; then
-  if "$DOCKER" ps --format '{{.Names}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -qiE 'betgenius|school'; then
-    die "BetGenius or School Kit containers are running on this host. Run on an isolated machine."
-  fi
-  if "$DOCKER" network ls --format '{{.Name}}' 2>/dev/null | grep -qx 'edge'; then
-    die "a Docker network named 'edge' exists (School Kit's shared network on the VPS). Run on an isolated machine."
-  fi
-fi
-if listening_on "${BGF_TEST_PROD_PORT:-5433}"; then
-  die "something listens on port ${BGF_TEST_PROD_PORT:-5433}, the VPS Postgres host port. Run on an isolated machine."
-fi
+# shellcheck source=lib-host-check.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib-host-check.sh"
+if HOST_REASON=$(bgf_production_host_reason); then die "$HOST_REASON"; fi
 echo "   no production markers, containers, networks or listeners; client environment cleared"
 
 # ── dump ───────────────────────────────────────────────────────────────────

@@ -72,3 +72,56 @@ jobs:
       # refusals, two-table restore, teardown, validation, evaluation, canaries.
       - name: Isolated real-data runner (synthetic dump)
         run: BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-isolated-run.sh
+
+      # Owner-run R2 fetch wrapper, end to end with a FAKE rclone and a SYNTHETIC dump
+      # (fictional credentials that must never appear in output).
+      - name: Fetch-and-run wrapper (fake rclone, synthetic dump)
+        run: BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-fetch-and-run.sh
+
+  # Production dumps are written by pg_dump 17 (deploy/ops is postgres:17-alpine).
+  # This job proves the isolated runner against real Postgres 17 binaries, and a
+  # 17 dump restored by 18 (an owner machine with a newer Postgres). SYNTHETIC
+  # data only; no secrets. Packages come from the official PGDG repository.
+  restore-postgres-17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: research/forecasting/requirements.txt
+
+      - name: Python dependencies
+        run: pip install -r research/forecasting/requirements.txt
+
+      # Packaged clusters are NOT created: an auto-started cluster could sit on
+      # 5433, the VPS Postgres port, which the runner correctly refuses.
+      - name: Postgres 17 and 18 binaries (PGDG)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-common
+          echo 'create_main_cluster = false' | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -q postgresql-17 postgresql-18
+          /usr/lib/postgresql/17/bin/pg_restore --version
+          /usr/lib/postgresql/18/bin/pg_restore --version
+
+      - name: Isolated runner, Postgres 17 dump restored by Postgres 17 (the production case)
+        run: PG_BIN=/usr/lib/postgresql/17/bin BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-isolated-run.sh
+
+      - name: Isolated runner, Postgres 17 dump restored by Postgres 18
+        run: DUMP_PG_BIN=/usr/lib/postgresql/17/bin PG_BIN=/usr/lib/postgresql/18/bin BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-isolated-run.sh
+
+      - name: Fetch-and-run wrapper on Postgres 17 (fake rclone, synthetic dump)
+        run: PG_BIN=/usr/lib/postgresql/17/bin BGF_PYTHON="$(command -v python)" bash research/forecasting/restore/check-fetch-and-run.sh
