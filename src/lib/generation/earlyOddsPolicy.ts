@@ -69,6 +69,31 @@ export function earlyQuotedSelection(input: {
   } };
 }
 
+/**
+ * The generator should not spend inference on an unpriced early fixture. The
+ * bookmaker market must already have opened and have at least one usable
+ * above-floor exact line; publication rechecks the specific generated pick.
+ */
+export function earlyFixturePricedForGeneration(input: {
+  odds: FixtureOdds | null; fetchedAt: Date | null; kickoff: Date; now: Date;
+}): boolean {
+  const { odds, fetchedAt, kickoff, now } = input;
+  if (!odds?.update || !fetchedAt) return false;
+  const providerAt = new Date(odds.update);
+  const lead = kickoff.getTime() - now.getTime();
+  if (!Number.isFinite(providerAt.getTime()) || providerAt > now ||
+      providerAt > kickoff || fetchedAt > now ||
+      fetchedAt.getTime() < providerAt.getTime() - 5 * 60_000 ||
+      lead <= 48 * HOUR || lead > EARLY_ODDS_MAX_HORIZON_DAYS * DAY ||
+      now.getTime() - providerAt.getTime() > earlyOddsBand(kickoff, now).maxQuoteAgeMs)
+    return false;
+  const minBooks = earlyOddsBand(kickoff, now).minBooks;
+  return odds.markets.some(m =>
+    ["Match Winner", "Double Chance", "Goals Over/Under", "Both Teams Score"].includes(m.market) &&
+    m.selections.some(v => v.bookmakers >= minBooks &&
+      Number.isFinite(v.median) && v.median >= AUTO_MIN_MEDIAN_ODDS));
+}
+
 export function earlyOddsRefreshDue(input: {
   kickoff: Date; now: Date; fetchedAt: Date | null; lastAttemptAt: Date | null;
 }): boolean {
