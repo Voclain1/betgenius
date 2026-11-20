@@ -22,8 +22,10 @@ import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { matchKey } from "@/lib/slug";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import { matchOddsState } from "@/lib/matchOdds";
+import { earlyQuotedSelection } from "@/lib/generation/earlyOddsPolicy";
+import { isDedicatedEarlyFreeJob } from "@/lib/generation/earlyPublication";
 import {
-  compareFootballEvidence, confirmedLineupSignals, fixtureSignals, reassessmentIntervalMinutes, oddsMovementSignal,
+  compareFootballEvidence, confirmedLineupSignals, fixtureSignals, reassessmentIntervalMinutes, oddsMovementSignal, earlyOddsFloorCrossing,
   type EvidenceSignal, type FixtureEvidence,
 } from "@/lib/reassessment/evidence";
 
@@ -111,10 +113,10 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
   try {
     const limit = Math.max(1, Math.min(MAX_REASSESSMENTS_PER_RUN, Math.trunc(input.limit ?? MAX_REASSESSMENTS_PER_RUN)));
     const rows = await prisma.prediction.findMany({
-      where: { status: "PUBLISHED", kickoff: { gt: now, lte: new Date(now.getTime() + 7 * 86_400_000) },
+      where: { status: "PUBLISHED", kickoff: { gt: now, lte: new Date(now.getTime() + 14 * 86_400_000) },
         fixtureApiId: { not: null } },
       include: {
-        aiJob: { select: { context: true } },
+        aiJob: { select: { context: true, prompt: true } },
         categories: true, reassessment: true,
       },
       orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }],
@@ -226,12 +228,26 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         }) : null;
         const mapped = toBookmakerSelection(row.marketType, row.selection);
         const quote = oddsState?.state === "current" && mapped ? findSelection(odds, mapped.market, mapped.value) : null;
-        const latestOdds = quote && oddsState?.asOf && quote.bookmakers >= 5
-          && Number.isFinite(quote.median) && quote.median > 1
-          ? { median: quote.median, bookmakers: quote.bookmakers, at: oddsState.asOf } : null;
+        // Preserve the match-page 2h clock for ordinary picks. Only the
+        // dedicated EARLY FREE lane may use a lead-time-aware quote window.
+        const isEarlyFree = isDedicatedEarlyFreeJob(row.aiJob?.prompt, row.fixtureApiId);
+        const earlyQuote = isEarlyFree ? earlyQuotedSelection({
+          odds, fetchedAt: quoteCache?.fetchedAt ?? null, kickoff: row.kickoff,
+          now, marketType: row.marketType, selection: row.selection,
+          allowBelowFloor: true,
+        }) : null;
+        const latestOdds = earlyQuote?.ok
+          ? { median: earlyQuote.quote.median, bookmakers: earlyQuote.quote.bookmakers,
+              at: earlyQuote.quote.providerAt }
+          : quote && oddsState?.asOf && quote.bookmakers >= 5
+              && Number.isFinite(quote.median) && quote.median > 1
+            ? { median: quote.median, bookmakers: quote.bookmakers, at: oddsState.asOf }
+            : null;
         const previousOdds = row.reassessment?.lastOddsMedian && row.reassessment.lastOddsAt
-          ? { median: row.reassessment.lastOddsMedian, at: row.reassessment.lastOddsAt, bookmakers: 5 } : null;
-        signals.push(...oddsMovementSignal(previousOdds, latestOdds, now));
+          ? { median: row.reassessment.lastOddsMedian, at: row.reassessment.lastOddsAt,
+              bookmakers: isEarlyFree ? 3 : 5 } : null;
+        signals.push(...oddsMovementSignal(previousOdds, latestOdds, now, isEarlyFree ? row.kickoff : undefined));
+        if (isEarlyFree) signals.push(...earlyOddsFloorCrossing(previousOdds, latestOdds, now, row.kickoff));
         const oddsColumns = latestOdds ? { lastOddsMedian: latestOdds.median, lastOddsAt: latestOdds.at } : {};
         // Only official starting XI data, close to kickoff, can trigger this.
         if (row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
