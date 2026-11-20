@@ -62,6 +62,17 @@ cost and tests are available.
   remain gated by runtime flags, so installing the scheduler is inert with OFF.
   The on-VPS ops container must be rebuilt/restarted by `deploy-vps` for the
   entries to take effect. Verify scheduler logs and `JobRun` outcomes.
+- **Tier-aligned early FREE publishing (PR #216):** early generation still
+  creates FEATURED drafts 2–7 days ahead using the GENIUS/free model route.
+  Automatic publication requires **70%**, matching regular Genius and Goals
+  (NOT VIP's 75% and NOT Premium's 80%). These are editorial model confidence
+  scores, not verified winning probabilities. The publisher still refuses
+  incomplete two-sided football evidence, invalid structured markets, stale or
+  rescheduled fixtures, non-dedicated generation jobs, paid provenance/tags,
+  source combo legs and late/early kickoffs. Genius/Banker may curate published
+  free rows under their unchanged policies; dedicated paid VIP/Premium creation,
+  odds/value checks and entitlement boundaries are entirely separate. No
+  minimum daily quota may weaken these gates.
 - **Deployment-persistence fix:** after PR #214, `deploy-vps` stages the
   incoming GitHub `PROD_ENV_FILE` on the VPS, then the validated, atomic
   `deploy/ops/merge-rollout-env.py` retains exactly these three activation

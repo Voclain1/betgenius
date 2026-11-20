@@ -12,6 +12,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { earlyPublicationBlock, earlyPublicationMode, isDedicatedEarlyFreeJob,
   EARLY_PUBLICATION_CONFIDENCE_FLOOR } from "../src/lib/generation/earlyPublication";
+import { GENIUS_CONFIDENCE_FLOOR, VIP_CONFIDENCE_FLOOR, PREMIUM_CONFIDENCE_FLOOR } from "../src/lib/geniusCuration";
+import { GOALS_MIN_CONFIDENCE } from "../src/lib/goalsGeneration";
 
 const now = new Date("2026-11-19T09:00:00.000Z");
 const inHours = (n: number) => new Date(now.getTime() + n * 3_600_000);
@@ -119,7 +121,14 @@ assert.ok(monitorSource.includes("const recordReceipt = shouldRecordReassessment
   "live-first renewal of a shadow alert must create visible receipt and notice");
 assert.equal(reassessmentMode("bad"), "off");
 assert.equal(earlyPublicationMode("bad"), "off");
-assert.equal(EARLY_PUBLICATION_CONFIDENCE_FLOOR, 80);
+// The free early lane must never inherit the VIP or Premium floor. Its bar is
+// identical to existing FREE Genius/Goals, but qualifying still demands the
+// provider, structural and evidence checks below.
+assert.equal(GENIUS_CONFIDENCE_FLOOR, 70);
+assert.equal(GOALS_MIN_CONFIDENCE, GENIUS_CONFIDENCE_FLOOR);
+assert.equal(VIP_CONFIDENCE_FLOOR, 75);
+assert.equal(PREMIUM_CONFIDENCE_FLOOR, 80);
+assert.equal(EARLY_PUBLICATION_CONFIDENCE_FLOOR, GENIUS_CONFIDENCE_FLOOR);
 const candidate = {
   id: "p1", status: "PENDING_REVIEW", provenance: "STANDARD_CURATED", fixtureApiId: 1,
   kickoff: inHours(120), contextComplete: true, confidence: 83,
@@ -127,7 +136,19 @@ const candidate = {
   categories: ["FEATURED"], earlyJobVerified: true,
 };
 assert.equal(earlyPublicationBlock({ ...candidate, marketType: "OTHER" }, prior, now), "invalid-market");
-assert.equal(earlyPublicationBlock({ ...candidate, confidence: 74 }, prior, now), "below-early-confidence-floor");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 69 }, prior, now), "below-early-confidence-floor");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70 }, prior, now), null,
+  "a 70% early FREE pick with genuine two-sided evidence qualifies");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 74 }, prior, now), null,
+  "free picks in the 70–74 band must not be held to VIP's 75% bar");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 79 }, prior, now), null,
+  "free picks in the 75–79 band must not be held to Premium's 80% bar");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, categories: ["PREMIUM"] }, prior, now), "reserved-category");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, provenance: "VIP_GENERATED" }, prior, now), "protected-provenance");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, contextComplete: false }, prior, now), "no-reliable-evidence");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, earlyJobVerified: false }, prior, now), "not-dedicated-early-free-job");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, categories: ["FEATURED", "GOALS"] }, prior, now), null,
+  "derived free GOALS tag must not prevent normal early Featured publication");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["VIP"] }, prior, now), "reserved-category");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["SAME_GAME_DOUBLE"] }, prior, now), "combo-source-or-double");
 assert.equal(earlyPublicationBlock(candidate, null, now), "no-reliable-evidence");

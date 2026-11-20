@@ -9,7 +9,7 @@ import type { MatchDigest } from "@/lib/ai/digest";
 import { parseStoredContext } from "@/lib/ai/context";
 import { applyReviewAction } from "@/lib/predictions";
 import { isValidSelection, type MarketType } from "@/lib/markets";
-import { DEDICATED_PAID_PROVENANCES } from "@/lib/geniusCuration";
+import { DEDICATED_PAID_PROVENANCES, GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 import { earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { getUsageSnapshot } from "@/lib/football/usage";
@@ -20,8 +20,18 @@ export function earlyPublicationMode(value: string | undefined = process.env.EAR
   return value === "shadow" || value === "on" ? value : "off";
 }
 
-/** This is deliberately higher than the period-feed 75% threshold. */
-export const EARLY_PUBLICATION_CONFIDENCE_FLOOR = 80;
+/**
+ * The early lane is FREE, using the same 70% bar as regular Genius and the
+ * free Goals generator. 75% is VIP's separate tier floor and 80% belongs to
+ * Premium; applying Premium's floor to free early tips made nearly every
+ * genuine candidate permanently ineligible (20 Nov production audit).
+ *
+ * This is only ONE of multiple gates. A 70 score does not mean a validated
+ * 70% success probability. The dedicated-free-job identity, 48–168h window,
+ * fixture freshness, evidence, market structure, and paid exclusions remain
+ * mandatory. The paid generation/capacity/value routes are unchanged.
+ */
+export const EARLY_PUBLICATION_CONFIDENCE_FLOOR = GENIUS_CONFIDENCE_FLOOR;
 export const EARLY_PUBLISH_MAX_PER_RUN = 8;
 
 /** Trust the immutable saved input of the dedicated job, not only shared
