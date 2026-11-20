@@ -33,29 +33,45 @@ export const SELECTIVE_LEAGUES: Readonly<Record<number, SelectiveLeagueRule>> = 
   286: { name: "Serbian Super Liga", topN: 4, minPlayed: 5 },
   333: { name: "Ukrainian Premier League", topN: 4, minPlayed: 5 },
   235: { name: "Russian Premier League", topN: 4, minPlayed: 5 },
-  // Comparable secondary domestic leagues: quality beats sheer fixture count.
-  399: { name: "Nigeria NPFL", topN: 5, minPlayed: 5 },
-  113: { name: "Swedish Allsvenskan", topN: 4, minPlayed: 5 },
-  103: { name: "Norway Eliteserien", topN: 4, minPlayed: 5 },
-  345: { name: "Czech Liga", topN: 4, minPlayed: 5 },
-  119: { name: "Danish Superliga", topN: 4, minPlayed: 5 },
-  106: { name: "Polish Ekstraklasa", topN: 4, minPlayed: 5 },
-  197: { name: "Greek Super League 1", topN: 4, minPlayed: 5 },
 };
 
 /**
- * Fallback domestic LEAGUES follow the same selectivity instead of treating
- * every lower-division fixture as equally worth evaluating. Cups, national
- * teams, and senior women's competitions keep their separate existing gates.
- * Established high-coverage European SECONDARY leagues remain unchanged.
+ * Full-fixture analysis coverage across major domestic competitions. EPL and
+ * La Liga are examples, never the boundary. This explicit exemption protects
+ * major competitions even if a schedule temporarily places them in FALLBACK.
+ *
+ * These leagues still need actual fixture evidence, confidence and bookmaker
+ * quotes before any prediction can be published. 'Eligible' != 'published'.
+ * Regional selectivity requested for Saudi/UAE/Kuwait/etc is separate.
+ */
+export const FULL_FIXTURE_DOMESTIC_LEAGUE_IDS: readonly number[] = [
+  39, 140, 135, 78, 61, // European top five
+  88, 94, 144, 203, // Netherlands, Portugal, Belgium, Turkey
+  207, 218, 179, // Switzerland, Austria, Scotland
+  119, 103, 113, 106, 197, 345, // Denmark, Norway, Sweden, Poland, Greece, Czechia
+  71, 399, // Brazil Serie A and Nigeria NPFL
+  128, 239, 262, 253, // Argentina, Colombia, Mexico, MLS
+  98, 292, 233, // Japan J1, Korea K1, Egypt Premier League
+];
+const FULL_FIXTURE_DOMESTIC_SET = new Set<number>(FULL_FIXTURE_DOMESTIC_LEAGUE_IDS);
+
+/**
+ * Only explicitly selected secondary/regional leagues, or genuinely lower/
+ * minor competitions in fallback tiers, receive strong-club filtering.
+ * Major world leagues in FALLBACK are never treated as minor solely because
+ * their tier is used for provider-call scheduling. Cups and women's leagues
+ * retain their own rules.
  */
 export function selectiveLeagueRule(leagueApiId: number | null | undefined): SelectiveLeagueRule | null {
   if (leagueApiId == null) return null;
+  if (FULL_FIXTURE_DOMESTIC_SET.has(leagueApiId)) return null;
   if (SELECTIVE_LEAGUES[leagueApiId]) return SELECTIVE_LEAGUES[leagueApiId];
   const tier = generationTierOf(leagueApiId);
   if (tier !== "FALLBACK" && tier !== "DEEP_FALLBACK") return null;
   const league = LEAGUE_CATALOGUE.find(l => l.id === leagueApiId);
-  if (!league || league.kind !== "league" || isSeniorWomensCompetition(leagueApiId)) return null;
+  if (!league || league.kind !== "league" ||
+      isSeniorWomensCompetition(leagueApiId) ||
+      (league.tier !== "lower" && league.tier !== "minor")) return null;
   return { name: league.name, topN: 4, minPlayed: 5 };
 }
 
