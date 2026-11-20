@@ -51,6 +51,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
 
+      - name: VPS rollout state survives deployment (no secret values)
+        run: python3 scripts/check-rollout-env.py
+
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
 

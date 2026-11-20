@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { feedDayText, type FeedDay } from "@/lib/feedDays";
 
-export function TodayPredictionsGuide({ dateLabel, day = "today" }: { dateLabel: string; day?: "yesterday" | "today" | "tomorrow" }) {
+export function TodayPredictionsGuide({ dateLabel, day = "today" }: { dateLabel: string; day?: FeedDay }) {
   return (
     <details className="card group">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-semibold marker:hidden sm:text-lg">
-        <span>How to use football predictions for {day}</span>
+        <span>How to use football predictions for {feedDayText(day)}</span>
         <span aria-hidden="true" className="shrink-0 text-sm font-normal text-brand group-open:hidden">Read guide +</span>
         <span aria-hidden="true" className="hidden shrink-0 text-sm font-normal text-brand group-open:inline">Close −</span>
       </summary>
@@ -20,11 +21,11 @@ export function TodayPredictionsGuide({ dateLabel, day = "today" }: { dateLabel:
   );
 }
 
-export function TodayPredictionsEvidence({ day = "today" }: { day?: "yesterday" | "today" | "tomorrow" }) {
+export function TodayPredictionsEvidence({ day = "today" }: { day?: FeedDay }) {
   return (
     <div className="space-y-6 [&_[id]]:scroll-mt-36">
       <section className="card space-y-4" aria-labelledby="daily-football-guide">
-        <h2 id="daily-football-guide" className="text-xl font-semibold">Football predictions for {day}: choosing a market that fits the match</h2>
+        <h2 id="daily-football-guide" className="text-xl font-semibold">Football predictions for {feedDayText(day)}: choosing a market that fits the match</h2>
         <p className="text-sm leading-6 text-gray-300">
           A football prediction is a view about a particular outcome, rather than a promise about the whole match.
           A team can avoid defeat without winning, and a match can produce three goals without both teams scoring.
@@ -54,7 +55,7 @@ export function TodayPredictionsEvidence({ day = "today" }: { day?: "yesterday" 
       <section className="card space-y-4" aria-labelledby="compare-daily-picks">
         <h2 id="compare-daily-picks" className="text-xl font-semibold">How to compare football betting tips before kick-off</h2>
         <ol className="list-decimal space-y-3 pl-5 text-sm leading-6 text-gray-300">
-          <li><strong className="text-white">Check the date and match status.</strong> This feed uses West Africa Time, the same time zone as Nigeria. A completed match is a result to review, rather than a new pre-match opportunity. Use the day tabs to distinguish the current card from yesterday’s results and tomorrow’s published tips.</li>
+          <li><strong className="text-white">Check the date and match status.</strong> This feed uses West Africa Time, the same time zone as Nigeria. A completed match is a result to review, rather than a new pre-match opportunity. Use the dated tabs to browse published picks up to seven days ahead. Empty days have no published selections yet.</li>
           <li><strong className="text-white">Read beyond the last result.</strong> Look at the strength of recent opponents, home and away form, scoring patterns and the size of the sample. One large win or an old head-to-head meeting may give a misleading picture of the current teams.</li>
           <li><strong className="text-white">Check what evidence is available.</strong> Match pages can include team statistics, head-to-head meetings and line-ups where supplied. Check their dates and whether line-ups are confirmed. Missing information adds uncertainty; it should not be treated as evidence that a player is available.</li>
           <li><strong className="text-white">Compare confidence with the actual selection.</strong> A confidence rating helps compare the assessment behind a pick. It is not a measured guarantee of the result. Two selections with similar ratings may cover different outcomes and carry different odds.</li>

@@ -113,7 +113,7 @@ const teaserSettled = hero(botd(g(2.4), "LOST", Date.now() - 6 * 3_600_000));
 for (const [label, out] of [["upcoming", teaserPending], ["settled", teaserSettled]] as const) {
   check(`BOTD hero (${label}): keeps the teams`, out.includes("Arsenal") && out.includes("Chelsea"), out);
   check(`BOTD hero (${label}): no pick, market, odds, confidence or price note`, !/Match Winner|2\.40|Odds|confidence|77%|Best of|Price not available/.test(out), out);
-  check(`BOTD hero (${label}): no result, score or full-time label`, !/\b(Won|Lost|Void|Result|Full time)\b/.test(out) && !/\b2\s*1\b/.test(out), out);
+  check(`BOTD hero (${label}): no result, score or full-time label`, !/\b(Won|Lost|Void|Result|Full time)\b/.test(out) && !/\b2\s*[-:–]\s*1\b/.test(out), out);
 }
 check("BOTD page: still shows the pick, odds and confidence", live.includes("Match Winner") && live.includes("2.40") && live.includes("77%"), live);
 

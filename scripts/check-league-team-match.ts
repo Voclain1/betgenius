@@ -46,5 +46,16 @@ for (const f of ["src/app/admin/ai/page.tsx", "src/app/admin/predictions/new/pag
   check(`${f}: asks the admin to confirm a mismatch`, /withLeagueConfirm\(/.test(src(f)));
 }
 
+// The production diagnostic uses an owner-initiated workflow only; logs from
+// public GitHub Actions must not disclose unpublished picks or author data.
+const auditWorkflow = src(".github/workflows/inspect-league-mismatch.yml");
+check("production diagnostic requires explicit manual dispatch",
+  /workflow_dispatch:/.test(auditWorkflow) && !/\bpush:\s*\n/.test(auditWorkflow));
+const auditSource = src("scripts/inspect-league-mismatch.ts");
+check("diagnostic verifies a read-only transaction",
+  /transaction_read_only/.test(auditSource) && /REQUIRE_READ_ONLY/.test(auditSource));
+check("diagnostic never logs unpublished picks or author identities",
+  !/r\.(market|pick|author|categories|provenance|aiJobId|authorId)/.test(auditSource));
+
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
 console.log("\nleague/team checks passed");

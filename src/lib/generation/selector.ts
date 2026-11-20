@@ -119,12 +119,14 @@ export async function selectCandidates(opts: {
  */
 export async function candidatesFromFixtures(
   rows: FixtureRow[],
-  opts: { now: Date; limit: number },
+  opts: { now: Date; limit: number; fromHours?: number; untilHours?: number },
 ): Promise<{ candidates: Candidate[]; scanned: number; reservedForPaidTier: number; newToLedger: Set<string> }> {
   const now = opts.now;
   const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
-  const from = new Date(now.getTime() + SAME_DAY_GENERATE_FROM_HOURS * 3_600_000);
-  const until = new Date(now.getTime() + GENERATE_UNTIL_HOURS * 3_600_000);
+  // The default is unchanged (2–48h). Only the separate, opt-in early lane
+  // supplies a different bound; VIP/Premium and fallback still use 12–48h.
+  const from = new Date(now.getTime() + (opts.fromHours ?? SAME_DAY_GENERATE_FROM_HOURS) * 3_600_000);
+  const until = new Date(now.getTime() + (opts.untilHours ?? GENERATE_UNTIL_HOURS) * 3_600_000);
 
   // Only unstarted fixtures with both team ids and a kickoff genuinely inside
   // the window — the day-granular API query returns whole days at the edges.

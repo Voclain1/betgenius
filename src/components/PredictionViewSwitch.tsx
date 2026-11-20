@@ -78,7 +78,7 @@ export function PredictionViewSwitch({
   return (
     <>
       <div className={`flex flex-wrap items-center gap-3 ${tabs ? "justify-between" : "justify-end"}`}>
-        {tabs}
+        {tabs && <div className="w-full min-w-0 lg:w-auto lg:flex-1">{tabs}</div>}
         {/* Deliberately unlike the day tabs beside it: round, small, icon-led,
             and an inverted (light-on-dark / dark-on-light) active state rather
             than brand green, so the two controls never read as one. */}

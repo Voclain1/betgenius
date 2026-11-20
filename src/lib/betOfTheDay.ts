@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { MIXED_REASSESSMENT_VISIBLE, FREE_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 import { betOfTheDayState, isCurrentBetOfTheDay, showBetOfTheDayOnHomepage, type BetOfTheDayState } from "@/lib/betOfTheDayStatus";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
@@ -120,7 +121,7 @@ export async function getOddsForPrediction(row: {
  */
 export const getBetOfTheDay = cache(async (): Promise<BetOfTheDayView | null> => {
   const row = await prisma.prediction.findFirst({
-    where: { status: "PUBLISHED", categories: { some: { category: BET_OF_THE_DAY } } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", categories: { some: { category: BET_OF_THE_DAY } } },
     select: ROW_SELECT,
   });
   if (!row) return null;
@@ -248,6 +249,7 @@ export async function getBetOfTheDayCandidates(now: Date = new Date()): Promise<
   const { start, end } = lagosTodayBounds(now);
   const rows = await prisma.prediction.findMany({
     where: {
+      ...FREE_REASSESSMENT_VISIBLE,
       status: "PUBLISHED",
       outcome: "PENDING",
       kickoff: { gte: now, lt: end },

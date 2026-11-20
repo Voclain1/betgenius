@@ -27,6 +27,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 // module load. Nothing here queries — the shim only lets the module load.
 import "./lib/reactCacheShim";
 import { CategoryPredictionsList } from "../src/components/CategoryPredictionsList";
+import { FeedDayTabs } from "../src/components/FeedDayTabs";
+import { FEED_DAYS, VISIBLE_FEED_DAYS, feedDayTabLabel, feedDayTile, parseFeedDay } from "../src/lib/feedDays";
 import { PredictionViewSwitch } from "../src/components/PredictionViewSwitch";
 import { BankerPredictionsEvidence } from "../src/components/BankerPredictionsGuide";
 import {
@@ -76,6 +78,35 @@ const order = (s: string) => [...s.matchAll(/Home(\d+)Side/g)].map((m) => Number
 const ADS = 'aria-label="Advertisement"';
 const CARD = /<article\b/g;
 const TABLE = /<table\b/g;
+
+// The compact date rail should scroll horizontally without widening the page.
+{
+  const output = html(<FeedDayTabs basePath="/predictions/genius" active="day-5" />);
+  check("the public rail shows only days through +5", count(output, 'href="/predictions/genius') === VISIBLE_FEED_DAYS.length && VISIBLE_FEED_DAYS.length === 7);
+  check("day 6–14 are not shown in the swipeable rail", !output.includes('href="/predictions/genius?date=day-6"') && !output.includes('href="/predictions/genius?date=day-14"'));
+  check("future day active state", [...output.matchAll(/<a\b[^>]*>/g)].some(m =>
+    m[0].includes('href="/predictions/genius?date=day-5"') && m[0].includes('aria-current="page"')));
+  check("native horizontal swipe strip instead of a 3-column grid",
+    output.includes('data-testid="feed-day-track"') && output.includes("overflow-x-auto")
+    && output.includes("snap-x") && !output.includes("grid-cols-3"));
+  check("each day has a two-line date tile",
+    count(output, "tabular-nums") === VISIBLE_FEED_DAYS.length && output.includes("Swipe to browse dates"));
+  check("selected date visible with an accessible name",
+    output.includes("Predictions for") && output.includes("selected"));
+  check("desktop has explicit scrolling controls",
+    output.includes('aria-label="Scroll dates left"')
+    && output.includes('aria-label="Scroll dates right"'));
+  const anchor = new Date("2026-11-19T12:00:00Z");
+  check("future tabs show weekday and date", FEED_DAYS.slice(3).every(day =>
+    /^[A-Za-z]{3} \d{1,2} [A-Za-z]{3}$/.test(feedDayTabLabel(day, anchor))));
+  check("date tile uses a consistent short date", feedDayTile("tomorrow", anchor).date === "20 Nov"
+    && feedDayTile("day-2", anchor).date === "21 Nov");
+  check("relative and absolute labels stay distinguishable",
+    feedDayTile("today", anchor).eyebrow === "Today"
+    && feedDayTile("day-2", anchor).eyebrow === "Sat");
+  check("invalid date cannot expand scope", parseFeedDay("day-15") === "today");
+  check("internal 14-day URLs remain valid", parseFeedDay("day-14") === "day-14");
+}
 
 // ===========================================================================
 // 1. TODAY is table-only

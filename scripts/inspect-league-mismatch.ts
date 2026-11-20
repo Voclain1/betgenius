@@ -27,7 +27,7 @@ async function main() {
   const rows = await prisma.prediction.findMany({
     where: { leagueApiId: leagueId, kickoff: { gte: since } },
     orderBy: { kickoff: "desc" },
-    select: { id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true, provenance: true, leagueName: true, leagueApiId: true, fixtureApiId: true, createdAt: true, updatedAt: true, publishedAt: true, authorId: true, aiJobId: true, market: true, pick: true, author: { select: { name: true, role: true } }, categories: { select: { category: true } } },
+    select: { id: true, homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, leagueName: true, leagueApiId: true, fixtureApiId: true },
   });
   console.log(`\nPredictions stored under league ${leagueId} with kickoff in the last 10 days or later: ${rows.length}`);
 
@@ -43,10 +43,10 @@ async function main() {
     const discoveryDisagrees = !!ga && ga.leagueApiId !== r.leagueApiId;
     if (teamsKnown && !discoveryDisagrees) continue;
     suspicious++;
-    console.log(`\n* ${r.homeTeam} v ${r.awayTeam}  kickoff ${r.kickoff?.toISOString()}  ${r.market} / ${r.pick}  status ${r.status}`);
+    // The repository's Actions logs may be public. Do not disclose unpublished picks, tiers, author identities or AI job details.\n    console.log(`\n* ${r.homeTeam} v ${r.awayTeam}  kickoff ${r.kickoff?.toISOString()}`);
     console.log(`  stored league: ${r.leagueName} (${r.leagueApiId})  fixtureApiId ${r.fixtureApiId}  teamApiIds ${r.homeTeamApiId}/${r.awayTeamApiId}`);
-    console.log(`  provenance ${r.provenance}  author ${r.author?.name ?? r.authorId} (${r.author?.role ?? "?"})  aiJob ${r.aiJobId ?? "none"}  categories ${r.categories.map((c) => c.category).join(",")}`);
-    console.log(`  created ${r.createdAt.toISOString()}  updated ${r.updatedAt.toISOString()}  published ${r.publishedAt?.toISOString() ?? "-"}  edited-after-create ${r.updatedAt.getTime() - r.createdAt.getTime() > 60_000}`);
+
+
     console.log(`  discovery record: ${ga ? `${ga.leagueName} (${ga.leagueApiId}) ${ga.homeTeam} v ${ga.awayTeam} status ${ga.status} discovered ${ga.createdAt.toISOString()}` : "none"}`);
   }
   console.log(`\nrows that do not belong: ${suspicious} of ${rows.length}`);

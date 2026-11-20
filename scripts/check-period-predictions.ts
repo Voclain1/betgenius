@@ -68,6 +68,20 @@ for (const [date, want] of Object.entries(MIDWEEK)) {
   check("Sunday's picks arrive from Friday", lagosDateKey(picksArriveFrom(w.days[2])) === "2026-10-16");
 }
 
+// The forward-looking pages can switch to the next period earlier, but only
+// with the explicitly enabled early lane. The legacy 48h behaviour above stays.
+{
+  const oldMode = process.env.EARLY_FIXTURE_MODE;
+  process.env.EARLY_FIXTURE_MODE = "on";
+  const monday = periodWindow("weekend", at("2026-10-12"));
+  check("early mode opens weekend on Monday", monday.state === "upcoming" && monday.days[0].key === "2026-10-16");
+  const friday = periodWindow("midweek", at("2026-10-16"));
+  check("early mode opens next midweek on Friday", friday.state === "upcoming" && friday.days[0].key === "2026-10-20");
+  check("early-mode arrival spans the internal 14-day window", lagosDateKey(picksArriveFrom(monday.days[0])) === "2026-10-02");
+  if (oldMode === undefined) delete process.env.EARLY_FIXTURE_MODE;
+  else process.env.EARLY_FIXTURE_MODE = oldMode;
+}
+
 // The period list and its Banker.
 let n = 0;
 const row = (id: string, over: Partial<PeriodBankerRow> = {}): PeriodBankerRow => {

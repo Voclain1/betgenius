@@ -11,6 +11,7 @@ import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { lagosDayLabel } from "@/lib/lagosDate";
+import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { Over25PredictionsEvidence, Over25PredictionsGuide } from "@/components/Over25PredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
@@ -25,10 +26,10 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: r.awayTeam ?? r.fixture?.awayTeam?.name,
   })));
   return {
-    title: `Over 2.5 Goals Predictions ${day[0].toUpperCase()}${day.slice(1)}`,
+    title: `Over 2.5 Goals Predictions ${feedDayTitle(day)}`,
     description: rows.length
-      ? `${rows.length} Over 2.5 Goals predictions for ${day}${sample ? `, including ${sample}` : ""}. Read the match evidence and confidence rating for every pick.`
-      : `No Over 2.5 Goals predictions are published for ${day}. Browse another day or explore the other prediction markets.`,
+      ? `${rows.length} Over 2.5 Goals predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Read the match evidence and confidence rating for every pick.`
+      : `No Over 2.5 Goals predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
     robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
     alternates: { canonical: feedDayHref("over-2-5-goals", day) },
   };
@@ -102,9 +103,9 @@ export default async function Over25GoalsPage({ searchParams }: { searchParams?:
       ]} />
       <CategoryMasthead
         kicker="Market guide"
-        title={`Over 2.5 Goals predictions ${day}`}
+        title={`Over 2.5 Goals predictions ${feedDayText(day)}`}
         blurb={<>{rows.length} {rows.length === 1 ? "match" : "matches"} currently meet this market selection for the chosen day.</>}
-        dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
+        dateLabel={`${lagosDayLabel(feedDayOffset(day))} · West Africa Time`}
         stats={[
           { label: rows.length === 1 ? "Pick" : "Picks", value: String(rows.length) },
           { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },

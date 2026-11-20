@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { FREE_REASSESSMENT_VISIBLE, MIXED_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
@@ -18,6 +19,7 @@ import { RecentResults } from "@/components/RecentResults";
 import { getRecentResults } from "@/lib/recentResultsSnapshot";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { parseFeedDay, dayShowsOutcomes, type FeedDay } from "@/lib/categoryPredictions";
+import { feedDayOffset, feedDayTabLabel } from "@/lib/feedDays";
 import { HeroSlider } from "@/components/HeroSlider";
 import { getHeroSlides } from "@/lib/heroSlides";
 import { AnswerSummary } from "@/components/AnswerSummary";
@@ -82,9 +84,9 @@ export function generateMetadata({ searchParams }: { searchParams?: { date?: str
  * ranking an arbitrary subset rather than the day's best picks.
  */
 async function fetchCategoryDay(category: string, day: FeedDay) {
-  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
+    where: { ...FREE_REASSESSMENT_VISIBLE, status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
   });
@@ -153,9 +155,9 @@ async function fetchGeniusPreview(day: FeedDay) {
  * fixture happened to sort first.
  */
 async function fetchDaySlate(day: FeedDay) {
-  const bounds = lagosDayBounds(day === "yesterday" ? -1 : day === "tomorrow" ? 1 : 0);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
     select: { leagueName: true, leagueApiId: true },
   });
 
@@ -177,6 +179,7 @@ async function fetchDaySlate(day: FeedDay) {
   // standing claim would be wrong regularly rather than rarely.
   const bankerCount = await prisma.prediction.count({
     where: {
+      ...FREE_REASSESSMENT_VISIBLE,
       status: "PUBLISHED",
       kickoff: { gte: bounds.start, lt: bounds.end },
       categories: { some: { category: "BANKER" } },
@@ -201,7 +204,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
     getPublishedMatchIndex(),
     // Today's top picks, fixed for the day once chosen (lib/heroSlides).
     getHeroSlides().catch(() => []),
-    getHomepageBetOfTheDay(),
+    day === "today" ? getHomepageBetOfTheDay() : Promise.resolve(null),
     fetchDaySlate(day),
     // Never throws: a failed read serves the last stored copy, or nothing.
     getRecentResults(),
@@ -386,13 +389,9 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
 
       {genius.length > 0 && (
         <section aria-labelledby="home-genius">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="mb-4 space-y-3">
             <SectionHead kicker="Our strongest calls" title="Genius tips" id="home-genius" />
-            {/* self-start so the control keeps its natural width in the stacked
-                mobile layout, matching Featured. */}
-            <div className="self-start sm:mb-4 sm:self-auto">
-              <FeedDayTabs basePath="/" active={day} />
-            </div>
+            <FeedDayTabs basePath="/" active={day} />
           </div>
           {/* The same tip table as every feed (crests, Score column, rows
               that open the match), so the homepage never falls behind it. */}
@@ -429,20 +428,14 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
       )}
 
       <section aria-labelledby="home-featured">
-        {/* Stacks below sm. On one row at phone width the heading wrapped to two
-            lines and "View all" broke across three, with the pills squeezed
-            between them. The day control needs a full-width row of its own on a
-            narrow screen. */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
-          <div className="flex flex-wrap items-center justify-between gap-4 sm:mb-4 sm:justify-end">
-            {/* The two excerpts share one ?date=, so both controls show the same
-                active day. Repeated rather than hoisted because the sections are
-                far apart on the page — a reader at Featured should not have to
-                scroll back to the Genius header to change day. */}
-            <FeedDayTabs basePath="/" active={day} />
+        {/* Keep the heading/actions separate from the swipe rail at every
+            width. Both homepage excerpts share the same selected URL date. */}
+        <div className="mb-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SectionHead kicker="Editor's selection" title="Featured tips" id="home-featured" />
             <Link href="/predictions/featured" className={ARROW}>View all →</Link>
           </div>
+          <FeedDayTabs basePath="/" active={day} />
         </div>
         {/* Two different empty states. With nothing tagged FEATURED for the
             day, the original message. With FEATURED picks published but none
@@ -468,7 +461,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           competitions we publish most for (src/lib/dayCompetitions.ts). */}
       {dayCompetitions.length > 0 && (
         <PremiumPanel
-          kicker={day === "today" ? "Playing today" : day === "tomorrow" ? "Playing tomorrow" : "Played yesterday"}
+          kicker={day === "today" ? "Playing today" : day === "tomorrow" ? "Playing tomorrow" : day === "yesterday" ? "Played yesterday" : `Playing ${feedDayTabLabel(day)}`}
           title="Predictions by competition"
           id="home-competitions"
           aside={

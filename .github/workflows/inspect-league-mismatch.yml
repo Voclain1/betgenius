@@ -2,13 +2,10 @@
 # No provider calls, no writes (the session is forced read-only).
 name: inspect-league-mismatch
 
+# Querying the actual production DB must be an explicit owner action. Do
+# not run it implicitly on every feature-branch push.
 on:
   workflow_dispatch:
-  push:
-    branches: ["ccr-*"]
-    paths:
-      - scripts/inspect-league-mismatch.ts
-      - .github/workflows/inspect-league-mismatch.yml
 
 permissions:
   contents: read

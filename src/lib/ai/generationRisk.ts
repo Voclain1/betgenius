@@ -24,6 +24,9 @@ export const EUROPEAN_CLUB_COMPETITION_IDS: readonly number[] = [2, 3, 848];
 /** Competitions whose ordinary picks are generated under the VIP calibration route. */
 export const VIP_ROUTE_LEAGUE_IDS: readonly number[] = [...VIP_PROXY_LEAGUE_IDS, ...EUROPEAN_CLUB_COMPETITION_IDS];
 
+/** Exclusive early FREE lane: ordinary and paid routes remain untouched. */
+export const EARLY_FREE_GENERATION_INTENT = "EARLY_FREE" as const;
+
 export type GenerationRiskRoute = {
   calibration: "legacy" | "genius" | "vip";
   promptTiers: GenerationTier[];
@@ -38,6 +41,7 @@ export type GenerationRiskRoute = {
 export function resolveGenerationRisk(
   categories: readonly string[],
   leagueApiId?: number | null,
+  intent?: string,
 ): GenerationRiskRoute {
   // BET_OF_THE_DAY rides the SAME branch as BANKER rather than getting a tier
   // of its own. The slot wants the bolder, uncalibrated market style — a pick
@@ -50,6 +54,20 @@ export function resolveGenerationRisk(
       calibration: "legacy",
       promptTiers: ["BANKER"],
       reason: "BANKER/BET_OF_THE_DAY category intent preserves the original uncalibrated market style",
+    };
+  }
+
+  // Early publication accepts only non-paid provenance. A CORE fixture would
+  // normally use VIP calibration even when its dedicated early job has an
+  // exclusively FREE destination, resulting in a guaranteed publication
+  // refusal. Route this exact opt-in FEATURED intent via standard GENIUS
+  // calibration; do NOT relabel a paid-generated pick after the fact.
+  if (intent === EARLY_FREE_GENERATION_INTENT
+    && categories.length === 1 && categories[0] === "FEATURED") {
+    return {
+      calibration: "genius",
+      promptTiers: ["GENIUS"],
+      reason: "dedicated early FREE single; paid calibration and provenance are reserved",
     };
   }
 

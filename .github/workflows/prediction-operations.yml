@@ -30,6 +30,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:league-team-match
+      - run: npm run check:odds-outlier
       - run: npm run check:odds-integrity
       - run: npm run check:operations-investigation
       - run: npm run check:prediction-operations
@@ -42,12 +43,16 @@ jobs:
       - run: npm run check:paid-value-integration
       - run: npm run check:vip-premium-overlay
       - run: npm run check:goals-generation
+      # Automatic pricing policy must be checked on every PR, not only locally.
+      - run: npm run check:short-price-guard
+      - run: npm run check:market-sanity
       - run: npm run check:adaptive-coverage
       - run: npm run check:subscription-entitlement
       - run: npm run check:paystack-entitlement
       - run: npm run check:onetime-fallback
       - run: npx tsc --noEmit
       - run: npx prisma db push --skip-generate
+      - run: npx tsx scripts/check-team-total.ts
       - run: npx tsx scripts/check-prediction-operations-postgres.ts
       - run: npx tsx scripts/check-paid-publication-postgres.ts
       - run: npx tsx scripts/check-reliability-postgres.ts

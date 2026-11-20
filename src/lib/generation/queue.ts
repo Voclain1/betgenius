@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { maxQueuedKickoff } from "@/lib/generation/queueWindow";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { LEAGUE_CATALOGUE, generationTierOf, leaguePriorityRank, leaguesInTiers, normalizeLeagueName, type GenerationTier } from "@/lib/leagues";
+import { filterSelectiveQueuedCandidates } from "@/lib/generation/selectiveLeagues";
 import { candidatesFromFixtures, selectCandidates, type Candidate } from "@/lib/generation/selector";
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
@@ -409,9 +411,13 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
   // An empty (not absent) matchKeys array means "nothing was selected", which
   // must return nothing rather than falling through to the whole ledger.
   if (opts.matchKeys && opts.matchKeys.length === 0) return [];
+  // Dedicated early generation opts in through an explicit fixture allowlist.
+  // Ordinary scheduled processing must NEVER consume week-ahead PENDING rows
+  // from the shared ledger before they enter its existing 48h window.
+  const ordinaryUntil = maxQueuedKickoff(now, opts.matchKeys);
   const attempts = await prisma.generationAttempt.findMany({
     where: {
-      kickoff: { gt: now },
+      kickoff: { gt: now, ...(ordinaryUntil ? { lte: ordinaryUntil } : {}) },
       matchKey: opts.matchKeys?.length ? { in: opts.matchKeys } : undefined,
       leagueApiId: opts.leagueApiIds?.length
         ? { in: opts.leagueApiIds }
@@ -494,7 +500,10 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
       || a.kickoff.getTime() - b.kickoff.getTime()
       || a.matchKey.localeCompare(b.matchKey);
   });
-  return candidates.slice(0, opts.limit);
+  // A queued fixture is not exempt: even rows created under the old broad
+  // policy must pass the CURRENT strongest-club rule before inference.
+  const worthwhile = await filterSelectiveQueuedCandidates(candidates, now);
+  return worthwhile.slice(0, opts.limit);
 }
 
 // ---------------------------------------------------------------------------

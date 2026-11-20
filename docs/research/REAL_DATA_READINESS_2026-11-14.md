@@ -1,5 +1,14 @@
 # Real-data research readiness: 14 November 2026
 
+> **Update (Sprint 03, later on 14 Nov). Several statements below are superseded.** Current status: `docs/research/SPRINT03_REAL_DATA_STATUS_2026-11-14.md`.
+>
+> - The owner repaired the R2 backup configuration (`RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET=true` in the VPS `ops.env` and in the `OPS_ENV_FILE` secret).
+> - The production backup script then uploaded `betgenius-2026-11-14T1711Z.dump` (29,850,681 bytes) to `daily/`. A separate download and `pg_restore --list` succeeded (owner-reported).
+>
+> This resolves U1 (a backup exists) and is consistent with inference I3: a failing bucket check blocked uploads. It proves the archive is **readable**, not that it **restores**, and no research has run yet.
+>
+> The "Production risk" banner no longer applies to the day of the fix. Whether the fix survives the next deploy depends on the secret, and has not yet been exercised (the last deploy, at 16:57Z, preceded the upload). §4 Step 2 now checks it.
+
 **Status: blocked before production. No real-world extraction, training or evaluation has been run, and no metrics exist.**
 
 The research engine (#189) and the isolated runner (this PR) are ready and tested. What is missing is a **verified, isolated copy of the data**. No usable off-server backup of the live database has been demonstrated. The routes that do exist all act on the live server and need the owner's approval.
@@ -83,7 +92,8 @@ $C exec -T ops grep backup /etc/crontabs/root
 
 # Step 2. Which settings are present (prints "set" or "MISSING", never a value).
 $C exec -T ops sh -c '. /ops/env.sh; for k in BACKUP_BUCKET RCLONE_CONFIG_BACKUP_TYPE RCLONE_CONFIG_BACKUP_PROVIDER \
-  RCLONE_CONFIG_BACKUP_ENDPOINT RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY HEALTHCHECK_PING_URL; do
+  RCLONE_CONFIG_BACKUP_ENDPOINT RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY \
+  RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET HEALTHCHECK_PING_URL; do
   eval "v=\${$k:-}"; if [ -n "$v" ]; then echo "$k: set"; else echo "$k: MISSING"; fi; done'
 
 # Step 3. Does the remote resolve, and what is in it? Prints file names, sizes and times only.
@@ -97,7 +107,8 @@ $C logs ops --since 96h 2>&1 | grep -E "backup ok|refusing|ERROR|CRITICAL|Failed
 | What you see | Meaning | Next |
 |---|---|---|
 | Step 2 shows all `RCLONE_CONFIG_BACKUP_*` and `BACKUP_BUCKET` as `set`; Step 3 lists recent `betgenius-<date>.dump` files with plausible sizes (tens of MB or more); Step 4 shows `backup ok` lines | Backups are running | Go to §6 Route A with the newest file |
-| Step 2: any `RCLONE_CONFIG_BACKUP_*` is `MISSING` | The remote cannot work | Add the settings to `OPS_ENV_FILE` and redeploy (owner change) |
+| Step 2: `RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET: MISSING` after a deploy | The R2 fix was lost on redeploy: the `OPS_ENV_FILE` secret lacks it | Add `RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET=true` to the secret and redeploy |
+| Step 2: any other `RCLONE_CONFIG_BACKUP_*` is `MISSING` | The remote cannot work | Add the settings to `OPS_ENV_FILE` and redeploy (owner change) |
 | Step 3: `didn't find section in config file`, or `exit=` not 0 | The remote does not resolve, or the listing fails (endpoint or credentials) | Fix `OPS_ENV_FILE` |
 | Step 3: listing works, but `daily/` is empty or absent; Step 4 shows errors | Uploads fail | Read the Step 4 error; usually credentials or bucket permissions |
 | Step 3: `daily/` empty; Step 4 shows **nothing** (no `backup ok`, no errors) | The nightly job is not running | Check crond in the `ops` container |

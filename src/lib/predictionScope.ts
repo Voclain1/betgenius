@@ -1,4 +1,5 @@
 import { discoveryAccessWhere } from "./predictionVisibility";
+import { MIXED_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { ANONYMOUS } from "./entitlement";
 import type { InsightFixture } from "@/lib/insights";
 import { cache } from "react";
@@ -131,7 +132,7 @@ export type ScopedResult = {
  */
 export const getPublishedByLeagueSlug = cache(async (slug: string): Promise<ScopedResult> => {
   const matched = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", leagueSlugKey: slug },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", leagueSlugKey: slug },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
@@ -142,7 +143,7 @@ export const getPublishedByLeagueSlug = cache(async (slug: string): Promise<Scop
 /** All published predictions where homeTeam or awayTeam slugs to `slug`, in the same display order as the league scope above. */
 export const getPublishedByTeamSlug = cache(async (slug: string): Promise<ScopedResult> => {
   const matched = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", OR: [{ homeSlugKey: slug }, { awaySlugKey: slug }] },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", OR: [{ homeSlugKey: slug }, { awaySlugKey: slug }] },
     orderBy: { publishedAt: "desc" },
     select: SCOPED_SELECT,
   });
@@ -186,7 +187,7 @@ export type MatchScopedResult = ScopedResult & {
  */
 export const getPublishedByMatchSlug = cache(async (slug: string): Promise<MatchScopedResult> => {
   const matched = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", matchSlugKey: slug },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: slug },
     orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
     take: 60,
     select: SCOPED_SELECT,
@@ -230,7 +231,7 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
 
 async function readPublishedMatchIndex(scope: Prisma.PredictionWhereInput): Promise<Record<string, string>> {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null }, ...scope },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null }, ...scope },
     select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true },
   });
   const index: Record<string, string> = {};
@@ -301,7 +302,7 @@ export type SearchIndex = {
 export const getSearchIndex = cache(async (): Promise<SearchIndex> => {
   const [rows, leagues] = await Promise.all([
     prisma.prediction.findMany({
-      where: { AND: [discoveryAccessWhere(ANONYMOUS)], status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
+      where: { ...MIXED_REASSESSMENT_VISIBLE, AND: [discoveryAccessWhere(ANONYMOUS)], status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null } },
       select: { homeTeam: true, awayTeam: true, kickoff: true, leagueApiId: true },
       orderBy: [{ kickoff: "desc" }, { id: "asc" }],
       take: 1000,
@@ -392,7 +393,7 @@ export async function getPublishedTeamIndexFor(teams: { teamId: number | null; t
 
 async function readPublishedTeamIndex(scope: Prisma.PredictionWhereInput): Promise<PublishedTeamIndex> {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }], ...scope },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", OR: [{ homeTeam: { not: null } }, { awayTeam: { not: null } }], ...scope },
     orderBy: { publishedAt: "desc" },
     select: { homeTeam: true, awayTeam: true, homeTeamApiId: true, awayTeamApiId: true },
   });
@@ -503,7 +504,7 @@ export type H2HPageData = {
  */
 export const getH2HBySlug = cache(async (slug: string): Promise<H2HPageData> => {
   const matched = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", h2hSlugKey: slug },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", h2hSlugKey: slug },
     orderBy: { kickoff: "desc" },
     select: SCOPED_SELECT,
   });
@@ -560,6 +561,7 @@ export const getSubstantiveH2HSlugs = cache(async (): Promise<Set<string>> => {
   const pairs = await prisma.prediction.groupBy({
     by: ["homeTeam", "awayTeam", "homeTeamApiId", "awayTeamApiId"],
     where: {
+      ...MIXED_REASSESSMENT_VISIBLE,
       status: "PUBLISHED",
       homeTeam: { not: null },
       awayTeam: { not: null },
@@ -779,7 +781,7 @@ export type LeagueNavItem = {
  */
 export const getLeaguesWithPublishedPredictions = cache(async (): Promise<LeagueNavItem[]> => {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", leagueName: { not: null } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", leagueName: { not: null } },
     select: { leagueName: true, leagueApiId: true },
   });
 
@@ -998,7 +1000,7 @@ export const getH2HMeetings = cache(async (teamAApiId: number | null, teamBApiId
 export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => {
   const distinct = await prisma.prediction.groupBy({
     by: ["matchSlugKey"],
-    where: { status: "PUBLISHED", matchSlugKey: { not: null } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: { not: null } },
     orderBy: { matchSlugKey: "asc" },
   });
   const slugs = distinct.map((d) => d.matchSlugKey).filter((slug): slug is string => !!slug);
@@ -1013,7 +1015,7 @@ export const getSubstantiveMatchSlugs = cache(async (): Promise<Set<string>> => 
 /** The evidence gate for one batch of match slugs — the body getSubstantiveMatchSlugs used to run over the whole corpus. */
 async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", matchSlugKey: { in: batch } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: { in: batch } },
     orderBy: { publishedAt: "desc" },
     select: EVIDENCE_SELECT,
   });
@@ -1101,7 +1103,7 @@ async function substantiveMatchSlugsIn(batch: string[]): Promise<Set<string>> {
 
 /** Original model evidence for this match only; never shipped to a client component. */
 export const getMatchEditorialEvidence = cache(async (slug: string) => prisma.prediction.findMany({
-  where: { status: "PUBLISHED", matchSlugKey: slug },
+  where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: slug },
   orderBy: [{ publishedAt: "desc" }, { id: "asc" }],
   take: 60,
   select: { id: true, marketConfirmation: true, aiJob: { select: { context: true, createdAt: true } } },
