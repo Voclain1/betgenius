@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { leaguesInTiers } from "../src/lib/leagues";
+import { FEED_DAYS, VISIBLE_FEED_DAYS, feedDayOffset, parseFeedDay } from "../src/lib/feedDays";
 import { GENERATE_UNTIL_HOURS } from "../src/lib/generation/window";
 import { maxQueuedKickoff } from "../src/lib/generation/queueWindow";
 import { readFileSync } from "node:fs";
@@ -19,6 +20,9 @@ import {
 const core = leaguesInTiers(["CORE"]);
 const secondary = leaguesInTiers(["SECONDARY"]);
 assert.ok(core.length > 0 && secondary.length > 0, "real priority scope must exist");
+assert.equal(Math.max(...VISIBLE_FEED_DAYS.map(feedDayOffset)), 5, "visible date rail stops at day five");
+assert.ok(!VISIBLE_FEED_DAYS.includes("day-14"), "day 14 stays off the public rail");
+assert.ok(FEED_DAYS.includes("day-14") && parseFeedDay("day-14") === "day-14", "internal 14-day URL remains valid");
 assert.equal(discoveryHorizonDays(core[0]), 14);
 assert.equal(discoveryHorizonDays(secondary[0]), 10);
 assert.equal(discoveryHorizonDays(-999), 0);
