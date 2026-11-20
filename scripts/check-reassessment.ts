@@ -99,6 +99,13 @@ assert.deepEqual(FREE_REASSESSMENT_VISIBLE, { NOT: { reassessment: { is: { publi
 assert.ok(JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("VIP") &&
   JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("PREMIUM"),
   "mixed pages must preserve paid tips under their entitlement review controls");
+const heroSource = readFileSync(join(process.cwd(), "src/lib/heroSlides.ts"), "utf8");
+assert.ok(heroSource.includes("...MIXED_REASSESSMENT_VISIBLE"),
+  "home hero may not promote held free selections");
+const botdSource = readFileSync(join(process.cwd(), "src/lib/betOfTheDay.ts"), "utf8");
+assert.ok(botdSource.includes("...MIXED_REASSESSMENT_VISIBLE") &&
+  botdSource.includes("...FREE_REASSESSMENT_VISIBLE"),
+  "Bet of the Day must not select or show a free prediction under public hold");
 const marketSource = readFileSync(join(process.cwd(), "src/lib/marketPredictions.ts"), "utf8");
 assert.ok(marketSource.includes("...FREE_REASSESSMENT_VISIBLE"), "market pages must respect free holds");
 const homeSource = readFileSync(join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
