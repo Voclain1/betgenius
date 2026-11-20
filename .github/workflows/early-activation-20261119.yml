@@ -1,4 +1,4 @@
-# One-shot read-only operational audit of early prediction rollout.
+# 2026-11-20 morning follow-up: refreshed read-only production evidence audit.
 # No feature flags, scheduled jobs, predictions or database records are changed.
 name: Early prediction production audit - read only
 on:
@@ -66,6 +66,22 @@ jobs:
             FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
             WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
             GROUP BY p.provenance ORDER BY p.provenance;
+          SELECT 'early_free_by_day',to_char(p.kickoff AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD'),count(*),
+            coalesce(min(p.confidence),0),coalesce(max(p.confidence),0),
+            count(*) FILTER (WHERE p.confidence>=80)
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+            GROUP BY 2 ORDER BY 2;
+          SELECT 'early_free_latest',to_char(p."createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+            to_char(p.kickoff AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),
+            p.confidence,p.status,coalesce(p.provenance,'NULL')
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+            ORDER BY p."createdAt" DESC LIMIT 12;
+          SELECT 'run_24h',job,count(*),sum(case when ok then 0 else 1 end)
+            FROM "JobRun" WHERE "ranAt">NOW()-interval '24 hours'
+            AND job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
+            GROUP BY job ORDER BY job;
           SELECT 'monitor_status',status,count(*) FROM "PredictionReassessment" GROUP BY status ORDER BY status;
           SELECT 'public_holds',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
           SELECT 'public_visible_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
