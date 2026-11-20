@@ -7,11 +7,14 @@
 import { prisma } from "@/lib/prisma";
 import type { MatchDigest } from "@/lib/ai/digest";
 import { parseStoredContext } from "@/lib/ai/context";
-import { applyReviewAction } from "@/lib/predictions";
+import { publishEarlyFreePredictionAtomically } from "@/lib/predictions";
+import { matchKey } from "@/lib/slug";
+import { earlyQuotedSelection } from "@/lib/generation/earlyOddsPolicy";
+import type { FixtureOdds } from "@/lib/odds";
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { DEDICATED_PAID_PROVENANCES, GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
-import { earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
+import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 
@@ -56,6 +59,7 @@ export function isDedicatedEarlyFreeJob(prompt: string | null | undefined, fixtu
 
 export type EarlyPublicationCandidate = {
   id: string; status: string; provenance: string | null; fixtureApiId: number | null;
+  leagueApiId?: number | null;
   kickoff: Date | null; contextComplete: boolean; confidence: number;
   marketType: string; selection: unknown; manualSettlementOnly: boolean;
   categories: string[];
@@ -68,7 +72,7 @@ export function earlyPublicationBlock(
 ): string | null {
   if (row.status !== "PENDING_REVIEW") return "not-awaiting-review";
   if (row.fixtureApiId == null) return "no-provider-fixture";
-  if (!row.kickoff || !inEarlyGenerationWindow(row.kickoff, now)) return "outside-early-window";
+  if (!row.kickoff || !inEarlyGenerationWindow(row.kickoff, now, row.leagueApiId)) return "outside-early-window";
   if (!row.contextComplete || !digest) return "no-reliable-evidence";
   if (row.manualSettlementOnly || row.marketType === "OTHER" || !isValidSelection(row.marketType as MarketType, row.selection)) return "invalid-market";
   if (row.marketType === "SAME_GAME_DOUBLE" || row.categories.includes("SAME_GAME_DOUBLE")) return "combo-source-or-double";
@@ -113,13 +117,13 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
   // A row can only enter this lane after a recorded early provider capture.
   // User-entered drafts, late ordinary picks and all paid outputs remain manual.
   const from = new Date(now.getTime() + 48 * 3_600_000);
-  const until = new Date(now.getTime() + 168 * 3_600_000);
+  const until = new Date(now.getTime() + EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS * 3_600_000);
   const previouslyQueued = await prisma.upcomingFixture.findMany({
     where: { earlyQueuedAt: { not: null }, kickoff: { gt: from, lte: until }, status: "NS" },
-    select: { fixtureApiId: true, kickoff: true },
+    select: { fixtureApiId: true, kickoff: true, leagueApiId: true },
     take: 200,
   });
-  const verifiedKickoffs = new Map(previouslyQueued.map(row => [row.fixtureApiId, row.kickoff]));
+  const verifiedKickoffs = new Map(previouslyQueued.map(row => [row.fixtureApiId, row]));
   const fixtureIds = previouslyQueued.map((row) => row.fixtureApiId);
   if (!fixtureIds.length) return finish();
 
@@ -134,11 +138,20 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
     take: 100,
   });
 
+  // One bounded cache read for the complete review slate. Publish only priced
+  // EXACT selections; the atomic publisher repeats this check under the lock.
+  const keys = rows.map(row => matchKey(row)).filter((key): key is string => key !== null);
+  const quotes = keys.length ? await prisma.fixtureOddsCache.findMany({
+    where: { matchKey: { in: keys } },
+    select: { matchKey: true, oddsJson: true, fetchedAt: true },
+  }) : [];
+  const byKey = new Map(quotes.map(q => [q.matchKey, q]));
+
   for (const row of rows) {
     if (report.published >= limit) break;
     report.considered++;
     const captured = row.fixtureApiId != null ? verifiedKickoffs.get(row.fixtureApiId) : null;
-    if (!captured || !row.kickoff || Math.abs(captured.getTime() - row.kickoff.getTime()) > 15 * 60_000) {
+    if (!captured || !row.kickoff || captured.leagueApiId !== row.leagueApiId || Math.abs(captured.kickoff.getTime() - row.kickoff.getTime()) > 15 * 60_000) {
       report.blocked["kickoff-changed"] = (report.blocked["kickoff-changed"] ?? 0) + 1;
       continue;
     }
@@ -149,13 +162,25 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
       earlyJobVerified: isDedicatedEarlyFreeJob(row.aiJob?.prompt, row.fixtureApiId),
     }, digest, now);
     if (reason) { report.blocked[reason] = (report.blocked[reason] ?? 0) + 1; continue; }
+    const key = matchKey(row);
+    const cached = key ? byKey.get(key) : null;
+    const price = earlyQuotedSelection({
+      odds: (cached?.oddsJson as FixtureOdds | null) ?? null,
+      fetchedAt: cached?.fetchedAt ?? null, kickoff: row.kickoff!, now,
+      marketType: row.marketType, selection: row.selection,
+    });
+    if (!price.ok) {
+      const blocked = "odds-" + price.reason;
+      report.blocked[blocked] = (report.blocked[blocked] ?? 0) + 1;
+      continue;
+    }
     report.qualifying++;
     if (mode !== "on") continue;
     try {
-      // Shared transactional publisher performs the final kickoff/fixture
-      // validation and writes the same notification events as manual publishing.
-      await applyReviewAction(row, "PUBLISH", input.actorId);
-      report.published++;
+      // The same exact price must remain qualified INSIDE the locked
+      // publication transaction; an altered or expired quote cannot pass.
+      if (await publishEarlyFreePredictionAtomically(row, input.actorId)) report.published++;
+      else report.blocked["concurrent-publication"] = (report.blocked["concurrent-publication"] ?? 0) + 1;
     } catch (error) {
       report.failures.push(row.id + ": " + (error instanceof Error ? error.message : String(error)));
     }
