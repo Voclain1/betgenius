@@ -4,6 +4,8 @@
  * A signal requests a critical reassessment; it is not proof of a winning pick.
  */
 import type { MatchDigest, TeamDigest } from "@/lib/ai/digest";
+import { earlyOddsBand } from "@/lib/generation/earlyOddsPolicy";
+import { AUTO_MIN_MEDIAN_ODDS } from "@/lib/autoOddsFloor";
 
 export type EvidenceSignal = {
   code: string;
@@ -16,12 +18,15 @@ export type FixtureEvidence = { status: string; kickoff: Date; seenAt: Date; fix
 export type OddsObservation = { median: number; bookmakers: number; at: Date };
 
 /** Only compare current provider-timestamped prices for the original pick. */
-export function oddsMovementSignal(previous: OddsObservation | null, latest: OddsObservation | null, now: Date): EvidenceSignal[] {
-  if (!previous || !latest || previous.bookmakers < 5 || latest.bookmakers < 5
+export function oddsMovementSignal(previous: OddsObservation | null, latest: OddsObservation | null, now: Date, kickoff?: Date): EvidenceSignal[] {
+  const early = kickoff != null && kickoff.getTime() - now.getTime() > 48 * 3_600_000;
+  const books = early ? earlyOddsBand(kickoff!, now).minBooks : 5;
+  const maxAge = early ? earlyOddsBand(kickoff!, now).maxQuoteAgeMs : 2 * 3_600_000;
+  if (!previous || !latest || previous.bookmakers < books || latest.bookmakers < books
     || !Number.isFinite(previous.median) || !Number.isFinite(latest.median)
     || previous.median <= 1 || latest.median <= 1
     || previous.at >= latest.at || latest.at > now
-    || now.getTime() - latest.at.getTime() > 2 * 3_600_000) return [];
+    || now.getTime() - latest.at.getTime() > maxAge) return [];
   const pp = Math.abs(100 / latest.median - 100 / previous.median);
   if (pp < 7) return [];
   return [{ code: "market-movement-" + latest.at.toISOString(),
@@ -30,6 +35,26 @@ export function oddsMovementSignal(previous: OddsObservation | null, latest: Odd
       + " implied-probability points (at least five bookmakers, current quote)." }];
 }
 
+
+/** A formerly acceptable price falling below the basic free-tip floor is
+ * material even when the implied-probability movement is smaller than 7pp. */
+export function earlyOddsFloorCrossing(
+  previous: OddsObservation | null, latest: OddsObservation | null,
+  now: Date, kickoff: Date,
+): EvidenceSignal[] {
+  if (!previous || !latest || previous.median < AUTO_MIN_MEDIAN_ODDS ||
+      latest.median >= AUTO_MIN_MEDIAN_ODDS || latest.median <= 1 ||
+      previous.at >= latest.at || latest.at > now ||
+      latest.bookmakers < earlyOddsBand(kickoff, now).minBooks ||
+      now.getTime() - latest.at.getTime() > earlyOddsBand(kickoff, now).maxQuoteAgeMs)
+    return [];
+  return [{
+    code: "early-odds-floor-crossing-" + latest.at.toISOString(),
+    severity: "MODERATE", source: "odds",
+    message: "Bookmaker median for the original early pick has fallen below " +
+      AUTO_MIN_MEDIAN_ODDS.toFixed(2) + "; recheck value and availability.",
+  }];
+}
 
 export function reassessmentIntervalMinutes(now: Date, kickoff: Date): number {
   const minutes = (kickoff.getTime() - now.getTime()) / 60_000;
