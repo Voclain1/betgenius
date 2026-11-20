@@ -121,7 +121,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
   const previouslyQueued = await prisma.upcomingFixture.findMany({
     where: { earlyQueuedAt: { not: null }, kickoff: { gt: from, lte: until }, status: "NS" },
     select: { fixtureApiId: true, kickoff: true, leagueApiId: true },
-    take: 200,
+    take: 400,
   });
   const verifiedKickoffs = new Map(previouslyQueued.map(row => [row.fixtureApiId, row]));
   const fixtureIds = previouslyQueued.map((row) => row.fixtureApiId);
@@ -135,7 +135,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
     },
     include: { categories: true, aiJob: { select: { context: true, prompt: true } } },
     orderBy: [{ confidence: "desc" }, { kickoff: "asc" }],
-    take: 100,
+    take: 500,
   });
 
   // One bounded cache read for the complete review slate. Publish only priced
