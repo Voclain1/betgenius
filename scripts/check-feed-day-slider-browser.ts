@@ -59,7 +59,7 @@ async function main() {
           };
         });
         const tag = `${width}px ${path}`;
-        check(`${tag}: nine date links`, data.links === 9);
+        check(`${tag}: seven date links (Yesterday through Day 5)`, data.links === 7);
         check(`${tag}: exactly one active date`, data.selectedCount === 1);
         check(`${tag}: date strip does not widen page`, data.noPageOverflow);
         if (width < 768) {

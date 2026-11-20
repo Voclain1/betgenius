@@ -44,7 +44,9 @@ async function main() {
   check("undefined -> today", parseFeedDay(undefined) === "today");
   check('"banana" -> today', parseFeedDay("banana") === "today");
   check('"day-7" resolves', parseFeedDay("day-7") === "day-7");
-  check('"day-8" rejected', parseFeedDay("day-8") === "today");
+  check('"day-8" resolves', parseFeedDay("day-8") === "day-8");
+  check('"day-14" resolves', parseFeedDay("day-14") === "day-14");
+  check('"day-15" rejected', parseFeedDay("day-15") === "today");
   check("future days have calendar labels", FEED_DAYS.slice(3).every(d =>
     /^[A-Za-z]{3} \d{1,2} [A-Za-z]{3}$/.test(feedDayTabLabel(d, new Date("2026-11-19T12:00:00Z")))));
   check("array param takes the first", parseFeedDay(["tomorrow", "yesterday"]) === "tomorrow");
@@ -55,6 +57,7 @@ async function main() {
   check("tomorrow", feedDayHref("genius", "tomorrow") === "/predictions/genius?date=tomorrow");
   check("day-2", feedDayHref("genius", "day-2") === "/predictions/genius?date=day-2");
   check("day-7", feedDayHref("genius", "day-7") === "/predictions/genius?date=day-7");
+  check("day-14", feedDayHref("genius", "day-14") === "/predictions/genius?date=day-14");
 
   console.log("\noutcomes are shown on yesterday only:");
   check("yesterday shows outcomes", dayShowsOutcomes("yesterday"));
@@ -75,7 +78,7 @@ async function main() {
     perDay[day] = { ids: new Set(rows.map((r: any) => r.id)), count: rows.length };
   }
 
-  console.log("\nall nine days are disjoint (no row is fetched by more than one):");
+  console.log("\nall bounded days are disjoint (no row is fetched by more than one):");
   const [y, t, m] = [perDay.yesterday.ids, perDay.today.ids, perDay.tomorrow.ids];
   const overlap = (a: Set<string>, b: Set<string>) => [...a].filter((x) => b.has(x)).length;
   check("yesterday vs today", overlap(y, t) === 0, `${overlap(y, t)} shared`);

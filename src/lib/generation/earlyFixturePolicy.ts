@@ -8,12 +8,33 @@ export const EARLY_FIXTURE_POLICY = {
   CORE_DAYS: 14,
   SECONDARY_DAYS: 10,
   EARLY_GENERATION_FROM_HOURS: 48,
-  EARLY_GENERATION_UNTIL_HOURS: 168,
+  EARLY_GENERATION_UNTIL_HOURS: 336,
   MAX_QUEUE_PER_DAY: 20,
   MAX_QUEUE_PER_LEAGUE: 8,
   MIN_API_QUOTA_REMAINING: 2_200,
   MAX_RUN_MS: 22_000,
 } as const;
+
+/**
+ * Strong regional interest needs regular sampling even on a busy global slate.
+ * A spotlight slot scans one requested domestic league per early-discovery pass,
+ * leaving the existing CORE/SECONDARY cursor intact (3 original slots).
+ * This does not bypass fixture, odds, confidence, or publication gates.
+ */
+export const EARLY_SPOTLIGHT_LEAGUES = [
+  307, // Saudi Pro League
+  301, // UAE Pro League
+  330, // Kuwaiti Premier League
+  288, // South Africa PSL
+  286, // Serbian Super Liga
+  333, // Ukrainian Premier League
+  235, // Russian Premier League
+] as const;
+
+/** Same fixed half-hour periods as the VPS early-discovery cron. */
+export function earlySpotlightLeague(now: Date): number {
+  return EARLY_SPOTLIGHT_LEAGUES[Math.floor(now.getTime() / (30 * 60_000)) % EARLY_SPOTLIGHT_LEAGUES.length];
+}
 
 export type EarlyFixtureMode = "off" | "shadow" | "on";
 
@@ -38,9 +59,9 @@ export function earlyDateRange(now: Date, days: number): { from: string; to: str
 }
 
 /** No early queueing at or inside the existing 48-hour final-validation band. */
-export function inEarlyGenerationWindow(kickoff: Date, now: Date): boolean {
+export function inEarlyGenerationWindow(kickoff: Date, now: Date, leagueApiId?: number | null): boolean {
   const hours = (kickoff.getTime() - now.getTime()) / 3_600_000;
   return Number.isFinite(hours)
     && hours > EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS
-    && hours <= EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS;
+    && hours <= (leagueApiId != null ? discoveryHorizonDays(leagueApiId) * 24 : EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS);
 }

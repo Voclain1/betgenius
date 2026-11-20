@@ -11,7 +11,8 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
 import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
-import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance, ShortPriceError } from "@/lib/shortPriceGuard";
+import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
+import { automaticOddsFailure, automaticOddsRetryBlock, AutoOddsFloorError, type AutoOddsFailure } from "@/lib/autoOddsFloor";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
 import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
@@ -238,15 +239,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // same-game double can be assembled from independently-reasoned rows.
   // The dedicated VIP/PREMIUM pass also uses multi breadth for its odds gate.
   const marketBreadth = goalsOnly ? "single" : marketBreadthForCategories(input.categories, input.intent);
-  // Two checks against the bookmakers' prices. Neither runs for the Goals pass
-  // (one fixed market), a handicap job (one fixed line) or the VIP/PREMIUM pass
-  // (its own odds gate).
-  // - Short-price rule (src/lib/shortPriceGuard.ts): scheduled ordinary
-  //   generation only, not an admin's manual generation.
-  // - Market sanity (src/lib/marketSanity.ts): manual runs too. A pick far
-  //   above the market's own view misread the match, whoever asked for it.
-  const checksMarket = !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
-  const guardsShortPrice = !input.manual && !goalsOnly && !input.handicapLine && input.intent !== "VIP_PREMIUM";
+  // Quote checks run on ordinary AND dedicated Goals generation. The European
+  // Handicap lane has its own sourced-line/value gate and VIP/PREMIUM has its
+  // own stricter fair-odds and independent confirmation gate.
+  // Admin/manual generation remains exempt from the automatic price floor.
+  const checksMarket = !input.handicapLine && input.intent !== "VIP_PREMIUM";
+  const guardsShortPrice = !input.manual && !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
   const priceOdds = guardsShortPrice ? odds : null;
   const callModel = (block: string) =>
@@ -292,19 +290,26 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   }
   let { output, usage, model } = firstCall;
   type Draft = (typeof output.predictions)[number];
-  const unpayable = (p: Draft) => isUnpayableDoubleChance(priceOdds, p.marketType, p.selection);
+  const autoPriceIssue = (p: Draft): AutoOddsFailure | null =>
+    guardsShortPrice ? automaticOddsFailure(priceOdds, p.marketType, p.selection) : null;
+  const tooShortDc = (p: Draft) => isUnpayableDoubleChance(priceOdds, p.marketType, p.selection);
+  const unpayable = (p: Draft) => tooShortDc(p) || autoPriceIssue(p) !== null;
   const offMarket = (p: Draft) => farAboveMarket(odds, p);
-  // Every draft rejected (an unpayable Double Chance, or far above the market):
-  // ask once more, naming the prices, instead of failing the match. For a short
-  // price that means the strongest pick with a real price (Draw No Bet, Win
-  // Either Half, a straight win, a goals line...); for a misread match, the
-  // market's view beside each pick. Both calls are on the job.
+  // One bounded second attempt for ordinary (non-Goals) generation if every
+  // draft was too cheap, an unpriced TEAM_TOTAL or far above market evidence.
+  // The Goals pass allows only a fixed 1.5/2.5 OVER pick, and its prompt
+  // intentionally ignores general short-price retry blocks: do not pay for a
+  // second identical call there. Reject the priced-out Goals pick instead.
   const first = Array.isArray(output.predictions) ? output.predictions : [];
-  if (odds && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
-    const dc = first.filter(unpayable);
+  if (!goalsOnly && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+    const dc = first.filter(tooShortDc);
+    const floor: AutoOddsFailure[] = first.filter((p) => !tooShortDc(p))
+      .map((p) => autoPriceIssue(p))
+      .filter((issue): issue is AutoOddsFailure => issue !== null);
     const off = first.filter((p) => !unpayable(p));
     const retryBlock =
       (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : firstBlock) +
+      automaticOddsRetryBlock(floor) +
       (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "");
     let retry: Awaited<ReturnType<typeof callModel>>;
     try {
@@ -358,12 +363,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const goalsSelection = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []) : null;
   const goalsRejections: GoalsDraftRejection[] = goalsSelection?.rejected ?? [];
   const modelDrafts = goalsSelection ? (goalsSelection.pick ? [goalsSelection.pick] : []) : output.predictions;
-  // Dropped whatever the prompt said: a Double Chance the market prices under
-  // 1.10 (it pays nothing), and a pick far above the market's own view of the
-  // same selection (it misread the match). If that was every draft, nothing is
-  // saved and the run says why.
-  const payable = odds ? modelDrafts.filter((p) => !unpayable(p)) : modelDrafts;
-  const drafts = odds ? payable.filter((p) => !offMarket(p)) : payable;
+  // Reject every mapped selection with median quoted odds below 1.12,
+  // including Double Chance and Goals picks. TEAM_TOTAL is held until its
+  // exact prices can be cached; it cannot evade the price check by being absent
+  // from the current trimmed feed. Market-sanity rejects remain independent.
+  const payable = modelDrafts.filter((p) => !unpayable(p));
+  const drafts = payable.filter((p) => !offMarket(p));
   // From here a rejection throws away a job that was paid for and already
   // recorded; it is marked REJECTED so the panel shows that spend apart from
   // the jobs that produced picks.
@@ -372,7 +377,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     return err;
   };
   if (modelDrafts.length > 0 && payable.length === 0) {
-    throw await rejected(new ShortPriceError(`${input.home} v ${input.away}`));
+    throw await rejected(new AutoOddsFloorError(`${input.home} v ${input.away}`));
   }
   if (payable.length > 0 && drafts.length === 0) {
     throw await rejected(new MarketSanityError(`${input.home} v ${input.away}`, offMarket(payable[0])!));

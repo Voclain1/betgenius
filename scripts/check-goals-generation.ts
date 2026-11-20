@@ -133,7 +133,8 @@ console.log("\n3. Persistence (generate.ts)");
 const generate = code("src/lib/ai/generate.ts");
 check("Goals intent turns the constraint on", /const goalsOnly = input\.intent === GOALS_INTENT;/.test(generate) && /\.\.\.\(goalsOnly \? \{ goalsOnly: true \} : \{\}\)/.test(generate));
 check("single market breadth — a Goals job can never assemble a double", /const marketBreadth = goalsOnly \? "single"/.test(generate) && /marketBreadth === "multi"/.test(generate));
-check("only pickGoalsDraft's survivor is persisted", /const modelDrafts = goalsSelection \? \(goalsSelection\.pick \? \[goalsSelection\.pick\] : \[\]\) : output\.predictions;/.test(generate) && /const drafts = odds \? payable\.filter/.test(generate) && /guardsShortPrice = !input\.manual && !goalsOnly/.test(generate) && /drafts\.map\(async \(p\) =>/.test(generate));
+check("Goals price rejection never triggers an ineffective second model request", /if \(!goalsOnly && first\.length > 0 && first\.every/.test(generate));
+check("only pickGoalsDraft's survivor is persisted and its price is checked", /const modelDrafts = goalsSelection \? \(goalsSelection\.pick \? \[goalsSelection\.pick\] : \[\]\) : output\.predictions;/.test(generate) && /const drafts = payable\.filter\(\(p\) => !offMarket\(p\)\);/.test(generate) && /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(generate) && /automaticOddsFailure\(priceOdds, p\.marketType, p\.selection\)/.test(generate) && /drafts\.map\(async \(p\) =>/.test(generate));
 check("persisted under GOALS only — never FEATURED", /const persistedCategories = goalsOnly \? \[\.\.\.GOALS_PERSISTED_CATEGORIES\]/.test(generate) && same([...GOALS_PERSISTED_CATEGORIES], [GOALS]));
 check("GOALS still comes from the shared deterministic helper", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(generate));
 check("stamped GOALS_GENERATED", /goalsOnly\s*\?\s*GOALS_GENERATED_PROVENANCE/.test(generate));
@@ -374,18 +375,19 @@ async function publicationAndProbe() {
   const callers = walk("src").filter((f) => /autoPublishGoalsPrediction\(/.test(read(f)) && !f.endsWith("goalsPipeline.ts"));
   check("auto-publish is reachable only from the Goals run", callers.length === 1 && callers[0].endsWith("generation/worker.ts"), callers);
   const reviewCallers = walk("src").filter((f) => /applyReviewAction\(/.test(read(f)) && !f.endsWith("lib/predictions.ts"));
-  // The separately gated week-ahead FREE publisher is a third supported
-  // caller. It must keep the original transactional publication path and must
-  // not widen the Goals-only or VIP/Premium publication lane.
+  // Early FREE publishing is a separately gated, price-verified atomic path.
+  // It cannot invoke applyReviewAction directly or approve ordinary drafts.
   const earlyPublication = code("src/lib/generation/earlyPublication.ts");
   check(
-    "applyReviewAction is used only by bulk review, gated Goals and gated early FREE publication",
-    reviewCallers.length === 3 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$|generation\/earlyPublication\.ts$/.test(f)),
+    "applyReviewAction is restricted to bulk review and gated Goals publication",
+    reviewCallers.length === 2 && reviewCallers.every((f) => /bulk\/route\.ts$|goalsPipeline\.ts$/.test(f)),
     reviewCallers,
   );
-  check("early FREE publisher is off by default and uses the shared transactional publisher",
+  check("early FREE publisher is off by default and uses price-verified atomic publication",
     /if \(mode === "off" \|\| earlyFixtureMode\(\) !== "on"\) return finish\(\)/.test(earlyPublication) &&
-    /await applyReviewAction\(row, "PUBLISH", input\.actorId\)/.test(earlyPublication) &&
+    /await publishEarlyFreePredictionAtomically\(row, input\.actorId\)/.test(earlyPublication) &&
+    /tx\.predictionRevision\.create\(/.test(predictionsSrc) &&
+    /earlyQuotedSelection\(/.test(predictionsSrc) &&
     !/status: "PUBLISHED"|prisma\.prediction\.update\(/.test(earlyPublication));
   check("early FREE publisher excludes dedicated Goals and VIP/Premium picks",
     /GOALS_GENERATED_PROVENANCE/.test(earlyPublication) &&

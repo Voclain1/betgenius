@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - "src/lib/generation/earlyFixturePolicy.ts"
+      - "src/lib/generation/earlyOddsPolicy.ts"
+      - "src/lib/generation/earlyOdds.ts"
+      - "src/lib/autoOddsFloor.ts"
+      - "src/lib/predictions.ts"
       - "src/lib/generation/queue.ts"
       - "src/lib/generation/queueWindow.ts"
       - "deploy/ops/crontab"
@@ -13,6 +17,7 @@ on:
       - "src/lib/categoryPredictions.ts"
       - "src/app/(public)/predictions/[category]/page.tsx"
       - "src/app/api/admin/generate/early-run/**"
+      - "src/app/api/admin/generate/early-odds/**"
       - "src/app/api/admin/reassessment/resolve/**"
       - "src/lib/reassessment/**"
       - "src/app/api/admin/generate/early-publish/**"
@@ -26,6 +31,7 @@ on:
       - "src/lib/periodPredictions.ts"
       - "src/app/api/admin/generate/early-discover/route.ts"
       - "scripts/check-early-fixtures.ts"
+      - "scripts/check-early-odds.ts"
       - "scripts/check-period-predictions.ts"
       - "prisma/schema.prisma"
       - ".github/workflows/early-fixtures.yml"
@@ -50,6 +56,7 @@ jobs:
           DATABASE_URL_UNPOOLED: "postgresql://user:pass@localhost:5432/betgenius"
       - run: npx tsc --noEmit
       - run: npm run check:early-fixtures
+      - run: npx tsx scripts/check-early-odds.ts
       - run: npm run check:reassessment
       - run: npm run check:period-predictions
 
