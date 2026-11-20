@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { FREE_REASSESSMENT_VISIBLE, MIXED_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
 import { PredictionsTable } from "@/components/PredictionsTable";
@@ -85,7 +86,7 @@ export function generateMetadata({ searchParams }: { searchParams?: { date?: str
 async function fetchCategoryDay(category: string, day: FeedDay) {
   const bounds = lagosDayBounds(feedDayOffset(day));
   return prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
+    where: { ...FREE_REASSESSMENT_VISIBLE, status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end }, categories: { some: { category } } },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     include: { fixture: { include: { homeTeam: true, awayTeam: true, league: true } } },
   });
@@ -156,7 +157,7 @@ async function fetchGeniusPreview(day: FeedDay) {
 async function fetchDaySlate(day: FeedDay) {
   const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
-    where: { status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
+    where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", kickoff: { gte: bounds.start, lt: bounds.end } },
     select: { leagueName: true, leagueApiId: true },
   });
 
@@ -178,6 +179,7 @@ async function fetchDaySlate(day: FeedDay) {
   // standing claim would be wrong regularly rather than rarely.
   const bankerCount = await prisma.prediction.count({
     where: {
+      ...FREE_REASSESSMENT_VISIBLE,
       status: "PUBLISHED",
       kickoff: { gte: bounds.start, lt: bounds.end },
       categories: { some: { category: "BANKER" } },

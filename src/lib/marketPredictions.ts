@@ -5,6 +5,7 @@ import { feedDayOffset, type FeedDay } from "@/lib/feedDays";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import type { Prisma } from "@prisma/client";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
+import { FREE_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { MARKET_HUB_EXCLUDED_CATEGORIES, onePerMatchAndPick } from "@/lib/marketHubs";
 
 /**
@@ -13,6 +14,8 @@ import { MARKET_HUB_EXCLUDED_CATEGORIES, onePerMatchAndPick } from "@/lib/market
  */
 const FREE_TIERS_ONLY: Prisma.PredictionWhereInput = {
   ...NOT_PAID_ONLY,
+  // Mirrors FREE category feed visibility on BTTS, DC, wins and goals pages.
+  ...FREE_REASSESSMENT_VISIBLE,
   category: { notIn: [...MARKET_HUB_EXCLUDED_CATEGORIES] },
   categories: { none: { category: { in: [...MARKET_HUB_EXCLUDED_CATEGORIES] } } },
 };

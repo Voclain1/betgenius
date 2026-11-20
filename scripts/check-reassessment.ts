@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import type { MatchDigest, TeamDigest } from "../src/lib/ai/digest";
 import { compareFootballEvidence, fixtureSignals, reassessmentIntervalMinutes,
   confirmedLineupSignals, oddsMovementSignal } from "../src/lib/reassessment/evidence";
-import { reassessmentMode, publishedSelectionSnapshot } from "../src/lib/reassessment/worker";
+import { reassessmentMode, publishedSelectionSnapshot, shouldRecordReassessmentReceipt } from "../src/lib/reassessment/worker";
+import { FREE_REASSESSMENT_VISIBLE, MIXED_REASSESSMENT_VISIBLE } from "../src/lib/reassessment/visibility";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { earlyPublicationBlock, earlyPublicationMode, isDedicatedEarlyFreeJob,
@@ -85,6 +86,30 @@ assert.ok(categorySource.includes('NOT: { reassessment: { is: { publicHold: true
 assert.ok(categorySource.includes('!PAID_FEEDS.has(cat)'),
   "paid category feeds must remain under separate protections");
 
+// The SHADOW -> LIVE transition generates one receipt/notification only on
+// renewed evidence, never a silent hold or repeated notification.
+const receipt = (mode: "on" | "shadow", sameSignature: boolean, existingStatus = "REVIEW_REQUIRED", publicHold = false) =>
+  shouldRecordReassessmentReceipt({ mode, sameSignature, existingStatus, publicHold });
+assert.equal(receipt("shadow", true), false);
+assert.equal(receipt("on", true), true);
+assert.equal(receipt("on", true, "REVIEW_REQUIRED", true), false);
+assert.equal(receipt("on", true, "CURRENT", false), false);
+assert.equal(receipt("on", false, "CURRENT", false), true);
+assert.deepEqual(FREE_REASSESSMENT_VISIBLE, { NOT: { reassessment: { is: { publicHold: true } } } });
+assert.ok(JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("VIP") &&
+  JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("PREMIUM"),
+  "mixed pages must preserve paid tips under their entitlement review controls");
+const marketSource = readFileSync(join(process.cwd(), "src/lib/marketPredictions.ts"), "utf8");
+assert.ok(marketSource.includes("...FREE_REASSESSMENT_VISIBLE"), "market pages must respect free holds");
+const homeSource = readFileSync(join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
+assert.ok(homeSource.includes("...FREE_REASSESSMENT_VISIBLE") &&
+  homeSource.includes("...MIXED_REASSESSMENT_VISIBLE"), "homepage must respect holds");
+const scopeSource = readFileSync(join(process.cwd(), "src/lib/predictionScope.ts"), "utf8");
+assert.ok(scopeSource.includes("...MIXED_REASSESSMENT_VISIBLE"), "league/match/team pages must respect holds");
+assert.ok(monitorSource.includes("const recordReceipt = shouldRecordReassessmentReceipt(") &&
+  monitorSource.includes("if (recordReceipt) {") &&
+  monitorSource.includes('if (mode === "on" && !criticalStatus && recordReceipt)'),
+  "live-first renewal of a shadow alert must create visible receipt and notice");
 assert.equal(reassessmentMode("bad"), "off");
 assert.equal(earlyPublicationMode("bad"), "off");
 assert.equal(EARLY_PUBLICATION_CONFIDENCE_FLOOR, 80);
