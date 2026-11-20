@@ -1,6 +1,6 @@
-# Post-persistence-checkpoint audit. Absolutely READ ONLY. Does not invoke any
-# generation or publication endpoint or change VPS settings.
-name: BetGenius 20 Nov early-prediction qualification checkpoint
+# Read-only audit: publication provenance and shadow reassessment findings.
+# Never invoke prediction-generation/publish endpoints, change env or mutate DB.
+name: BetGenius early publication and reassessment safety trace
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -10,7 +10,7 @@ concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  checkpoint:
+  read:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -19,80 +19,55 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Audit shadow publication and fixture supply since production fix
+      - name: Trace early publication source and review-required evidence
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          C=$(docker compose --env-file deploy.env ps -q app)
-          test -n "$C"
-          echo "=== Approved running build and modes ==="
-          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" |
-            grep -E '^(APP_BUILD_ID|EARLY_FIXTURE_MODE|EARLY_FREE_PUBLICATION_MODE|PREDICTION_REASSESSMENT_MODE)='
-          echo "=== Application health ==="
-          curl -fsS --max-time 8 http://127.0.0.1:3000/api/health
-          echo
-          echo "=== Database operational evidence ==="
+          echo "=== Early fixture publication source indicators (no IDs or secrets) ==="
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
-          SELECT 'asof_utc',to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS');
-          SELECT 'run_since_fix',job,count(*),count(*) FILTER (WHERE NOT ok),min("ranAt"),max("ranAt")
-            FROM "JobRun" WHERE "ranAt">='2026-11-20 08:01:00+00'::timestamptz
-              AND job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
-            GROUP BY job ORDER BY job;
-          SELECT 'run_latest',job,to_char("ranAt" AT TIME ZONE 'UTC','HH24:MI:SS'),
-            ok,left(coalesce(summary,'NULL'),125)
-            FROM (SELECT DISTINCT ON (job) job,"ranAt",ok,summary FROM "JobRun"
-              WHERE job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
-              ORDER BY job,"ranAt" DESC) runs ORDER BY job;
-          SELECT 'publish_shadow_6h',count(*),
-            count(*) FILTER (WHERE detail::text ILIKE '%"qualifying":1%'),
-            count(*) FILTER (WHERE NOT ok)
-            FROM "JobRun" WHERE job='early-free-publication' AND "ranAt">NOW()-interval '6 hours';
-          SELECT 'latest_shadow_details',to_char("ranAt" AT TIME ZONE 'UTC','HH24:MI'),
-            coalesce(detail->>'mode','NULL'),coalesce(detail->>'considered','NULL'),
-            coalesce(detail->>'qualifying','NULL'),coalesce(detail->>'published','NULL'),
-            coalesce((detail->'blocked')::text,'NULL')
-            FROM "JobRun" WHERE job='early-free-publication'
-            ORDER BY "ranAt" DESC LIMIT 8;
-          SELECT 'fresh_early_window',count(*) FROM "UpcomingFixture"
-            WHERE kickoff>NOW()+interval '48 hours'
-              AND kickoff<=NOW()+interval '168 hours'
-              AND status='NS';
-          SELECT 'early_queued_total',count(*) FROM "UpcomingFixture" WHERE "earlyQueuedAt" IS NOT NULL;
-          SELECT 'early_queued_available',count(*) FROM "UpcomingFixture"
-            WHERE "earlyQueuedAt" IS NOT NULL AND status='NS'
-              AND kickoff>NOW()+interval '48 hours'
-              AND kickoff<=NOW()+interval '168 hours';
-          SELECT 'early_generated_all',count(*),
-            count(*) FILTER (WHERE p.confidence>=80),
-            count(*) FILTER (WHERE p.status='PENDING_REVIEW'),
-            count(*) FILTER (WHERE p.status='PUBLISHED')
-            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
-            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0;
-          SELECT 'early_generated_since_fix',count(*),
-            count(*) FILTER (WHERE p.confidence>=80),
-            coalesce(max(p.confidence),0)
-            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+          SELECT 'early_free_publication_path',p.status,coalesce(p.provenance,'NULL'),
+            coalesce(p."approvedById"=p."authorId",false),count(*),
+            coalesce(min(p.confidence),0),coalesce(max(p.confidence),0),
+            to_char(min(p."publishedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI'),
+            to_char(max(p."publishedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI')
+            FROM "Prediction" p JOIN "AIJob" j ON p."aiJobId"=j.id
             WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
-              AND p."createdAt">='2026-11-20 08:01:00+00'::timestamptz;
-          SELECT 'early_candidates_today',to_char(p."createdAt" AT TIME ZONE 'UTC','HH24:MI'),
-            to_char(p.kickoff AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),
-            p.confidence,p.status,coalesce(p.provenance,'NULL'),p."contextComplete",
-            coalesce(p."marketType",'NULL')
-            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            GROUP BY p.status,p.provenance,(p."approvedById"=p."authorId")
+            ORDER BY p.status,p.provenance;
+          SELECT 'publication_batch',
+            to_char(date_trunc('minute',p."publishedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI'),
+            count(*),min(p.confidence),max(p.confidence)
+            FROM "Prediction" p JOIN "AIJob" j ON p."aiJobId"=j.id
             WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
-            ORDER BY p."createdAt" DESC LIMIT 15;
-          SELECT 'reassessment_states',status,count(*),
-            count(*) FILTER (WHERE "checkedAt">='2026-11-20 08:01:00+00'::timestamptz)
-            FROM "PredictionReassessment" GROUP BY status ORDER BY status;
-          SELECT 'reassessment_recent',coalesce("lastError",'NONE'),status,count(*)
-            FROM "PredictionReassessment" WHERE "checkedAt">NOW()-interval '8 hours'
-            GROUP BY "lastError",status ORDER BY count(*) DESC LIMIT 10;
-          SELECT 'public_holds',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
-          SELECT 'public_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
+              AND p."publishedAt" IS NOT NULL
+            GROUP BY date_trunc('minute',p."publishedAt")
+            ORDER BY 2 DESC LIMIT 20;
+          SELECT 'early_free_category',l.category,count(*)
+            FROM "Prediction" p JOIN "AIJob" j ON p."aiJobId"=j.id
+              JOIN "PredictionCategoryLink" l ON l."predictionId"=p.id
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+            GROUP BY l.category ORDER BY l.category;
+          SELECT 'reassessment_flags',r.status,r."publicHold",coalesce(r."lastError",'NONE'),count(*),
+            to_char(max(r."checkedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI')
+            FROM "PredictionReassessment" r
+            WHERE r.status IN ('REVIEW_REQUIRED','UNKNOWN')
+            GROUP BY r.status,r."publicHold",r."lastError"
+            ORDER BY r.status,count(*) DESC;
+          SELECT 'reassessment_review_details',
+            to_char(r."checkedAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI'),
+            r.status,coalesce(r."lastError",'NONE'),
+            LEFT(coalesce(r.summary,'NONE'),350),
+            (SELECT count(*) FROM "PredictionRevision" v WHERE v."predictionId"=r."predictionId"),
+            (SELECT count(*) FROM "PredictionRevision" v WHERE v."predictionId"=r."predictionId" AND v."publiclyVisible"=true)
+            FROM "PredictionReassessment" r
+            WHERE r.status IN ('REVIEW_REQUIRED','UNKNOWN')
+            ORDER BY r."checkedAt" DESC LIMIT 18;
+          SELECT 'shadow_revision_kinds',kind,"publiclyVisible",count(*)
+            FROM "PredictionRevision" GROUP BY kind,"publiclyVisible" ORDER BY kind;
           COMMIT;
           SQL
-          echo "PASS: all production observations read only; no mode or publication change"
+          echo "PASS: traced records without changing predictions or rollout"
           REMOTE
