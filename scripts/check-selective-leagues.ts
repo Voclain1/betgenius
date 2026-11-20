@@ -8,7 +8,7 @@ export {};
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FULL_FIXTURE_DOMESTIC_LEAGUE_IDS, SELECTIVE_LEAGUES, selectiveLeagueRule, isSelectiveLeague, isWorthATip, strongTeamIds } from "../src/lib/generation/selectiveLeagues";
-import { generationTierOf } from "../src/lib/leagues";
+import { generationTierOf, LEAGUE_CATALOGUE } from "../src/lib/leagues";
 import { RESULTS_LEAGUE_IDS } from "../src/lib/recentResultsSnapshot";
 import type { FixtureRow } from "../src/lib/football/api-football";
 
@@ -60,6 +60,10 @@ const majorMustStayBroad = [
 ];
 check("every major league explicitly protected from standings-only filtering",
   majorMustStayBroad.every(id => FULL_FIXTURE_DOMESTIC_LEAGUE_IDS.includes(id) && !isSelectiveLeague(id)));
+check("all catalogued top-five and high-profile mid-tier league divisions stay unrestricted",
+  LEAGUE_CATALOGUE.filter(l => l.kind === "league" && (l.tier === "top" || l.tier === "mid"))
+    .every(l => !isSelectiveLeague(l.id)));
+
 for (const id of majorMustStayBroad) {
   check(`major ${id} all fixtures remain eligible even between weak clubs`,
     isWorthATip(fx(id, 107, 108), new Map()) &&
