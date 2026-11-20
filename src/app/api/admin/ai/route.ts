@@ -7,6 +7,7 @@ import { generateAndPersistPrediction } from "@/lib/ai/generate";
 import { DEFAULT_GEMINI_MODEL } from "@/lib/ai/providers/gemini";
 import { DEFAULT_ANTHROPIC_MODEL } from "@/lib/ai/providers/anthropic";
 import { z } from "zod";
+import { leagueTeamMismatch, LEAGUE_TEAM_MISMATCH } from "@/lib/leagueTeamCheck";
 
 // One fixture: ~11 throttled api-football calls plus a Gemini call that can
 // now spend up to ~17s retrying a 503. The 15s default left no room for either.
@@ -25,6 +26,8 @@ const Body = z.object({
   leagueApiId: z.number().optional(),
   kickoff: z.string(),
   category: z.enum(["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"]).default("FEATURED"),
+  /** The admin saw the "teams do not match this competition" warning and chose to continue. */
+  leagueConfirmed: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -35,6 +38,13 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   const input = parsed.data;
+
+  // A hand-typed match filed under a competition neither team plays in would
+  // show on that competition's page. Stop and ask, once.
+  if (!input.leagueConfirmed) {
+    const mismatch = await leagueTeamMismatch({ leagueApiId: input.leagueApiId, leagueName: input.league, home: input.home, away: input.away, fixtureApiId: input.fixtureApiId });
+    if (mismatch) return NextResponse.json({ error: mismatch, code: LEAGUE_TEAM_MISMATCH }, { status: 409 });
+  }
 
   try {
     const result = await generateAndPersistPrediction({

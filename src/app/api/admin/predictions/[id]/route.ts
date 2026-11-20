@@ -15,6 +15,7 @@ import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
 import { curateBankerTips, curateGeniusTips } from "@/lib/geniusCuration";
+import { leagueTeamMismatch, LEAGUE_TEAM_MISMATCH } from "@/lib/leagueTeamCheck";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
@@ -60,6 +61,7 @@ const Patch = z.object({
       homeTeam: z.string().nullable().optional(),
       awayTeam: z.string().nullable().optional(),
       kickoff: z.coerce.date().nullable().optional(),
+      leagueConfirmed: z.boolean().optional(),
       marketType: z.enum(ADMIN_MARKET_TYPES).optional(),
       selection: z.any().optional(),
       otherMarket: z.string().optional(),
@@ -79,8 +81,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const before = await prisma.prediction.findUnique({ where: { id: params.id }, include: { categories: true } });
   if (!before) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { correctionReason, categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
+  const { correctionReason, leagueConfirmed, categories, marketType, selection, otherMarket, otherPick, ouLine, ouDirection, outcome, finalHomeScore, finalAwayScore, ...rest } =
     patch ?? {};
+
+  // Only when this save changes the competition or the teams: re-saving a row
+  // that is already filed somewhere must never be blocked by an unrelated edit.
+  const placementChanged =
+    (rest.leagueApiId !== undefined && rest.leagueApiId !== before.leagueApiId) ||
+    (rest.homeTeam !== undefined && rest.homeTeam !== before.homeTeam) ||
+    (rest.awayTeam !== undefined && rest.awayTeam !== before.awayTeam);
+  if (!leagueConfirmed && placementChanged && !isComboPrediction(before)) {
+    const mismatch = await leagueTeamMismatch({
+      leagueApiId: rest.leagueApiId !== undefined ? rest.leagueApiId : before.leagueApiId,
+      leagueName: rest.leagueName !== undefined ? rest.leagueName : before.leagueName,
+      home: rest.homeTeam !== undefined ? rest.homeTeam : before.homeTeam,
+      away: rest.awayTeam !== undefined ? rest.awayTeam : before.awayTeam,
+      fixtureApiId: before.fixtureApiId,
+    });
+    if (mismatch) return NextResponse.json({ error: mismatch, code: LEAGUE_TEAM_MISMATCH }, { status: 409 });
+  }
 
   const comboError = comboMarketEditError(isComboPrediction(before), { marketType, selection, otherMarket, otherPick, ouLine, ouDirection });
   if (comboError) return NextResponse.json({ error: comboError }, { status: 400 });

@@ -1,4 +1,5 @@
 "use client";
+import { withLeagueConfirm } from "@/lib/leagueConfirm";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -164,12 +165,13 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/predictions/${params.id}`, {
+      const res = await withLeagueConfirm((leagueConfirmed) => fetch(`/api/admin/predictions/${params.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "EDIT",
           patch: {
+            leagueConfirmed,
             confidence: form.confidence,
             reasoning: form.reasoning,
             matchPreview: form.matchPreview,
@@ -191,7 +193,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
                 }),
           },
         }),
-      });
+      }));
       const j = await res.json();
       if (!res.ok) throw new Error(j.error?.message || j.error || "Save failed");
       await load();
