@@ -46,7 +46,7 @@ jobs:
             count(*)
           FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
           WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
-          GROUP BY p.status,2 ORDER BY p.status,2;
+          GROUP BY p.status,3 ORDER BY p.status,3;
           SELECT 'pending_free_lead_window',count(*),count(*) FILTER(WHERE p.confidence>=70),
             count(*) FILTER(WHERE p.confidence BETWEEN 70 AND 79 AND p."contextComplete"),
             count(*) FILTER(WHERE p.confidence>=80)
