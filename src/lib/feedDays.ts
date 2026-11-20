@@ -1,6 +1,6 @@
 /**
  * Bounded Lagos day navigation for daily published predictions.
- * Historical days remain stable; future dates are browsable up to +14 days.
+ * Historical days remain stable; internal date queries may reach +14 days; the visible rail stops at +5 days.
  * Opening a future date does not claim a prediction exists there.
  * Pure and client-safe: no database or authentication imports.
  */
@@ -21,6 +21,9 @@ const OFFSETS: Record<FeedDay, number> = {
   "day-12": 12, "day-13": 13, "day-14": 14,
 };
 export const feedDayOffset = (day: FeedDay): number => OFFSETS[day];
+
+/** Keep the public date rail compact; 6–14-day tips remain queryable by direct URL. */
+export const VISIBLE_FEED_DAYS = FEED_DAYS.filter((day) => OFFSETS[day] <= 5);
 
 export function parseFeedDay(input: string | string[] | undefined): FeedDay {
   const value = Array.isArray(input) ? input[0] : input;
