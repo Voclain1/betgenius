@@ -28,6 +28,20 @@ import {
 } from "@/lib/reassessment/evidence";
 
 export type ReassessmentMode = "off" | "shadow" | "on";
+
+/** SHADOW receipts are internal only. When the same unresolved material signal
+ * is freshly confirmed for the first time in LIVE, create a public receipt and
+ * notify once. Do not reopen an already reviewed/retained CURRENT case, and
+ * do not duplicate notices for an existing live hold.
+ */
+export function shouldRecordReassessmentReceipt(input: {
+  mode: ReassessmentMode; sameSignature: boolean;
+  existingStatus: string | null | undefined;
+  publicHold: boolean | null | undefined;
+}): boolean {
+  return !input.sameSignature ||
+    (input.mode === "on" && input.existingStatus === "REVIEW_REQUIRED" && input.publicHold !== true);
+}
 export function reassessmentMode(value: string | undefined = process.env.PREDICTION_REASSESSMENT_MODE): ReassessmentMode {
   return value === "shadow" || value === "on" ? value : "off";
 }
@@ -251,6 +265,11 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
 
         const newSignature = digestSignature(unique.map(s => s.code).sort());
         const alreadyRecorded = newSignature === row.reassessment?.lastChangeHash;
+        const recordReceipt = shouldRecordReassessmentReceipt({
+          mode, sameSignature: alreadyRecorded,
+          existingStatus: row.reassessment?.status,
+          publicHold: row.reassessment?.publicHold,
+        });
         const criticalStatus = unique.find(s => s.source === "fixture" && s.severity === "CRITICAL");
         const isPaid = isPaidOnlyProvenance(row.provenance) || row.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
         const summary = unique.map(s => s.message).join(" ").slice(0, 1000);
@@ -259,7 +278,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         // New evidence prompts a fresh assessment (NOT the editorial rewrite
         // path, which reuses stale evidence). Paid selections are assessed
         // read-only; their market evidence cannot be overwritten.
-        if (mode === "on" && !criticalStatus && !alreadyRecorded) {
+        if (mode === "on" && !criticalStatus && recordReceipt) {
           try {
             const risk = resolveGenerationRisk(row.categories.map(c => c.category), row.leagueApiId);
             const result = await generatePredictionForFixture({
@@ -314,7 +333,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
               proposedConfidence: proposed?.confidence ?? null },
           });
 
-          if (!alreadyRecorded) {
+          if (recordReceipt) {
             await tx.predictionRevision.create({
               data: { predictionId: row.id, kind: archived ? "WITHDRAWN" : "REVIEW_REQUIRED",
                 publiclyVisible: mode === "on",
