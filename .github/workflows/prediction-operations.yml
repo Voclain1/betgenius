@@ -45,13 +45,13 @@ jobs:
       # Automatic pricing policy must be checked on every PR, not only locally.
       - run: npm run check:short-price-guard
       - run: npm run check:market-sanity
-      - run: npx tsx scripts/check-team-total.ts
       - run: npm run check:adaptive-coverage
       - run: npm run check:subscription-entitlement
       - run: npm run check:paystack-entitlement
       - run: npm run check:onetime-fallback
       - run: npx tsc --noEmit
       - run: npx prisma db push --skip-generate
+      - run: npx tsx scripts/check-team-total.ts
       - run: npx tsx scripts/check-prediction-operations-postgres.ts
       - run: npx tsx scripts/check-paid-publication-postgres.ts
       - run: npx tsx scripts/check-reliability-postgres.ts
