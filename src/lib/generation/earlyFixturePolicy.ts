@@ -15,6 +15,27 @@ export const EARLY_FIXTURE_POLICY = {
   MAX_RUN_MS: 22_000,
 } as const;
 
+/**
+ * Strong regional interest needs regular sampling even on a busy global slate.
+ * A spotlight slot scans one requested domestic league per early-discovery pass,
+ * leaving the existing CORE/SECONDARY cursor intact (3 original slots).
+ * This does not bypass fixture, odds, confidence, or publication gates.
+ */
+export const EARLY_SPOTLIGHT_LEAGUES = [
+  307, // Saudi Pro League
+  301, // UAE Pro League
+  330, // Kuwaiti Premier League
+  288, // South Africa PSL
+  286, // Serbian Super Liga
+  333, // Ukrainian Premier League
+  235, // Russian Premier League
+] as const;
+
+/** Same fixed half-hour periods as the VPS early-discovery cron. */
+export function earlySpotlightLeague(now: Date): number {
+  return EARLY_SPOTLIGHT_LEAGUES[Math.floor(now.getTime() / (30 * 60_000)) % EARLY_SPOTLIGHT_LEAGUES.length];
+}
+
 export type EarlyFixtureMode = "off" | "shadow" | "on";
 
 /** Off by default until the new schema has been deployed and the lane verified. */
