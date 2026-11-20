@@ -42,6 +42,10 @@ jobs:
       - run: npm run check:paid-value-integration
       - run: npm run check:vip-premium-overlay
       - run: npm run check:goals-generation
+      # Automatic pricing policy must be checked on every PR, not only locally.
+      - run: npm run check:short-price-guard
+      - run: npm run check:market-sanity
+      - run: npx tsx scripts/check-team-total.ts
       - run: npm run check:adaptive-coverage
       - run: npm run check:subscription-entitlement
       - run: npm run check:paystack-entitlement
