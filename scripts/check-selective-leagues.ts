@@ -7,7 +7,7 @@
 export {};
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SELECTIVE_LEAGUES, selectiveLeagueRule, isSelectiveLeague, isWorthATip, strongTeamIds } from "../src/lib/generation/selectiveLeagues";
+import { FULL_FIXTURE_DOMESTIC_LEAGUE_IDS, SELECTIVE_LEAGUES, selectiveLeagueRule, isSelectiveLeague, isWorthATip, strongTeamIds } from "../src/lib/generation/selectiveLeagues";
 import { generationTierOf } from "../src/lib/leagues";
 import { RESULTS_LEAGUE_IDS } from "../src/lib/recentResultsSnapshot";
 import type { FixtureRow } from "../src/lib/football/api-football";
@@ -51,14 +51,27 @@ for (const [id, topN] of regional) {
   check(`region ${id}: no unearned opening-week ranking`,
     strongTeamIds(id, table(4)).size === 0);
 }
-for (const id of [399, 113, 103, 345, 119, 106, 197]) {
-  check(`comparable secondary ${id} is selective`,
-    generationTierOf(id) === "SECONDARY" && isSelectiveLeague(id));
+// User clarified the EPL/La Liga examples mean ALL major leagues: do not
+// silently apply a top-club filter to top domestic competitions elsewhere.
+const majorMustStayBroad = [
+  39, 140, 135, 78, 61, 88, 94, 144, 203,
+  207, 218, 179, 119, 103, 113, 106, 197, 345,
+  71, 399, 128, 239, 262, 253, 98, 292, 233,
+];
+check("every major league explicitly protected from standings-only filtering",
+  majorMustStayBroad.every(id => FULL_FIXTURE_DOMESTIC_LEAGUE_IDS.includes(id) && !isSelectiveLeague(id)));
+for (const id of majorMustStayBroad) {
+  check(`major ${id} all fixtures remain eligible even between weak clubs`,
+    isWorthATip(fx(id, 107, 108), new Map()) &&
+    isWorthATip(fx(id, 107, 108), new Map([[id, null]])));
 }
+check("fallback Argentina, Mexico, MLS and Japan remain full-fixture",
+  [128, 262, 253, 98].every(id => generationTierOf(id) === "FALLBACK" && !isSelectiveLeague(id)));
 check("fallback domestic second-tier league is selective", isSelectiveLeague(79) && selectiveLeagueRule(79)?.topN === 4);
 check("deep fallback domestic league is selective", isSelectiveLeague(110));
 check("famous European core league still evaluates all fixtures", !isSelectiveLeague(39) && !isSelectiveLeague(140));
-check("high-data European secondary league retains its previous coverage", !isSelectiveLeague(94) && !isSelectiveLeague(88));
+check("all major mid-European leagues retain full fixture coverage",
+  [88, 94, 144, 203].every(id => !isSelectiveLeague(id)));
 check("fallback international cups and national sides retain their existing gates", !isSelectiveLeague(13) && !isSelectiveLeague(10));
 check("senior women's fallback leagues retain their separate quality gates", !isSelectiveLeague(64) && !isSelectiveLeague(549));
 
