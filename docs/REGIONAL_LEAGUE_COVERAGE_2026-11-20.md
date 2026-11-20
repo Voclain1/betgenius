@@ -30,3 +30,8 @@ Discovery records per-league counts of fixtures seen and candidates queued. A le
 - GitHub CI, TypeScript and regression checks on the complete PR head.
 - After merge and deployment, inspect actual 2026 provider season, fixture and bookmaker depth in these seven leagues and check discovery job's per-league counters. Do not infer live odds coverage or future prediction frequency from catalogue membership.
 - Early free publication flags and deployment stay controlled. Do not change VIP/Premium tier qualification, paid candidate supply or regular admin review.
+
+## Clarification: every major league keeps full-fixture eligibility
+The examples EPL and La Liga refer to **all major leagues**, not just those two. The explicit full-fixture exemption in `src/lib/generation/selectiveLeagues.ts` protects all European top-five leagues, Eredivisie, Primeira Liga, Belgian Pro League, Turkish Super Lig, the major Swiss/Austrian/Scottish/Scandinavian/Central European domestic competitions, Brazilian Serie A, NPFL, Argentina, Colombia, Liga MX, MLS, Japan J1, Korea K1 and Egypt's top division. This is an analysis-eligibility exemption, not a publication guarantee; bookmaker/quality requirements still apply.
+
+Strong-club filtering remains only for the seven expressly requested regional leagues, the existing Cyprus/Latvia special cases, and lower-profile FALLBACK/DEEP_FALLBACK domestic `lower`/`minor` leagues. A competition being categorised FALLBACK for provider-cost planning does **not** automatically make all of its fixtures unimportant (e.g. Liga MX, MLS or Argentina).
