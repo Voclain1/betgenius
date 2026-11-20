@@ -1,14 +1,11 @@
-name: BetGenius early free ops scheduler diagnostic - read only
+name: BetGenius durable job history diagnostic - read only
 on:
   push:
     branches: ["claude/early-activation-20261119"]
     paths: [".github/workflows/early-activation-20261119.yml"]
 permissions: { contents: read }
-concurrency:
-  group: early-activation-production
-  cancel-in-progress: false
 jobs:
-  diagnose:
+  diagnostics:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -17,29 +14,28 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Read-only scheduler container, timed jobs and anonymized operational logs
+      - name: Compare cron and DB timestamps, detect missing jobRun instrumentation
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          date -u '+UTC_NOW=%Y-%m-%dT%H:%M:%SZ'
-          echo '=== Container state ==='
-          docker compose --env-file deploy.env ps --format 'table {{.Service}}\t{{.Status}}\t{{.Name}}'
-          echo '=== Cron entries (paths only) ==='
-          docker compose --env-file deploy.env exec -T ops sh -c "cat /etc/crontabs/root | grep -E 'early-(discover|run|publish)|generate/reassess'" < /dev/null
-          echo '=== Cron daemon process ==='
-          docker compose --env-file deploy.env exec -T ops sh -c "ps | grep -E 'crond|cron-call' | grep -v grep || true" < /dev/null
-          echo '=== Recent ops logs (scrub credentials; statuses only) ==='
-          docker compose --env-file deploy.env logs --since 4h --tail 120 ops 2>&1 | sed -E 's/(Bearer |Authorization: |token=)[^ ]+/\1[REDACTED]/Ig' | tail -100
-          echo '=== Recent tracked 4-job status ==='
+          echo '=== App jobRun logger errors, redacted ==='
+          docker compose --env-file deploy.env logs --since 4h app 2>&1 |
+            grep -E '\[jobRuns\]|prisma:|P2002|P2024|JobRun' |
+            sed -E 's|(postgresql://)[^ ]+|\1[REDACTED]|g' | tail -45 || true
+          echo '=== Database clock and last four job times ==='
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
-          SELECT 'last_job',job,to_char(max("ranAt") AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),count(*) FILTER (WHERE "ranAt">now()-interval '3 hours'),count(*) FILTER (WHERE NOT ok AND "ranAt">now()-interval '3 hours')
-          FROM "JobRun"
-          WHERE job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
+          SELECT 'clock', current_setting('TimeZone'),now(), now() AT TIME ZONE 'UTC',now() AT TIME ZONE 'Africa/Lagos';
+          SELECT 'last_3h',job,count(*),to_char(max("ranAt"),'YYYY-MM-DD HH24:MI:SS'),
+            to_char(max("ranAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')
+          FROM "JobRun" WHERE job IN ('early-free-publication','early-free-generation','early-fixture-discovery','prediction-reassessment')
+            AND "ranAt">now()-interval '3 hours' GROUP BY job ORDER BY job;
+          SELECT 'latest_job',job,to_char(max("ranAt"),'YYYY-MM-DD HH24:MI:SS'),max("ranAt")<now()-interval '1 hour'
+          FROM "JobRun" WHERE job IN ('early-free-publication','early-free-generation','early-fixture-discovery','prediction-reassessment')
           GROUP BY job ORDER BY job;
           COMMIT;
           SQL
-          echo 'PASS: no generation, publication, runtime mode or DB mutation'
+          echo 'PASS: scheduler and metrics examined without changes'
           REMOTE
