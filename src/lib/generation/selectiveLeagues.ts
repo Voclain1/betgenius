@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { FixtureRow } from "@/lib/football/api-football";
 import type { LeagueStandingRow } from "@/lib/enrichment";
+import { generationTierOf, LEAGUE_CATALOGUE, isSeniorWomensCompetition } from "@/lib/leagues";
 
 /**
  * Leagues generated every day, but only for their matches worth a tip.
@@ -15,21 +16,59 @@ import type { LeagueStandingRow } from "@/lib/enrichment";
  * than STANDINGS_MAX_AGE_MS (one refresh per league a day, a few api-football
  * calls). No usable table means no fixture qualifies: unknown is not "worth it".
  */
-export const SELECTIVE_LEAGUES: Readonly<Record<number, { name: string; topN: number; minPlayed: number }>> = {
+export type SelectiveLeagueRule = { name: string; topN: number; minPlayed: number };
+/**
+ * Tier labels are NOT permission to generate every match. These explicit
+ * secondary markets are selectively discovered even on healthy global days,
+ * but only strong-club fixtures pass into inference. Never hardcode club IDs:
+ * use the current provider standings to survive promotion/relegation.
+ */
+export const SELECTIVE_LEAGUES: Readonly<Record<number, SelectiveLeagueRule>> = {
   318: { name: "Cyprus First Division", topN: 3, minPlayed: 3 },
   365: { name: "Latvia Virsliga", topN: 3, minPlayed: 3 },
+  307: { name: "Saudi Pro League", topN: 4, minPlayed: 5 },
+  301: { name: "UAE Pro League", topN: 3, minPlayed: 5 },
+  330: { name: "Kuwaiti Premier League", topN: 3, minPlayed: 5 },
+  288: { name: "South Africa PSL", topN: 4, minPlayed: 5 },
+  286: { name: "Serbian Super Liga", topN: 4, minPlayed: 5 },
+  333: { name: "Ukrainian Premier League", topN: 4, minPlayed: 5 },
+  235: { name: "Russian Premier League", topN: 4, minPlayed: 5 },
+  // Comparable secondary domestic leagues: quality beats sheer fixture count.
+  399: { name: "Nigeria NPFL", topN: 5, minPlayed: 5 },
+  113: { name: "Swedish Allsvenskan", topN: 4, minPlayed: 5 },
+  103: { name: "Norway Eliteserien", topN: 4, minPlayed: 5 },
+  345: { name: "Czech Liga", topN: 4, minPlayed: 5 },
+  119: { name: "Danish Superliga", topN: 4, minPlayed: 5 },
+  106: { name: "Polish Ekstraklasa", topN: 4, minPlayed: 5 },
+  197: { name: "Greek Super League 1", topN: 4, minPlayed: 5 },
 };
+
+/**
+ * Fallback domestic LEAGUES follow the same selectivity instead of treating
+ * every lower-division fixture as equally worth evaluating. Cups, national
+ * teams, and senior women's competitions keep their separate existing gates.
+ * Established high-coverage European SECONDARY leagues remain unchanged.
+ */
+export function selectiveLeagueRule(leagueApiId: number | null | undefined): SelectiveLeagueRule | null {
+  if (leagueApiId == null) return null;
+  if (SELECTIVE_LEAGUES[leagueApiId]) return SELECTIVE_LEAGUES[leagueApiId];
+  const tier = generationTierOf(leagueApiId);
+  if (tier !== "FALLBACK" && tier !== "DEEP_FALLBACK") return null;
+  const league = LEAGUE_CATALOGUE.find(l => l.id === leagueApiId);
+  if (!league || league.kind !== "league" || isSeniorWomensCompetition(leagueApiId)) return null;
+  return { name: league.name, topN: 4, minPlayed: 5 };
+}
 
 export const STANDINGS_MAX_AGE_MS = 20 * 3_600_000;
 const RETRY_AFTER_FAILURE_MS = 6 * 3_600_000;
 
 export function isSelectiveLeague(leagueApiId: number | null | undefined): boolean {
-  return leagueApiId != null && leagueApiId in SELECTIVE_LEAGUES;
+  return selectiveLeagueRule(leagueApiId) !== null;
 }
 
 /** The clubs worth a tip in a selective league: its current top `topN`. Pure. */
 export function strongTeamIds(leagueApiId: number, table: readonly LeagueStandingRow[] | null | undefined): Set<number> {
-  const rule = SELECTIVE_LEAGUES[leagueApiId];
+  const rule = selectiveLeagueRule(leagueApiId);
   if (!rule || !table?.length) return new Set();
   return new Set(table.filter((r) => r.rank <= rule.topN && r.played >= rule.minPlayed).map((r) => r.teamId));
 }
@@ -58,11 +97,36 @@ export async function loadSelectiveTables(rows: readonly FixtureRow[], now: Date
         await refreshLeagueCache({ leagueApiId, kickoff: kickoff ? new Date(kickoff) : now });
         row = await prisma.leagueEnrichmentCache.findUnique({ where: { leagueApiId }, select: { standingsJson: true, fetchedAt: true, lastAttemptAt: true } });
       }
-      tables.set(leagueApiId, (row?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null);
+      // An old snapshot is not "current standings" if refresh failed.
+      const usable = Boolean(row?.fetchedAt && row.standingsJson &&
+        row.fetchedAt.getTime() <= now.getTime() &&
+        now.getTime() - row.fetchedAt.getTime() <= 48 * 3_600_000);
+      tables.set(leagueApiId, usable ? (row!.standingsJson as unknown as LeagueStandingRow[]) : null);
     } catch (err) {
       console.error(`[selective-leagues] no table for league ${leagueApiId}; its fixtures are skipped`, err);
       tables.set(leagueApiId, null);
     }
   }
   return tables;
+}
+
+/**
+ * Revalidate already-queued attempts too: fixtures may have entered the ledger
+ * before these selective rules were enabled. Both normal and early FREE
+ * generators share selectQueuedCandidates, so the queue cannot bypass the
+ * strong-team gate even when no new discovery runs.
+ */
+export async function filterSelectiveQueuedCandidates<T extends {
+  leagueApiId: number; homeTeamApiId: number; awayTeamApiId: number; kickoff: Date;
+}>(candidates: readonly T[], now: Date): Promise<T[]> {
+  const narrowed = candidates.filter(c => isSelectiveLeague(c.leagueApiId));
+  if (!narrowed.length) return [...candidates];
+  const asRow = (c: T): FixtureRow => ({
+    fixture: { date: c.kickoff.toISOString() },
+    league: { id: c.leagueApiId },
+    teams: { home: { id: c.homeTeamApiId }, away: { id: c.awayTeamApiId } },
+  } as FixtureRow);
+  const tables = await loadSelectiveTables(narrowed.map(asRow), now);
+  return candidates.filter(c => !isSelectiveLeague(c.leagueApiId) ||
+    isWorthATip(asRow(c), tables));
 }
