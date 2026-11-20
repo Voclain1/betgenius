@@ -23,7 +23,7 @@ const core = leaguesInTiers(["CORE"]);
 const secondary = leaguesInTiers(["SECONDARY"]);
 assert.ok(core.length > 0 && secondary.length > 0, "real priority scope must exist");
 const regional = [307, 301, 330, 288, 286, 333, 235];
-const cataloguedIds = new Set(LEAGUE_CATALOGUE.map(l => l.id));
+const cataloguedIds = new Set<number>(LEAGUE_CATALOGUE.map(l => l.id));
 assert.deepEqual([...EARLY_SPOTLIGHT_LEAGUES], regional, "requested leagues have a rotating early scan");
 assert.ok(regional.every(id => generationTierOf(id) === "SECONDARY"), "all requested leagues have always-on normal discovery");
 assert.ok(regional.every(id => cataloguedIds.has(id)), "all requested competitions have logos, names and flags");
