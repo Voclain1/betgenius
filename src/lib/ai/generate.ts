@@ -295,10 +295,13 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const tooShortDc = (p: Draft) => isUnpayableDoubleChance(priceOdds, p.marketType, p.selection);
   const unpayable = (p: Draft) => tooShortDc(p) || autoPriceIssue(p) !== null;
   const offMarket = (p: Draft) => farAboveMarket(odds, p);
-  // One bounded second attempt if every draft was too cheap, an unpriced
-  // TEAM_TOTAL, or far above market evidence. A retry is never a quota bypass.
+  // One bounded second attempt for ordinary (non-Goals) generation if every
+  // draft was too cheap, an unpriced TEAM_TOTAL or far above market evidence.
+  // The Goals pass allows only a fixed 1.5/2.5 OVER pick, and its prompt
+  // intentionally ignores general short-price retry blocks: do not pay for a
+  // second identical call there. Reject the priced-out Goals pick instead.
   const first = Array.isArray(output.predictions) ? output.predictions : [];
-  if (first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+  if (!goalsOnly && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
     const dc = first.filter(tooShortDc);
     const floor: AutoOddsFailure[] = first.filter((p) => !tooShortDc(p))
       .map((p) => autoPriceIssue(p))
