@@ -1,7 +1,4 @@
-# Read-only post-deploy observation: the early FREE publisher now uses the
-# existing Genius 70% curation floor instead of Premium 80%. Never trigger a
-# generation, publication, reassessment or paid-tier write here.
-name: BetGenius verify early free 70 tier alignment - read only
+name: BetGenius early free ops scheduler diagnostic - read only
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -11,7 +8,7 @@ concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  verify:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -20,51 +17,29 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Verify modes and 70–79 free draft supply without modifying production
+      - name: Read-only scheduler container, timed jobs and anonymized operational logs
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          C=$(docker compose --env-file deploy.env ps -q app)
-          test -n "$C"
-          echo '=== Live build and three activation flags ==='
-          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" |
-            grep -E '^(APP_BUILD_ID|EARLY_FIXTURE_MODE|EARLY_FREE_PUBLICATION_MODE|PREDICTION_REASSESSMENT_MODE)='
-          echo '=== Health ==='
-          curl -fsS --max-time 10 http://127.0.0.1:3000/api/health
-          echo
-          echo '=== Tier-aligned early FREE supply, no prediction IDs or secrets ==='
+          date -u '+UTC_NOW=%Y-%m-%dT%H:%M:%SZ'
+          echo '=== Container state ==='
+          docker compose --env-file deploy.env ps --format 'table {{.Service}}\t{{.Status}}\t{{.Name}}'
+          echo '=== Cron entries (paths only) ==='
+          docker compose --env-file deploy.env exec -T ops sh -c "cat /etc/crontabs/root | grep -E 'early-(discover|run|publish)|generate/reassess'" < /dev/null
+          echo '=== Cron daemon process ==='
+          docker compose --env-file deploy.env exec -T ops sh -c "ps | grep -E 'crond|cron-call' | grep -v grep || true" < /dev/null
+          echo '=== Recent ops logs (scrub credentials; statuses only) ==='
+          docker compose --env-file deploy.env logs --since 4h --tail 120 ops 2>&1 | sed -E 's/(Bearer |Authorization: |token=)[^ ]+/\1[REDACTED]/Ig' | tail -100
+          echo '=== Recent tracked 4-job status ==='
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
-          SELECT 'asof',to_char(now() AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI:SS');
-          SELECT 'free_early_rows',p.status,
-            case when p.confidence<70 then 'below70'
-              when p.confidence<75 then '70to74'
-              when p.confidence<80 then '75to79'
-              else '80plus' end,
-            count(*)
-          FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
-          WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
-          GROUP BY p.status,3 ORDER BY p.status,3;
-          SELECT 'pending_free_lead_window',count(*),count(*) FILTER(WHERE p.confidence>=70),
-            count(*) FILTER(WHERE p.confidence BETWEEN 70 AND 79 AND p."contextComplete"),
-            count(*) FILTER(WHERE p.confidence>=80)
-          FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
-          WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0 AND p.status='PENDING_REVIEW'
-            AND p.kickoff>now()+interval '48 hours'
-            AND p.kickoff<=now()+interval '168 hours';
-          SELECT 'jobs_since_release',job,count(*),
-            count(*) FILTER(WHERE NOT ok),max("ranAt") AT TIME ZONE 'Africa/Lagos'
+          SELECT 'last_job',job,to_char(max("ranAt") AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),count(*) FILTER (WHERE "ranAt">now()-interval '3 hours'),count(*) FILTER (WHERE NOT ok AND "ranAt">now()-interval '3 hours')
           FROM "JobRun"
-          WHERE "ranAt">='2026-11-20 13:54:58+00'::timestamptz
-            AND job IN ('early-free-publication','early-free-generation','early-fixture-discovery','prediction-reassessment')
+          WHERE job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
           GROUP BY job ORDER BY job;
-          SELECT 'latest_publisher_run',to_char("ranAt" AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),ok,
-            left(coalesce(summary,'NULL'),180),coalesce(detail::text,'NULL')
-          FROM "JobRun" WHERE job='early-free-publication'
-          ORDER BY "ranAt" DESC LIMIT 1;
           COMMIT;
           SQL
-          echo 'PASS: live code/modes and confidence buckets audited without production writes'
+          echo 'PASS: no generation, publication, runtime mode or DB mutation'
           REMOTE
