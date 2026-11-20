@@ -1,4 +1,4 @@
-# 2026-11-20 morning follow-up: refreshed read-only production evidence audit.
+# 2026-11-20 follow-up: read-only trace of early free publication authorization.
 # No feature flags, scheduled jobs, predictions or database records are changed.
 name: Early prediction production audit - read only
 on:
@@ -82,6 +82,23 @@ jobs:
             FROM "JobRun" WHERE "ranAt">NOW()-interval '24 hours'
             AND job IN ('early-fixture-discovery','early-free-generation','early-free-publication','prediction-reassessment')
             GROUP BY job ORDER BY job;
+          SELECT 'early_publish_audit',count(*),
+            count(*) FILTER (WHERE p.status='PUBLISHED'),
+            count(*) FILTER (WHERE p."approvedById" IS NOT NULL),
+            count(*) FILTER (WHERE p."approvedById"=p."authorId"),
+            count(*) FILTER (WHERE p."publishedAt" IS NOT NULL),
+            to_char(min(p."publishedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+            to_char(max(p."publishedAt") AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0;
+          SELECT 'early_publish_timing',
+            to_char(p."createdAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+            to_char(p."publishedAt" AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+            coalesce(round(extract(epoch from (p."publishedAt"-p."createdAt"))/60),-1),
+            p.confidence,p.status,(p."approvedById"=p."authorId")
+            FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+            ORDER BY p."createdAt" DESC LIMIT 12;
           SELECT 'monitor_status',status,count(*) FROM "PredictionReassessment" GROUP BY status ORDER BY status;
           SELECT 'public_holds',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
           SELECT 'public_visible_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
