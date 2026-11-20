@@ -29,7 +29,12 @@ const hoursLater = (hours: number) => new Date(now.getTime() + hours * 3_600_000
 assert.equal(inEarlyGenerationWindow(hoursLater(48), now), false);
 assert.equal(inEarlyGenerationWindow(hoursLater(49), now), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(168), now), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(169), now), false);
+assert.equal(inEarlyGenerationWindow(hoursLater(240), now), true);
+assert.equal(inEarlyGenerationWindow(hoursLater(336), now), true);
+assert.equal(inEarlyGenerationWindow(hoursLater(337), now), false);
+assert.equal(inEarlyGenerationWindow(hoursLater(260), now, secondary[0]), false);
+assert.equal(inEarlyGenerationWindow(hoursLater(240), now, secondary[0]), true);
+assert.equal(inEarlyGenerationWindow(hoursLater(300), now, core[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
 assert.equal(EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY, 20);
 
