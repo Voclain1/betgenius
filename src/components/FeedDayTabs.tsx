@@ -1,4 +1,4 @@
-import { FEED_DAYS, dayHref, feedDayTile, type FeedDay } from "@/lib/feedDays";
+import { VISIBLE_FEED_DAYS, dayHref, feedDayTile, type FeedDay } from "@/lib/feedDays";
 import { FeedDayScroller } from "./FeedDayScroller";
 
 /**
@@ -8,7 +8,7 @@ import { FeedDayScroller } from "./FeedDayScroller";
  */
 export function FeedDayTabs({ basePath, active }: { basePath: string; active: FeedDay }) {
   const anchor = new Date();
-  const items = FEED_DAYS.map(day => ({
+  const items = VISIBLE_FEED_DAYS.map(day => ({
     day,
     href: dayHref(basePath, day),
     ...feedDayTile(day, anchor),
