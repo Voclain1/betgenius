@@ -8,7 +8,8 @@ import { getUsageSnapshot } from "@/lib/football/usage";
 import { refreshOddsCache } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
 import { earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
-import { earlyOddsRefreshDue } from "@/lib/generation/earlyOddsPolicy";
+import { earlyFixturePricedForGeneration, earlyOddsRefreshDue } from "@/lib/generation/earlyOddsPolicy";
+import type { FixtureOdds } from "@/lib/odds";
 
 const HOUR = 3_600_000;
 const MIN_QUOTA_REMAINING = 1_800;
@@ -17,6 +18,7 @@ export const EARLY_ODDS_MAX_PER_RUN = 6;
 export type EarlyOddsWarmReport = {
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
   quoted: number; unquoted: number; failures: string[]; summary: string;
+  coverageByLeadDays: Record<string, { fixtures: number; quoted: number; publishable: number }>;
 };
 
 export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } = {}): Promise<EarlyOddsWarmReport> {
@@ -25,6 +27,8 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   const report: EarlyOddsWarmReport = {
     ok: true, mode, considered: 0, due: 0, attempted: 0,
     quoted: 0, unquoted: 0, failures: [], summary: "",
+    coverageByLeadDays: Object.fromEntries(["2-3", "4-5", "6-7", "8-10", "11-14"].map(k =>
+      [k, { fixtures: 0, quoted: 0, publishable: 0 }])),
   };
   const finish = () => {
     report.ok = report.failures.length === 0;
@@ -60,9 +64,25 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
 
   const cached = await prisma.fixtureOddsCache.findMany({
     where: { matchKey: { in: captured.map(f => f.matchKey) } },
-    select: { matchKey: true, fetchedAt: true, lastAttemptAt: true },
+    select: { matchKey: true, fetchedAt: true, lastAttemptAt: true, oddsJson: true },
   });
   const byKey = new Map(cached.map(c => [c.matchKey, c]));
+  // Read-only lead-time coverage counters for tomorrow's 3/5/7/10/14-day
+  // verification, based on actually quoted early candidates, not assumptions
+  // about provider-supported horizons. No extra external requests.
+  for (const fixture of captured) {
+    const days = (fixture.kickoff.getTime() - now.getTime()) / (24 * HOUR);
+    const band = days <= 3 ? "2-3" : days <= 5 ? "4-5" :
+      days <= 7 ? "6-7" : days <= 10 ? "8-10" : "11-14";
+    const stats = report.coverageByLeadDays[band];
+    const cache = byKey.get(fixture.matchKey);
+    stats.fixtures++;
+    if (cache?.fetchedAt && cache.oddsJson) stats.quoted++;
+    if (earlyFixturePricedForGeneration({
+      odds: (cache?.oddsJson as FixtureOdds | null) ?? null,
+      fetchedAt: cache?.fetchedAt ?? null, kickoff: fixture.kickoff, now,
+    })) stats.publishable++;
+  }
   const due = captured.filter(f => {
     const row = byKey.get(f.matchKey);
     return earlyOddsRefreshDue({
