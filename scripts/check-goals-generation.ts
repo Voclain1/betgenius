@@ -133,6 +133,7 @@ console.log("\n3. Persistence (generate.ts)");
 const generate = code("src/lib/ai/generate.ts");
 check("Goals intent turns the constraint on", /const goalsOnly = input\.intent === GOALS_INTENT;/.test(generate) && /\.\.\.\(goalsOnly \? \{ goalsOnly: true \} : \{\}\)/.test(generate));
 check("single market breadth — a Goals job can never assemble a double", /const marketBreadth = goalsOnly \? "single"/.test(generate) && /marketBreadth === "multi"/.test(generate));
+check("Goals price rejection never triggers an ineffective second model request", /if \(!goalsOnly && first\.length > 0 && first\.every/.test(generate));
 check("only pickGoalsDraft's survivor is persisted and its price is checked", /const modelDrafts = goalsSelection \? \(goalsSelection\.pick \? \[goalsSelection\.pick\] : \[\]\) : output\.predictions;/.test(generate) && /const drafts = payable\.filter\(\(p\) => !offMarket\(p\)\);/.test(generate) && /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(generate) && /automaticOddsFailure\(priceOdds, p\.marketType, p\.selection\)/.test(generate) && /drafts\.map\(async \(p\) =>/.test(generate));
 check("persisted under GOALS only — never FEATURED", /const persistedCategories = goalsOnly \? \[\.\.\.GOALS_PERSISTED_CATEGORIES\]/.test(generate) && same([...GOALS_PERSISTED_CATEGORIES], [GOALS]));
 check("GOALS still comes from the shared deterministic helper", /setPredictionCategories\(pred\.id, persistedCategories, \{ marketType, selection \}\)/.test(generate));
