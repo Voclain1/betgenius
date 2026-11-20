@@ -35,6 +35,9 @@ export function FeedDayScroller({ items, active }: { items: DayItem[]; active: F
   useEffect(() => {
     const track = trackRef.current;
     if (!track) return;
+    // The initial selection must jump into view immediately; CSS scroll-smooth
+    // would leave it clipped on narrow phones during hydration. Button clicks
+    // use explicit smooth behavior below, so user-initiated movement stays fluid.
     // scrollLeft changes only the date rail; scrollIntoView would also move
     // the entire document vertically when this control sits below the fold.
     const selected = Array.from(track.querySelectorAll<HTMLAnchorElement>("a[data-feed-day]"))
@@ -83,7 +86,7 @@ export function FeedDayScroller({ items, active }: { items: DayItem[]; active: F
             ref={trackRef}
             data-testid="feed-day-track"
             onScroll={updateEdges}
-            className="feed-day-track flex min-w-0 max-w-full snap-x snap-mandatory gap-1.5 overflow-x-auto overscroll-x-contain rounded-2xl border border-brand-border bg-brand-card p-1.5 motion-safe:scroll-smooth sm:gap-2 sm:p-2"
+            className="feed-day-track flex min-w-0 max-w-full snap-x snap-mandatory gap-1.5 overflow-x-auto overscroll-x-contain rounded-2xl border border-brand-border bg-brand-card p-1.5 sm:gap-2 sm:p-2"
           >
             {items.map(item => {
               const current = item.day === active;
