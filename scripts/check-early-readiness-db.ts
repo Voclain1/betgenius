@@ -8,6 +8,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { FREE_REASSESSMENT_VISIBLE, MIXED_REASSESSMENT_VISIBLE } from "../src/lib/reassessment/visibility";
 
 const dbUrl = process.env.DATABASE_URL ?? "";
 if (process.env.BETGENIUS_DISPOSABLE_PG !== "yes"
@@ -85,6 +86,34 @@ try {
       assert.equal(actual.revisions[0].kind, "REVIEW_REQUIRED");
       assert.equal(actual.revisions[0].recordedAt instanceof Date, true);
 
+      // Query the actual disposable PostgreSQL relations with the same typed
+      // predicates used by homepage, market, league, team and match surfaces.
+      const freeHeld = await tx.prediction.count({
+        where: { ...FREE_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED", marketType: "BTTS" },
+      });
+      const mixedHeld = await tx.prediction.count({
+        where: { ...MIXED_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
+      });
+      assert.equal(freeHeld, 0, "held FREE pick must disappear from market/category feeds");
+      assert.equal(mixedHeld, 0, "held FREE pick must disappear from mixed league/team/match browsing");
+
+      // VIP is an intentionally added admin category: keep its subscriber
+      // visibility; free hubs still must never show this held prediction.
+      await tx.predictionCategoryLink.create({
+        data: { predictionId: prediction.id, category: "VIP", manual: true },
+      });
+      const paidHeld = await tx.prediction.count({
+        where: { ...MIXED_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
+      });
+      const marketStillHidden = await tx.prediction.count({
+        where: { ...FREE_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
+      });
+      assert.equal(paidHeld, 1, "VIP-tagged selection stays in its existing paid review lane");
+      assert.equal(marketStillHidden, 0, "a paid tag cannot bypass FREE market-hold filtering");
+      await tx.predictionCategoryLink.deleteMany({
+        where: { predictionId: prediction.id, category: "VIP" },
+      });
+
       await tx.predictionRevision.create({
         data: {
           predictionId: prediction.id, kind: "CONFIRMED", publiclyVisible: true,
@@ -102,6 +131,9 @@ try {
       assert.equal(revisions.length, 2, "review decision appends without rewriting first revision");
       assert.equal(revisions[0].kind, "REVIEW_REQUIRED");
       assert.equal(revisions[1].kind, "CONFIRMED");
+      assert.equal(await tx.prediction.count({
+        where: { ...FREE_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
+      }), 1, "admin KEEP clears hold and restores selection on free feeds");
       validated = true;
       throw new Error(rollback);
     });
