@@ -147,8 +147,14 @@ assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, categories: [
 assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, provenance: "VIP_GENERATED" }, prior, now), "protected-provenance");
 assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, contextComplete: false }, prior, now), "no-reliable-evidence");
 assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, earlyJobVerified: false }, prior, now), "not-dedicated-early-free-job");
-assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, categories: ["FEATURED", "GOALS"] }, prior, now), null,
-  "derived free GOALS tag must not prevent normal early Featured publication");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, marketType: "OVER_UNDER",
+  selection: { line: 2.5, direction: "OVER" }, categories: ["FEATURED", "GOALS"] }, prior, now), null,
+  "a genuine structured Over 2.5 pick may carry the automatically derived free GOALS tag");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70,
+  categories: ["FEATURED", "VIP"] }, prior, now), "reserved-category",
+  "free early approval must refuse a manually VIP-tagged draft even if also Featured");
+assert.equal(earlyPublicationBlock({ ...candidate, confidence: 70, manualSettlementOnly: true }, prior, now),
+  "invalid-market", "auto publication must retain structured settlement eligibility");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["VIP"] }, prior, now), "reserved-category");
 assert.equal(earlyPublicationBlock({ ...candidate, categories: ["SAME_GAME_DOUBLE"] }, prior, now), "combo-source-or-double");
 assert.equal(earlyPublicationBlock(candidate, null, now), "no-reliable-evidence");

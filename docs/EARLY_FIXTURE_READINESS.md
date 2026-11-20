@@ -107,5 +107,11 @@ cost and tests are available.
 4. Real production end-to-end run, accurate timestamps, limited API spend,
    no duplicate generation and no errors not accounted for by job diagnostics.
 
-**Public automatic publication remains OFF until end-to-end, non-leaking,
-provider-grounded quality and monitoring gates are verified on live fixtures.**
+**Current production state (20 Nov 2026):** following the owner's explicit
+activation, early capture, automatic FREE publication, and continuous
+reassessment are all ON. The previous OFF/SHADOW rollout instructions in this
+document describe historical activation stages, not the live configuration.
+After this tier-alignment change, the **70%** bar applies only to automated
+2–7-day FREE publication; the 75% VIP and 80% Premium bars and their separate
+market/paid-provenance gates stay unchanged. Production publication still
+requires all valid-evidence, provider-identity and fixture-window checks.
