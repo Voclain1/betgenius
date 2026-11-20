@@ -1,6 +1,6 @@
 /**
  * Bounded Lagos day navigation for daily published predictions.
- * Historical days remain stable; future dates are browsable up to +7 days.
+ * Historical days remain stable; future dates are browsable up to +14 days.
  * Opening a future date does not claim a prediction exists there.
  * Pure and client-safe: no database or authentication imports.
  */
@@ -9,6 +9,7 @@ import { lagosDayBounds, lagosDayLabel } from "./lagosDate";
 export const FEED_DAYS = [
   "yesterday", "today", "tomorrow", "day-2", "day-3",
   "day-4", "day-5", "day-6", "day-7",
+  "day-8", "day-9", "day-10", "day-11", "day-12", "day-13", "day-14",
 ] as const;
 
 export type FeedDay = (typeof FEED_DAYS)[number];
@@ -16,6 +17,8 @@ const OFFSETS: Record<FeedDay, number> = {
   yesterday: -1, today: 0, tomorrow: 1,
   "day-2": 2, "day-3": 3, "day-4": 4,
   "day-5": 5, "day-6": 6, "day-7": 7,
+  "day-8": 8, "day-9": 9, "day-10": 10, "day-11": 11,
+  "day-12": 12, "day-13": 13, "day-14": 14,
 };
 export const feedDayOffset = (day: FeedDay): number => OFFSETS[day];
 
