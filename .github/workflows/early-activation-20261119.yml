@@ -1,8 +1,7 @@
-# Explicit owner-approved activation on 20 Nov 2026.
-# Early FREE publication and evidence-based reassessment become ON. The
-# 80% threshold and all original protection gates remain unchanged.
-# This operational workflow is intentionally NOT merged into master.
-name: BetGenius activate qualified early publication and live reassessment
+# Read-only post-deploy observation: the early FREE publisher now uses the
+# existing Genius 70% curation floor instead of Premium 80%. Never trigger a
+# generation, publication, reassessment or paid-tier write here.
+name: BetGenius verify early free 70 tier alignment - read only
 on:
   push:
     branches: ["claude/early-activation-20261119"]
@@ -12,134 +11,60 @@ concurrency:
   group: early-activation-production
   cancel-in-progress: false
 jobs:
-  activate:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/vps-ssh
         with:
           host: ${{ secrets.VPS_HOST }}
           key: ${{ secrets.VPS_SSH_KEY }}
-      - name: Set approved modes and verify live production with guarded rollback
+      - name: Verify modes and 70–79 free draft supply without modifying production
         shell: bash
         run: |
           ssh vps 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd /opt/betgenius
-          EXPECTED=43ddddba6fd2d9b67b1aaa093c8610627437a6ed
           C=$(docker compose --env-file deploy.env ps -q app)
           test -n "$C"
-          ENV=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          echo "$ENV" | grep -qx "APP_BUILD_ID=$EXPECTED" || {
-            echo 'REFUSED: unexpected deployed build'; exit 1;
-          }
-          echo "$ENV" | grep -qx "EARLY_FIXTURE_MODE=on" || {
-            echo 'REFUSED: early capture must already be ON'; exit 1;
-          }
-          echo "$ENV" | grep -qx "EARLY_FREE_PUBLICATION_MODE=shadow" || {
-            echo 'REFUSED: expected publication SHADOW state'; exit 1;
-          }
-          echo "$ENV" | grep -qx "PREDICTION_REASSESSMENT_MODE=shadow" || {
-            echo 'REFUSED: expected reassessment SHADOW state'; exit 1;
-          }
-          curl -fsS --max-time 10 http://127.0.0.1:3000/api/health >/dev/null
-          echo 'PASS: correct live build healthy, activation starts from verified SHADOW state'
-          # Do not touch anything if scheduler is not installed.
-          docker compose --env-file deploy.env exec -T ops sh -c \
-            'grep -q "early-publish" /etc/crontabs/root && grep -q "generate/reassess" /etc/crontabs/root' < /dev/null
-          BACKUP=/opt/betgenius/app.env.before-early-full-activation-20261120
-          if [ -e "$BACKUP" ]; then echo 'REFUSED: full activation backup exists'; exit 1; fi
-          umask 077
-          cp -p app.env "$BACKUP"
-          chmod 600 "$BACKUP"
-          rollback() {
-            echo 'LIVE ACTIVATION CHECK FAILED; reverting rollout to prior SHADOW config'
-            cp -p "$BACKUP" app.env
-            docker compose --env-file deploy.env up -d --no-deps --force-recreate app || true
-          }
-          trap rollback ERR
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("app.env")
-          settings={
-            "EARLY_FIXTURE_MODE":"on",
-            "EARLY_FREE_PUBLICATION_MODE":"on",
-            "PREDICTION_REASSESSMENT_MODE":"on",
-          }
-          lines=p.read_text().splitlines()
-          for key in settings:
-              values=[s.partition("=")[2] for s in lines if s.startswith(key+"=")]
-              expected="on" if key=="EARLY_FIXTURE_MODE" else "shadow"
-              if len(values)!=1 or values[0]!=expected:
-                  raise SystemExit(f"REFUSED: unexpected app.env {key}")
-          lines=[line for line in lines
-                 if not any(line.startswith(key+"=") for key in settings)]
-          lines.extend(f"{key}={value}" for key,value in settings.items())
-          p.write_text("\n".join(lines)+"\n")
-          p.chmod(0o600)
-          PY
-          docker compose --env-file deploy.env up -d --no-deps --force-recreate app
-          HEALTHY=no
-          for i in $(seq 1 40); do
-            if curl -fsS --max-time 5 http://127.0.0.1:3000/api/health >/dev/null 2>&1; then
-              HEALTHY=yes; break
-            fi
-            sleep 3
-          done
-          test "$HEALTHY" = yes
-          C=$(docker compose --env-file deploy.env ps -q app)
-          FINAL=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C")
-          for flag in EARLY_FIXTURE_MODE EARLY_FREE_PUBLICATION_MODE PREDICTION_REASSESSMENT_MODE; do
-            echo "$FINAL" | grep -qx "$flag=on" || { echo "FAIL: $flag not ON"; exit 1; }
-          done
-          echo "PASS: all three rollout flags ON, build $EXPECTED, app healthy"
-          echo '=== First live gated publication + evidence reassessment ==='
-          docker compose --env-file deploy.env exec -T app node - <<'NODE'
-          (async () => {
-            if (!process.env.CRON_SECRET) throw new Error("Missing scheduler authentication");
-            const call = async (path) => {
-              const r = await fetch("http://127.0.0.1:3000"+path, {
-                headers: { authorization: "Bearer "+process.env.CRON_SECRET },
-                signal: AbortSignal.timeout(105000), cache: "no-store",
-              });
-              const b = await r.json();
-              const safe = {
-                endpoint: path, http: r.status, ok: b.ok, mode: b.mode,
-                considered: b.considered, qualifying: b.qualifying,
-                published: b.published, blocked: b.blocked,
-                checked: b.checked, current: b.current, flagged: b.flagged,
-                withdrawn: b.withdrawn, skipped: b.skipped,
-                failures: b.failures?.length ?? 0, summary: b.summary,
-              };
-              console.log("LIVE_RESULT", JSON.stringify(safe));
-              if (!r.ok || b.ok !== true || b.mode !== "on" ||
-                (b.failures && b.failures.length)) {
-                throw new Error("Guarded live endpoint failed: "+path);
-              }
-              return safe;
-            };
-            const publication = await call("/api/admin/generate/early-publish?limit=2");
-            if (publication.published > publication.qualifying) throw Error("Publication qualification invariant failed");
-            const reassessment = await call("/api/admin/generate/reassess?limit=2");
-            if (reassessment.withdrawn > reassessment.checked) throw Error("Reassessment withdrawal invariant failed");
-            console.log("PASS: live gated publication and reassessment routes respond safely");
-          })().catch(e=>{console.error("LIVE_GATE_CHECK_FAILED", e.message);process.exitCode=1;});
-          NODE
-          echo '=== Read-only outcomes ==='
+          echo '=== Live build and three activation flags ==='
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$C" |
+            grep -E '^(APP_BUILD_ID|EARLY_FIXTURE_MODE|EARLY_FREE_PUBLICATION_MODE|PREDICTION_REASSESSMENT_MODE)='
+          echo '=== Health ==='
+          curl -fsS --max-time 10 http://127.0.0.1:3000/api/health
+          echo
+          echo '=== Tier-aligned early FREE supply, no prediction IDs or secrets ==='
           docker compose --env-file deploy.env exec -T postgres psql -X -U betgenius -d betgenius -v ON_ERROR_STOP=1 -At <<'SQL'
           BEGIN READ ONLY;
-          SELECT 'recent_runs',job,count(*),count(*) FILTER (WHERE NOT ok)
-            FROM "JobRun" WHERE "ranAt">now()-interval '15 minutes'
-              AND job IN ('early-free-publication','prediction-reassessment')
-            GROUP BY job ORDER BY job;
-          SELECT 'public_holds',count(*) FROM "PredictionReassessment" WHERE "publicHold"=true;
-          SELECT 'publicly_visible_revisions',count(*) FROM "PredictionRevision" WHERE "publiclyVisible"=true;
-          SELECT 'eligible_pending_early_above_80',count(*) FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
-            WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
-              AND p.status='PENDING_REVIEW' AND p.confidence>=80;
+          SELECT 'asof',to_char(now() AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI:SS');
+          SELECT 'free_early_rows',p.status,
+            case when p.confidence<70 then 'below70'
+              when p.confidence<75 then '70to74'
+              when p.confidence<80 then '75to79'
+              else '80plus' end,
+            count(*)
+          FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+          WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0
+          GROUP BY p.status,2 ORDER BY p.status,2;
+          SELECT 'pending_free_lead_window',count(*),count(*) FILTER(WHERE p.confidence>=70),
+            count(*) FILTER(WHERE p.confidence BETWEEN 70 AND 79 AND p."contextComplete"),
+            count(*) FILTER(WHERE p.confidence>=80)
+          FROM "Prediction" p JOIN "AIJob" j ON j.id=p."aiJobId"
+          WHERE position('"intent":"EARLY_FREE"' in j.prompt)>0 AND p.status='PENDING_REVIEW'
+            AND p.kickoff>now()+interval '48 hours'
+            AND p.kickoff<=now()+interval '168 hours';
+          SELECT 'jobs_since_release',job,count(*),
+            count(*) FILTER(WHERE NOT ok),max("ranAt") AT TIME ZONE 'Africa/Lagos'
+          FROM "JobRun"
+          WHERE "ranAt">='2026-11-20 13:54:58+00'::timestamptz
+            AND job IN ('early-free-publication','early-free-generation','early-fixture-discovery','prediction-reassessment')
+          GROUP BY job ORDER BY job;
+          SELECT 'latest_publisher_run',to_char("ranAt" AT TIME ZONE 'Africa/Lagos','YYYY-MM-DD HH24:MI'),ok,
+            left(coalesce(summary,'NULL'),180),coalesce(detail::text,'NULL')
+          FROM "JobRun" WHERE job='early-free-publication'
+          ORDER BY "ranAt" DESC LIMIT 1;
           COMMIT;
           SQL
-          trap - ERR
-          echo 'PASS: LIVE ACTIVATION VERIFIED; capture ON, gated free publication ON, reassessment ON'
+          echo 'PASS: live code/modes and confidence buckets audited without production writes'
           REMOTE
