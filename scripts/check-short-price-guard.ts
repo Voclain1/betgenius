@@ -78,7 +78,7 @@ const newRetry = automaticOddsRetryBlock([
   automaticOddsFailure(lowMarkets, "OVER_UNDER", { line: 2.5, direction: "UNDER" })!,
   automaticOddsFailure(null, "TEAM_TOTAL", { side: "HOME", line: 2.5, direction: "UNDER" })!,
 ]);
-check("floor retry names a real quote and rejects unverified team totals", /1\\.04/.test(newRetry) && /TEAM_TOTAL/.test(newRetry) && /1\\.12/.test(newRetry), newRetry);
+check("floor retry names a real quote and rejects unverified team totals", /1\.04/.test(newRetry) && /TEAM_TOTAL/.test(newRetry) && /1\.12/.test(newRetry), newRetry);
 
 // The second ask names the worthless prices and the alternatives.
 const retryBlock = shortPriceRetryBlock(o, [{ selection: { value: "HOME_OR_DRAW" } }], "Real Madrid", "RB Leipzig");
@@ -88,14 +88,14 @@ check("first-ask block also offers Draw No Bet and Win Either Half", /DRAW_NO_BE
 
 // Bulk panel wording.
 check("bulk panel explains ShortPriceError", /Double Chance/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "ShortPriceError" }))));
-check("bulk panel explains AutoOddsFloorError", /1\\.12/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "AutoOddsFloorError" }))));
+check("bulk panel explains AutoOddsFloorError", /1\.12/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "AutoOddsFloorError" }))));
 
 // Wiring.
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
 check("generate.ts passes shortPriceBlock to the model", /const firstBlock = shortPriceBlock\(shortPriceSides\(priceOdds, input\.home, input\.away\)\);/.test(gen) && /callModel\(firstBlock\)/.test(gen) && /shortPriceBlock: block,/.test(gen));
 check("only unpayable Double Chance drafted: one more ask for the next best pick, not a failure", /first\.every\(\(p\) => unpayable\(p\) \|\| offMarket\(p\)\)/.test(gen) && /shortPriceRetryBlock\(priceOdds, dc, input\.home, input\.away\)/.test(gen) && /await callModel\(retryBlock\)/.test(gen));
 check("generate.ts drops low-odds selections and unpriced team totals", /isUnpayableDoubleChance\(priceOdds, p\.marketType, p\.selection\)/.test(gen) && /automaticOddsFailure\(priceOdds, p\.marketType, p\.selection\)/.test(gen) && /modelDrafts\.filter\(\(p\) => !unpayable\(p\)\)/.test(gen));
-check("generate.ts covers ordinary and Goals and skips manual/handicap/paid paths", /guardsShortPrice = !input\\.manual && !input\\.handicapLine && input\\.intent !== "VIP_PREMIUM"/.test(gen) && /const checksMarket = !input\\.handicapLine && input\\.intent !== "VIP_PREMIUM"/.test(gen) && /const priceOdds = guardsShortPrice \\? odds : null;/.test(gen));
+check("generate.ts covers ordinary and Goals and skips manual/handicap/paid paths", /guardsShortPrice = !input\.manual && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen) && /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen) && /const priceOdds = guardsShortPrice \? odds : null;/.test(gen));
 for (const route of ["src/app/api/admin/ai/route.ts", "src/app/api/admin/ai/bulk/route.ts"]) {
   check(`${route.split("/").slice(-2).join("/")}: admin generation is exempt (manual: true)`, /manual: true,/.test(readFileSync(join(__dirname, "..", route), "utf8")));
 }
