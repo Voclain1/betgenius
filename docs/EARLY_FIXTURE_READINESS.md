@@ -62,10 +62,21 @@ cost and tests are available.
   remain gated by runtime flags, so installing the scheduler is inert with OFF.
   The on-VPS ops container must be rebuilt/restarted by `deploy-vps` for the
   entries to take effect. Verify scheduler logs and `JobRun` outcomes.
-- After each `deploy-vps`, `app.env` is copied from the GitHub
-  `PROD_ENV_FILE` secret. Manual SHADOW flags in the running VPS are therefore
-  not durable across deploys and must be reapplied/verified. Do not silently
-  assume activation persists.
+- **Deployment-persistence fix:** after PR #214, `deploy-vps` stages the
+  incoming GitHub `PROD_ENV_FILE` on the VPS, then the validated, atomic
+  `deploy/ops/merge-rollout-env.py` retains exactly these three activation
+  flags from the existing VPS `app.env`: `EARLY_FIXTURE_MODE`,
+  `EARLY_FREE_PUBLICATION_MODE`, and `PREDICTION_REASSESSMENT_MODE`.
+  All secrets, service URLs and unrelated settings still come from the new
+  GitHub secret. Missing previous flag values fail safely OFF; invalid or
+  duplicate rollout flags abort the deploy rather than guessing.
+  No flag can be promoted from OFF/SHADOW to ON merely by a deploy. Only an
+  authorized, explicit change to the VPS runtime configuration can do that.
+  The deployment verifies the three running-container flag values after switch.
+- To stop the feature urgently, explicitly set the relevant flag(s) to OFF
+  on the VPS and recreate the app; that OFF state also survives deploys.
+  Changing the GitHub PROD_ENV_FILE secret alone does **not** override these
+  three operational flags; this separation is intentional.
 - Turn on capture SHADOW first; verify recorded fixture counts and API headroom.
   Then enable early capture ON + early publication SHADOW, inspect qualifying
   reasons, and enable publication ON only when results meet thresholds.
