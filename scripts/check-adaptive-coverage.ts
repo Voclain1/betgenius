@@ -49,6 +49,7 @@ const db = {
   ledger: [] as Ledger[],
   predictions: [] as Pred[],
   odds: [] as Array<{ matchKey: string; bookmakerCount: number | null; fetchedAt: Date | null }>,
+  strongTeamIds: new Map<number, Set<number>>(),
   /** AIJob prompts, read by the European-club lane's slate exclusion. */
   aiJobs: [] as Array<{ prompt: string; createdAt: Date }>,
   leaseFree: true,
@@ -117,6 +118,19 @@ const prismaStub = {
     },
   },
   fixtureOddsCache: { findMany: () => Promise.resolve(db.odds) },
+  // Standings stub: lower-profile leagues must establish a strong-club match
+  // before joining generation, even when ordinary or early queue already holds it.
+  leagueEnrichmentCache: {
+    findUnique: (args: any) => {
+      const teamIds = db.strongTeamIds.get(args.where.leagueApiId);
+      return Promise.resolve(!teamIds?.size ? null : {
+        fetchedAt: NOW, lastAttemptAt: NOW,
+        standingsJson: [...teamIds].map((teamId, index) => ({
+          teamId, rank: index + 1, played: 8, teamName: "Qualified club",
+        })),
+      });
+    },
+  },
   aIJob: {
     findMany: (args: any) => {
       const needle = args.where?.prompt?.contains;
@@ -169,6 +183,7 @@ function resetWorld() {
   db.ledger = [];
   db.predictions = [];
   db.odds = [];
+  db.strongTeamIds.clear();
   db.aiJobs = [];
   db.leaseFree = true;
   db.laneLeaseFree = false;
@@ -434,7 +449,11 @@ async function main() {
   const doneToo = fixture(141);
   db.predictions.push({ fixtureApiId: done.fixture.id, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: new Date(done.fixture.date), leagueApiId: 79, status: "PUBLISHED" });
   db.ledger.push({ ...ledgerRow(141, "ABANDONED"), fixtureApiId: doneToo.fixture.id });
-  byDatePayload = { [sweepDates(NOW)[1]]: [done, doneToo, fixture(62)] };
+  const candidate62 = fixture(62);
+  // Ligue 2 is selective. Without a credible top-four team it is not
+  // worth inference; with an actual top-ranked team it can be discovered.
+  db.strongTeamIds.set(62, new Set([candidate62.teams.home.id]));
+  byDatePayload = { [sweepDates(NOW)[1]]: [done, doneToo, candidate62] };
   await queue.discoverGenerationCandidates({ now: NOW, batchSize: 3 });
   check("a fixture with predictions is not re-queued", !db.ledger.some((l) => l.fixtureApiId === done.fixture.id));
   check("an abandoned fixture is not revived", db.ledger.filter((l) => l.fixtureApiId === doneToo.fixture.id).length === 1 && db.ledger.find((l) => l.fixtureApiId === doneToo.fixture.id)!.status === "ABANDONED");
@@ -445,6 +464,9 @@ async function main() {
   const pendingCore = ledgerRow(39, "PENDING");
   const pendingFallback = ledgerRow(79, "PENDING");
   db.ledger.push(pendingCore, pendingFallback);
+  // The 2. Bundesliga cannot be selected merely because the fallback tier
+  // is enabled. A current qualifying top-four team must be in the fixture.
+  db.strongTeamIds.set(79, new Set([Number(pendingFallback.matchKey.split("-")[0])]));
   const healthyExcluded = excludedLeagueIds(decideCoverage(counts(40, 10)));
   const selected = await queue.selectQueuedCandidates({ now: NOW, limit: 10, excludeLeagueApiIds: healthyExcluded });
   check("a healthy slate: the queued fallback row is not selected", selected.every((c) => c.leagueApiId !== 79) && selected.some((c) => c.leagueApiId === 39));
