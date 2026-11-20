@@ -50,9 +50,11 @@ export const JOB_REFRESH_ODDS = "refresh-odds" as const;
 export const JOB_GENERATION_DISCOVERY = "generation-discovery" as const;
 /** Advance fixture availability independently of 48h generation. */
 export const JOB_EARLY_FIXTURE_DISCOVERY = "early-fixture-discovery" as const;
+/** Quota-controlled opening bookmaker quotes for the early FREE lane. */
+export const JOB_EARLY_ODDS = "early-free-odds" as const;
 /** Quality-gated early publishing of free picks. */
 export const JOB_EARLY_FREE_PUBLICATION = "early-free-publication" as const;
-/** Dedicated 2-7 day ordinary singles generation pass. */
+/** Dedicated 2-14 day ordinary singles generation pass. */
 export const JOB_EARLY_GENERATION = "early-free-generation" as const;
 /** Evidence-aware post-publication monitoring. */
 export const JOB_PREDICTION_REASSESSMENT = "prediction-reassessment" as const;
@@ -80,6 +82,7 @@ export const JOB_REFRESH_INSIGHTS = "refresh-insights" as const;
 export const KNOWN_JOBS = [
   JOB_GENERATION_DISCOVERY,
   JOB_EARLY_FIXTURE_DISCOVERY,
+  JOB_EARLY_ODDS,
   JOB_EARLY_FREE_PUBLICATION,
   JOB_EARLY_GENERATION,
   JOB_PREDICTION_REASSESSMENT,
