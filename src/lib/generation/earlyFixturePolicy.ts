@@ -8,7 +8,7 @@ export const EARLY_FIXTURE_POLICY = {
   CORE_DAYS: 14,
   SECONDARY_DAYS: 10,
   EARLY_GENERATION_FROM_HOURS: 48,
-  EARLY_GENERATION_UNTIL_HOURS: 168,
+  EARLY_GENERATION_UNTIL_HOURS: 336,
   MAX_QUEUE_PER_DAY: 20,
   MAX_QUEUE_PER_LEAGUE: 8,
   MIN_API_QUOTA_REMAINING: 2_200,
@@ -38,9 +38,9 @@ export function earlyDateRange(now: Date, days: number): { from: string; to: str
 }
 
 /** No early queueing at or inside the existing 48-hour final-validation band. */
-export function inEarlyGenerationWindow(kickoff: Date, now: Date): boolean {
+export function inEarlyGenerationWindow(kickoff: Date, now: Date, leagueApiId?: number | null): boolean {
   const hours = (kickoff.getTime() - now.getTime()) / 3_600_000;
   return Number.isFinite(hours)
     && hours > EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS
-    && hours <= EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS;
+    && hours <= (leagueApiId != null ? discoveryHorizonDays(leagueApiId) * 24 : EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS);
 }
