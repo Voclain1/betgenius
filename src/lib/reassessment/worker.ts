@@ -112,17 +112,36 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
   if (!holder) { report.skipped++; return finish(); }
   try {
     const limit = Math.max(1, Math.min(MAX_REASSESSMENTS_PER_RUN, Math.trunc(input.limit ?? MAX_REASSESSMENTS_PER_RUN)));
-    const rows = await prisma.prediction.findMany({
-      where: { status: "PUBLISHED", kickoff: { gt: now, lte: new Date(now.getTime() + 14 * 86_400_000) },
-        fixtureApiId: { not: null } },
-      include: {
-        aiJob: { select: { context: true, prompt: true } },
-        categories: true, reassessment: true,
-      },
-      orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }],
-      take: 500,
-    });
-    const candidates = rows.filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now).slice(0, limit);
+    // Fetch near and 8–14-day windows independently. Otherwise a busy
+    // near-kickoff slate fills the 500-row cap and early posts are never read.
+    const include = {
+      aiJob: { select: { context: true, prompt: true } },
+      categories: true, reassessment: true,
+    } as const;
+    const sevenDays = new Date(now.getTime() + 7 * 86_400_000);
+    const fourteenDays = new Date(now.getTime() + 14 * 86_400_000);
+    const [near, early] = await Promise.all([
+      prisma.prediction.findMany({
+        where: { status: "PUBLISHED", kickoff: { gt: now, lte: sevenDays },
+          fixtureApiId: { not: null } },
+        include, orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }], take: 500,
+      }),
+      prisma.prediction.findMany({
+        where: { status: "PUBLISHED", kickoff: { gt: sevenDays, lte: fourteenDays },
+          fixtureApiId: { not: null } },
+        include, orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }], take: 400,
+      }),
+    ]);
+    const candidates = [...near, ...early]
+      .filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now)
+      .sort((a, b) => {
+        // Within 6h of kickoff, freshness takes priority. Otherwise check the
+        // oldest overdue/never-checked first so early picks aren't starved.
+        const urgent = (r: typeof a) => Number(!!r.kickoff && r.kickoff.getTime() - now.getTime() <= 6 * 3_600_000);
+        return urgent(b) - urgent(a) ||
+          (a.reassessment?.nextCheckAt?.getTime() ?? 0) - (b.reassessment?.nextCheckAt?.getTime() ?? 0) ||
+          (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0);
+      }).slice(0, limit);
     const ids = [...new Set(candidates.map(r => r.fixtureApiId).filter((v): v is number => v != null))];
     // One provider call per 20 fixture IDs. Failure means unknown, not cancellation.
     const freshFixtures = ids.length ? await getFixturesByIds(ids) : [];
