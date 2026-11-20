@@ -68,6 +68,24 @@ function matchOps(value: unknown, ops: Record<string, any>): boolean {
       case "startsWith":
         if (typeof value !== "string" || !value.startsWith(operand)) return false;
         break;
+      // Prisma relation filters, needed when scoped prediction pages suppress
+      // held FREE rows without excluding paid rows. Absent optional one-to-one
+      // relations fail "is", while absent one-to-many arrays satisfy "none".
+      case "is":
+        if (!isPlainObject(value) || !matchesWhere(value, operand)) return false;
+        break;
+      case "isNot":
+        if (isPlainObject(value) && matchesWhere(value, operand)) return false;
+        break;
+      case "some":
+        if (!Array.isArray(value) || !value.some((r) => matchesWhere(r, operand))) return false;
+        break;
+      case "none":
+        if (Array.isArray(value) && value.some((r) => matchesWhere(r, operand))) return false;
+        break;
+      case "every":
+        if (Array.isArray(value) && !value.every((r) => matchesWhere(r, operand))) return false;
+        break;
       default:
         throw new Error(`fakePrisma: unsupported filter operator "${op}"`);
     }
