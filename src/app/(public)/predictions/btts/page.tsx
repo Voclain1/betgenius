@@ -11,6 +11,7 @@ import { CategoryPredictionsList } from "@/components/CategoryPredictionsList";
 import { FeedDayTabs } from "@/components/FeedDayTabs";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { lagosDayLabel } from "@/lib/lagosDate";
+import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { BttsPredictionsEvidence, BttsPredictionsGuide } from "@/components/BttsPredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
@@ -25,10 +26,10 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: row.awayTeam ?? row.fixture?.awayTeam?.name,
   })));
   return {
-    title: `BTTS Predictions ${day[0].toUpperCase()}${day.slice(1)}`,
+    title: `BTTS Predictions ${feedDayTitle(day)}`,
     description: rows.length
-      ? `${rows.length} BTTS predictions for ${day}${sample ? `, including ${sample}` : ""}. Both Teams to Score Yes or No picks with match evidence and confidence ratings.`
-      : `No BTTS predictions are published for ${day}. Browse another day or explore the other prediction markets.`,
+      ? `${rows.length} BTTS predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Both Teams to Score Yes or No picks with match evidence and confidence ratings.`
+      : `No BTTS predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
     robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
     alternates: { canonical: feedDayHref("btts", day) },
   };
@@ -101,9 +102,9 @@ export default async function BttsPage({ searchParams }: { searchParams?: { date
       ]} />
       <CategoryMasthead
         kicker="Market guide"
-        title={`BTTS predictions ${day}`}
+        title={`BTTS predictions ${feedDayText(day)}`}
         blurb={<>{rows.length} Both Teams to Score {rows.length === 1 ? "pick is" : "picks are"} published for the chosen day.</>}
-        dateLabel={`${lagosDayLabel(({ yesterday: -1, today: 0, tomorrow: 1 } as const)[day])} · West Africa Time`}
+        dateLabel={`${lagosDayLabel(feedDayOffset(day))} · West Africa Time`}
         stats={[
           { label: rows.length === 1 ? "Pick" : "Picks", value: String(rows.length) },
           { label: "Competitions", value: String(new Set(rows.map((r) => r.leagueApiId ?? r.leagueName)).size) },

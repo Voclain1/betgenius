@@ -1,4 +1,5 @@
 "use client";
+import { safeAuthReturn, authPageHref } from "@/lib/authReturn";
 import { signIn } from "next-auth/react";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,7 +19,7 @@ function LoginForm() {
   const oauthError = searchParams.get("error");
   const justReset = searchParams.get("reset") === "1";
   const requested = searchParams.get("callbackUrl");
-  const callbackUrl = requested?.startsWith("/") && !requested.startsWith("//") ? requested : "/dashboard";
+  const callbackUrl = safeAuthReturn(requested);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,9 +49,9 @@ function LoginForm() {
           <div className="h-px flex-1 bg-brand-border" />
         </div>
         <form onSubmit={submit} className="space-y-3">
-          <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)}
+          <input aria-label="Email" type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
-          <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
+          <input aria-label="Password" type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-md border border-brand-border bg-brand-bg px-3 py-2" />
           {err && <div className="text-sm text-red-400">{err}</div>}
           <button className="btn btn-primary w-full">Log in</button>
@@ -60,7 +61,7 @@ function LoginForm() {
         </p>
       </div>
       <p className="mt-4 text-sm text-gray-400">
-        No account? <Link href="/register" className="text-brand">Create one</Link>.
+        No account? <Link href={authPageHref("/register", callbackUrl)} className="text-brand">Create one</Link>.
       </p>
     </div>
   );

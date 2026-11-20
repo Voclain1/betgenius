@@ -93,6 +93,9 @@ jobs:
           for v in OPS_ENV_FILE POSTGRES_PASSWORD SITE_DOMAIN; do
             [ -n "${!v}" ] || { echo "::error::$v is not set"; exit 1; }
           done
+          # Fail before copying settings: stale R2 templates must not overwrite
+          # the verified on-host backup repair. This does not deploy anything.
+          node scripts/ops/validate-backup-settings.mjs
           umask 077
           mkdir -p out
           # The app always talks to the Postgres beside it; any DATABASE_URL in
@@ -118,7 +121,17 @@ jobs:
           } >> out/deploy.env
 
           tar -C deploy -cf - . | ssh vps 'tar -C /opt/betgenius -xf -'
-          tar -C out -cf - app.env ops.env deploy.env | ssh vps 'umask 077; tar -C /opt/betgenius -xf -'
+          # Only these three approved runtime rollout flags are preserved from
+          # the currently running VPS app.env; all other env settings are taken
+          # fresh from PROD_ENV_FILE. Never copy secrets back to the runner.
+          # Stage the new env first, then validate and atomically merge on host.
+          # Missing prior flags default OFF. Invalid/duplicated flags abort.
+          tar -C out -cf - ops.env deploy.env | ssh vps 'umask 077; tar -C /opt/betgenius -xf -'
+          cat out/app.env | ssh vps 'umask 077; cat > /opt/betgenius/app.env.next'
+          ssh vps 'python3 /opt/betgenius/ops/merge-rollout-env.py /opt/betgenius/app.env /opt/betgenius/app.env.next'
           printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
           ssh vps "/opt/betgenius/deploy.sh ${GITHUB_SHA}"
+          # Confirm the running container received the final approved flags
+          # rather than treating a successful image switch as config proof.
+          ssh vps 'set -eu; cd /opt/betgenius; C=$(docker compose --env-file deploy.env ps -q app); test -n "$C"; for key in EARLY_FIXTURE_MODE EARLY_FREE_PUBLICATION_MODE PREDICTION_REASSESSMENT_MODE; do expected=$(sed -n "s/^$key=//p" app.env); actual=$(docker inspect --format "{{range .Config.Env}}{{println .}}{{end}}" "$C" | sed -n "s/^$key=//p"); test "$actual" = "$expected" || { echo "Rollout mode mismatch for $key"; exit 1; }; echo "Verified $key=$actual"; done'
           ssh vps 'docker logout ghcr.io'

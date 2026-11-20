@@ -9,7 +9,9 @@
 #
 # HOW TO USE. Actions → db-push → Run workflow, choosing the branch that adds
 # the tables or columns. Run it BEFORE merging that branch; the PR's preflight
-# turns green once the database has caught up.
+# turns green once the database has caught up. Supply expected_plan_sha256
+# to bind a production approval to exactly the reviewed SQL, including any
+# otherwise-additive drift. The default retains the existing manual procedure.
 #
 # WHAT IT REFUSES. Anything that is not purely additive. The planned SQL is
 # printed first, and the job stops if it contains a DROP, a type change or a
@@ -21,6 +23,12 @@ name: db-push
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_plan_sha256:
+        description: "Optional SHA-256 of the approved plan.sql; any mismatch blocks Push"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: db-push
@@ -50,6 +58,8 @@ jobs:
         run: npm ci
 
       - name: Plan (what would change)
+        env:
+          EXPECTED_PLAN_SHA256: ${{ inputs.expected_plan_sha256 }}
         run: |
           npx prisma migrate diff \
             --from-schema-datasource prisma/schema.prisma \
@@ -61,6 +71,14 @@ jobs:
           if grep -Eiq '\bDROP\b|\bALTER COLUMN\b.*\bTYPE\b|\bRENAME\b|\bALTER TYPE\b' plan.sql; then
             echo "::error::The plan is not purely additive (DROP / type change / rename). Not pushing."
             exit 1
+          fi
+          actual_plan_sha256=$(sha256sum plan.sql | cut -d ' ' -f 1)
+          echo "Plan SHA-256: $actual_plan_sha256"
+          if [ -n "$EXPECTED_PLAN_SHA256" ]; then
+            if ! [[ "$EXPECTED_PLAN_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || [ "$actual_plan_sha256" != "${EXPECTED_PLAN_SHA256,,}" ]; then
+              echo "::error::The plan does not match the approved SHA-256. Not pushing. Review a fresh read-only plan."
+              exit 1
+            fi
           fi
           if ! grep -q '[A-Za-z]' plan.sql || grep -q 'This is an empty migration' plan.sql; then
             echo "Nothing to push: the database already matches the schema."

@@ -1,0 +1,124 @@
+{
+  "verdict": "VERIFIED: BetGenius backup object exists in Cloudflare R2 bucket school-kit-backups under betgenius/daily",
+  "source_run": "https://github.com/Voclain1/betgenius/actions/runs/43714286732",
+  "source_job": 132812351279,
+  "source_head": "f8970dd5c270eab905df9e742c6ebb416a51b1a6",
+  "records": [
+    {
+      "at_utc": "2026-11-15T12:32:51.4672978Z",
+      "kind": "betgenius_backup_destination",
+      "configured": "school-kit-backups/betgenius",
+      "bucket": "school-kit-backups",
+      "prefix": "betgenius",
+      "disk_matches_runtime": true,
+      "container_matches_cron": true,
+      "user_reported_bucket": "scholkit",
+      "uses_scholkit": false
+    },
+    {
+      "at_utc": "2026-11-15T12:32:53.4824940Z",
+      "kind": "schoolkit_ops_candidates",
+      "containers": [
+        {
+          "name": "school-kit-ops-1",
+          "project": "school-kit"
+        }
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:32:55.6850626Z",
+      "kind": "schoolkit_backup_destination",
+      "configured": "school-kit-backups"
+    },
+    {
+      "at_utc": "2026-11-15T12:32:59.9340152Z",
+      "kind": "schoolkit_storage_backend",
+      "remote": "backup:",
+      "type": "s3",
+      "provider": "Other",
+      "endpoint_hostname": "46ec5b1fe217cb7a05ba922f8b306870.r2.cloudflarestorage.com",
+      "cloudflare_r2_endpoint": true
+    },
+    {
+      "at_utc": "2026-11-15T12:33:02.2104104Z",
+      "kind": "authenticated_bucket_inventory",
+      "ok": false,
+      "reason": "storage-access-denied"
+    },
+    {
+      "at_utc": "2026-11-15T12:33:04.6774137Z",
+      "kind": "bucket_root_check",
+      "bucket": "scholkit",
+      "authenticated_listing": false,
+      "reason": "storage-access-denied"
+    },
+    {
+      "at_utc": "2026-11-15T12:33:07.0789505Z",
+      "kind": "bucket_root_check",
+      "bucket": "school-kit-backups",
+      "authenticated_listing": true,
+      "entry_count": 2,
+      "backup_related_directories": [
+        "betgenius"
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:33:09.8259175Z",
+      "kind": "betgenius_prefix_check",
+      "path": "school-kit-backups/betgenius",
+      "authenticated_listing": true,
+      "entry_count": 2,
+      "backup_directories": [
+        "daily"
+      ],
+      "dump_count": 0,
+      "latest_dump": []
+    },
+    {
+      "at_utc": "2026-11-15T12:33:12.5088917Z",
+      "kind": "betgenius_prefix_check",
+      "path": "school-kit-backups/betgenius/daily",
+      "authenticated_listing": true,
+      "entry_count": 1,
+      "backup_directories": [],
+      "dump_count": 1,
+      "latest_dump": [
+        {
+          "name": "betgenius-2026-11-14T1711Z.dump",
+          "bytes": 29850681,
+          "modified": "2026-11-14T17:11:30.648252335Z"
+        }
+      ]
+    },
+    {
+      "at_utc": "2026-11-15T12:33:15.0974207Z",
+      "kind": "betgenius_prefix_check",
+      "path": "school-kit-backups/betgenius/weekly",
+      "authenticated_listing": true,
+      "entry_count": 0,
+      "backup_directories": [],
+      "dump_count": 0,
+      "latest_dump": []
+    },
+    {
+      "at_utc": "2026-11-15T12:33:17.5519001Z",
+      "kind": "betgenius_prefix_check",
+      "path": "scholkit/betgenius",
+      "authenticated_listing": false,
+      "reason": "storage-access-denied"
+    },
+    {
+      "at_utc": "2026-11-15T12:33:17.5520287Z",
+      "kind": "read_only_verification_complete",
+      "production_written": false,
+      "credentials_printed": false,
+      "objects_created": false
+    }
+  ],
+  "verification_scope": "Authenticated reads through the existing School Kit backup remote; BetGenius's own remote was not changed or validated",
+  "account_wide_bucket_inventory_verified": false,
+  "production_backup_restore_verified": false,
+  "production_configuration_changed": false,
+  "credentials_printed": false,
+  "objects_created": false
+}

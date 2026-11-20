@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { paidPublicationOutcome } from "@/lib/vipPremiumReadiness";
 import {
   JOB_GENERATE,
   JOB_GENERATE_BET_OF_DAY,
@@ -180,6 +181,11 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
         archivedDrafts: gate.archived,
         heldForRequote: gate.heldForRequote,
         published: gate.published.length,
+        publicationOutcome: paidPublicationOutcome({
+          evaluated: gate.evaluated, promoted: gate.promotedVip.length + gate.promotedPremium.length,
+          published: gate.published.length, publishHeld: gate.publishHeld.length,
+          heldForRequote: gate.heldForRequote, generationFailed: report.failed,
+        }),
         publishHeld: gate.publishHeld,
         ordinaryPaidTagsRemoved: gate.ordinaryPaidTagsRemoved,
       },

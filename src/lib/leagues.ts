@@ -38,6 +38,8 @@ export const LEAGUE_CATALOGUE = [
   { id: 40, name: "Championship", country: "England", tier: "mid", kind: "league", flagCode: "gb-eng" },
   { id: 45, name: "FA Cup", country: "England", tier: "top", kind: "cup" },
   { id: 307, name: "Pro League", country: "Saudi Arabia", tier: "world", kind: "league", flagCode: "sa" },
+  { id: 301, name: "Pro League", country: "United Arab Emirates", tier: "world", kind: "league", flagCode: "ae" },
+  { id: 330, name: "Premier League", country: "Kuwait", tier: "world", kind: "league", flagCode: "kw" },
 
   // Smaller European leagues
   { id: 207, name: "Super League", country: "Switzerland", tier: "minor", kind: "league", flagCode: "ch" },
@@ -211,7 +213,16 @@ export const GENERATION_TIERS = {
     94, 96, // Portugal
     88, 90, // Netherlands
     144, 147, // Belgium
-    307, // Saudi Arabia
+    // Requested international domestic coverage. These senior leagues are in
+    // the always-discovered secondary slate, not the thin-day-only fallback.
+    // Fixture/odds/evidence gates still decide whether any tip is publishable.
+    307, // Saudi Arabia — already secondary; retain its established priority
+    301, // UAE Pro League (provider V3 ID)
+    330, // Kuwaiti Premier League (provider V3 ID)
+    288, // South Africa Premier Soccer League
+    286, // Serbia Super Liga
+    333, // Ukraine Premier League
+    235, // Russia Premier League
     399, // Nigeria — a headline competition for this audience (MAJOR_LEAGUE_IDS)
     203, 206, // Turkey
     113, 115, // Sweden
@@ -238,8 +249,8 @@ export const GENERATION_TIERS = {
     13, 11, 12, 17, // continental club competitions outside Europe
     10, // international friendlies
     79, 141, 136, 62, 41, 42, 46, 89, 95, 180, 114, // European lower divisions
-    235, 286, 732, 210, 212, 333, 335, 172, 283, 285, 244, 271, 383, 357, 332, // smaller European top flights
-    128, 72, 239, 262, 253, 98, 292, 233, 288, // South/North America, Asia, Africa
+    732, 210, 212, 335, 172, 283, 285, 244, 271, 383, 357, 332, // smaller European top flights and cups
+    128, 72, 239, 262, 253, 98, 292, 233, // South/North America, Asia, Africa
     // Senior women's with full data but thin or no pricing, or shallower books.
     //
     // UWCL is here for DATA QUALITY, not sporting importance: the provider had

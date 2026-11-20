@@ -200,8 +200,17 @@ export function devigProbability(
     // Coverage comes from the REAL Double Chance line, not from the 1X2 market
     // the probability was derived from — the point of the cross-check is that
     // the books genuinely quote this selection.
+    //
+    // The two sides of a Double Chance label are matched in either order.
+    // api-football writes the away side "Draw/Away" (1,512 of 1,531 cached
+    // quotes, Oct-Nov 2026), while targeting (TARGETABLE_SELECTIONS) and the
+    // European lane ask for "Away/Draw". An exact-label match returned null
+    // for the away side, so away favourites were never targeted through
+    // their double chance: 0 of 212 recorded dedicated targets in 30 days,
+    // and 77 core fixtures with an away double chance at 75%+ were skipped.
+    const sameSides = (a: string, b: string) => a.split("/").map((x) => x.trim()).sort().join("/") === b.split("/").map((x) => x.trim()).sort().join("/");
     const dc = marketOf(odds, "Double Chance");
-    const sel = dc?.find((s) => s.value.trim().toLowerCase() === wanted);
+    const sel = dc?.find((s) => sameSides(s.value.toLowerCase(), wanted));
     if (!sel) return null;
     return { probability, bookmakers: sel.bookmakers };
   }

@@ -11,8 +11,8 @@
  *      confidence AND the Over/Under line, which is derived from the pick.
  *   4. In-feed ads land at the same positions in both views, and a caller that
  *      does not opt in (the dashboard) gets none in either.
- *   5. The switch server-renders Detailed with an accessible pressed state,
- *      and the stored preference reads, writes and fails safe to Detailed.
+ *   5. The switch server-renders Compact with an accessible pressed state,
+ *      and the stored preference reads, writes and fails safe to Compact.
  *   6. The homepage buttons say "Tips" and include Goals before Multi Bets.
  *
  * Run with the JSX override the automatic runtime needs:
@@ -27,6 +27,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 // module load. Nothing here queries — the shim only lets the module load.
 import "./lib/reactCacheShim";
 import { CategoryPredictionsList } from "../src/components/CategoryPredictionsList";
+import { FeedDayTabs } from "../src/components/FeedDayTabs";
+import { FEED_DAYS, VISIBLE_FEED_DAYS, feedDayTabLabel, feedDayTile, parseFeedDay } from "../src/lib/feedDays";
 import { PredictionViewSwitch } from "../src/components/PredictionViewSwitch";
 import { BankerPredictionsEvidence } from "../src/components/BankerPredictionsGuide";
 import {
@@ -76,6 +78,35 @@ const order = (s: string) => [...s.matchAll(/Home(\d+)Side/g)].map((m) => Number
 const ADS = 'aria-label="Advertisement"';
 const CARD = /<article\b/g;
 const TABLE = /<table\b/g;
+
+// The compact date rail should scroll horizontally without widening the page.
+{
+  const output = html(<FeedDayTabs basePath="/predictions/genius" active="day-5" />);
+  check("the public rail shows only days through +5", count(output, 'href="/predictions/genius') === VISIBLE_FEED_DAYS.length && VISIBLE_FEED_DAYS.length === 7);
+  check("day 6–14 are not shown in the swipeable rail", !output.includes('href="/predictions/genius?date=day-6"') && !output.includes('href="/predictions/genius?date=day-14"'));
+  check("future day active state", [...output.matchAll(/<a\b[^>]*>/g)].some(m =>
+    m[0].includes('href="/predictions/genius?date=day-5"') && m[0].includes('aria-current="page"')));
+  check("native horizontal swipe strip instead of a 3-column grid",
+    output.includes('data-testid="feed-day-track"') && output.includes("overflow-x-auto")
+    && output.includes("snap-x") && !output.includes("grid-cols-3"));
+  check("each day has a two-line date tile",
+    count(output, "tabular-nums") === VISIBLE_FEED_DAYS.length && output.includes("Swipe to browse dates"));
+  check("selected date visible with an accessible name",
+    output.includes("Predictions for") && output.includes("selected"));
+  check("desktop has explicit scrolling controls",
+    output.includes('aria-label="Scroll dates left"')
+    && output.includes('aria-label="Scroll dates right"'));
+  const anchor = new Date("2026-11-19T12:00:00Z");
+  check("future tabs show weekday and date", FEED_DAYS.slice(3).every(day =>
+    /^[A-Za-z]{3} \d{1,2} [A-Za-z]{3}$/.test(feedDayTabLabel(day, anchor))));
+  check("date tile uses a consistent short date", feedDayTile("tomorrow", anchor).date === "20 Nov"
+    && feedDayTile("day-2", anchor).date === "21 Nov");
+  check("relative and absolute labels stay distinguishable",
+    feedDayTile("today", anchor).eyebrow === "Today"
+    && feedDayTile("day-2", anchor).eyebrow === "Sat");
+  check("invalid date cannot expand scope", parseFeedDay("day-15") === "today");
+  check("internal 14-day URLs remain valid", parseFeedDay("day-14") === "day-14");
+}
 
 // ===========================================================================
 // 1. TODAY is table-only
@@ -289,14 +320,14 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
       compact={<div>COMPACT-VIEW</div>}
     />,
   );
-  check("server render shows Detailed", out.includes("DETAILED-VIEW") && !out.includes("COMPACT-VIEW"), out);
+  check("server render shows Compact", out.includes("COMPACT-VIEW") && !out.includes("DETAILED-VIEW"), out);
   check("controls are a labelled group", out.includes('role="group"') && out.includes('aria-label="Prediction view"'));
-  check("Detailed is pressed, Compact is not",
-    /aria-pressed="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Detailed</.test(out) && /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Compact</.test(out), out);
+  check("Compact is pressed, Detailed is not",
+    /aria-pressed="true"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Compact</.test(out) && /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Detailed</.test(out), out);
   check("buttons are type=button", count(out, 'type="button"') === 2);
   check("tabs, then intro, then the list",
     out.indexOf("TABS") < out.indexOf("Prediction view") && out.indexOf("Prediction view") < out.indexOf("INTRO") &&
-      out.indexOf("INTRO") < out.indexOf("DETAILED-VIEW"));
+      out.indexOf("INTRO") < out.indexOf("COMPACT-VIEW"));
 }
 {
   const memory = () => {
@@ -309,15 +340,15 @@ for (const category of ["GENIUS", "BANKER", "VIP", "GOALS", "PREMIUM"] as const)
   };
 
   check("the key is the shared one", PREDICTION_VIEW_KEY === "betgenius-prediction-view");
-  check("missing value falls back to detailed", readPredictionView(memory()) === "detailed");
-  check("no storage falls back to detailed", readPredictionView(null) === "detailed" && readPredictionView(undefined) === "detailed");
-  check("throwing storage falls back to detailed", readPredictionView(throwing) === "detailed");
+  check("missing value falls back to compact", readPredictionView(memory()) === "compact");
+  check("no storage falls back to compact", readPredictionView(null) === "compact" && readPredictionView(undefined) === "compact");
+  check("throwing storage falls back to compact", readPredictionView(throwing) === "compact");
   for (const bad of ["Compact", "table", "", "null", "1", " compact"]) {
     const s = memory();
     s.setItem(PREDICTION_VIEW_KEY, bad);
-    check(`invalid value ${JSON.stringify(bad)} falls back to detailed`, readPredictionView(s) === "detailed");
+    check(`invalid value ${JSON.stringify(bad)} falls back to compact`, readPredictionView(s) === "compact");
   }
-  check("parse rejects non-strings", parsePredictionView(1) === "detailed" && parsePredictionView({}) === "detailed");
+  check("parse rejects non-strings", parsePredictionView(1) === "compact" && parsePredictionView({}) === "compact");
 
   // One key for every feed: a choice made on Genius is what Banker/VIP/Goals read.
   const s = memory();

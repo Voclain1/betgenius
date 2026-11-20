@@ -1,6 +1,6 @@
 import { getOdds } from "@/lib/football/api-football";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
-import { HANDICAP_MARKET, MIN_BOOKMAKERS, MIN_VALUE_EDGE_PP, impliedProbability } from "@/lib/odds";
+import { HANDICAP_MARKET, MIN_BOOKMAKERS, MIN_VALUE_EDGE_PP, OUTLIER_RATIO, impliedProbability } from "@/lib/odds";
 import { EUROPEAN_HANDICAP_VALUES } from "@/lib/markets";
 
 /**
@@ -149,7 +149,8 @@ export async function sourceHandicapLine(fixtureApiId: number): Promise<Handicap
       return {
         value,
         label: LABEL_BY_VALUE[value] + " " + (line > 0 ? "+" : "") + line,
-        best: Number(Math.max(...odds).toFixed(2)),
+        // Highest quote that is not wildly above the median (see OUTLIER_RATIO).
+        best: Number(Math.max(...odds.filter((o) => o <= med * OUTLIER_RATIO), med).toFixed(2)),
         median: Number(med.toFixed(2)),
         bookmakers: books.size,
         impliedPercent: Number(impliedProbability(med).toFixed(1)),

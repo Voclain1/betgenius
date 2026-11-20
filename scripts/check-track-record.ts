@@ -97,7 +97,7 @@ async function main() {
   check("every query is bounded to a calendar month", monthFn.includes("settledInMonth(month)") && monthFn.includes("settledInMonth(previous)"));
   check("the old 90-day row read is gone", !lib.includes("getTrackRecordData") && !lib.includes("WINDOW_OPTIONS"));
   const page = src("src/app/(public)/track-record/page.tsx");
-  check("the page renders the month record", page.includes("getMonthTrackRecord"));
+  check("the performance page loads bounded entitlement-aware history and retains monthly archives", /loadPerformance\(filter,\s*viewer\)/.test(page) && page.includes("getViewerEntitlement") && page.includes("closedMonthsSince"));
   const feedPage = src("src/app/(public)/predictions/[category]/page.tsx");
   check("the feed page renders the section for VIP, Premium and Banker only", feedPage.includes('(cat === "VIP" || cat === "PREMIUM" || cat === "BANKER") && (\n        <FeedResults'));
   const comp = src("src/components/FeedResults.tsx");
@@ -145,7 +145,7 @@ async function main() {
   check("report: rates only, like the live page", (reportPage.match(/<RateCard /g) ?? []).length === (reportPage.match(/counts=\{false\}/g) ?? []).length);
   check("report: built from the same month function as the live page", lib.includes("getMonthTrackRecord = cache(async (now: Date = new Date()): Promise<MonthTrackRecord> => getTrackRecordForMonth("));
   check("report: rebuilt at most every six hours", reportPage.includes("export const revalidate = 21600"));
-  check("the live page links to the archive", page.includes("closedMonthsSince(startKey)") && view.includes("href={`/track-record/${m.key}`}"));
+  check("the live page links to the archive", page.includes("closedMonthsSince(await getRecordStartKey()).slice(0, 12)") && page.includes("href={`/track-record/${key}`}"));
 
   console.log(`\n${passed} passed, ${failures} failed`);
   if (failures) process.exit(1);

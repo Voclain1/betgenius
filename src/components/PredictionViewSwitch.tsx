@@ -43,10 +43,9 @@ function localStore(): Storage | null {
  * Only the active view is mounted. The inactive one is never in the DOM, so
  * its in-feed ad frames do not load behind the visible ones.
  *
- * HYDRATION: the first render always uses the default, on the server and in
- * the browser alike, so the markup matches. The stored preference is applied
- * after mount. That is also why the server HTML crawlers see is the Detailed
- * feed, reasoning included, whatever a given reader prefers.
+ * HYDRATION: the first render uses Compact on server and client, avoiding a
+ * mismatch. A previously saved Detailed preference is applied after mount.
+ * Both views are server-rendered as props, preserving existing access rules.
  *
  * `tabs` and `intro` are passed through so the control can sit in the same
  * row as the day tabs while the list stays below any intro copy — the page's
@@ -79,7 +78,7 @@ export function PredictionViewSwitch({
   return (
     <>
       <div className={`flex flex-wrap items-center gap-3 ${tabs ? "justify-between" : "justify-end"}`}>
-        {tabs}
+        {tabs && <div className="w-full min-w-0 lg:w-auto lg:flex-1">{tabs}</div>}
         {/* Deliberately unlike the day tabs beside it: round, small, icon-led,
             and an inverted (light-on-dark / dark-on-light) active state rather
             than brand green, so the two controls never read as one. */}

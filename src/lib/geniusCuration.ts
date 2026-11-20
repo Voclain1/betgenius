@@ -1,3 +1,4 @@
+import { earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
@@ -330,6 +331,8 @@ export type CurationRow = {
   homeTeamApiId: number | null;
   awayTeamApiId: number | null;
   categories: string[];
+  /** Categories an admin tagged by hand (PredictionCategoryLink.manual). Curation never removes these. Optional: pure callers may omit it. */
+  manualCategories?: string[];
 };
 
 export type CurationPlan = {
@@ -465,7 +468,10 @@ export function planCuration(
   const keptIds = rule.keepExisting
     ? rows.filter((r) => tagged.has(r.id) && (rule.paid || !isPaidOnlyProvenance(r.provenance))).map((r) => r.id)
     : [];
-  const protectedIds = new Set([...dedicatedIds, ...grandfatheredIds, ...keptIds]);
+  // An admin's hand-assigned tag is a fixed point in its own feed: it holds a
+  // slot and is never re-ranked or removed, whatever the day's ranking prefers.
+  const manualIds = rows.filter((r) => tagged.has(r.id) && (r.manualCategories ?? []).includes(category)).map((r) => r.id);
+  const protectedIds = new Set([...dedicatedIds, ...grandfatheredIds, ...keptIds, ...manualIds]);
 
   /**
    * May this row be NEWLY selected into this feed?
@@ -609,7 +615,7 @@ export function planCuration(
 const CURATION_ROW_SELECT = {
   id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true,
   kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, selection: true,
-  categories: { select: { category: true } }, aiJob: { select: { model: true } },
+  categories: { select: { category: true, manual: true } }, aiJob: { select: { model: true } },
 } as const;
 
 /**
@@ -660,7 +666,12 @@ async function loadCurationRows(start: Date, end: Date): Promise<CurationRow[]> 
     },
     select: CURATION_ROW_SELECT,
   });
-  return raw.map(({ aiJob, ...r }) => ({ ...r, model: aiJob?.model ?? null, categories: r.categories.map((c) => c.category) }));
+  return raw.map(({ aiJob, ...r }) => ({
+    ...r,
+    model: aiJob?.model ?? null,
+    categories: r.categories.map((c) => c.category),
+    manualCategories: r.categories.filter((c) => c.manual).map((c) => c.category),
+  }));
 }
 
 async function curateCategory(category: AutoCategory, now: Date, dayOffset = 0) {
@@ -704,7 +715,8 @@ export const GENIUS_CURATION_DAYS = 3;
 export async function curateGeniusTips(now: Date = new Date()) {
   const today = await curateCategory("GENIUS", now, 0);
   const ahead: Array<{ dayOffset: number; selected: number; added: number }> = [];
-  for (let d = 1; d < GENIUS_CURATION_DAYS; d++) {
+  const dayCount = earlyFixtureMode() === "on" ? 7 : GENIUS_CURATION_DAYS;
+  for (let d = 1; d < dayCount; d++) {
     const plan = await curateCategory("GENIUS", now, d);
     ahead.push({ dayOffset: d, selected: plan.selected, added: plan.added.length });
   }
@@ -828,7 +840,7 @@ export function planBankerCuration(rows: readonly CurationRow[], now: Date): Ban
   const tagged = rows.filter((r) => r.categories.includes("BANKER"));
   const started = (r: CurationRow) => !!r.kickoff && r.kickoff.getTime() <= now.getTime();
   const fixed = tagged.filter(
-    (r) => started(r) || r.provenance === BANKER_INTENT_PROVENANCE || r.categories.length === 1,
+    (r) => started(r) || r.provenance === BANKER_INTENT_PROVENANCE || r.categories.length === 1 || (r.manualCategories ?? []).includes("BANKER"),
   );
   const fixedIds = new Set(fixed.map((r) => r.id));
   const taken = new Set(fixed.map(paidFixtureKey));
@@ -879,7 +891,8 @@ async function curateBankerDay(now: Date, dayOffset: number): Promise<BankerPlan
 export async function curateBankerTips(now: Date = new Date()) {
   const today = await curateBankerDay(now, 0);
   const ahead: Array<{ dayOffset: number; selected: number; added: number; removed: number }> = [];
-  for (let d = 1; d < BANKER_CURATION_DAYS; d++) {
+  const dayCount = earlyFixtureMode() === "on" ? 7 : BANKER_CURATION_DAYS;
+  for (let d = 1; d < dayCount; d++) {
     const plan = await curateBankerDay(now, d);
     ahead.push({ dayOffset: d, selected: plan.selectedIds.length, added: plan.added.length, removed: plan.removed.length });
   }

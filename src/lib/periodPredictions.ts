@@ -2,15 +2,16 @@ import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { compareBankerRank, paidFixtureKey } from "@/lib/geniusCuration";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
+import { EARLY_FIXTURE_POLICY, earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 /**
  * Weekend (Friday–Sunday) and midweek (Tuesday–Thursday) tips: a short list
  * of the period's strongest published picks, grouped by day, with a period
  * Banker at the top. See selectPeriodList for the bar.
  *
- * Nothing is generated for these pages. Picks are produced 12–48h before
- * kickoff (src/lib/generation/window.ts), so a period's later days fill in as
- * it approaches, and the page says so rather than looking empty.
+ * These pages only assemble qualifying published picks; they never fabricate
+ * selections. When early preparation is enabled, they switch to the upcoming
+ * period earlier, while original publication and safety rules remain intact.
  *
  * PURE apart from the clock argument: the window and the Banker choice are
  * checked by scripts/check-period-predictions.ts.
@@ -84,7 +85,8 @@ export function periodWindow(kind: PeriodKind, now: Date = new Date()): PeriodWi
     state = "live";
   } else {
     const untilNext = (startDow - dow + 7) % 7;
-    if (untilNext * DAY_MS <= GENERATE_UNTIL_HOURS * 3_600_000) {
+    const leadHours = earlyFixtureMode() === "on" ? EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS : GENERATE_UNTIL_HOURS;
+    if (untilNext * DAY_MS <= leadHours * 3_600_000) {
       startOffset = untilNext;
       state = "upcoming";
     } else {
@@ -101,7 +103,8 @@ export function periodWindow(kind: PeriodKind, now: Date = new Date()): PeriodWi
 
 /** When picks for a day start arriving: the far edge of the generation window. */
 export function picksArriveFrom(day: PeriodDay): Date {
-  return new Date(day.start.getTime() - GENERATE_UNTIL_HOURS * 3_600_000);
+  const leadHours = earlyFixtureMode() === "on" ? EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS : GENERATE_UNTIL_HOURS;
+  return new Date(day.start.getTime() - leadHours * 3_600_000);
 }
 
 export type PeriodBankerRow = {

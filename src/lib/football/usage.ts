@@ -1,3 +1,4 @@
+import { experimentScope } from "@/lib/vipQuotaExperiment";
 import { AsyncLocalStorage } from "node:async_hooks";
 /**
  * Daily quota accounting for api-football.
@@ -104,11 +105,25 @@ export async function getUsageSnapshot(day: string = utcDay()): Promise<UsageSna
  * Atomic per-endpoint increment. Uses upsert's `increment` rather than a
  * read-modify-write so concurrent instances can't clobber each other's counts.
  *
- * Never throws: a usage-tracking failure must not take down the actual API call
+ * Outside the experiment, never throws: a tracking failure must not take down the API call
  * that succeeded. A dropped increment under-counts (fails open), which the
  * /status reconciliation in reconcileWithAccount() is there to correct.
  */
 export async function recordCall(path: string, day: string = utcDay()): Promise<void> {
+  if (experimentScope() && process.env.VIP_QUOTA_EXPERIMENT !== "on") throw new Error("quota experiment disabled before API dispatch");
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") {
+    // All app callers serialize reservation+increment while the experiment is
+    // on. A failed reservation/tracking write throws BEFORE network dispatch.
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(750000)`;
+      const usage = await tx.apiUsage.aggregate({ where: { day }, _sum: { count: true } });
+      const ceiling = Math.min(7500, budgetCeiling(inPaidPriority()));
+      if (!Number.isFinite(ceiling) || ceiling <= 0 || (usage._sum.count ?? 0) >= ceiling) throw new Error("api-football hard daily ceiling reached");
+      await tx.apiUsage.upsert({ where: { day_path: { day, path } }, create: { day, path, count: 1 }, update: { count: { increment: 1 } } });
+    });
+    await experimentScope()?.recordApi();
+    return;
+  }
   try {
     await prisma.apiUsage.upsert({
       where: { day_path: { day, path } },
@@ -136,8 +151,9 @@ export async function hasBudget(day: string = utcDay()): Promise<boolean> {
   try {
     return (await usedToday(day)) < budgetCeiling(inPaidPriority());
   } catch (err) {
-    console.error("[api-football/usage] budget check failed — allowing request", err);
-    return true;
+    const failClosed = process.env.VIP_QUOTA_EXPERIMENT === "on";
+    console.error(`[api-football/usage] budget check failed — ${failClosed ? "refusing" : "allowing"} request`, err);
+    return !failClosed;
   }
 }
 

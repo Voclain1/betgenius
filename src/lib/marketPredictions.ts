@@ -1,13 +1,12 @@
 import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { lagosDayBounds } from "@/lib/lagosDate";
+import { feedDayOffset, type FeedDay } from "@/lib/feedDays";
 import { orderForDisplay } from "@/lib/predictionOrdering";
-import type { FeedDay } from "@/lib/categoryPredictions";
 import type { Prisma } from "@prisma/client";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
+import { FREE_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { MARKET_HUB_EXCLUDED_CATEGORIES, onePerMatchAndPick } from "@/lib/marketHubs";
-
-const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow: 1 };
 
 /**
  * Every market page lists free-tier tips only: no VIP or Premium tag, primary
@@ -15,13 +14,15 @@ const DAY_OFFSETS: Record<FeedDay, number> = { yesterday: -1, today: 0, tomorrow
  */
 const FREE_TIERS_ONLY: Prisma.PredictionWhereInput = {
   ...NOT_PAID_ONLY,
+  // Mirrors FREE category feed visibility on BTTS, DC, wins and goals pages.
+  ...FREE_REASSESSMENT_VISIBLE,
   category: { notIn: [...MARKET_HUB_EXCLUDED_CATEGORIES] },
   categories: { none: { category: { in: [...MARKET_HUB_EXCLUDED_CATEGORIES] } } },
 };
 
 /** One bounded read for the exact Over 2.5 Goals selection shown by the hub. */
 export const getOver25Predictions = cache(async (day: FeedDay = "today") => {
-  const bounds = lagosDayBounds(DAY_OFFSETS[day]);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
     where: {
       ...FREE_TIERS_ONLY,
@@ -45,7 +46,7 @@ export const getOver25Predictions = cache(async (day: FeedDay = "today") => {
 
 /** One bounded read for all Both Teams to Score selections, Yes and No. */
 export const getBttsPredictions = cache(async (day: FeedDay = "today") => {
-  const bounds = lagosDayBounds(DAY_OFFSETS[day]);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
     where: {
       ...FREE_TIERS_ONLY,
@@ -65,7 +66,7 @@ export const getBttsPredictions = cache(async (day: FeedDay = "today") => {
 
 /** One bounded read for all three structured Double Chance selections. */
 export const getDoubleChancePredictions = cache(async (day: FeedDay = "today") => {
-  const bounds = lagosDayBounds(DAY_OFFSETS[day]);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
     where: {
       ...FREE_TIERS_ONLY,
@@ -85,7 +86,7 @@ export const getDoubleChancePredictions = cache(async (day: FeedDay = "today") =
 
 /** One bounded read for straight wins: a home or away win, never a draw. */
 export const getStraightWinPredictions = cache(async (day: FeedDay = "today") => {
-  const bounds = lagosDayBounds(DAY_OFFSETS[day]);
+  const bounds = lagosDayBounds(feedDayOffset(day));
   const rows = await prisma.prediction.findMany({
     where: {
       ...FREE_TIERS_ONLY,

@@ -5,6 +5,7 @@ import type { FixtureOdds } from "@/lib/odds";
 import { lagosDateKey } from "@/lib/lagosDate";
 import {
   lopsidednessSignal,
+  MC_MIN_BOOKMAKERS,
   MC_MAX_QUOTE_AGE_MS,
   MC_MIN_MARKET_PROBABILITY,
   MC_MIN_MODEL_CONFIDENCE,
@@ -243,6 +244,8 @@ export type OverlayCandidate = {
   awayTeamApiId: number;
   kickoff: Date;
   round: string | null;
+  /** Admitted only because its kickoff day has quota its own core fixtures can never use (PAID_SPARE_QUOTA_WIDENING=on). */
+  viaSpareQuota?: true;
 };
 
 export type OverlaySkipReason =
@@ -262,6 +265,13 @@ export type OverlayPlan = {
   widened: boolean;
   /** Covered core fixtures inside the window — what decided `widened`. */
   coreFixtures: number;
+  /**
+   * Widened-scope fixtures that pass every other rule and sit on a kickoff day
+   * with spare quota (spareQuotaSlotsByDay). Under "on" they are also in
+   * `candidates`, flagged viaSpareQuota; under "shadow" they are ONLY listed
+   * here, so live behaviour is unchanged.
+   */
+  spareQuota?: { mode: SpareQuotaMode; eligible: OverlayCandidate[] };
 };
 
 const LIVE_STATUSES = new Set(["DRAFT", "PENDING_REVIEW", "APPROVED", "PUBLISHED"]);
@@ -294,6 +304,8 @@ export function planVipPremiumCandidates(input: {
   scope?: PaidScope;
   /** VERIFICATION ONLY (scripts/verify-vip-premium-pass.ts): drops the paid-scope restriction. */
   anyLeague?: boolean;
+  /** Spare kickoff-day quota (Sprint 09). Absent or "off": exactly the previous behaviour. */
+  spareQuota?: { mode: SpareQuotaMode; slots: ReadonlyMap<string, number> };
 }): OverlayPlan {
   const skipped: OverlayPlan["skipped"] = {};
   const skip = (r: OverlaySkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
@@ -310,28 +322,61 @@ export function planVipPremiumCandidates(input: {
   }
 
   const candidates: OverlayCandidate[] = [];
+  const spareMode = input.spareQuota?.mode ?? "off";
+  const spareEligible: OverlayCandidate[] = [];
   for (const l of input.ledger) {
     if (!inVipPremiumWindow(l.kickoff, input.now)) { skip("OUTSIDE_WINDOW"); continue; }
-    if (!input.anyLeague && !scope.leagueIds.has(l.leagueApiId ?? -1)) { skip("OUT_OF_SCOPE"); continue; }
+    let viaSpare = false;
+    if (!input.anyLeague && !scope.leagueIds.has(l.leagueApiId ?? -1)) {
+      // Only inside VIP_PREMIUM_WARM_WITHIN_MS (24h) of kickoff. Core fixtures
+      // enter the ledger 37-48h before their own kickoff, so by the time a
+      // widened fixture is this close, every core fixture of its Lagos day is
+      // already in the ledger and reserved (measured: scripts/
+      // measure-paid-opportunity.ts section L). Earlier than that a later core
+      // fixture of the day might not be discovered yet.
+      // ...and only once the END of its Lagos day is within
+      // SPARE_QUOTA_DAY_END_LEAD_MS: core fixtures are discovered at least 37h
+      // before kickoff (measured), so 30h before the day ends every core
+      // fixture of that day is in the ledger. Without this, an overnight
+      // widened fixture (Brazil, the Americas: ~00:00-02:00 Lagos) could be
+      // admitted before that evening's core fixtures were discovered.
+      viaSpare = spareMode !== "off"
+        && PAID_WIDENED_LEAGUE_IDS.includes(l.leagueApiId ?? -1)
+        && l.kickoff.getTime() - input.now.getTime() <= VIP_PREMIUM_WARM_WITHIN_MS
+        && lagosDayEnd(l.kickoff) - input.now.getTime() <= SPARE_QUOTA_DAY_END_LEAD_MS
+        && (input.spareQuota!.slots.get(lagosDateKey(l.kickoff)) ?? 0) > 0;
+      // Counted exactly as before under shadow, so every existing counter is unchanged.
+      if (!viaSpare || spareMode === "shadow") skip("OUT_OF_SCOPE");
+      if (!viaSpare) continue;
+    }
+    const countSkip = (r: OverlaySkipReason) => { if (!viaSpare || spareMode === "on") skip(r); };
     const rows = [...new Set([...(l.fixtureApiId != null ? byFixture.get(`f${l.fixtureApiId}`) ?? [] : []), ...(byFixture.get(l.matchKey) ?? [])])];
     const ordinary = rows.filter(isOrdinary);
     const [homeId, awayId] = l.matchKey.split("-").map(Number);
     if (l.status !== "SUCCEEDED" || l.fixtureApiId == null || l.leagueApiId == null || ordinary.length === 0 || !Number.isFinite(homeId) || !Number.isFinite(awayId)) {
-      skip("NOT_YET_GENERATED");
+      countSkip("NOT_YET_GENERATED");
       continue;
     }
-    if (!ordinary.some((r) => r.contextComplete)) { skip("NO_MATCH_CONTEXT"); continue; }
-    if (rows.some((r) => isDedicatedPaid(r.provenance))) { skip("HAS_DEDICATED_PAID"); continue; }
-    if (attempted.has(l.fixtureApiId)) { skip("ALREADY_ATTEMPTED"); continue; }
-    if (input.backingOff?.has(l.fixtureApiId)) { skip("BACKING_OFF"); continue; }
-    candidates.push({
+    if (!ordinary.some((r) => r.contextComplete)) { countSkip("NO_MATCH_CONTEXT"); continue; }
+    if (rows.some((r) => isDedicatedPaid(r.provenance))) { countSkip("HAS_DEDICATED_PAID"); continue; }
+    if (attempted.has(l.fixtureApiId)) { countSkip("ALREADY_ATTEMPTED"); continue; }
+    if (input.backingOff?.has(l.fixtureApiId)) { countSkip("BACKING_OFF"); continue; }
+    const candidate: OverlayCandidate = {
       matchKey: l.matchKey, fixtureApiId: l.fixtureApiId, leagueApiId: l.leagueApiId, leagueName: l.leagueName,
       homeTeam: l.homeTeam, awayTeam: l.awayTeam, homeTeamApiId: homeId, awayTeamApiId: awayId,
       kickoff: l.kickoff, round: l.round,
-    });
+      ...(viaSpare ? { viaSpareQuota: true as const } : {}),
+    };
+    if (viaSpare) spareEligible.push(candidate);
+    if (!viaSpare || spareMode === "on") candidates.push(candidate);
   }
-  candidates.sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey));
-  return { candidates, considered: input.ledger.length, skipped, widened: scope.widened, coreFixtures: scope.coreFixtures };
+  const byKickoff = (a: OverlayCandidate, b: OverlayCandidate) => a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey);
+  candidates.sort(byKickoff);
+  spareEligible.sort(byKickoff);
+  return {
+    candidates, considered: input.ledger.length, skipped, widened: scope.widened, coreFixtures: scope.coreFixtures,
+    ...(spareMode !== "off" ? { spareQuota: { mode: spareMode, eligible: spareEligible } } : {}),
+  };
 }
 
 // ── Odds ─────────────────────────────────────────────────────────────────────
@@ -341,6 +386,45 @@ export type OverlayQuote = { oddsJson: FixtureOdds | null; fetchedAt: Date | nul
 
 const isFresh = (q: OverlayQuote | undefined, now: Date) =>
   !!q?.fetchedAt && now.getTime() - q.fetchedAt.getTime() <= MC_MAX_QUOTE_AGE_MS;
+
+export type OddsWarmReason = "OUTSIDE_WARMING_WINDOW" | "FRESH" | "FETCH_BACKOFF" | "DUE";
+/** Shared execution/diagnostic policy; never fetches or changes backoff. */
+export function vipPremiumOddsWarmReason(c: Pick<OverlayCandidate, "kickoff">, q: OverlayQuote | undefined, now: Date): OddsWarmReason {
+  if (c.kickoff.getTime() - now.getTime() > VIP_PREMIUM_WARM_WITHIN_MS) return "OUTSIDE_WARMING_WINDOW";
+  if (isFresh(q, now)) return "FRESH";
+  const failedSinceLastQuote = !!q?.lastAttemptAt && (!q.fetchedAt || q.lastAttemptAt.getTime() > q.fetchedAt.getTime());
+  if (failedSinceLastQuote && now.getTime() - q!.lastAttemptAt!.getTime() < VIP_PREMIUM_WARM_RETRY_MS) return "FETCH_BACKOFF";
+  return "DUE";
+}
+
+export type PaidOddsDiagnostic = {
+  fixtureApiId: number; kickoff: string; kickoffDay: string;
+  cacheState: "MISSING_CACHE" | "NO_SUCCESSFUL_QUOTE" | "FRESH" | "STALE";
+  quoteAgeMinutes: number | null; lastAttemptAgeMinutes: number | null;
+  warmReason: OddsWarmReason;
+  providerFailure: "NONE" | "NO_BOOKMAKER_PRICES" | "RATE_OR_QUOTA" | "AUTHORIZATION" | "TIMEOUT" | "OTHER";
+  marketState: "NO_PAYLOAD" | "INSUFFICIENT_BOOKMAKERS" | "NO_TARGETABLE_MARKET" | "BELOW_MARKET_FLOOR" | "MEETS_MARKET_FLOOR";
+  signal: number | null; bookmakers: number | null;
+};
+
+/** Cache-only facts, not another qualification gate or provider call. */
+export function vipPremiumOddsDiagnostic(c: Pick<OverlayCandidate, "fixtureApiId" | "kickoff">, q: (OverlayQuote & { lastError?: string | null }) | undefined, now: Date): PaidOddsDiagnostic {
+  const signal = lopsidednessSignal(q?.oddsJson ?? null);
+  const targetBooks = (q?.oddsJson?.markets ?? []).filter(m => m.market === "Match Winner" || m.market === "Double Chance")
+    .flatMap(m => m.selections.filter(s => m.market === "Match Winner" ? /^(Home|Away)$/i.test(s.value) : /^(Home\/Draw|Away\/Draw)$/i.test(s.value)).map(s => s.bookmakers));
+  const err = q?.lastError ?? "";
+  return {
+    fixtureApiId: c.fixtureApiId, kickoff: c.kickoff.toISOString(), kickoffDay: lagosDateKey(c.kickoff),
+    cacheState: !q ? "MISSING_CACHE" : !q.fetchedAt ? "NO_SUCCESSFUL_QUOTE" : isFresh(q, now) ? "FRESH" : "STALE",
+    quoteAgeMinutes: q?.fetchedAt ? Math.round((now.getTime() - q.fetchedAt.getTime()) / 60000) : null,
+    lastAttemptAgeMinutes: q?.lastAttemptAt ? Math.round((now.getTime() - q.lastAttemptAt.getTime()) / 60000) : null,
+    warmReason: vipPremiumOddsWarmReason(c, q, now),
+    // Never include raw provider messages or account details in JobRun.
+    providerFailure: !err ? "NONE" : /no bookmaker|no.*prices|no.*odds/i.test(err) ? "NO_BOOKMAKER_PRICES" : /429|quota|rate.limit/i.test(err) ? "RATE_OR_QUOTA" : /401|403|unauthor|forbidden/i.test(err) ? "AUTHORIZATION" : /timeout|timed.out/i.test(err) ? "TIMEOUT" : "OTHER",
+    marketState: !q?.oddsJson ? "NO_PAYLOAD" : !signal ? (targetBooks.length > 0 && Math.max(...targetBooks) < MC_MIN_BOOKMAKERS ? "INSUFFICIENT_BOOKMAKERS" : "NO_TARGETABLE_MARKET") : signal.probability < VIP_MARKET_FLOOR ? "BELOW_MARKET_FLOOR" : "MEETS_MARKET_FLOOR",
+    signal: signal ? Number(signal.probability.toFixed(2)) : null, bookmakers: signal?.bookmakers ?? null,
+  };
+}
 
 /**
  * Which candidates this run should price itself, nearest kickoff first, at most
@@ -359,15 +443,10 @@ export function vipPremiumOddsToWarm(
   limit = VIP_PREMIUM_ODDS_WARM_LIMIT,
 ): OverlayCandidate[] {
   return candidates
-    .filter((c) => {
-      if (c.kickoff.getTime() - now.getTime() > VIP_PREMIUM_WARM_WITHIN_MS) return false;
-      const q = quotes.get(c.matchKey);
-      if (isFresh(q, now)) return false;
-      const failedSinceLastQuote = !!q?.lastAttemptAt && (!q.fetchedAt || q.lastAttemptAt.getTime() > q.fetchedAt.getTime());
-      if (failedSinceLastQuote && now.getTime() - q!.lastAttemptAt!.getTime() < VIP_PREMIUM_WARM_RETRY_MS) return false;
-      return true;
-    })
-    .sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey))
+    .filter(c => vipPremiumOddsWarmReason(c, quotes.get(c.matchKey), now) === "DUE")
+    // Spare-quota candidates are priced only after every in-scope candidate, so
+    // they can never take a core fixture's place in the warm budget.
+    .sort((a, b) => Number(!!a.viaSpareQuota) - Number(!!b.viaSpareQuota) || a.kickoff.getTime() - b.kickoff.getTime() || a.matchKey.localeCompare(b.matchKey))
     .slice(0, Math.max(0, limit));
 }
 
@@ -383,7 +462,20 @@ export type VipPremiumTarget = OverlayCandidate & {
 /** NO_QUOTED_MARKET: no targetable market quoted by MC_MIN_BOOKMAKERS or more books (lopsidednessSignal drops thinner ones). */
 export type OddsSkipReason = "NO_FRESH_QUOTE" | "NO_QUOTED_MARKET" | "MARKET_BELOW_BAR" | "KICKOFF_DAY_QUOTA";
 
+/**
+ * Why a candidate inside the warm band (kickoff within VIP_PREMIUM_WARM_WITHIN_MS)
+ * was not targeted on this run. Diagnostic only: recorded on the pass's JobRun so
+ * a lopsided fixture that is never attempted can be explained afterwards
+ * (Sprint 09 §5 and the supply-reliability audit could not, because only counts
+ * were stored). Never read by any decision.
+ */
+export type WarmBandSkip = { matchKey: string; kickoff: string; leagueApiId: number; reason: OddsSkipReason; signal: number | null; quoteAgeMinutes: number | null };
+/** At most this many warm-band skips are recorded per run, soonest kickoff first. */
+export const WARM_BAND_SKIP_RECORD_LIMIT = 20;
+
 export type OddsQualification = {
+  /** Diagnostic record of warm-band candidates skipped on this run (WarmBandSkip). */
+  warmBandSkips: WarmBandSkip[];
   targets: VipPremiumTarget[];
   /** Candidates with a quote fresh enough for the gate to read. */
   freshlyPriced: number;
@@ -407,20 +499,39 @@ export function qualifyVipPremiumTargets(
   now: Date,
   limit: number,
   /** Attempts already spent per kickoff day (attemptsByKickoffDay) and the per-day quota. Absent: no per-day limit. */
-  kickoffDayQuota?: { used: ReadonlyMap<string, number>; quota: number },
+  kickoffDayQuota?: { used: ReadonlyMap<string, number>; quota: number; byDay?: ReadonlyMap<string, number> },
+  /** Spare slots per kickoff day (spareQuotaSlotsByDay): the most viaSpareQuota targets a day may take. */
+  spareSlots?: ReadonlyMap<string, number>,
 ): OddsQualification {
   const skipped: OddsQualification["skipped"] = {};
-  const skip = (r: OddsSkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
+  const warmBand: WarmBandSkip[] = [];
+  let current: { c: OverlayCandidate; q: OverlayQuote | undefined; signal: number | null } | null = null;
+  const skip = (r: OddsSkipReason) => {
+    skipped[r] = (skipped[r] ?? 0) + 1;
+    if (current && current.c.kickoff.getTime() - now.getTime() <= VIP_PREMIUM_WARM_WITHIN_MS) {
+      const at = current.q?.fetchedAt;
+      warmBand.push({ matchKey: current.c.matchKey, kickoff: current.c.kickoff.toISOString(), leagueApiId: current.c.leagueApiId, reason: r, signal: current.signal,
+        quoteAgeMinutes: at ? Math.round((now.getTime() - at.getTime()) / 60_000) : null });
+    }
+  };
   let freshlyPriced = 0;
   const qualified: VipPremiumTarget[] = [];
+  const spareTaken = new Map<string, number>();
   for (const c of candidates) {
     const q = quotes.get(c.matchKey);
+    current = { c, q, signal: null };
     if (!isFresh(q, now)) { skip("NO_FRESH_QUOTE"); continue; }
     freshlyPriced++;
     const best = lopsidednessSignal(q!.oddsJson);
+    current.signal = best ? Number(best.probability.toFixed(1)) : null;
     if (!best) { skip("NO_QUOTED_MARKET"); continue; }
     if (best.probability < VIP_MARKET_FLOOR) { skip("MARKET_BELOW_BAR"); continue; }
-    if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= kickoffDayQuota.quota) { skip("KICKOFF_DAY_QUOTA"); continue; }
+    if (kickoffDayQuota && (kickoffDayQuota.used.get(lagosDateKey(c.kickoff)) ?? 0) >= (kickoffDayQuota.byDay?.get(lagosDateKey(c.kickoff)) ?? kickoffDayQuota.quota)) { skip("KICKOFF_DAY_QUOTA"); continue; }
+    if (c.viaSpareQuota) {
+      const day = lagosDateKey(c.kickoff);
+      if ((spareTaken.get(day) ?? 0) >= (spareSlots?.get(day) ?? 0)) { skip("KICKOFF_DAY_QUOTA"); continue; }
+      spareTaken.set(day, (spareTaken.get(day) ?? 0) + 1);
+    }
     qualified.push({
       ...c,
       marketProbability: best.probability,
@@ -442,7 +553,95 @@ export function qualifyVipPremiumTargets(
       a.kickoff.getTime() - b.kickoff.getTime() ||
       a.matchKey.localeCompare(b.matchKey),
   );
-  return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped };
+  warmBand.sort((a, b) => a.kickoff.localeCompare(b.kickoff) || a.matchKey.localeCompare(b.matchKey));
+  return { targets: qualified.slice(0, Math.max(0, limit)), freshlyPriced, qualified: qualified.length, skipped, warmBandSkips: warmBand.slice(0, WARM_BAND_SKIP_RECORD_LIMIT) };
+}
+
+// ── Spare kickoff-day quota (VIP/Premium Sprint 09) ────────────────────────
+
+/**
+ * PAID_SPARE_QUOTA_WIDENING: off | shadow (default) | on.
+ *
+ * THE GAP IT CLOSES. Thin-day widening (paidScopeFor) asks one question for the
+ * whole 12-48h window: are there fewer than PAID_THIN_CORE_MIN covered core
+ * fixtures? A day with 4-6 core fixtures is therefore "healthy", so its
+ * widened-scope fixtures (Eredivisie, Primeira Liga, Nations League...) are
+ * never looked at, even when those few core fixtures use 1-2 of the day's 8
+ * attempts. Over 15 Oct - 14 Nov 2026 that happened on 5 kickoff days
+ * (19, 23, 30 Oct; 2, 6 Nov: 0-3 VIP picks each): 13 attempts the day's own
+ * core fixtures could never have used, with 21 widened fixtures the closing
+ * market put at 75%+ left out (scripts/measure-paid-opportunity.ts, section I).
+ * Dedicated picks from widened-scope competitions have settled 16-3 (84.2%,
+ * n=20) against core's 70-14 (83.3%, n=87) since the paid-tier cutover.
+ *
+ * WHAT IT DOES. Only quota the day's core fixtures can never use is offered:
+ * one slot is reserved for EVERY core fixture of that day still attemptable
+ * (not attempted, kickoff more than GENERATE_FROM_HOURS away), whether or not
+ * the market will ever qualify it. Nothing about the bar changes: the same
+ * fresh quote, books, market floor, model floors, gap, auto-publish checks and
+ * daily spend cap apply, and the competitions are the ones the pass already
+ * targets on thin days (PAID_WIDENED_LEAGUE_IDS).
+ *
+ * shadow  (default) live decisions unchanged; each run records which widened
+ *         fixtures would have been eligible and which the CACHED quote would
+ *         qualify. No odds call, no model call.
+ * on      those fixtures become targets (in-scope candidates are warmed first).
+ * off     nothing computed.
+ */
+export type SpareQuotaMode = "off" | "shadow" | "on";
+
+/** Spare slots of a Lagos day are offered only once its end is this close. See planVipPremiumCandidates. */
+export const SPARE_QUOTA_DAY_END_LEAD_MS = 30 * 3_600_000;
+
+/** End of the Lagos (UTC+1, no DST) calendar day a kickoff falls on, in ms. */
+export function lagosDayEnd(kickoff: Date): number {
+  return Date.parse(`${lagosDateKey(kickoff)}T23:00:00.000Z`);
+}
+
+export function spareQuotaWideningMode(env: Record<string, string | undefined> = process.env): SpareQuotaMode {
+  const v = (env.PAID_SPARE_QUOTA_WIDENING ?? "").trim().toLowerCase();
+  return v === "on" || v === "off" ? v : "shadow";
+}
+
+/**
+ * Spare slots per kickoff day: the quota left after this pass's attempts AND
+ * one reserved slot per core fixture of the day that could still be
+ * attempted. Pure. Days with no spare slot are omitted.
+ */
+export function spareQuotaSlotsByDay(input: {
+  days: Iterable<string>;
+  /** Ledger rows of core competitions on and around those days (ABANDONED rows are ignored). */
+  coreLedger: ReadonlyArray<{ fixtureApiId: number | null; leagueApiId: number | null; kickoff: Date; status: string }>;
+  attempted: ReadonlySet<number>;
+  used: ReadonlyMap<string, number>;
+  quota: number;
+  now: Date;
+}): Map<string, number> {
+  const reserved = new Map<string, number>();
+  const earliest = input.now.getTime() + GENERATE_FROM_HOURS * 3_600_000;
+  // One reservation per real fixture: a rescheduled fixture can hold two ledger
+  // rows (matchKey carries the UTC day) under one provider id. The later
+  // kickoff wins; rows without an id are each reserved (conservative).
+  const latest = new Map<number, number>();
+  const counted = new Set<number>();
+  for (const r of input.coreLedger) if (r.fixtureApiId != null) latest.set(r.fixtureApiId, Math.max(latest.get(r.fixtureApiId) ?? 0, r.kickoff.getTime()));
+  for (const r of input.coreLedger) {
+    if (!PAID_CORE_LEAGUE_IDS.includes(r.leagueApiId ?? -1) || r.status === "ABANDONED") continue;
+    if (r.kickoff.getTime() < earliest) continue; // can no longer be attempted
+    if (r.fixtureApiId != null && input.attempted.has(r.fixtureApiId)) continue; // already counted in `used`
+    if (r.fixtureApiId != null) {
+      if (latest.get(r.fixtureApiId) !== r.kickoff.getTime() || counted.has(r.fixtureApiId)) continue; // superseded or repeated row
+      counted.add(r.fixtureApiId);
+    }
+    const d = lagosDateKey(r.kickoff);
+    reserved.set(d, (reserved.get(d) ?? 0) + 1);
+  }
+  const out = new Map<string, number>();
+  for (const d of new Set(input.days)) {
+    const spare = input.quota - (input.used.get(d) ?? 0) - (reserved.get(d) ?? 0);
+    if (spare > 0) out.set(d, spare);
+  }
+  return out;
 }
 
 // ── Ordinary picks as a fallback ─────────────────────────────────────────────
@@ -588,6 +787,7 @@ export type PaidPublishBlock =
   | "OVER_DAILY_QUOTA"
   | "KICKED_OFF" // the match started before publication could complete
   | "CONCURRENT_OR_STALE_PUBLISH" // another worker claimed the row or the draft changed
+  | "INVALID_PUBLICATION_EVIDENCE" // the atomic boundary rejected the quote snapshot
   | "TOO_CLOSE_TO_KICKOFF"; // under PAID_MIN_PUBLISH_LEAD_MS to kickoff
 
 export type PaidPublishRow = {

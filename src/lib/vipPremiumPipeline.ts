@@ -1,3 +1,5 @@
+import { experimentalDays, quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
+import { paidFixtureReadiness, summarisePaidOdds } from "@/lib/vipPremiumReadiness";
 import { reliabilityControls } from "@/lib/reliabilitySnapshot";
 import { recordReliability } from "@/lib/reliabilityStore";
 import { captureReliabilityPrice } from "@/lib/reliabilityPrice";
@@ -5,8 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { shadowQualityRecord } from "@/lib/paidCandidateQuality";
 import { paidQualityPolicyMode } from "@/lib/paidQualityPolicy";
 import { auditPaidSelectionConcentration } from "@/lib/paidShadowIntegrity";
-import { lagosTodayBounds } from "@/lib/lagosDate";
-import { publishPaidPredictionAtomically, KickoffPassedError, setPredictionCategories } from "@/lib/predictions";
+import { lagosDateKey, lagosTodayBounds } from "@/lib/lagosDate";
+import { publishPaidPredictionAtomically, KickoffPassedError, PaidPublicationEvidenceError, setPredictionCategories } from "@/lib/predictions";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import type { Selection } from "@/lib/markets";
 import { GENERATE_FROM_HOURS, GENERATE_UNTIL_HOURS } from "@/lib/generation/window";
@@ -55,6 +57,11 @@ import {
   PREMIUM_MARKET_FLOOR,
   VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
+  vipPremiumOddsDiagnostic,
+  spareQuotaSlotsByDay,
+  spareQuotaWideningMode,
+  PAID_CORE_LEAGUE_IDS,
+  type SpareQuotaMode,
   type OddsSkipReason,
   type OverlayAttempt,
   type OverlayQuote,
@@ -62,6 +69,7 @@ import {
   type PaidPublishBlock,
   type PaidTier,
   type VipPremiumTarget,
+  type WarmBandSkip,
 } from "@/lib/vipPremiumOverlay";
 
 export {
@@ -194,7 +202,17 @@ export function vipPremiumSpendFrom(generatedToday: number): number {
  * (selectVipPremiumTargets) and again at publication.
  */
 export async function vipPremiumQuotaRemaining(now: Date = new Date()): Promise<number> {
-  return vipPremiumSpendFrom(await vipPremiumGeneratedToday(now));
+  let generated = await vipPremiumGeneratedToday(now);
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") {
+    const { start, end } = lagosTodayBounds(now);
+    const [reservations, jobs] = await Promise.all([
+      prisma.paidQuotaAttempt.findMany({ where: { createdAt: { gte: start, lt: end } } }),
+      prisma.aIJob.findMany({ where: { createdAt: { gte: start, lt: end }, prompt: { contains: '"intent":"VIP_PREMIUM"' } }, select: { prompt: true } }),
+    ]);
+    const ids = new Set(jobs.map(j => { try { return JSON.parse(j.prompt).fixtureApiId; } catch { return null; } }));
+    generated += reservations.filter(r => !ids.has(r.fixtureApiId)).length;
+  }
+  return vipPremiumSpendFrom(generated);
 }
 
 // ── Targeting ────────────────────────────────────────────────────────────────
@@ -210,7 +228,16 @@ export async function loadVipPremiumAttempts(now: Date = new Date()): Promise<Ov
     where: { createdAt: { gte: new Date(now.getTime() - ATTEMPT_LOOKBACK_MS) }, prompt: { contains: `"intent":"${VIP_PREMIUM_INTENT}"` } },
     select: { prompt: true, createdAt: true },
   });
-  return jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+  const attempts = jobs.map((j) => readVipPremiumAttempt(j.prompt, j.createdAt)).filter((a): a is OverlayAttempt => a !== null);
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") {
+    // Extra-fixture identity survives a reschedule beyond the normal lookback.
+    const reservations = await prisma.paidQuotaAttempt.findMany();
+    for (const r of reservations) if (!attempts.some(a => a.fixtureApiId === r.fixtureApiId)) {
+      const a = readVipPremiumAttempt(JSON.stringify({ intent: VIP_PREMIUM_INTENT, fixtureApiId: r.fixtureApiId, kickoff: `${r.kickoffDay}T12:00:00+01:00` }), r.createdAt);
+      if (a) attempts.push(a);
+    }
+  }
+  return attempts;
 }
 
 /**
@@ -434,6 +461,14 @@ export async function recordPaidSelectionShadow(input: {
 }
 
 export type TargetSelection = {
+  /** Cache-only observability, present even while experimental attempts are off. */
+  readiness?: {
+    fixtureDays: ReturnType<typeof paidFixtureReadiness>;
+    oddsBeforeWarming: ReturnType<typeof summarisePaidOdds>;
+    oddsAfterWarming: ReturnType<typeof summarisePaidOdds>;
+  };
+  /** Cache-qualified rich-day allowance; absent when the experiment switch is off. */
+  experiment?: { enabled: boolean; quotas: Record<string, number>; eligibleFixtures: { day: string; fixtureApiId: number }[] };
   targets: VipPremiumTarget[];
   /** Covered (ledger SUCCEEDED) fixtures inside the paid-generation window. */
   considered: number;
@@ -449,10 +484,27 @@ export type TargetSelection = {
   warmed: number;
   /** Why each considered fixture was not targeted. */
   skipped: Partial<Record<OverlaySkipReason | OddsSkipReason, number>>;
+  /** Diagnostic: warm-band candidates skipped on this run and why (vipPremiumOverlay.ts WarmBandSkip). Never read by a decision. */
+  warmBandSkips?: WarmBandSkip[];
   /** The core was thin, so this run also looked at the widened competitions. */
   widened: boolean;
   /** Covered core fixtures inside the window. */
   coreFixtures: number;
+  /**
+   * Spare kickoff-day quota (PAID_SPARE_QUOTA_WIDENING; vipPremiumOverlay.ts).
+   * Absent when off. Under shadow nothing here affects the run.
+   */
+  spareQuota?: {
+    mode: SpareQuotaMode;
+    /** Spare slots per Lagos kickoff day, after reserving one per attemptable core fixture. */
+    slots: Record<string, number>;
+    /** Widened-scope fixtures on those days that pass every other pre-odds rule. */
+    eligible: number;
+    /** ...of which the quote already cached (no call made for them under shadow) is fresh and at the VIP bar. */
+    qualifiedFromCache: number;
+    /** Up to five of them, for the record. */
+    wouldTarget: Array<{ fixture: string; kickoff: string; leagueApiId: number; marketProbability: number }>;
+  };
 };
 
 /**
@@ -488,6 +540,27 @@ export async function selectVipPremiumTargets(
     prisma.appLock.findMany({ where: { key: { startsWith: VIP_PREMIUM_BACKOFF_LOCK_PREFIX }, expiresAt: { gt: now } }, select: { key: true } }),
   ]);
   const backingOff = new Set(backoffs.map((b) => Number(b.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))).filter(Number.isFinite));
+  const used = attemptsByKickoffDay(attempts);
+
+  // Spare kickoff-day quota: one database read, no provider call.
+  const spareMode = options.anyLeague ? "off" : spareQuotaWideningMode();
+  let spareSlots = new Map<string, number>();
+  if (spareMode !== "off") {
+    const coreLedger = await prisma.generationAttempt.findMany({
+      // Through the end of the last Lagos day the window touches, so a day's
+      // later core fixtures are reserved before any of them enters the window.
+      where: { kickoff: { gte: from, lte: new Date(until.getTime() + 24 * 3_600_000) }, leagueApiId: { in: [...PAID_CORE_LEAGUE_IDS] } },
+      select: { fixtureApiId: true, leagueApiId: true, kickoff: true, status: true },
+    });
+    spareSlots = spareQuotaSlotsByDay({
+      days: ledger.map((l) => lagosDateKey(l.kickoff)),
+      coreLedger,
+      attempted: new Set(attempts.map((a) => a.fixtureApiId).filter((id): id is number => id != null)),
+      used,
+      quota: VIP_PREMIUM_DAILY_QUOTA,
+      now,
+    });
+  }
 
   const plan = planVipPremiumCandidates({
     ledger: ledger.filter((l) => l.kickoff).map((l) => ({ ...l, kickoff: l.kickoff! })),
@@ -496,22 +569,24 @@ export async function selectVipPremiumTargets(
     backingOff,
     now,
     anyLeague: options.anyLeague,
+    ...(spareMode !== "off" ? { spareQuota: { mode: spareMode, slots: spareSlots } } : {}),
   });
 
   const readQuotes = async (keys: string[]) =>
     keys.length
       ? await prisma.fixtureOddsCache.findMany({
           where: { matchKey: { in: keys } },
-          select: { matchKey: true, oddsJson: true, fetchedAt: true, lastAttemptAt: true },
+          select: { matchKey: true, oddsJson: true, fetchedAt: true, lastAttemptAt: true, lastError: true },
         })
       : [];
-  const quotes = new Map<string, OverlayQuote>(
+  const quotes = new Map<string, OverlayQuote & { lastError: string | null }>(
     (await readQuotes(plan.candidates.map((c) => c.matchKey))).map((q) => [
       q.matchKey,
-      { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt },
+      { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError },
     ]),
   );
 
+  const oddsBeforeWarming = summarisePaidOdds(plan.candidates.map(c => vipPremiumOddsDiagnostic(c, quotes.get(c.matchKey), now)));
   let oddsCalls = 0;
   let warmed = 0;
   if (options.warmOdds) {
@@ -530,13 +605,42 @@ export async function selectVipPremiumTargets(
         }
       }
       for (const q of await readQuotes(due.map((c) => c.matchKey))) {
-        quotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt });
+        quotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError });
       }
     }
   }
 
-  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used: attemptsByKickoffDay(attempts), quota: VIP_PREMIUM_DAILY_QUOTA });
+  const experiment = options.anyLeague ? null : quotaExperimentConfig(process.env, now);
+  // Cache-only eligibility: no extra warming budget and no threshold changes.
+  const eligible = qualifyVipPremiumTargets(plan.candidates, quotes, now, plan.candidates.length, undefined, spareSlots).targets;
+  const eligibleFixtures = eligible.map(c => ({ day: lagosDateKey(c.kickoff), fixtureApiId: c.fixtureApiId }));
+  const quotas = experimentalDays(attempts.map(a => ({ day: attemptKickoffDay(a), fixtureApiId: a.fixtureApiId })), eligibleFixtures, experiment?.extra ?? 0);
+  const odds = qualifyVipPremiumTargets(plan.candidates, quotes, now, limit, { used, quota: VIP_PREMIUM_DAILY_QUOTA, byDay: quotas }, spareSlots);
+
+  let spareQuota: TargetSelection["spareQuota"];
+  if (plan.spareQuota) {
+    const eligible = plan.spareQuota.eligible;
+    // Shadow reads the cache only; "on" candidates were already priced above.
+    const shadowQuotes = new Map(quotes);
+    for (const q of await readQuotes(eligible.filter((c) => !shadowQuotes.has(c.matchKey)).map((c) => c.matchKey))) {
+      shadowQuotes.set(q.matchKey, { oddsJson: (q.oddsJson as unknown as FixtureOdds | null) ?? null, fetchedAt: q.fetchedAt, lastAttemptAt: q.lastAttemptAt, lastError: q.lastError });
+    }
+    const would = qualifyVipPremiumTargets(eligible, shadowQuotes, now, eligible.length, { used, quota: VIP_PREMIUM_DAILY_QUOTA }, spareSlots);
+    spareQuota = {
+      mode: plan.spareQuota.mode,
+      slots: Object.fromEntries(spareSlots),
+      eligible: eligible.length,
+      qualifiedFromCache: would.qualified,
+      wouldTarget: would.targets.slice(0, 5).map((t) => ({ fixture: `${t.homeTeam} vs ${t.awayTeam}`, kickoff: t.kickoff.toISOString(), leagueApiId: t.leagueApiId, marketProbability: Number(t.marketProbability.toFixed(1)) })),
+    };
+  }
   return {
+    readiness: {
+      fixtureDays: paidFixtureReadiness(attempts.map(a => ({ day: attemptKickoffDay(a), fixtureApiId: a.fixtureApiId })), eligibleFixtures),
+      oddsBeforeWarming,
+      oddsAfterWarming: summarisePaidOdds(plan.candidates.map(c => vipPremiumOddsDiagnostic(c, quotes.get(c.matchKey), now))),
+    },
+    ...(process.env.VIP_QUOTA_EXPERIMENT === "on" ? { experiment: { enabled: !!experiment, quotas: Object.fromEntries(quotas), eligibleFixtures } } : {}),
     targets: odds.targets,
     considered: plan.considered,
     inScope: plan.candidates.length,
@@ -545,8 +649,10 @@ export async function selectVipPremiumTargets(
     oddsCalls,
     warmed,
     skipped: { ...plan.skipped, ...odds.skipped },
+    warmBandSkips: odds.warmBandSkips,
     widened: plan.widened,
     coreFixtures: plan.coreFixtures,
+    ...(spareQuota ? { spareQuota } : {}),
   };
 }
 
@@ -635,7 +741,8 @@ export function provenanceForTier(tier: PaidTier): string {
 type FixtureRef = { id: string; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; kickoff: Date | null };
 
 /** Every non-archived row on the same fixture as `ref`, with its paid tags. */
-async function liveRowsOnFixture(ref: FixtureRef) {
+/** Live (not archived) rows on a fixture. Read-only; also used by scripts/run-alt-market-experiment.ts. */
+export async function liveRowsOnFixture(ref: FixtureRef) {
   const byTeams = ref.homeTeamApiId != null && ref.awayTeamApiId != null && !!ref.kickoff;
   if (!byTeams && ref.fixtureApiId == null) return [];
   const key = paidFixtureKey(ref);
@@ -718,6 +825,18 @@ export async function autoPublishVipPremiumPrediction(
   const attemptNumber = own
     ? sameDayAttempts.filter((a) => attemptKickoffDay(a) === attemptKickoffDay(own) && a.createdAt <= own.createdAt).length
     : Infinity;
+  let experimentalJob = false;
+  try { experimentalJob = JSON.parse(row.aiJob?.prompt ?? "{}").quotaExperiment === "vip-quota-v1"; } catch { /* invalid attribution fails closed */ }
+  const experiment = quotaExperimentConfig(process.env, now);
+  let withinQuota = attemptNumber <= VIP_PREMIUM_DAILY_QUOTA && !experimentalJob;
+  if (!withinQuota && experimentalJob && row.fixtureApiId != null && experiment) {
+    const reservation = await prisma.paidQuotaAttempt.findUnique({ where: { fixtureApiId: row.fixtureApiId } });
+    const extra = experiment.extra;
+    withinQuota = !!reservation && row.aiJob != null && reservation.experiment === "vip-quota-v1"
+      && reservation.createdAt <= row.aiJob.createdAt && reservation.usageReliable && reservation.modelRequests === 1
+      && reservation.kickoffDay === lagosDateKey(row.kickoff ?? new Date(0))
+      && attemptNumber <= VIP_PREMIUM_DAILY_QUOTA + extra;
+  }
   const others = onFixture.filter((r) => r.id !== row.id);
 
   const verdict = evaluateMarketConfirmed({
@@ -744,7 +863,7 @@ export async function autoPublishVipPremiumPrediction(
       categories: row.categories.map((c) => c.category),
     },
     verdict,
-    paidPublishFixture(row, ledger?.status ?? null, onFixture, attemptNumber <= VIP_PREMIUM_DAILY_QUOTA),
+    paidPublishFixture(row, ledger?.status ?? null, onFixture, withinQuota),
   );
   if (!publish) return { published: false, blocks, ordinaryPaidTagsRemoved: 0 };
 
@@ -762,6 +881,7 @@ export async function autoPublishVipPremiumPrediction(
     if (!published) return { published: false, blocks: ["CONCURRENT_OR_STALE_PUBLISH"], ordinaryPaidTagsRemoved: 0 };
   } catch (error) {
     if (error instanceof KickoffPassedError) return { published: false, blocks: ["KICKED_OFF"], ordinaryPaidTagsRemoved: 0 };
+    if (error instanceof PaidPublicationEvidenceError) return { published: false, blocks: ["INVALID_PUBLICATION_EVIDENCE"], ordinaryPaidTagsRemoved: 0 };
     throw error;
   }
 
@@ -771,7 +891,8 @@ export async function autoPublishVipPremiumPrediction(
     : others.filter((r) => !isDedicated(r.provenance) && r.categories.some((c) => (PAID_TIER_CATEGORIES as readonly string[]).includes(c.category)));
   if (ordinaryPaid.length) {
     await prisma.predictionCategoryLink.deleteMany({
-      where: { predictionId: { in: ordinaryPaid.map((r) => r.id) }, category: { in: [...PAID_TIER_CATEGORIES] } },
+      // manual: false — an admin's hand-assigned paid tag is never taken out.
+      where: { predictionId: { in: ordinaryPaid.map((r) => r.id) }, category: { in: [...PAID_TIER_CATEGORIES] }, manual: false },
     });
   }
   return { published: true, blocks: [], ordinaryPaidTagsRemoved: ordinaryPaid.length };

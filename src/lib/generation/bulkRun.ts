@@ -19,7 +19,10 @@ export function bulkFailureReason(err: unknown): string {
     return "Draft rejected by the writing checks. Run it again for a new draft.";
   }
   if (name === "ShortPriceError") {
-    return "Only a Double Chance priced under 1.10 was drafted, which is not worth tipping. Run it again or skip this match.";
+    return "Only a Double Chance priced under 1.10 was drafted. Run it again or skip this match.";
+  }
+  if (name === "AutoOddsFloorError") {
+    return "No draft cleared the automatic odds floor (minimum 1.12) or the team-total price check. Try another market or skip this match.";
   }
   if (name === "MarketSanityError") {
     return "Every pick was far above the bookmakers' view of the match, even after a second try. Skip this match or run it again.";

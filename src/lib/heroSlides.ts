@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { MIXED_REASSESSMENT_VISIBLE } from "@/lib/reassessment/visibility";
 import { NOT_PAID_ONLY } from "@/lib/paidOnly";
 import { GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { leaguePriorityRank } from "@/lib/leagues";
@@ -110,6 +111,7 @@ export async function getHeroSlides(now: Date = new Date()): Promise<HeroSlideDa
   const today = lagosDayBounds(0, now);
   const rows = await prisma.prediction.findMany({
     where: {
+      ...MIXED_REASSESSMENT_VISIBLE,
       status: "PUBLISHED",
       homeTeam: { not: null },
       awayTeam: { not: null },

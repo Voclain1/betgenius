@@ -17,6 +17,10 @@ import { validOdds } from "@/lib/oddsFormat";
  * /predictions/bet-of-the-day page (`variant="page"`, which adds the
  * reasoning), so the two can never disagree about the price they quote.
  *
+ * The homepage slot is a compact teaser: competition, kickoff and the two
+ * teams only. It carries no pick, odds, confidence, score or result; all of
+ * that lives on the dedicated page, which is one tap away.
+ *
  * LAYOUT, phone first. A header line (competition and kickoff, with the match
  * state on the right), the two teams stacked one per row with their crests (and
  * the score once settled), then ONE pick panel: market and pick on the left,
@@ -99,14 +103,16 @@ export function BetOfTheDayCard({
   const age = quoteAge(oddsFetchedAt);
   const when = kickoffLabel(row.kickoff);
   const result = settled ? RESULT_STYLE[row.outcome] : null;
-  const showScore = settled && row.finalHomeScore != null && row.finalAwayScore != null;
+  const full = variant === "page";
+  const showScore = full && settled && row.finalHomeScore != null && row.finalAwayScore != null;
   const confidence = Math.max(0, Math.min(100, row.confidence));
 
   // Match state as plain small caps, never a tinted pill: when it kicks off,
   // that it is in play, or that it has finished.
   const caps = "shrink-0 whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em]";
   const statusLabel = settled ? (
-    <span className={`${caps} text-gray-300`}>Full time</span>
+    // The teaser says nothing about the outcome, not even that it has finished.
+    full ? <span className={`${caps} text-gray-300`}>Full time</span> : null
   ) : !live ? (
     <span className={`${caps} inline-flex items-center gap-1.5 text-red-400`}>
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" aria-hidden />
@@ -117,7 +123,7 @@ export function BetOfTheDayCard({
   ) : null;
 
   const body = (
-    <div className="space-y-5 rounded-3xl border border-brand-border bg-brand-card p-5 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)] sm:p-6">
+    <div className={`rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)] ${full ? "space-y-5 p-5 sm:p-6" : "space-y-3.5 p-4"}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <LeagueBadge leagueApiId={row.leagueApiId} leagueName={row.leagueName} showName={false} size={16} />
@@ -126,13 +132,14 @@ export function BetOfTheDayCard({
         {statusLabel}
       </div>
 
-      <div className="space-y-2.5">
+      <div className={full ? "space-y-2.5" : "space-y-2"}>
         <TeamRow name={row.homeTeam} crest={crests?.home} score={showScore ? row.finalHomeScore : null} />
         <TeamRow name={row.awayTeam} crest={crests?.away} score={showScore ? row.finalAwayScore : null} />
       </div>
 
       {/* The pick, set like the prediction cards: market small, pick large,
           and whatever matters now as the big figure on the right. */}
+      {full && (
       <div className="rounded-2xl bg-brand-bg/70 p-4 ring-1 ring-brand-border">
         <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">
@@ -185,8 +192,9 @@ export function BetOfTheDayCard({
           </div>
         )}
       </div>
+      )}
 
-      {variant === "page" && <Prose text={stripUnsupportedStaff(row.reasoning, { coaches: [], teams: [row.homeTeam, row.awayTeam] })} />}
+      {full && <Prose text={stripUnsupportedStaff(row.reasoning, { coaches: [], teams: [row.homeTeam, row.awayTeam] })} />}
     </div>
   );
 

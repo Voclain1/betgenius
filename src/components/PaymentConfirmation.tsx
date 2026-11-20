@@ -1,5 +1,6 @@
 "use client";
 
+import { paymentProviderName } from "@/lib/checkoutAnalytics";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -70,6 +71,8 @@ export function PaymentConfirmation({
   const [waiting, setWaiting] = useState(!activated);
   const [status, setStatus] = useState<PaymentStatus | null>(null);
   const attempts = useRef(0);
+  const measured = useRef<string | null>(null);
+  const providerName = paymentProviderName(provider);
 
   // A confirmed, reference-backed activation is the purchase boundary. GA4
   // also deduplicates transaction_id, while sessionStorage avoids repeat hits
@@ -77,14 +80,16 @@ export function PaymentConfirmation({
   useEffect(() => {
     if (!activated || !reference || !tier || !value) return;
     const key = `bg_purchase_${reference}`;
-    if (sessionStorage.getItem(key)) return;
+    if (measured.current === reference) return;
+    try { if (sessionStorage.getItem(key)) return; } catch { /* Storage may be blocked; confirmation must still work. */ }
+    measured.current = reference;
     trackEvent("purchase", {
       transaction_id: reference,
       currency: "NGN",
       value,
       items: [{ item_id: tier, item_name: `BetGenius ${tier}`, price: value, quantity: 1 }],
     });
-    sessionStorage.setItem(key, "1");
+    try { sessionStorage.setItem(key, "1"); } catch { /* GA4/Meta also deduplicate by transaction ID. */ }
   }, [activated, reference, tier, value]);
 
   // Sync the browser's session claims with the database once, either way, and
@@ -155,8 +160,8 @@ export function PaymentConfirmation({
     return (
       <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
         {status === "failed"
-          ? "Paystack declined this payment, so your plan has not changed. You can try again — choosing a different payment method sometimes helps."
-          : "Paystack hasn't received this payment, so your plan has not changed. If you already sent a bank transfer, access unlocks automatically when it arrives — you don't need to pay again. Otherwise you can try again whenever you're ready."}{" "}
+          ? `${providerName} declined this payment, so your plan has not changed. You can try again — choosing a different payment method sometimes helps.`
+          : `${providerName} hasn't received this payment, so your plan has not changed. If you already sent a bank transfer, access unlocks automatically when it arrives — you don't need to pay again. Otherwise you can try again whenever you're ready.`}{" "}
         <Link href="/pricing" className="font-medium text-brand underline">
           Choose a plan
         </Link>
@@ -167,7 +172,7 @@ export function PaymentConfirmation({
   if (status === "pending") {
     return (
       <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-200">
-        Paystack is still confirming your payment — bank transfers can take a few minutes. Your access unlocks
+        {providerName} is still confirming your payment — bank transfers can take a few minutes. Your access unlocks
         automatically as soon as it clears; you don&apos;t need to stay on this page.
       </div>
     );
@@ -179,7 +184,7 @@ export function PaymentConfirmation({
     </div>
   ) : (
     <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-      We haven&apos;t had confirmation from Paystack yet. If you were charged, your access will unlock as soon as it
+      We haven&apos;t had confirmation from {providerName} yet. If you were charged, your access will unlock as soon as it
       arrives — refresh this page in a minute, or contact support if it persists. If you didn&apos;t finish paying,{" "}
       <Link href="/pricing" className="font-medium text-brand underline">
         choose a plan

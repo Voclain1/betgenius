@@ -96,7 +96,7 @@ for (const v of [null, ...BAD]) check(`trend: ${String(v)} shows no price line`,
 console.log("\nBet of the Day");
 const botd = (gate: unknown, outcome = "PENDING", kick = Date.now() + 5 * 3_600_000) => ({ row: { id: "b", homeTeam: "Arsenal", awayTeam: "Chelsea", leagueApiId: 39, leagueName: "Premier League", kickoff: new Date(kick), market: "Match Winner", pick: "Arsenal", marketType: "MATCH_WINNER", selection: null, confidence: 77, reasoning: "x", matchPreview: null, outcome, category: "BET_OF_THE_DAY", homeTeamApiId: 42, awayTeamApiId: 49, betOfDayPinnedAt: null, finalHomeScore: outcome === "PENDING" ? null : 2, finalAwayScore: outcome === "PENDING" ? null : 1 }, odds: null, oddsFetchedAt: new Date(Date.now() - 20 * 60_000), gate }) as any;
 const g = (price: number | null) => ({ qualifies: true, reasons: [], price, bookmakers: 6, impliedProbability: 52, edgePP: 4 });
-const bt = (d: any) => text(html(<BetOfTheDayCard data={d} variant="hero" />));
+const bt = (d: any) => text(html(<BetOfTheDayCard data={d} variant="page" />));
 const live = bt(botd(g(2.4)));
 check("BOTD: shows 2.40, the bookmaker count and the quote's age", live.includes("2.40") && live.includes("Best of 6 bookmakers") && /\d+m ago/.test(live), live);
 check("BOTD: confidence and odds stay separate figures", live.includes("77%") && live.includes("confidence"));
@@ -105,6 +105,17 @@ check("BOTD: no gate → 'Price not available yet'", bt(botd(null)).includes("Pr
 const settled = bt(botd(g(2.4), "WON", Date.now() - 6 * 3_600_000));
 check("BOTD: a settled pick shows its result, not a price", settled.includes("Won") || settled.includes("WON"), settled);
 check("BOTD: a settled pick does not present the old price as current", !settled.includes("Best of 6 bookmakers"), settled);
+
+// Homepage teaser: teams and kickoff only. No pick, odds, confidence, score or result.
+const hero = (d: any) => text(html(<BetOfTheDayCard data={d} variant="hero" />));
+const teaserPending = hero(botd(g(2.4)));
+const teaserSettled = hero(botd(g(2.4), "LOST", Date.now() - 6 * 3_600_000));
+for (const [label, out] of [["upcoming", teaserPending], ["settled", teaserSettled]] as const) {
+  check(`BOTD hero (${label}): keeps the teams`, out.includes("Arsenal") && out.includes("Chelsea"), out);
+  check(`BOTD hero (${label}): no pick, market, odds, confidence or price note`, !/Match Winner|2\.40|Odds|confidence|77%|Best of|Price not available/.test(out), out);
+  check(`BOTD hero (${label}): no result, score or full-time label`, !/\b(Won|Lost|Void|Result|Full time)\b/.test(out) && !/\b2\s*[-:–]\s*1\b/.test(out), out);
+}
+check("BOTD page: still shows the pick, odds and confidence", live.includes("Match Winner") && live.includes("2.40") && live.includes("77%"), live);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

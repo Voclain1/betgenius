@@ -1,0 +1,171 @@
+/**
+ * Pure, source-aware football evidence comparison. Missing coverage means
+ * UNKNOWN, never "fit squad", "no injuries" or a confirmed unchanged lineup.
+ * A signal requests a critical reassessment; it is not proof of a winning pick.
+ */
+import type { MatchDigest, TeamDigest } from "@/lib/ai/digest";
+import { earlyOddsBand } from "@/lib/generation/earlyOddsPolicy";
+import { AUTO_MIN_MEDIAN_ODDS } from "@/lib/autoOddsFloor";
+
+export type EvidenceSignal = {
+  code: string;
+  severity: "MODERATE" | "CRITICAL";
+  message: string;
+  source: "fixture" | "availability" | "form" | "coach" | "lineup" | "odds";
+};
+
+export type FixtureEvidence = { status: string; kickoff: Date; seenAt: Date; fixtureApiId: number };
+export type OddsObservation = { median: number; bookmakers: number; at: Date };
+
+/** Only compare current provider-timestamped prices for the original pick. */
+export function oddsMovementSignal(previous: OddsObservation | null, latest: OddsObservation | null, now: Date, kickoff?: Date): EvidenceSignal[] {
+  const early = kickoff != null && kickoff.getTime() - now.getTime() > 48 * 3_600_000;
+  const books = early ? earlyOddsBand(kickoff!, now).minBooks : 5;
+  const maxAge = early ? earlyOddsBand(kickoff!, now).maxQuoteAgeMs : 2 * 3_600_000;
+  if (!previous || !latest || previous.bookmakers < books || latest.bookmakers < books
+    || !Number.isFinite(previous.median) || !Number.isFinite(latest.median)
+    || previous.median <= 1 || latest.median <= 1
+    || previous.at >= latest.at || latest.at > now
+    || now.getTime() - latest.at.getTime() > maxAge) return [];
+  const pp = Math.abs(100 / latest.median - 100 / previous.median);
+  if (pp < 7) return [];
+  return [{ code: "market-movement-" + latest.at.toISOString(),
+    severity: pp >= 12 ? "CRITICAL" : "MODERATE",
+    source: "odds", message: "Bookmaker median for the original selection moved by " + pp.toFixed(1)
+      + " implied-probability points (at least five bookmakers, current quote)." }];
+}
+
+
+/** A formerly acceptable price falling below the basic free-tip floor is
+ * material even when the implied-probability movement is smaller than 7pp. */
+export function earlyOddsFloorCrossing(
+  previous: OddsObservation | null, latest: OddsObservation | null,
+  now: Date, kickoff: Date,
+): EvidenceSignal[] {
+  if (!previous || !latest || previous.median < AUTO_MIN_MEDIAN_ODDS ||
+      latest.median >= AUTO_MIN_MEDIAN_ODDS || latest.median <= 1 ||
+      previous.at >= latest.at || latest.at > now ||
+      latest.bookmakers < earlyOddsBand(kickoff, now).minBooks ||
+      now.getTime() - latest.at.getTime() > earlyOddsBand(kickoff, now).maxQuoteAgeMs)
+    return [];
+  return [{
+    code: "early-odds-floor-crossing-" + latest.at.toISOString(),
+    severity: "MODERATE", source: "odds",
+    message: "Bookmaker median for the original early pick has fallen below " +
+      AUTO_MIN_MEDIAN_ODDS.toFixed(2) + "; recheck value and availability.",
+  }];
+}
+
+export function reassessmentIntervalMinutes(now: Date, kickoff: Date): number {
+  const minutes = (kickoff.getTime() - now.getTime()) / 60_000;
+  if (!Number.isFinite(minutes) || minutes <= 0) return 0;
+  if (minutes <= 90) return 15;
+  if (minutes <= 6 * 60) return 60;
+  if (minutes <= 24 * 60) return 360;
+  if (minutes <= 72 * 60) return 720;
+  return 1440;
+}
+
+const IRREGULAR_STATUSES = new Set(["PST", "CANC", "ABD", "AWD", "WO", "SUSP"]);
+
+/** Only trust provider fixture state updated recently, not an old schedule. */
+export function fixtureSignals(originalKickoff: Date, fixture: FixtureEvidence | null, now: Date): EvidenceSignal[] {
+  if (!fixture || fixture.seenAt.getTime() > now.getTime()
+    || now.getTime() - fixture.seenAt.getTime() > 6 * 3_600_000) return [];
+  const signals: EvidenceSignal[] = [];
+  if (IRREGULAR_STATUSES.has(fixture.status)) {
+    signals.push({
+      code: "fixture-status-" + fixture.status,
+      severity: "CRITICAL",
+      message: "Provider reports the fixture as " + fixture.status + "; published selection requires withdrawal.",
+      source: "fixture",
+    });
+  }
+  const shift = Math.abs(fixture.kickoff.getTime() - originalKickoff.getTime());
+  if (shift > 15 * 60_000) {
+    signals.push({
+      code: "fixture-kickoff-shift",
+      severity: shift > 24 * 3_600_000 ? "CRITICAL" : "MODERATE",
+      message: "Provider reports a kickoff change of " + Math.round(shift / 60_000) + " minutes.",
+      source: "fixture",
+    });
+  }
+  return signals;
+}
+
+function normalized(name: string): string { return name.trim().toLocaleLowerCase("en").replace(/\s+/g, " "); }
+
+function unavailableSignals(side: string, oldTeam: TeamDigest, nextTeam: TeamDigest, now: Date): EvidenceSignal[] {
+  // A null availabilityAsOf is missing data, not an empty injury list.
+  if (!oldTeam.availabilityAsOf || !nextTeam.availabilityAsOf) return [];
+  // Only consider genuinely newer provider snapshots. Old injury data is
+  // historically noisy and can list players who have already returned.
+  if (nextTeam.availabilityAsOf <= oldTeam.availabilityAsOf) return [];
+  const observationTime = Date.parse(nextTeam.availabilityAsOf);
+  // A provider can return last season's injury rows when no recent matches
+  // exist. Do not announce them as newly confirmed team news.
+  if (!Number.isFinite(observationTime) || observationTime > now.getTime() + 86_400_000
+    || now.getTime() - observationTime > 21 * 86_400_000) return [];
+  const before = new Set(oldTeam.availability.map(p => normalized(p.player)));
+  const fresh = nextTeam.availability.filter(p => !before.has(normalized(p.player)));
+  const keyPlayers = new Set(nextTeam.keyPlayers.map(p => normalized(p.name)));
+  return fresh.map((p) => ({
+    code: "new-unavailable-" + side + "-" + normalized(p.player),
+    severity: keyPlayers.has(normalized(p.player)) ? "CRITICAL" as const : "MODERATE" as const,
+    message: side + ": " + p.player + " newly reported " + p.kind + " (" + p.reason.slice(0, 100) + ").",
+    source: "availability" as const,
+  }));
+}
+
+function formSignals(side: string, oldTeam: TeamDigest, nextTeam: TeamDigest): EvidenceSignal[] {
+  if (!oldTeam.last5.length || !nextTeam.last5.length) return [];
+  const oldEnd = oldTeam.last5.map(r => r.date).sort().at(-1) ?? "";
+  const newEnd = nextTeam.last5.map(r => r.date).sort().at(-1) ?? "";
+  if (newEnd <= oldEnd) return [];
+  return [{
+    code: "new-result-" + side + "-" + newEnd,
+    severity: "MODERATE",
+    message: side + " has played a new match since publication (" + newEnd + "); form needs reassessment.",
+    source: "form",
+  }];
+}
+
+export function compareFootballEvidence(before: MatchDigest | null, after: MatchDigest | null, now: Date = new Date()): EvidenceSignal[] {
+  if (!before || !after) return [];
+  const all: EvidenceSignal[] = [];
+  for (const side of ["home", "away"] as const) {
+    const oldTeam = before.teams[side], newTeam = after.teams[side];
+    all.push(...unavailableSignals(side, oldTeam, newTeam, now));
+    all.push(...formSignals(side, oldTeam, newTeam));
+    if (oldTeam.coach?.name && newTeam.coach?.name
+      && normalized(oldTeam.coach.name) !== normalized(newTeam.coach.name)) {
+      all.push({ code: "coach-change-" + side, severity: "MODERATE",
+        message: side + " has a different confirmed head coach.", source: "coach" });
+    }
+  }
+  return all;
+}
+
+/** Confirmed starting XI is a strong pre-match signal, not a predicted XI. */
+export function confirmedLineupSignals(
+  lineupTeams: Array<{ teamId: number; starters: Array<{ id: number; name: string }> }> | null,
+  prior: MatchDigest | null,
+): EvidenceSignal[] {
+  if (!prior || !lineupTeams || lineupTeams.length !== 2) return [];
+  const absent: string[] = [];
+  for (const [side, team] of [["home", prior.teams.home], ["away", prior.teams.away]] as const) {
+    if (team.apiId == null) continue;
+    const xi = lineupTeams.find(l => l.teamId === team.apiId);
+    if (!xi || xi.starters.length !== 11) continue;
+    const starters = new Set(xi.starters.map(x => normalized(x.name)));
+    for (const key of team.keyPlayers) {
+      if (!starters.has(normalized(key.name))) absent.push(side + ": " + key.name);
+    }
+  }
+  return absent.length ? [{
+    code: "confirmed-lineup-key-player-absence",
+    severity: "CRITICAL",
+    message: "Key players not in the confirmed starting XIs: " + absent.slice(0, 4).join(", "),
+    source: "lineup",
+  }] : [];
+}

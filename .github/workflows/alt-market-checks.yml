@@ -1,0 +1,48 @@
+# Sprint 10: unit checks for the alternative-market research, the Double
+# Chance label fix and the opt-in cache-only/no-retry paths, plus the suites
+# guarding what they sit next to. No database, no network, no provider calls.
+name: alt-market-checks
+on:
+  pull_request:
+    paths:
+      - 'src/lib/altMarketResearch.ts'
+      - 'src/lib/marketConfirmed.ts'
+      - 'src/lib/ai/generationContext.ts'
+      - 'src/lib/ai/providers/anthropic.ts'
+      - 'src/lib/vipPremiumPipeline.ts'
+      - 'scripts/run-alt-market-experiment.ts'
+      - 'scripts/settle-alt-market-experiment.ts'
+      - 'scripts/measure-alt-market-baseline.ts'
+      - 'scripts/check-alt-market-research.ts'
+      - '.github/workflows/alt-market-research.yml'
+      - '.github/workflows/alt-market-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://ci:ci@db.invalid:5432/none
+      DATABASE_URL_UNPOOLED: postgresql://ci:ci@db.invalid:5432/none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run check:alt-market-research
+      - run: npx tsx scripts/check-sprint11-audit.ts
+      - name: Suites next to the changed code
+        run: |
+          npx tsx scripts/check-market-sanity.ts
+          npx tsx scripts/check-short-price-guard.ts
+          npx tsx scripts/check-trend-cards.ts
+          npm run check:european-clubs
+          npm run check:vip-premium-overlay
+          npm run check:paid-selection
+          npx tsx scripts/check-generation.ts
+          npx tsx scripts/check-providers.ts
