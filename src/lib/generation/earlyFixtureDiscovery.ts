@@ -13,7 +13,7 @@ import { leaguesInTiers } from "@/lib/leagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { candidatesFromFixtures } from "@/lib/generation/selector";
-import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtureMode, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
+import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
 const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY"]);
@@ -23,6 +23,8 @@ export type EarlyDiscoveryReport = {
   ok: boolean;
   mode: EarlyFixtureMode;
   scanned: number;
+  /** Per-league proof of real current upcoming fixture and queued-candidate coverage. */
+  byLeague: Record<number, { fixtures: number; queued: number }>;
   fixturesSeen: number;
   cached: number;
   candidatesQueued: number;
@@ -91,7 +93,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
   const startedAt = Date.now();
   const now = opts.now ?? new Date();
   const mode = earlyFixtureMode();
-  const base = { ok: true, mode, scanned: 0, fixturesSeen: 0, cached: 0, candidatesQueued: 0,
+  const base = { ok: true, mode, scanned: 0, byLeague: {} as EarlyDiscoveryReport["byLeague"], fixturesSeen: 0, cached: 0, candidatesQueued: 0,
     quotaRemaining: null as number | null, failures: [] as EarlyDiscoveryReport["failures"], elapsedMs: 0, summary: "" };
   if (mode === "off") return { ...base, summary: "EARLY_FIXTURE_MODE=off; no calls or writes", elapsedMs: Date.now() - startedAt };
 
@@ -101,8 +103,12 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
     return { ...base, summary: "Early fixture capture stood down to protect API quota", elapsedMs: Date.now() - startedAt };
   }
 
-  const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 3)));
-  const leagues = await nextLeagues(batch, now);
+  const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
+  // The focused league gets the first slot, followed by the ordinary
+  // round-robin slice. No duplicate provider call within a pass.
+  const focusedLeague = earlySpotlightLeague(now);
+  const regular = batch > 1 ? await nextLeagues(batch - 1, now) : [];
+  const leagues = [focusedLeague, ...regular.filter(id => id !== focusedLeague)];
   const { start: lagosStart } = lagosDayBounds(0, now);
   let todayQueued = mode === "on"
     ? await prisma.upcomingFixture.count({ where: { earlyQueuedAt: { gte: lagosStart } } })
@@ -113,6 +119,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
     const days = discoveryHorizonDays(leagueApiId);
     if (!days) continue;
     base.scanned++;
+    base.byLeague[leagueApiId] = { fixtures: 0, queued: 0 };
     try {
       const dates = earlyDateRange(now, days);
       const season = await resolveSeason(leagueApiId, now);
@@ -123,6 +130,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
       }
       const rows = response.filter((r) => validFixture(r, now, days));
       base.fixturesSeen += rows.length;
+      base.byLeague[leagueApiId].fixtures = rows.length;
       // Avoid firing hundreds of concurrent Neon queries for a busy cup slate.
       for (let i = 0; i < rows.length; i += 8) {
         const chunk = rows.slice(i, i + 8);
@@ -165,6 +173,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
           });
           todayQueued++;
           base.candidatesQueued++;
+          base.byLeague[leagueApiId].queued++;
         } catch (error) {
           if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") continue;
           if (error instanceof Error && error.message === "EARLY_FIXTURE_ALREADY_QUEUED") continue;
