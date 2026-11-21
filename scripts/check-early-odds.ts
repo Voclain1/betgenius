@@ -9,6 +9,7 @@ import { earlyOddsBand, earlyOddsRefreshDue, earlyQuotedSelection,
   earlyFixturePricedForGeneration } from "../src/lib/generation/earlyOddsPolicy";
 import { earlyOddsFloorCrossing, oddsMovementSignal } from "../src/lib/reassessment/evidence";
 import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS } from "../src/lib/generation/earlyTriage";
+import { earlyMarketGuidance } from "../src/lib/generation/earlyMarketGuidance";
 
 const now = new Date("2026-11-20T12:00:00Z");
 const HOUR = 3_600_000;
@@ -72,6 +73,22 @@ assert.equal(earlyOddsRefreshDue({
 assert.equal(earlyOddsRefreshDue({
   kickoff: ahead(1), now, fetchedAt: null, lastAttemptAt: null,
 }), false, "existing near-kickoff workflow remains separate");
+
+assert.deepEqual(earlyMarketGuidance(makeOdds(1.34, 5), ahead(2.5), now),
+  ["Match Winner: Home (5 quoting bookmakers)"], "early model sees genuinely priced selections");
+assert.deepEqual(earlyMarketGuidance(makeOdds(1.34, 4), ahead(2.5), now), [],
+  "near-kickoff shallow bookmaker consensus not suggested");
+assert.deepEqual(earlyMarketGuidance(makeOdds(1.11, 5), ahead(2.5), now), [],
+  "unpayably short outcomes never promoted into model guidance");
+assert.deepEqual(earlyMarketGuidance(makeOdds(1.34, 5, ago(25).toISOString()), ahead(12), now), [],
+  "stale priced outcomes never guide early model");
+const generateSrc = readFileSync("src/lib/ai/generate.ts", "utf8");
+const analysisSrc = readFileSync("src/lib/ai/analysis.ts", "utf8");
+assert.ok(generateSrc.includes('input.intent === EARLY_FREE_GENERATION_INTENT && odds') &&
+  generateSrc.includes("earlyMarketGuidance(odds,") &&
+  analysisSrc.includes("EARLY MARKET AVAILABILITY") &&
+  analysisSrc.includes("do not inflate confidence from quote availability"),
+  "only early FREE tips are guided toward real quoted markets, not priced into confidence");
 
 const old = { median: 1.30, bookmakers: 3, at: ago(24) };
 const moved = { median: 1.10, bookmakers: 3, at: ago(1) };
