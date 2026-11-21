@@ -102,7 +102,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
     ...(hasPlayerStats ? [{ id: "top", label: "Top players", content: <TeamTopPlayers squad={squad} /> }] : []),
   ];
 
-  // The club itself as structured data, beside the events: name, crest,
+  // The team itself as structured data, beside the events: name, crest,
   // ground, coach and the competitions it plays in, all from stored facts.
   const teamJsonLd = {
     "@context": "https://schema.org",
@@ -203,7 +203,7 @@ export default async function TeamPage({ params }: { params: { slug: string } })
 
       {enrichment && (
         <section aria-labelledby="form">
-          <SectionHead kicker="Form" title="Form and club facts" id="form" />
+          <SectionHead kicker="Form" title="Form and team facts" id="form" />
           <TeamEnrichmentPanel teamApiId={teamApiId} />
         </section>
       )}

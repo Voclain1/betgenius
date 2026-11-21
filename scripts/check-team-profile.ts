@@ -51,6 +51,29 @@ async function main() {
   check("singular prediction", text.includes("published 1 prediction on"));
   check("no recent-form line", !text.includes("Across their last"));
   check("no empty paragraphs", full.every((p) => p.trim().length > 0));
+  check("club identity is not falsely asserted from the country field",
+    text.includes("a football team from England") && !text.includes("a football club"));
+
+  const nationalTeam = buildTeamAbout({
+    name: "Nigeria",
+    profile: {
+      nextMatch: null,
+      upcoming: [],
+      competitions: [],
+      standing: null,
+      country: "Nigeria",
+      flagCode: "ng",
+    },
+    venue: { name: null, city: null, capacity: null },
+    coach: null,
+    lastFixtures: null,
+    squad: [],
+    pickCount: 1,
+  });
+  check("international teams are never mislabeled as football clubs",
+    nationalTeam[0] === "Nigeria is a football team from Nigeria." &&
+    nationalTeam.every((paragraph) => !paragraph.includes("football club")),
+    JSON.stringify(nationalTeam));
 
   check("ids from stored fields", JSON.stringify(upcomingTeamIds({ id: 1, date: "", homeTeam: "a", awayTeam: "b", homeLogo: null, awayLogo: null, homeId: 5, awayId: 6 })) === '{"home":5,"away":6}');
   check(
