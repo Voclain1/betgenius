@@ -13,7 +13,7 @@ import type { FixtureOdds } from "@/lib/odds";
 
 const HOUR = 3_600_000;
 const MIN_QUOTA_REMAINING = 1_800;
-export const EARLY_ODDS_MAX_PER_RUN = 6;
+export const EARLY_ODDS_MAX_PER_RUN = 16;
 
 export type EarlyOddsWarmReport = {
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
@@ -53,7 +53,6 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
       leagueApiId: true, kickoff: true,
     },
     orderBy: [{ kickoff: "asc" }, { fixtureApiId: "asc" }],
-    take: 400,
   });
   const captured = fixtures
     .filter(f => inEarlyGenerationWindow(f.kickoff, now, f.leagueApiId))
@@ -83,6 +82,9 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
       fetchedAt: cache?.fetchedAt ?? null, kickoff: fixture.kickoff, now,
     })) stats.publishable++;
   }
+  // No first-400-row ceiling: every active queued fixture is considered.
+  // Failed/unpriced quotes retry on a lead-time-aware backoff, so provider
+  // quota is spent on new opportunities, not repeatedly on one empty market.
   const due = captured.filter(f => {
     const row = byKey.get(f.matchKey);
     return earlyOddsRefreshDue({
