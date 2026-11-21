@@ -1,5 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
+import { skipFootballImageOptimization } from "@/lib/footballImage";
 import { TeamCrest } from "@/components/TeamCrest";
 import { NextMatchCard, RankedList } from "@/components/TeamProfile";
 import { leagueLogoUrl } from "@/lib/leagues";
@@ -35,7 +36,7 @@ export function CompetitionMasthead({
   return (
     <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
       {leagueApiId != null && (
-        <Image
+        <Image unoptimized={skipFootballImageOptimization}
           aria-hidden
           src={leagueLogoUrl(leagueApiId)}
           alt=""
@@ -51,7 +52,7 @@ export function CompetitionMasthead({
       <div className="relative flex items-center gap-4 p-5 sm:gap-6 sm:p-8">
         <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-white shadow-inner ring-1 ring-brand-border sm:h-28 sm:w-28">
           {leagueApiId != null && (
-            <Image src={leagueLogoUrl(leagueApiId)} alt="" width={112} height={112} priority className="h-14 w-14 object-contain sm:h-20 sm:w-20" />
+            <Image unoptimized={skipFootballImageOptimization} src={leagueLogoUrl(leagueApiId)} alt="" width={112} height={112} priority className="h-14 w-14 object-contain sm:h-20 sm:w-20" />
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-2.5">

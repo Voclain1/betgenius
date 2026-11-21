@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
+import { skipFootballImageOptimization } from "@/lib/footballImage";
 import { teamCrestUrl } from "@/lib/leagues";
 
 /**
@@ -43,7 +44,7 @@ export function TeamCrest({
   }
 
   return (
-    <Image
+    <Image unoptimized={skipFootballImageOptimization}
       src={teamCrestUrl(teamApiId)}
       alt=""
       width={size}

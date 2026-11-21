@@ -234,6 +234,8 @@ check("H2H: current BTTS and goals link without presenting past scores as certai
 
 // --- Sprint 2: football image delivery without extra provider API usage -----
 const footballImages = require("../src/lib/footballImage") as typeof import("../src/lib/footballImage");
+check("football images: offline Node renderer bypasses missing Next image config",
+  footballImages.skipFootballImageOptimization === (process.env.NODE_ENV !== "production"));
 check("football images: API-Sports CDN hosts accepted for cached optimization",
   footballImages.isOptimizableFootballImageUrl("https://media.api-sports.io/football/teams/33.png") &&
   footballImages.isOptimizableFootballImageUrl("https://media-3.api-sports.io/football/teams/33.png"));

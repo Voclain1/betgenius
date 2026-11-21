@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { isOptimizableFootballImageUrl } from "@/lib/footballImage";
+import { isOptimizableFootballImageUrl, skipFootballImageOptimization } from "@/lib/footballImage";
 import type { LeagueClub } from "@/lib/predictionScope";
 
 /**
@@ -25,7 +25,7 @@ export function LeagueClubGrid({ clubs }: { clubs: LeagueClub[] }) {
           <>
             {c.crest ? (
               isOptimizableFootballImageUrl(c.crest) ? (
-                <Image
+                <Image unoptimized={skipFootballImageOptimization}
                   src={c.crest}
                   alt=""
                   width={28}

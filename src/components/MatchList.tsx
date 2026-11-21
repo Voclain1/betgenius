@@ -1,7 +1,7 @@
 import { kickoffTime, footballDay, footballDayKey } from "@/lib/footballTime";
 import Link from "next/link";
 import Image from "next/image";
-import { isOptimizableFootballImageUrl } from "@/lib/footballImage";
+import { isOptimizableFootballImageUrl, skipFootballImageOptimization } from "@/lib/footballImage";
 import type { FixtureRow } from "@/lib/football/api-football";
 import { classifyStatus, isIrregular, statusLabel, type MatchStatusGroup } from "@/lib/matchStatus";
 import { matchKey } from "@/lib/slug";
@@ -68,7 +68,7 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       {logo && (isOptimizableFootballImageUrl(logo) ? (
-        <Image
+        <Image unoptimized={skipFootballImageOptimization}
           src={logo}
           alt=""
           width={18}
@@ -140,7 +140,7 @@ export function LeagueGroup({
     <section className="rounded-3xl border border-brand-border bg-brand-card">
       <div className="sticky top-16 z-10 flex items-center gap-2 rounded-t-3xl border-b border-brand-border bg-brand-card px-4 py-3">
         {league.logo && (isOptimizableFootballImageUrl(league.logo) ? (
-          <Image
+          <Image unoptimized={skipFootballImageOptimization}
             src={league.logo}
             alt=""
             width={16}
