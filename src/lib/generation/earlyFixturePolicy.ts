@@ -14,7 +14,7 @@ export const EARLY_FIXTURE_POLICY = {
   // No daily or league fixture quota. Cron calls are finite for runtime/API
   // safety, but the backlog continues every cycle without an exhaustion cap.
   MIN_API_QUOTA_REMAINING: 2_200,
-  MAX_RUN_MS: 45_000,
+  MAX_RUN_MS: 22_000,
 } as const;
 
 /**
