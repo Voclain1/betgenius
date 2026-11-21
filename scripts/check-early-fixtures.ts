@@ -68,6 +68,7 @@ assert.equal(inEarlyGenerationWindow(hoursLater(260), now, secondary[0]), false)
 assert.equal(inEarlyGenerationWindow(hoursLater(240), now, secondary[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(300), now, core[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
+assert.equal(EARLY_FIXTURE_POLICY.MAX_RUN_MS, 22_000, "existing discovery runtime cutoff is preserved");
 assert.ok(!("MAX_QUEUE_PER_DAY" in EARLY_FIXTURE_POLICY) && !("MAX_QUEUE_PER_LEAGUE" in EARLY_FIXTURE_POLICY),
   "no artificial daily/league limit on early queueing");
 assert.ok(rawDiscovery.includes('leaguesInTiers(["CORE", "SECONDARY"])') &&
