@@ -11,16 +11,16 @@
 
 ## Capacity model
 
-- **No fixed per-day or per-league caps** on discovering or queuing early fixtures; all four catalogue tiers are covered on a rotating basis, subject to the existing competition eligibility and strong-club checks.
+- **No fixed per-day or per-league caps** on discovering or queuing early fixtures. CORE/SECONDARY stay the priority; a fallback-league slot is rotated within the existing four discovery calls per twice-hourly pass, not added on top.
 - Horizons: CORE 14 days, SECONDARY 10 days, FALLBACK 7 days, DEEP_FALLBACK 5 days. Quality filters for selective lower leagues are retained.
-- Scheduled discovery, odds warming, generation and publication now run four times per hour, with a short stagger. Each call has a **per-run** batch/time limit and hard provider-quota headroom. Those are production safety measures, not lifetime caps; the queue resumes every cycle. Removing API limits or trying unlimited parallel requests would be unreliable and could consume quota reserved for normal and paid tips.
-- Odds warming processes the full active early queue rather than just the first 400 entries, retries unpriced markets on an 8h/4h/2h lead-time-dependent backoff, and continues to require 3/4/5 genuinely quoting bookmakers (according to lead time) for automatic publication. No bookmaker prices or odds are fabricated.
-- Early generation prioritizes fixtures with qualified opening prices, but also generates unpriced candidates for quality screening and later admin review/hold. Previously, any missing opening quote prevented analysis altogether.
+- Provider-facing discovery and odds warming retain the **original twice-hourly schedule**, four scans per discovery pass, four bookmaker fetch attempts per warming pass, original lead-time odds retry intervals, and the provider quota reserves. The database-only triage can process more previously generated rows per pass. No extra odds API provider calls are scheduled.
+- Odds warming processes the full active early queue rather than only the first 400, but fetches at most four fixtures every half-hour, with the original 12h/6h/3h missing-price backoff and 12h/8h/3h existing-quote refresh rules. Automatic publication still requires 3/4/5 genuinely quoting bookmakers according to lead time; no odds are fabricated.
+- Early generation prioritizes fixtures with qualified opening prices, but also generates unpriced candidates for quality screening and later admin review/hold. It passes `cacheOnly: true` through all team, standings and H2H evidence gathering and reads bookmaker prices from `FixtureOddsCache` without attempting a new provider call. Missing/stale supporting evidence cannot qualify a row for auto-publication. The system still uses its existing forecast-model provider, which can have separate inference costs.
 - The existing normal engine and VIP/Premium passes remain active. Do **not** retire the normal engine until live measurements prove adequate early coverage, pre-kickoff freshness, qualification rates and settling quality.
 
 ## Verification / deployment
 
-- Pure regressions: `npm run check:early-fixtures`, `npm run check:early-odds`.
+- Pure regressions: `npm run check:early-fixtures`, `npm run check:early-odds`. They assert the early-only cache guarantee and existing API-Football call cadence.
 - Full PR CI including operation tests, production build, browser checks, and PostgreSQL publication checks.
 - After merging, verify VPS deploy preserves all three rollout flags, ops crontab is updated, and `JobRun` shows discovery/odds/generation/publication/reassessment with meaningful results.
 - Daily operational metrics: leagues sampled, queued by lead-time band, quote coverage by 2–3 / 4–5 / 6–7 / 8–10 / 11–14 day bands, auto-published with price receipts, admin-review ready, held, restored, explicit failures, and provider quota.
