@@ -15,7 +15,6 @@ import { hasValidMutationOrigin } from "@/lib/requestSecurity";
 import { prisma } from "@/lib/prisma";
 import { parseStoredContext } from "@/lib/ai/context";
 import { deriveMarketAndPick, isValidSelection, type MarketType, type Selection } from "@/lib/markets";
-import { createNotificationEvent, recordPredictionEvents } from "@/lib/notifications";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { assertPublicationFixture } from "@/lib/predictions";
 
@@ -43,7 +42,6 @@ export async function POST(req: NextRequest) {
       });
       if (!before || before.status !== "PUBLISHED" || !before.publishedAt || !before.kickoff)
         throw new Error("PREDICTION_NOT_PUBLISHED_OR_STARTED");
-      if (before.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
       if (before.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_OPEN_REASSESSMENT");
       const paid = isPaidOnlyProvenance(before.provenance)
         || before.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
@@ -55,23 +53,20 @@ export async function POST(req: NextRequest) {
         provenance: before.provenance, status: before.status,
       };
       if (action === "KEEP") {
-        const latestFixture = before.fixtureApiId == null ? null : await tx.upcomingFixture.findUnique({
-          where: { fixtureApiId: before.fixtureApiId }, select: { status: true },
-        });
-        if (latestFixture && latestFixture.status !== "NS") throw new Error("FIXTURE_NOT_SCHEDULED");
         await tx.predictionReassessment.update({
           where: { predictionId }, data: { status: "CURRENT", publicHold: false, summary: "Reviewed and retained: " + note,
             proposedMarket: null, proposedSelection: Prisma.DbNull, proposedConfidence: null,
             checkedAt: new Date(), nextCheckAt: new Date(Date.now() + 60 * 60_000) },
         });
         await tx.predictionRevision.create({
-          data: { predictionId, kind: "CONFIRMED", publiclyVisible: true, reason: note, beforeJson: previous as Prisma.InputJsonValue },
+          data: { predictionId, kind: "CONFIRMED", publiclyVisible: false, reason: note, beforeJson: previous as Prisma.InputJsonValue },
         });
         return { action, predictionId, replacementId: null };
       }
 
       let replacementId: string | null = null;
       if (action === "REPLACE") {
+        if (before.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
         if (before.categories.some(c => ["BET_OF_THE_DAY", "SAME_GAME_DOUBLE"].includes(c.category)))
           throw new Error("PROTECTED_CATEGORY_REPLACEMENT");
         const revision = before.revisions[0];
@@ -123,7 +118,6 @@ export async function POST(req: NextRequest) {
           include: { categories: true },
         });
         replacementId = replacement.id;
-        await recordPredictionEvents(tx, { ...replacement, status: "PENDING_REVIEW", publishedAt: null }, replacement, "PUBLISH");
       }
 
       // Always archive the original when withdrawing or replacing. Its
@@ -136,34 +130,16 @@ export async function POST(req: NextRequest) {
       const after = await tx.prediction.findUniqueOrThrow({
         where: { id: predictionId }, include: { categories: true },
       });
-      await recordPredictionEvents(tx, before, after, "ARCHIVE");
       await tx.predictionReassessment.update({
         where: { predictionId }, data: { status: "WITHDRAWN", publicHold: false, summary: note,
           checkedAt: new Date(), nextCheckAt: null },
       });
       await tx.predictionRevision.create({
         data: {
-          predictionId, kind: action === "REPLACE" ? "REPLACED" : "WITHDRAWN", publiclyVisible: true,
+          predictionId, kind: action === "REPLACE" ? "REPLACED" : "WITHDRAWN", publiclyVisible: false,
           reason: note, beforeJson: previous as Prisma.InputJsonValue,
           afterJson: replacementId ? ({ replacementId } as Prisma.InputJsonValue) : undefined,
         },
-      });
-      const event = await createNotificationEvent({
-        eventKey: "prediction:" + predictionId + ":admin-" + action.toLowerCase() + ":" + after.updatedAt.toISOString(),
-        type: "WITHDRAWN",
-        predictionId, fixtureApiId: before.fixtureApiId, leagueApiId: before.leagueApiId,
-        teamApiIds: [before.homeTeamApiId, before.awayTeamApiId].filter((n): n is number => n != null),
-        title: action === "REPLACE" ? "Prediction replaced after review" : "Prediction withdrawn after review",
-        body: note,
-        link: "/predictions/updates/" + predictionId,
-        data: { original: previous, replacementId },
-      }, tx);
-      const saved = await tx.savedPrediction.findMany({
-        where: { predictionId }, select: { userId: true },
-      });
-      if (saved.length) await tx.userNotification.createMany({
-        data: saved.map(({ userId }) => ({ userId, eventId: event.id })),
-        skipDuplicates: true,
       });
       return { action, predictionId, replacementId };
     });
