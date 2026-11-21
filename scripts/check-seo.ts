@@ -280,8 +280,19 @@ check("guides: index and published guides are sitemap entries", sitemapEntriesSo
 (globalThis as { React?: unknown }).React = require("react");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { GUIDES } = require("../src/content/guides") as typeof import("../src/content/guides");
-check("guides: nine published", GUIDES.length === 9, String(GUIDES.length));
+check("guides: eleven published", GUIDES.length === 11, String(GUIDES.length));
 check("guides: unique slugs", new Set(GUIDES.map((g) => g.slug)).size === GUIDES.length);
+const { GUIDE_CLUSTERS } = require("../src/content/guides") as typeof import("../src/content/guides");
+const clusteredSlugs = GUIDE_CLUSTERS.flatMap((cluster) => [...cluster.slugs]);
+check("guides: all guides assigned to one relevant topic cluster, with no missing or duplicate slugs",
+  clusteredSlugs.length === GUIDES.length &&
+  new Set(clusteredSlugs).size === GUIDES.length &&
+  clusteredSlugs.every((slug) => GUIDES.some((guide) => guide.slug === slug)));
+check("guides: cluster navigation links to every listed guide", guidesIndex.includes("GUIDE_CLUSTERS.map") && guidesIndex.includes("bySlug.get(slug)"));
+check("guides: cup-tie guide differentiates qualification and standard match result",
+  guidesContent.includes('slug: "how-to-evaluate-cup-football-predictions"') && guidesContent.includes("normal time") && guidesContent.includes("two-legged tie"));
+check("guides: multi-bet coupon guide explains risk and bookmaker settlement",
+  guidesContent.includes('slug: "how-to-check-a-multi-bet-coupon"') && guidesContent.includes("24.01%") && guidesContent.includes("void leg"));
 check("guides: unique section ids within each guide", GUIDES.every((g) => new Set(g.sections.map((x) => x.id)).size === g.sections.length));
 check("guides: every guide has a description, summary and at least three related links", GUIDES.every((g) => g.description.length > 60 && g.summary.length > 40 && g.related.length >= 3));
 // Every related link resolves to a route that exists, or to another guide.
