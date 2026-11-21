@@ -126,7 +126,8 @@ const publish = readFileSync("src/lib/generation/earlyPublication.ts", "utf8");
 const publisher = readFileSync("src/lib/predictions.ts", "utf8");
 const monitor = readFileSync("src/lib/reassessment/worker.ts", "utf8");
 const cron = readFileSync("deploy/ops/crontab", "utf8");
-assert.ok(warm.includes("MIN_QUOTA_REMAINING = 1_800") && warm.includes("refreshOddsCache("));
+assert.ok(warm.includes("MIN_QUOTA_REMAINING = 1_800") && warm.includes("refreshOddsCache(") &&
+  warm.includes("EARLY_ODDS_MAX_PER_RUN = 6"), "early odds warming cannot exceed the established per-run request bound");
 assert.ok(earlyRun.includes("earlyFixturePricedForGeneration("));
 assert.ok(publish.includes("earlyQuotedSelection(") &&
   publish.includes("publishEarlyFreePredictionAtomically("));
