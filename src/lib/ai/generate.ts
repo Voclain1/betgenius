@@ -11,6 +11,8 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
 import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
+import { earlyMarketGuidance } from "@/lib/generation/earlyMarketGuidance";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
 import { automaticOddsFailure, automaticOddsRetryBlock, AutoOddsFloorError, type AutoOddsFailure } from "@/lib/autoOddsFloor";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
@@ -247,12 +249,18 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const guardsShortPrice = !input.manual && !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
   const priceOdds = guardsShortPrice ? odds : null;
+  // A priced-market shortlist is useful context for EARLY FREE alone.
+  // It is never a recommendation, a probability estimate or a publication
+  // bypass. Normal, paid, Goals and admin prompts remain unchanged.
+  const pricedEarlyMarkets = input.intent === EARLY_FREE_GENERATION_INTENT && odds
+    ? earlyMarketGuidance(odds, new Date(input.kickoff), new Date()) : [];
   const callModel = (block: string) =>
     generatePredictionForFixture({
       digest,
       tiers: riskRoute.promptTiers,
       riskCalibration: riskRoute.calibration !== "legacy",
       marketBreadth,
+      ...(pricedEarlyMarkets.length ? { pricedEarlyMarkets } : {}),
       handicapLine: input.handicapLine,
       shortPriceBlock: block,
       ...(goalsOnly ? { goalsOnly: true } : {}),
