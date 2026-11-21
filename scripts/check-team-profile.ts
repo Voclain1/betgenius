@@ -51,6 +51,11 @@ async function main() {
   check("singular prediction", text.includes("published 1 prediction on"));
   check("no recent-form line", !text.includes("Across their last"));
   check("no empty paragraphs", full.every((p) => p.trim().length > 0));
+  const teamPageSource = require("node:fs").readFileSync("src/app/(public)/predictions/team/[slug]/page.tsx", "utf8");
+  const teamComponentSource = require("node:fs").readFileSync("src/components/TeamProfile.tsx", "utf8");
+  check("team headings do not label national squads as clubs",
+    teamPageSource.includes('title="Form and team facts"') &&
+    teamComponentSource.includes('kicker = "Team profile"'));
   check("club identity is not falsely asserted from the country field",
     text.includes("a football team from England") && !text.includes("a football club"));
 
