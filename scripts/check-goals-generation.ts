@@ -385,7 +385,8 @@ async function publicationAndProbe() {
   );
   check("early FREE publisher is off by default and uses price-verified atomic publication",
     /if \(mode === "off" \|\| earlyFixtureMode\(\) !== "on"\) return finish\(\)/.test(earlyPublication) &&
-    /await publishEarlyFreePredictionAtomically\(row, input\.actorId\)/.test(earlyPublication) &&
+    /await publishEarlyFreePredictionAtomically\(publishRow, input\.actorId\)/.test(earlyPublication) &&
+    /classifyEarlyDisposition\(/.test(earlyPublication) &&
     /tx\.predictionRevision\.create\(/.test(predictionsSrc) &&
     /earlyQuotedSelection\(/.test(predictionsSrc) &&
     !/status: "PUBLISHED"|prisma\.prediction\.update\(/.test(earlyPublication));
