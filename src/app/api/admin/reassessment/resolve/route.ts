@@ -21,7 +21,7 @@ import { assertPublicationFixture } from "@/lib/predictions";
 export const dynamic = "force-dynamic";
 const Action = z.object({
   predictionId: z.string().min(1).max(128),
-  action: z.enum(["KEEP", "WITHDRAW", "REPLACE"]),
+  action: z.enum(["KEEP", "WITHDRAW", "REPLACE", "RESTORE"]),
   note: z.string().trim().min(10).max(500),
 });
 
@@ -40,6 +40,36 @@ export async function POST(req: NextRequest) {
         where: { id: predictionId },
         include: { categories: true, reassessment: true, revisions: { orderBy: { recordedAt: "desc" }, take: 1 } },
       });
+      if (action === "RESTORE") {
+        if (!before || before.status !== "ARCHIVED" || !before.publishedAt || !before.reassessment)
+          throw new Error("NOT_AUTO_WITHDRAWN");
+        // This operation exists solely for the old monitoring worker's
+        // automatic fixture withdrawals, never administrator withdrawals.
+        const withdrawn = before.revisions.find(r => r.kind === "WITHDRAWN" &&
+          Array.isArray(r.evidenceJson) && r.evidenceJson.some(signal =>
+            !!signal && typeof signal === "object" &&
+            (signal as { source?: string }).source === "fixture"));
+        if (!withdrawn) throw new Error("NOT_AUTO_WITHDRAWN");
+        const claim = await tx.prediction.updateMany({
+          where: { id: predictionId, status: "ARCHIVED" },
+          data: { status: "PUBLISHED" },
+        });
+        if (claim.count !== 1) throw new Error("REVIEW_STATE_CHANGED");
+        await tx.predictionReassessment.update({
+          where: { predictionId },
+          data: { status: "CURRENT", publicHold: false,
+            summary: "Administrator restored previously auto-withdrawn original: " + note,
+            checkedAt: new Date(), nextCheckAt: null },
+        });
+        await tx.predictionRevision.create({
+          data: { predictionId, kind: "ADMIN_RESTORED", publiclyVisible: false,
+            reason: note, beforeJson: {
+              market: before.market, pick: before.pick, confidence: before.confidence,
+              publishedAt: before.publishedAt.toISOString(), status: before.status,
+            } as Prisma.InputJsonValue },
+        });
+        return { action, predictionId, replacementId: null };
+      }
       if (!before || before.status !== "PUBLISHED" || !before.publishedAt || !before.kickoff)
         throw new Error("PREDICTION_NOT_PUBLISHED_OR_STARTED");
       if (before.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_OPEN_REASSESSMENT");
@@ -149,7 +179,7 @@ export async function POST(req: NextRequest) {
     if (["PREDICTION_NOT_PUBLISHED_OR_STARTED", "KICKOFF_PASSED", "NO_OPEN_REASSESSMENT",
       "PAID_REPLACEMENT_REQUIRES_PAID_GATE", "PROTECTED_CATEGORY_REPLACEMENT",
       "REPLACEMENT_EVIDENCE_OR_SELECTION_NOT_QUALIFIED", "FIXTURE_NOT_SCHEDULED",
-      "REVIEW_STATE_CHANGED"].includes(message)) {
+      "REVIEW_STATE_CHANGED", "NOT_AUTO_WITHDRAWN"].includes(message)) {
       return NextResponse.json({ error: message }, { status: 409 });
     }
     console.error("[reassessment-resolve]", error);
