@@ -24,7 +24,7 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
   if (quota.remaining < MIN_API_HEADROOM) return { ok: true, skipped: "preserving provider quota", selected: 0, generated: 0, summary: "Early generation deferred for quota" };
   // Operational batch size, not a daily/league generation quota. The queue
   // resumes on every cron pass, protecting the regular and paid workflows.
-  const limit = Math.max(1, Math.min(12, Math.trunc(input.limit ?? 8)));
+  const limit = Math.max(1, Math.min(4, Math.trunc(input.limit ?? 3)));
   const from = new Date(now.getTime() + 48 * 3_600_000);
   const until = new Date(now.getTime() + EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS * 3_600_000);
   const queued = await prisma.generationAttempt.findMany({
