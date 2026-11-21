@@ -2,9 +2,8 @@
  * Post-publication evidence monitoring. Never edits an already-published
  * selection or confidence, and NEVER auto-replaces paid picks.
  *
- * Shadow writes monitoring/audit only. Live mode can withdraw a fixture that
- * the provider has explicitly cancelled/postponed; footballing changes create
- * a review case and a proposed analysis, never an unreviewed public replacement.
+ * All reassessment modes write private monitoring and admin-only review cases.
+ * No background path may hold, archive, rewrite, replace or notify about a published tip.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
@@ -14,11 +13,6 @@ import { getFixturesByIds, getFixtureLineups } from "@/lib/football/api-football
 import { trimConfirmedLineups } from "@/lib/lineups";
 import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { buildStoredContext, parseStoredContext } from "@/lib/ai/context";
-import { generatePredictionForFixture } from "@/lib/ai/analysis";
-import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
-import { isValidSelection, type MarketType } from "@/lib/markets";
-import { recordPredictionEvents, createNotificationEvent } from "@/lib/notifications";
-import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { matchKey } from "@/lib/slug";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 import { matchOddsState } from "@/lib/matchOdds";
@@ -31,18 +25,13 @@ import {
 
 export type ReassessmentMode = "off" | "shadow" | "on";
 
-/** SHADOW receipts are internal only. When the same unresolved material signal
- * is freshly confirmed for the first time in LIVE, create a public receipt and
- * notify once. Do not reopen an already reviewed/retained CURRENT case, and
- * do not duplicate notices for an existing live hold.
- */
+/** One append-only private receipt per new signal signature, regardless of rollout mode. */
 export function shouldRecordReassessmentReceipt(input: {
   mode: ReassessmentMode; sameSignature: boolean;
   existingStatus: string | null | undefined;
   publicHold: boolean | null | undefined;
 }): boolean {
-  return !input.sameSignature ||
-    (input.mode === "on" && input.existingStatus === "REVIEW_REQUIRED" && input.publicHold !== true);
+  return !input.sameSignature;
 }
 export function reassessmentMode(value: string | undefined = process.env.PREDICTION_REASSESSMENT_MODE): ReassessmentMode {
   return value === "shadow" || value === "on" ? value : "off";
@@ -300,36 +289,50 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
 
         const newSignature = digestSignature(unique.map(s => s.code).sort());
         const alreadyRecorded = newSignature === row.reassessment?.lastChangeHash;
+        // An administrator explicitly retained this exact evidence signature:
+        // a subsequent monitoring pass must not override that human decision.
+        if (alreadyRecorded && row.reassessment?.status === "CURRENT") {
+          await prisma.predictionReassessment.update({
+            where: { predictionId: row.id },
+            data: { checkedAt: now, nextCheckAt, lastEvidence: evidence,
+              lastEvidenceAt: now, ...oddsColumns, publicHold: false, lastError: null },
+          });
+          report.current++;
+          continue;
+        }
         const recordReceipt = shouldRecordReassessmentReceipt({
           mode, sameSignature: alreadyRecorded,
           existingStatus: row.reassessment?.status,
           publicHold: row.reassessment?.publicHold,
         });
-        const criticalStatus = unique.find(s => s.source === "fixture" && s.severity === "CRITICAL");
-        const isPaid = isPaidOnlyProvenance(row.provenance) || row.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
         const summary = unique.map(s => s.message).join(" ").slice(0, 1000);
-        let proposed: { marketType: string; selection: unknown; confidence: number; reasoning: string } | null = null;
-
-        // New evidence prompts a fresh assessment (NOT the editorial rewrite
-        // path, which reuses stale evidence). Paid selections are assessed
-        // read-only; their market evidence cannot be overwritten.
-        if (mode === "on" && !criticalStatus && recordReceipt) {
-          try {
-            const risk = resolveGenerationRisk(row.categories.map(c => c.category), row.leagueApiId);
-            const result = await generatePredictionForFixture({
-              digest, tiers: risk.promptTiers, riskCalibration: risk.calibration !== "legacy",
-              marketBreadth: "single",
+        const before = publishedSelectionSnapshot(row);
+        const signalPayload = unique.map(s => ({
+          code: s.code, severity: s.severity, source: s.source, message: s.message,
+        }));
+        // Monitoring is read-only with respect to published selections.
+        // Even a critical cancellation is exclusively an administrator's decision.
+        await prisma.$transaction(async tx => {
+          await tx.predictionReassessment.upsert({
+            where: { predictionId: row.id },
+            create: { predictionId: row.id, status: "REVIEW_REQUIRED", publicHold: false,
+              checkedAt: now, nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now,
+              ...oddsColumns, lastChangeHash: newSignature, summary },
+            update: { status: "REVIEW_REQUIRED", publicHold: false,
+              checkedAt: now, nextCheckAt, lastEvidence: evidence, lastEvidenceAt: now,
+              ...oddsColumns, lastChangeHash: newSignature, summary, lastError: null },
+          });
+          if (recordReceipt) {
+            await tx.predictionRevision.create({
+              data: { predictionId: row.id, kind: "REVIEW_REQUIRED",
+                publiclyVisible: false, reason: summary,
+                beforeJson: before as unknown as Prisma.InputJsonValue,
+                evidenceJson: signalPayload as Prisma.InputJsonValue },
             });
-            const draft = result.output.predictions?.[0];
-            if (draft && Number.isFinite(draft.confidence)
-              && isValidSelection(draft.marketType as MarketType, draft.selection)) {
-              proposed = {
-                marketType: draft.marketType, selection: draft.selection,
-                confidence: Math.min(90, Math.max(0, Math.round(draft.confidence))),
-                reasoning: draft.reasoning,
-              };
-            }
-          } catch (error) {
+          }
+        });
+        report.flagged++;
+      } catch (error) {
             report.failures.push(row.id + ": new evidence analysis: "
               + (error instanceof Error ? error.message : String(error)));
           }
