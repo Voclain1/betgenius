@@ -99,6 +99,27 @@ assert.equal(earlyOddsFloorCrossing(old, moved, now, ahead(12))[0]?.severity, "M
 assert.equal(earlyOddsFloorCrossing(old, { ...moved, bookmakers: 2 }, now, ahead(12)).length, 0,
   "thin quotes cannot place a live hold");
 
+const earlyGenerationSource = readFileSync("src/lib/generation/earlyGeneration.ts", "utf8");
+const generationContextSource = readFileSync("src/lib/ai/generate.ts", "utf8");
+const selectorSource = readFileSync("src/lib/generation/selector.ts", "utf8");
+const normalQueueSource = readFileSync("src/lib/generation/queue.ts", "utf8");
+const selectiveSource = readFileSync("src/lib/generation/selectiveLeagues.ts", "utf8");
+const discoverySource = readFileSync("src/lib/generation/earlyFixtureDiscovery.ts", "utf8");
+assert.ok(generationContextSource.includes("cacheOnly: input.intent === EARLY_FREE_GENERATION_INTENT") &&
+  generationContextSource.includes("input.intent === EARLY_FREE_GENERATION_INTENT) : null") &&
+  generationContextSource.includes("if (cacheOnly || fixtureApiId == null"),
+  "early prediction creation reads cached form, standings, H2H and prices without provider refresh");
+assert.ok(selectorSource.includes("loadSelectiveTables(inWindow, now, opts.cacheOnly === true)") &&
+  normalQueueSource.includes("filterSelectiveQueuedCandidates(candidates, now, opts.cacheOnly === true)") &&
+  selectiveSource.includes("if (!cacheOnly && !fresh && !triedRecently)") &&
+  discoverySource.includes("cacheOnly: true,"),
+  "early discovery and selection never refresh missing standings through API-Football");
+assert.ok(earlyGenerationSource.includes("intent: EARLY_FREE_GENERATION_INTENT") &&
+  !earlyGenerationSource.includes("refreshOddsCache(") &&
+  cron.includes("3,33 * * * * /ops/cron-call.sh /api/admin/generate/early-discover?batch=4") &&
+  cron.includes("6,36 * * * * /ops/cron-call.sh /api/admin/generate/early-odds?limit=4"),
+  "unchanged early discovery/odds provider-call cadence and cached evidence generation");
+
 const warm = readFileSync("src/lib/generation/earlyOdds.ts", "utf8");
 const earlyRun = readFileSync("src/lib/generation/earlyGeneration.ts", "utf8");
 const publish = readFileSync("src/lib/generation/earlyPublication.ts", "utf8");
