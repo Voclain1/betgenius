@@ -268,7 +268,9 @@ export async function runGeneration(opts: {
 
   try {
     const usage = await getUsageSnapshot();
-    if (usage.remaining < MIN_QUOTA_HEADROOM) {
+    // Dedicated early FREE analysis is cache-only and spends ZERO football-API
+    // requests; it may continue even after the paid quota reserve is reached.
+    if (opts.intent !== EARLY_FREE_GENERATION_INTENT && usage.remaining < MIN_QUOTA_HEADROOM) {
       return empty(`api-football daily budget nearly exhausted (${usage.remaining} left)`, usage.remaining);
     }
 
