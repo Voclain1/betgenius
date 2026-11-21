@@ -30,7 +30,7 @@
 
 ## Scope / safeguards
 
-This PR only changes factual team-profile copy and guide-title length, with regression tests. It does **not** alter published picks, confidence, odds, generation, API-Football, billing, membership, tier visibility, schema, deployment or scheduled jobs.
+This PR changes factual team-profile copy, guide-title lengths and three utility-page meta descriptions, with regression tests. It does **not** alter published picks, confidence, odds, generation, API-Football, billing, membership, tier visibility, schema, deployment or scheduled jobs.
 
 ## Follow-up verification
 
@@ -43,3 +43,13 @@ This PR only changes factual team-profile copy and guide-title length, with regr
 Crawl report: https://app.openseo.so/p/96e618e8-610e-414c-9a3c-7f55092d9189/audit?auditId=50b07dc6-fbd7-4263-bfb6-d2d0717a9a14  
 Liga MX reproduction: https://app.openseo.so/p/96e618e8-610e-414c-9a3c-7f55092d9189/audit?auditId=8761eec8-90b3-4716-9608-77952d8e4f18  
 Guide verification: https://app.openseo.so/p/96e618e8-610e-414c-9a3c-7f55092d9189/audit?auditId=e2b84045-c2da-49e5-887f-aded58a4ecce
+
+## Additional targeted production checks
+
+### Major cup catalogue
+A targeted ten-page live crawl starting at `/predictions/cup/uefa-champions-league` returned **HTTP 200 for all ten cups**, including Champions League, Europa League, Conference League, FA Cup, EFL Cup, DFB Pokal, Copa del Rey, Coppa Italia, Coupe de France and Taça de Portugal. All ten rendered titles, descriptions, one intended canonical path and indexable markup and appeared in the sitemap. Crawl ended after 10 pages; this does not establish coverage of every cup or every link.
+
+### Additional utility-page metadata
+A ten-page crawl starting at Danish Cup found `/fixtures`, `/livescores` and `/standings` descriptions exceeding 160 characters (about **213**, **171** and **204** characters). This PR reduces them to **130**, **120** and **133** characters without changing route, title or canonical. The same crawl flagged `/fixtures` as thin (~112 words); it is primarily a client-side interactive fixture tool. Follow-up should assess rendered usefulness before either adding content or changing indexability. Do **not** add generic filler text.
+
+The direct major-cup and Danish Cup crawls each reached their 10-page cap and did not report any additional 5xx errors in those samples.
