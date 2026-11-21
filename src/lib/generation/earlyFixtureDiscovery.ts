@@ -15,7 +15,9 @@ import { candidatesFromFixtures } from "@/lib/generation/selector";
 import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
-const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY", "FALLBACK", "DEEP_FALLBACK"]);
+const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY"]);
+const EARLY_EXPANDED_LEAGUES = leaguesInTiers(["FALLBACK", "DEEP_FALLBACK"]);
+const EXPANDED_CURSOR_KEY = "early-fixture-expanded-discovery-cursor";
 const DAY = 86_400_000;
 
 export type EarlyDiscoveryReport = {
@@ -33,13 +35,16 @@ export type EarlyDiscoveryReport = {
   summary: string;
 };
 
-/** Rotates a unique batch through CORE+SECONDARY, independently of ordinary discovery. */
-async function nextLeagues(batch: number, now: Date): Promise<number[]> {
-  const size = EARLY_LEAGUES.length;
+/** Keep CORE+SECONDARY as the primary scan, use one existing scan slot
+ * per pass for lower tiers. Same 4 provider calls maximum as before. */
+async function nextLeagues(batch: number, now: Date, expanded = false): Promise<number[]> {
+  const pool = expanded ? EARLY_EXPANDED_LEAGUES : EARLY_LEAGUES;
+  const cursor = expanded ? EXPANDED_CURSOR_KEY : CURSOR_KEY;
+  const size = pool.length;
   if (!size) return [];
   const rows = await prisma.$queryRaw<Array<{ holder: string }>>`
     INSERT INTO "AppLock" ("key", "holder", "acquiredAt", "expiresAt")
-    VALUES (${CURSOR_KEY}, ${String(batch)}, ${now}, ${new Date("2999-01-01T00:00:00Z")})
+    VALUES (${cursor}, ${String(batch)}, ${now}, ${new Date("2999-01-01T00:00:00Z")})
     ON CONFLICT ("key") DO UPDATE
       SET "holder" = (((("AppLock"."holder")::integer + ${batch}) % ${size}))::text,
           "acquiredAt" = ${now}
@@ -47,7 +52,7 @@ async function nextLeagues(batch: number, now: Date): Promise<number[]> {
   `;
   const end = Number(rows[0]?.holder ?? batch) % size;
   const start = (end - batch + size) % size;
-  return Array.from({ length: batch }, (_, offset) => EARLY_LEAGUES[(start + offset) % size]);
+  return Array.from({ length: batch }, (_, offset) => pool[(start + offset) % size]);
 }
 
 function validFixture(row: FixtureRow, now: Date, horizonDays: number): boolean {
@@ -104,12 +109,16 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
 
   // A per-request time budget and quota headroom are operational safeguards,
   // never a lifetime/day/league limit on how much the engine can cover.
-  const batch = Math.min(EARLY_LEAGUES.length, Math.max(1, Math.trunc(opts.batchSize ?? 12)));
-  // The focused league gets the first slot, followed by the ordinary
-  // round-robin slice. No duplicate provider call within a pass.
+  const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
+  // Never increase API-Football discovery calls: one regional spotlight,
+  // two priority leagues, and one rotating fallback league per 4-slot pass.
+  // Long-lived coverage grows through the cursor, not a higher call rate.
   const focusedLeague = earlySpotlightLeague(now);
-  const regular = batch > 1 ? await nextLeagues(batch - 1, now) : [];
-  const leagues = [focusedLeague, ...regular.filter(id => id !== focusedLeague)];
+  const expansionSlots = batch >= 4 && EARLY_EXPANDED_LEAGUES.length ? 1 : 0;
+  const ordinarySlots = batch - 1 - expansionSlots;
+  const regular = ordinarySlots > 0 ? await nextLeagues(ordinarySlots, now) : [];
+  const expanded = expansionSlots ? await nextLeagues(expansionSlots, now, true) : [];
+  const leagues = [...new Set([focusedLeague, ...regular, ...expanded])];
 
   for (const leagueApiId of leagues) {
     if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
