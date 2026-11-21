@@ -11,7 +11,7 @@
 
 ## Capacity model
 
-- **No fixed per-day or per-league caps** on discovering or queuing early fixtures. CORE/SECONDARY stay the priority; a fallback-league slot is rotated within the existing four discovery calls per twice-hourly pass, not added on top.
+- **No fixed per-day or per-league caps** on discovering or queuing early fixtures. CORE/SECONDARY stay the priority; a fallback-league slot is rotated within the existing four discovery calls per twice-hourly pass, not added on top. New fallback scans reuse previously cached season metadata; a competition missing season metadata is deferred, rather than spending an additional /leagues request.
 - Horizons: CORE 14 days, SECONDARY 10 days, FALLBACK 7 days, DEEP_FALLBACK 5 days. Quality filters for selective lower leagues are retained.
 - Provider-facing discovery and odds warming retain the **original twice-hourly schedule**, four scans per discovery pass, four bookmaker fetch attempts per warming pass, original lead-time odds retry intervals, and the provider quota reserves. The database-only triage can process more previously generated rows per pass. No extra odds API provider calls are scheduled.
 - Odds warming processes the full active early queue rather than only the first 400, but fetches at most four fixtures every half-hour, with the original 12h/6h/3h missing-price backoff and 12h/8h/3h existing-quote refresh rules. Automatic publication still requires 3/4/5 genuinely quoting bookmakers according to lead time; no odds are fabricated.
