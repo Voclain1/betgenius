@@ -75,6 +75,10 @@ assert.ok(rawDiscovery.includes('leaguesInTiers(["CORE", "SECONDARY"])') &&
   rawDiscovery.includes('leaguesInTiers(["FALLBACK", "DEEP_FALLBACK"])') &&
   rawDiscovery.includes("expansionSlots = batch >= 4"),
   "priority and fallback competitions rotate within the same four provider scans");
+assert.ok(rawDiscovery.includes("const season = expandedTier ? cachedSeason?.season : await resolveSeason(leagueApiId, now);") &&
+  rawDiscovery.includes("if (!season) continue;"),
+  "fallback scan never consumes an extra /leagues lookup when season metadata is missing");
+
 assert.ok(!rawDiscovery.includes("todayQueued") && !rawDiscovery.includes("MAX_QUEUE_PER_DAY"),
   "early fixtures remain queueable regardless of the number queued earlier today");
 
