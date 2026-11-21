@@ -15,9 +15,9 @@ export function earlyOddsBand(kickoff: Date, now: Date): {
   maxQuoteAgeMs: number; refreshAfterMs: number; retryAfterMs: number; minBooks: number;
 } {
   const lead = kickoff.getTime() - now.getTime();
-  if (lead > 7 * DAY) return { maxQuoteAgeMs: 24 * HOUR, refreshAfterMs: 8 * HOUR, retryAfterMs: 8 * HOUR, minBooks: 3 };
-  if (lead > 3 * DAY) return { maxQuoteAgeMs: 12 * HOUR, refreshAfterMs: 4 * HOUR, retryAfterMs: 4 * HOUR, minBooks: 4 };
-  return { maxQuoteAgeMs: 6 * HOUR, refreshAfterMs: 2 * HOUR, retryAfterMs: 2 * HOUR, minBooks: 5 };
+  if (lead > 7 * DAY) return { maxQuoteAgeMs: 24 * HOUR, refreshAfterMs: 12 * HOUR, retryAfterMs: 12 * HOUR, minBooks: 3 };
+  if (lead > 3 * DAY) return { maxQuoteAgeMs: 12 * HOUR, refreshAfterMs: 8 * HOUR, retryAfterMs: 6 * HOUR, minBooks: 4 };
+  return { maxQuoteAgeMs: 6 * HOUR, refreshAfterMs: 3 * HOUR, retryAfterMs: 3 * HOUR, minBooks: 5 };
 }
 
 export type EarlyQuote = {
