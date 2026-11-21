@@ -123,6 +123,13 @@ assert.ok(earlyGenerationSource.includes("intent: EARLY_FREE_GENERATION_INTENT")
 assert.ok(!earlyGenerationSource.includes("getUsageSnapshot(") &&
   sharedWorkerSource.includes("opts.intent !== EARLY_FREE_GENERATION_INTENT && usage.remaining < MIN_QUOTA_HEADROOM"),
   "early forecast-model jobs can continue on existing caches when football API quota is low; paid/normal protection remains");
+const providerClientSource = readFileSync("src/lib/football/api-football.ts", "utf8");
+assert.ok(earlyGenerationSource.includes("withNoFootballApiCalls(() => runGeneration({") &&
+  providerClientSource.includes("const forbidProviderCalls = new AsyncLocalStorage<boolean>()") &&
+  providerClientSource.includes("assertProviderCallsAllowed(); // Before quota recording or network dispatch.") &&
+  providerClientSource.includes("CACHE_ONLY_FOOTBALL_API_CALL_BLOCKED"),
+  "AsyncLocalStorage hard-blocks any accidental early API-Football requests, without touching normal/paid contexts");
+
 
 
 const warm = readFileSync("src/lib/generation/earlyOdds.ts", "utf8");
