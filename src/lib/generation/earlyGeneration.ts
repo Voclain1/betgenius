@@ -4,14 +4,12 @@
  * pages 2–14 days before kickoff, without touching VIP/Premium targeting.
  */
 import { prisma } from "@/lib/prisma";
-import { getUsageSnapshot } from "@/lib/football/usage";
 import { runGeneration } from "@/lib/generation/worker";
 import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { earlyFixturePricedForGeneration } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
 
-const MIN_API_HEADROOM = 1_800;
 export type EarlyGenerationResult = {
   ok: boolean; skipped?: string; selected: number; generated: number; pricedSelected?: number; unpricedSelected?: number; summary: string;
   worker?: Awaited<ReturnType<typeof runGeneration>>;
@@ -20,8 +18,6 @@ export type EarlyGenerationResult = {
 export async function runEarlyFreeGeneration(input: { actorId: string; now?: Date; limit?: number }): Promise<EarlyGenerationResult> {
   const now = input.now ?? new Date();
   if (earlyFixtureMode() !== "on") return { ok: true, skipped: "early fixture mode is not on", selected: 0, generated: 0, summary: "Early generation disabled" };
-  const quota = await getUsageSnapshot();
-  if (quota.remaining < MIN_API_HEADROOM) return { ok: true, skipped: "preserving provider quota", selected: 0, generated: 0, summary: "Early generation deferred for quota" };
   // Operational batch size, not a daily/league generation quota. The queue
   // resumes on every cron pass, protecting the regular and paid workflows.
   const limit = Math.max(1, Math.min(4, Math.trunc(input.limit ?? 3)));
