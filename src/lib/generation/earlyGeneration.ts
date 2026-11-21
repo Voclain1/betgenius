@@ -34,7 +34,7 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
     },
     select: { matchKey: true, fixtureApiId: true, leagueApiId: true, kickoff: true, status: true, nextAttemptAt: true },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
-    take: 400,
+    // No top-400 ledger ceiling: every captured fixture eventually gets a turn.
   });
   const pending = queued.filter(a => inEarlyGenerationWindow(a.kickoff, now, a.leagueApiId)
     && (a.status === "PENDING" || (a.nextAttemptAt && a.nextAttemptAt <= now)));
