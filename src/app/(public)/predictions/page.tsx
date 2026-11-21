@@ -8,7 +8,7 @@ import Link from "next/link";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 import { MARKET_HUBS } from "@/lib/marketHubs";
-import { cupById } from "@/lib/cupConfig";
+import { CupDiscoveryDirectory } from "@/components/CupDiscoveryDirectory";
 
 const baseMetadata: Metadata = {
   title: "Football Predictions & Betting Tips",
@@ -49,21 +49,8 @@ const marketHubs = MARKET_HUBS.map((m) => ({ href: m.href, name: `${m.label} pre
 
 // Use the cup routing catalogue, rather than league aliases, for cup hubs.
 // These destinations remain available even between rounds.
-const competitionLinks = [
-  { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore English Premier League picks, standings, upcoming fixtures and season statistics." },
-  // GSC shows genuine non-branded discovery for Danish Cup games and DFB
-  // Pokal, so link the existing, substantive competition hubs from the index.
-  // Preserve market intent: fixture browsing is not a promise of new tips.
-  ...[
-    { id: 121, label: "Danish Cup games, fixtures & results", desc: "Follow available Danish Cup matches by round, with fixtures, scores and links to published predictions." },
-    { id: 81, label: "DFB Pokal fixtures & results", desc: "Browse DFB Pokal rounds, match results and any published football predictions." },
-    { id: 2, label: "Champions League predictions" },
-    { id: 3, label: "Europa League predictions" },
-    { id: 45, label: "FA Cup predictions" },
-  ].flatMap((entry) => {
-    const cup = cupById(entry.id);
-    return cup ? [{ href: `/predictions/cup/${cup.slug}`, name: entry.label, desc: "desc" in entry && entry.desc ? entry.desc : `Browse ${cup.name} fixtures, results and published match predictions.` }] : [];
-  }),
+const leagueLinks = [
+  { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore Premier League picks, standings, fixtures and season statistics." },
 ];
 
 export default function PredictionsIndex({ searchParams = {} }: { searchParams?: DiscoveryParams }) {
@@ -96,10 +83,11 @@ export default function PredictionsIndex({ searchParams = {} }: { searchParams?:
 
       <PremiumPanel kicker="Competitions" title="Football predictions by competition" id="prediction-competitions" bare>
         <div className="grid gap-4 md:grid-cols-2">
-          {competitionLinks.map((competition) => (
+          {leagueLinks.map((competition) => (
             <LinkTile key={competition.href} href={competition.href} title={competition.name} desc={competition.desc} />
           ))}
         </div>
+        <div className="mt-6"><CupDiscoveryDirectory /></div>
       </PremiumPanel>
 
       <PremiumPanel kicker="Research guides" title="Learn how to assess football predictions" id="prediction-research" bare>

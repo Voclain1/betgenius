@@ -59,10 +59,10 @@ check("multi-bets: indexed page has dedicated title and clean canonical",
 check("multi-bets: meta describes evidence and no fabricated fixtures or certainty",
   multiBetLanding.includes("individual selections and available odds") &&
   !multiBetLanding.includes("sure wins"));
-check("non-branded cup demand: main prediction hub links to real Danish and DFB cup pages",
-  predictionsLanding.includes('id: 121, label: "Danish Cup games, fixtures & results"') &&
-  predictionsLanding.includes('id: 81, label: "DFB Pokal fixtures & results"') &&
-  predictionsLanding.includes('href: `/predictions/cup/${cup.slug}`'));
+check("non-branded cup demand: all configured cup tiers are linked from the discovery hub",
+  predictionsLanding.includes("<CupDiscoveryDirectory />") &&
+  readFileSync(join(process.cwd(), "src/lib/cupSeoDirectory.ts"), "utf8").includes('if (cup.id === 121) return "Danish Cup games, fixtures & results"') &&
+  readFileSync(join(process.cwd(), "src/lib/cupSeoDirectory.ts"), "utf8").includes('if (cup.id === 81) return "DFB Pokal fixtures & results"'));
 check("non-branded cup demand: existing noindex and category rules unchanged",
   predictionsLanding.includes("hasDiscoveryFilters(searchParams)") &&
   readFileSync(join(process.cwd(), "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));

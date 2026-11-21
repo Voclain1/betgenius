@@ -65,6 +65,9 @@ jobs:
       - name: Non-branded Search Console measurement regression
         run: npx tsx scripts/check-nonbrand-seo.ts
 
+      - name: Cup catalogue, metadata and landing-page SEO coverage
+        run: npx tsx scripts/check-cup-seo-coverage.ts
+
       - name: Competition-stage content grounding
         run: node --import tsx scripts/check-competition-stage.ts
 

@@ -3,10 +3,10 @@ import Link from "next/link";
 export function CompetitionHubLinks({ competition, isCup = false }: { competition: string; isCup?: boolean }) {
   return (
     <section className="card" aria-labelledby="competition-evidence-heading">
-      <h2 id="competition-evidence-heading" className="text-lg font-semibold">How to verify these {competition} predictions</h2>
+      <h2 id="competition-evidence-heading" className="text-lg font-semibold">How to assess {competition} match information</h2>
       <p className="mt-3 text-sm leading-6 text-gray-300">
-        Compare the pick and confidence rating with the current table, fixture context, recent results and the
-        reasoning on each match. Confidence describes the strength of the assessment, not a guaranteed chance of winning.
+        When a prediction is published, compare its selection and confidence with available fixture information,
+        recent results and match reasoning. A fixture listing is not a published prediction, and confidence is not a guarantee.
       </p>
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
         <Link href="/track-record" className="text-brand hover:underline">Check the public track record</Link>

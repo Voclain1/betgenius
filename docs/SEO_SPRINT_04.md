@@ -67,3 +67,13 @@ The comparator **refuses** trend claims on curated examples or unequal/overlappi
 - Compare a consistently extracted 14-day diagnostic window and a full **28-day window** at least 28 days after the *actual release date*, allowing about three days of GSC lag. Record both indexed pages and query × page rows; watch effects separately for Danish Cup, DFB Pokal, Banker, multi-bets, BTTS and goals.
 - A meaningful improvement must show **incremental non-branded clicks** (not just branded growth), stable indexing and no degradation in availability, mobile usability, API budget or subscriber privacy. Seasonality, changing fixtures and anonymous queries limit causal certainty.
 - OpenSEO keyword-expansion requests returned `INSUFFICIENT_CREDITS`; don't publish unverifiable search volume, difficulty or conversion impact. OpenSEO's GA4-joined opportunity scoring was unavailable in this session, so no user/conversion attribution is claimed.
+
+## Cup catalogue expansion (same PR)
+
+**Audit:** All 32 known cup competitions were already listed by the existing cup sitemap, and all had a route-level canonical. Custom metadata existed for nine flagship competition hubs plus Danish Cup, but the remaining cup metadata relied on a generic description that sometimes mentioned data not supported by that cup's configured capabilities.
+
+**Change:** Use one typed cup registry to show every configured cup in the main predictions hub: major cups first, then the mid-tier catalogue, and less-visited cups under a compact expandable section. The same hierarchy appears as contextual links on each cup landing page (without linking a cup to itself). Cup pages use a careful per-competition fallback SEO title and description without implying top scorers, standings or published picks exist. Keep existing curated UEFA/FA/EFL/Copa/Coppa/DFB/Coupe metadata, Danish Cup's strong GSC title and the cup season noindex/canonical rule intact.
+
+The metadata regression gate verifies all registry slugs are represented once, have valid URLs and non-empty, appropriately bounded titles/descriptions. The broad site SEO matrix checks the existing important routes without claiming all possible dynamic URLs have been inspected in Google.
+
+**No new football provider calls, prediction generation changes or public data exposure.** This is navigation/metadata only; Google may choose other snippets, and index/rank/CTR changes need fresh GSC data after deployment.

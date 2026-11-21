@@ -91,6 +91,7 @@
     "check:budgets": "tsx scripts/check-performance-budget.ts",
     "report:seo-nonbrand": "tsx scripts/report-nonbrand-seo.ts",
     "check:seo-nonbrand": "tsx scripts/check-nonbrand-seo.ts",
+    "check:seo-cups": "tsx scripts/check-cup-seo-coverage.ts",
     "check:engagement": "tsx scripts/check-engagement.ts",
     "check:track-record": "tsx scripts/check-track-record.ts",
     "check:odds-breadth": "tsx scripts/check-odds-breadth.ts",

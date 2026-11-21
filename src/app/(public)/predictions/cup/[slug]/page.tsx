@@ -9,7 +9,6 @@ import { LeagueClubGrid } from "@/components/LeagueClubGrid";
 import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { getCupPageData, cupBySlug } from "@/lib/cups";
 import { getPublishedMatchIndexForCompetition } from "@/lib/predictionScope";
-import { fitMetadataTitleWithSuffix, fitMetaDescription } from "@/lib/seo";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { getPublishedByLeagueSlug } from "@/lib/predictionScope";
 import { leagueSlug } from "@/lib/slug";
@@ -27,6 +26,8 @@ import { competitionInSentence } from "@/lib/teamProfile";
 import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
 import { tabOfStatus } from "@/lib/matchStatus";
 import { CompetitionFixtureSummary } from "@/components/CompetitionFixtureSummary";
+import { CupDiscoveryDirectory } from "@/components/CupDiscoveryDirectory";
+import { cupSearchFallback } from "@/lib/cupSeoDirectory";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +55,7 @@ export async function generateMetadata({ params, searchParams }: { params: { slu
     };
   }
   return {
-    title: fitMetadataTitleWithSuffix(cup.name, "fixtures and results"),
-    description: fitMetaDescription(`${cup.name} knockout rounds, participating clubs, results, fixtures and top scorers.`),
+    ...cupSearchFallback(cup),
     alternates: { canonical: `/predictions/cup/${cup.slug}` },
     ...seasonRobots,
   };
@@ -219,7 +219,8 @@ export default async function CupPage({ params, searchParams }: { params: { slug
 
       {about.length > 0 && <TeamAbout name={competitionInSentence(data.cup.name)} paragraphs={about} kicker="Competition profile" />}
 
-      {hubContent && <CompetitionHubLinks competition={data.cup.name} isCup />}
+      <CompetitionHubLinks competition={data.cup.name} isCup />
+      <CupDiscoveryDirectory currentSlug={data.cup.slug} mode="related" />
     </div>
   );
 }
