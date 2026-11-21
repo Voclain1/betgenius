@@ -6,6 +6,16 @@
  * REVIEW joins the existing admin review queue (PENDING_REVIEW).
  * HOLD is a recoverable DRAFT state, revisited on every early-publish cycle.
  */
+/** Saved early-job attribution, never client-provided permission. */
+export function earlyPriceUnsafeFromPrompt(prompt: string | null | undefined): boolean {
+  if (!prompt) return false;
+  try {
+    const parsed: unknown = JSON.parse(prompt);
+    return !!parsed && typeof parsed === "object" &&
+      (parsed as Record<string, unknown>).earlyPriceUnsafe === true;
+  } catch { return false; }
+}
+
 export const EARLY_REVIEW_CONFIDENCE_FLOOR = 65;
 export const EARLY_HOLD_UNTIL_HOURS = 72;
 export type EarlyDisposition = "auto" | "review" | "hold";
