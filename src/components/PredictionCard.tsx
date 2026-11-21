@@ -100,7 +100,7 @@ export function PredictionCard({
   const hasConfidence = p.confidence !== null && p.confidence !== undefined;
 
   return (
-    <article className="flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
+    <article className="premium-prediction-card flex flex-col gap-4 rounded-3xl border border-brand-border bg-brand-card p-5">
       {/* Category and result as coloured small caps, never as tinted pills. */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3 text-[11px] font-black uppercase tracking-[0.14em]">
@@ -155,7 +155,7 @@ export function PredictionCard({
       )}
       {/* The pick, set like the match page's verdict: market small, pick large,
           confidence as a big numeral. */}
-      <div className="rounded-2xl bg-brand-bg/70 p-4 ring-1 ring-brand-border">
+      <div className="premium-confidence rounded-2xl bg-brand-bg/70 p-4 ring-1 ring-brand-border">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500">{p.locked ? "Market" : p.market}</div>
