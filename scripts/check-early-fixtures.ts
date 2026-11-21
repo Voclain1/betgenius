@@ -41,10 +41,10 @@ assert.equal(new Set(Array.from({ length: regional.length }, (_, i) =>
   "every requested region gets a dedicated early scan slot in seven half-hour cycles");
 const rawDiscovery = readFileSync("src/lib/generation/earlyFixtureDiscovery.ts", "utf8");
 assert.ok(rawDiscovery.includes("earlySpotlightLeague(now)") &&
-  rawDiscovery.includes("nextLeagues(batch - 1, now)") &&
+  rawDiscovery.includes("nextLeagues(ordinarySlots, now)") &&
   rawDiscovery.includes("candidatesFromFixtures(rows,") &&
   rawDiscovery.includes("byLeague[leagueApiId].queued++"),
-  "regional spotlight preserves three other discovery slots, standard quality filters and diagnostics");
+  "regional spotlight preserves three other slots including lower-league rotation, quality filters and diagnostics");
 
 assert.equal(Math.max(...VISIBLE_FEED_DAYS.map(feedDayOffset)), 5, "visible date rail stops at day five");
 assert.ok(!VISIBLE_FEED_DAYS.includes("day-14"), "day 14 stays off the public rail");
@@ -70,8 +70,10 @@ assert.equal(inEarlyGenerationWindow(hoursLater(300), now, core[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
 assert.ok(!("MAX_QUEUE_PER_DAY" in EARLY_FIXTURE_POLICY) && !("MAX_QUEUE_PER_LEAGUE" in EARLY_FIXTURE_POLICY),
   "no artificial daily/league limit on early queueing");
-assert.ok(rawDiscovery.includes('leaguesInTiers(["CORE", "SECONDARY", "FALLBACK", "DEEP_FALLBACK"])'),
-  "all catalogue tiers receive rotating early discovery");
+assert.ok(rawDiscovery.includes('leaguesInTiers(["CORE", "SECONDARY"])') &&
+  rawDiscovery.includes('leaguesInTiers(["FALLBACK", "DEEP_FALLBACK"])') &&
+  rawDiscovery.includes("expansionSlots = batch >= 4"),
+  "priority and fallback competitions rotate within the same four provider scans");
 assert.ok(!rawDiscovery.includes("todayQueued") && !rawDiscovery.includes("MAX_QUEUE_PER_DAY"),
   "early fixtures remain queueable regardless of the number queued earlier today");
 
