@@ -1,3 +1,4 @@
+import "./premium-ui.css";
 import { BackButton } from "@/components/BackButton";
 import { PreviewDataBanner } from "@/components/PreviewDataBanner";
 import { Nav } from "@/components/Nav";
@@ -31,7 +32,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           owner (mb-3 lives on the button, not on a wrapper here), so on every
           page without a back button this contributes no element and no
           space — the heading sits exactly where it always did. */}
-      <main className="mx-auto max-w-7xl px-4 py-6">
+      <main className="premium-public mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <BackButton />
         {/* Live scores on tips (src/components/LiveScores.tsx): renders no
             element of its own, and polls only while a match on the page is
