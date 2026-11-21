@@ -3,12 +3,11 @@
  * the ordinary 48h discovery/sweep or the VIP/Premium qualification window.
  *
  * "shadow" writes a bounded future-fixture cache only.
- * "on" additionally seeds a small number of already-quality-filtered free
- * candidates into the existing generation ledger. It NEVER publishes picks.
+ * "on" seeds all eligible quality-filtered free candidates over rotating
+ * runs, with no daily or per-league quota. It NEVER publishes picks.
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { lagosDayBounds } from "@/lib/lagosDate";
 import { leaguesInTiers } from "@/lib/leagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
@@ -16,7 +15,7 @@ import { candidatesFromFixtures } from "@/lib/generation/selector";
 import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
-const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY"]);
+const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY", "FALLBACK", "DEEP_FALLBACK"]);
 const DAY = 86_400_000;
 
 export type EarlyDiscoveryReport = {
@@ -103,16 +102,14 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
     return { ...base, summary: "Early fixture capture stood down to protect API quota", elapsedMs: Date.now() - startedAt };
   }
 
-  const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
+  // A per-request time budget and quota headroom are operational safeguards,
+  // never a lifetime/day/league limit on how much the engine can cover.
+  const batch = Math.min(EARLY_LEAGUES.length, Math.max(1, Math.trunc(opts.batchSize ?? 12)));
   // The focused league gets the first slot, followed by the ordinary
   // round-robin slice. No duplicate provider call within a pass.
   const focusedLeague = earlySpotlightLeague(now);
   const regular = batch > 1 ? await nextLeagues(batch - 1, now) : [];
   const leagues = [focusedLeague, ...regular.filter(id => id !== focusedLeague)];
-  const { start: lagosStart } = lagosDayBounds(0, now);
-  let todayQueued = mode === "on"
-    ? await prisma.upcomingFixture.count({ where: { earlyQueuedAt: { gte: lagosStart } } })
-    : 0;
 
   for (const leagueApiId of leagues) {
     if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
@@ -138,14 +135,10 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
         base.cached += chunk.length;
       }
 
-      if (mode !== "on" || todayQueued >= EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY) continue;
-      const available = Math.min(
-        EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_LEAGUE,
-        EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY - todayQueued,
-      );
+      if (mode !== "on" || !rows.length) continue;
       const selected = await candidatesFromFixtures(rows, {
         now,
-        limit: available,
+        limit: rows.length,
         fromHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS,
         untilHours: Math.min(EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS, days * 24),
       });
@@ -154,7 +147,9 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
       // followed by marking every candidate can falsely authorize manual or
       // preexisting ordinary rows for early publication.
       for (const c of selected.candidates) {
-        if (todayQueued >= EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY) break;
+        // Resume next cron run when the execution budget is consumed. Unqueued
+        // fixtures are rediscovered; no permanent quota drops them.
+        if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
         try {
           await prisma.$transaction(async tx => {
             await tx.generationAttempt.create({
@@ -171,7 +166,6 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
             });
             if (marked.count !== 1) throw new Error("EARLY_FIXTURE_ALREADY_QUEUED");
           });
-          todayQueued++;
           base.candidatesQueued++;
           base.byLeague[leagueApiId].queued++;
         } catch (error) {
