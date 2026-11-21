@@ -13,7 +13,7 @@ import type { FixtureOdds } from "@/lib/odds";
 
 const HOUR = 3_600_000;
 const MIN_QUOTA_REMAINING = 1_800;
-export const EARLY_ODDS_MAX_PER_RUN = 16;
+export const EARLY_ODDS_MAX_PER_RUN = 6;
 
 export type EarlyOddsWarmReport = {
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
