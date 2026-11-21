@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { COMPETITION_PAGE_SIZE } from "@/lib/predictionTimeline";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
@@ -143,7 +144,10 @@ export default async function CupPage({ params, searchParams }: { params: { slug
             FT marks a finished game. FT (AET) means it finished after extra time, and FT (Pens) means a penalty shootout was played.
             {" "}Match links open a BetGenius prediction where one has been published; the fixture list also includes games without a prediction.
           </p>
-          <a href="#rounds" className="inline-block text-sm font-semibold text-brand hover:underline">Browse Danish Cup fixtures and results</a>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <a href="#rounds" className="font-semibold text-brand hover:underline">Browse Danish Cup fixtures and results</a>
+            <Link href="/guides/how-to-evaluate-cup-football-predictions" className="font-semibold text-brand hover:underline">How to assess a cup prediction</Link>
+          </div>
         </section>
       )}
 

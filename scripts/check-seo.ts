@@ -390,6 +390,9 @@ check("topic clusters: prediction hub connects to cup, match and coupon guides",
   predictionsHubSource.includes('id="prediction-research"'));
 check("topic clusters: multi bets link to a coupon-checklist guide",
   multiBetsSource.includes('href="/guides/how-to-check-a-multi-bet-coupon"'));
+check("topic clusters: every cup page links to the cup guide, including Danish Cup",
+  cupPageSource.includes('href="/guides/how-to-evaluate-cup-football-predictions"') &&
+  readFileSync(join(repoRoot, "src/components/CompetitionFixtureSummary.tsx"), "utf8").includes('href="/guides/how-to-evaluate-cup-football-predictions"'));
 check("topic clusters: cup competition links are cup-specific, not copied to league pages",
   competitionLinks.includes("isCup = false") &&
   competitionLinks.includes('isCup && <Link href="/guides/how-to-evaluate-cup-football-predictions"') &&
