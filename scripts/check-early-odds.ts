@@ -100,6 +100,7 @@ assert.equal(earlyOddsFloorCrossing(old, { ...moved, bookmakers: 2 }, now, ahead
   "thin quotes cannot place a live hold");
 
 const earlyGenerationSource = readFileSync("src/lib/generation/earlyGeneration.ts", "utf8");
+const sharedWorkerSource = readFileSync("src/lib/generation/worker.ts", "utf8");
 const generationContextSource = readFileSync("src/lib/ai/generate.ts", "utf8");
 const selectorSource = readFileSync("src/lib/generation/selector.ts", "utf8");
 const normalQueueSource = readFileSync("src/lib/generation/queue.ts", "utf8");
@@ -119,6 +120,10 @@ assert.ok(earlyGenerationSource.includes("intent: EARLY_FREE_GENERATION_INTENT")
   cron.includes("3,33 * * * * /ops/cron-call.sh /api/admin/generate/early-discover?batch=4") &&
   cron.includes("6,36 * * * * /ops/cron-call.sh /api/admin/generate/early-odds?limit=4"),
   "unchanged early discovery/odds provider-call cadence and cached evidence generation");
+assert.ok(!earlyGenerationSource.includes("getUsageSnapshot(") &&
+  sharedWorkerSource.includes("opts.intent !== EARLY_FREE_GENERATION_INTENT && usage.remaining < MIN_QUOTA_HEADROOM"),
+  "early forecast-model jobs can continue on existing caches when football API quota is low; paid/normal protection remains");
+
 
 const warm = readFileSync("src/lib/generation/earlyOdds.ts", "utf8");
 const earlyRun = readFileSync("src/lib/generation/earlyGeneration.ts", "utf8");
