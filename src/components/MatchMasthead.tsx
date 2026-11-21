@@ -1,5 +1,6 @@
 import { kickoffTime, footballDate } from "@/lib/footballTime";
 import Link from "next/link";
+import Image from "next/image";
 import { TeamCrest } from "@/components/TeamCrest";
 import { MatchScoreClock } from "@/components/MatchScoreClock";
 import { LeagueBadge } from "@/components/LeagueBadge";
@@ -91,12 +92,10 @@ export function MatchMasthead({
     <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
       {/* Both crests, oversized and faded, as the backdrop. */}
       {homeTeamApiId != null && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img aria-hidden src={teamCrestUrl(homeTeamApiId)} alt="" className="pointer-events-none absolute -left-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
+        <Image aria-hidden src={teamCrestUrl(homeTeamApiId)} alt="" width={288} height={288} quality={50} loading="lazy" className="pointer-events-none absolute -left-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
       )}
       {awayTeamApiId != null && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img aria-hidden src={teamCrestUrl(awayTeamApiId)} alt="" className="pointer-events-none absolute -right-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
+        <Image aria-hidden src={teamCrestUrl(awayTeamApiId)} alt="" width={288} height={288} quality={50} loading="lazy" className="pointer-events-none absolute -right-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
       )}
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-16 h-72 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
 

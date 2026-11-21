@@ -232,6 +232,23 @@ check("competition relevance: published fixture counts are factual",
 check("H2H: current BTTS and goals link without presenting past scores as certain",
   readFileSync(join(repoRoot, "src/app/(public)/predictions/h2h/[slug]/page.tsx"), "utf8").includes("Past head-to-head rates alone cannot establish a winning pick"));
 
+// --- Sprint 2: football image delivery without extra provider API usage -----
+const footballImages = require("../src/lib/footballImage") as typeof import("../src/lib/footballImage");
+check("football images: API-Sports CDN hosts accepted for cached optimization",
+  footballImages.isOptimizableFootballImageUrl("https://media.api-sports.io/football/teams/33.png") &&
+  footballImages.isOptimizableFootballImageUrl("https://media-3.api-sports.io/football/teams/33.png"));
+check("football images: untrusted or non-HTTPS hosts never use optimization",
+  !footballImages.isOptimizableFootballImageUrl("http://media.api-sports.io/football/teams/33.png") &&
+  !footballImages.isOptimizableFootballImageUrl("https://example.com/logo.png") &&
+  !footballImages.isOptimizableFootballImageUrl("https://media.api-sports.io.evil.test/image.png"));
+check("football images: club grids and fixture lists optimize only supported sources",
+  readFileSync(join(repoRoot, "src/components/LeagueClubGrid.tsx"), "utf8").includes("isOptimizableFootballImageUrl") &&
+  readFileSync(join(repoRoot, "src/components/MatchList.tsx"), "utf8").includes("isOptimizableFootballImageUrl"));
+check("football images: large crests load early, small ones remain lazy",
+  readFileSync(join(repoRoot, "src/components/TeamCrest.tsx"), "utf8").includes('size >= 48 ? "eager" : "lazy"'));
+check("football images: competition masthead uses optimized image with existing design",
+  readFileSync(join(repoRoot, "src/components/CompetitionProfile.tsx"), "utf8").includes('priority className="h-14 w-14'));
+
 // --- Editorial attribution ------------------------------------------------
 const aboutPage = readFileSync(join(repoRoot, "src/app/(public)/about/page.tsx"), "utf8");
 const matchPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import { teamCrestUrl } from "@/lib/leagues";
 
 /**
@@ -42,13 +43,12 @@ export function TeamCrest({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+    <Image
       src={teamCrestUrl(teamApiId)}
       alt=""
       width={size}
       height={size}
-      loading="lazy"
+      loading={size >= 48 ? "eager" : "lazy"}
       style={{ width: size, height: size }}
       className={`inline-block shrink-0 object-contain align-[-0.2em] ${className}`}
       onError={(e) => {

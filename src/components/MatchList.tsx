@@ -1,5 +1,7 @@
 import { kickoffTime, footballDay, footballDayKey } from "@/lib/footballTime";
 import Link from "next/link";
+import Image from "next/image";
+import { isOptimizableFootballImageUrl } from "@/lib/footballImage";
 import type { FixtureRow } from "@/lib/football/api-football";
 import { classifyStatus, isIrregular, statusLabel, type MatchStatusGroup } from "@/lib/matchStatus";
 import { matchKey } from "@/lib/slug";
@@ -65,8 +67,17 @@ function MatchStatusCell({ fixture }: { fixture: FixtureRow }) {
 function TeamLine({ name, logo }: { name: string; logo?: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      {logo && (
-        // eslint-disable-next-line @next/next/no-img-element
+      {logo && (isOptimizableFootballImageUrl(logo) ? (
+        <Image
+          src={logo}
+          alt=""
+          width={18}
+          height={18}
+          loading="lazy"
+          className="h-[18px] w-[18px] shrink-0 rounded-sm object-contain"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : (
         <img
           src={logo}
           alt=""
@@ -74,11 +85,9 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
           height={18}
           loading="lazy"
           className="h-[18px] w-[18px] shrink-0 rounded-sm object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
-      )}
+      ))}
       <span className="truncate text-sm font-semibold text-gray-100">{name}</span>
     </div>
   );
@@ -129,8 +138,17 @@ export function LeagueGroup({
   return (
     <section className="rounded-3xl border border-brand-border bg-brand-card">
       <div className="sticky top-16 z-10 flex items-center gap-2 rounded-t-3xl border-b border-brand-border bg-brand-card px-4 py-3">
-        {league.logo && (
-          // eslint-disable-next-line @next/next/no-img-element
+        {league.logo && (isOptimizableFootballImageUrl(league.logo) ? (
+          <Image
+            src={league.logo}
+            alt=""
+            width={16}
+            height={16}
+            loading="lazy"
+            className="h-4 w-4 shrink-0 object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : (
           <img
             src={league.logo}
             alt=""
@@ -138,11 +156,9 @@ export function LeagueGroup({
             height={16}
             loading="lazy"
             className="h-4 w-4 shrink-0 object-contain"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
-        )}
+        ))}
         <span className="truncate text-[11px] font-bold uppercase tracking-[0.14em] text-gray-300">
           {league.country} · {league.name}
         </span>

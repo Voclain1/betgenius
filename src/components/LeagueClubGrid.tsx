@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
+import { isOptimizableFootballImageUrl } from "@/lib/footballImage";
 import type { LeagueClub } from "@/lib/predictionScope";
 
 /**
@@ -22,18 +24,27 @@ export function LeagueClubGrid({ clubs }: { clubs: LeagueClub[] }) {
         const tile = (
           <>
             {c.crest ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={c.crest}
-                alt=""
-                width={28}
-                height={28}
-                loading="lazy"
-                className="h-7 w-7 shrink-0 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
+              isOptimizableFootballImageUrl(c.crest) ? (
+                <Image
+                  src={c.crest}
+                  alt=""
+                  width={28}
+                  height={28}
+                  loading="lazy"
+                  className="h-7 w-7 shrink-0 object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <img
+                  src={c.crest}
+                  alt=""
+                  width={28}
+                  height={28}
+                  loading="lazy"
+                  className="h-7 w-7 shrink-0 object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              )
             ) : (
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-bg text-[10px] font-semibold text-gray-400">
                 {c.teamName.slice(0, 3).toUpperCase()}
