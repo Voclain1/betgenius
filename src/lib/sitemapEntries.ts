@@ -13,6 +13,7 @@ import { CUP_CONFIGS, cupById } from "@/lib/cupConfig";
 import { GUIDES } from "@/content/guides";
 import { sitemapType, type SitemapType } from "@/lib/sitemapXml";
 import { isFreeTierRow, isStraightWinSelection } from "@/lib/marketHubs";
+import { isEvergreenCategory, isEvergreenMarketHub } from "@/lib/searchLandingPolicy";
 
 // One builder per child sitemap (/sitemaps/<type>.xml), each reading only what
 // its own URLs need. There used to be a single function that read every
@@ -147,8 +148,8 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
 
   const entries: MetadataRoute.Sitemap = staticPagesFor("categories");
 
-  // One entry per category that actually has published rows — mirrors the
-  // noindex-when-empty gate on /predictions/[category].
+  // Substantive evergreen category guides keep a stable sitemap URL even
+  // when no new picks qualify today. One-off feeds still require inventory.
   for (const cat of PREDICTION_CATEGORIES) {
     const catRows = rows.filter(
       (r) =>
@@ -158,7 +159,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
         // is listed only while the pick is still a live recommendation.
         (cat !== "BET_OF_THE_DAY" || isCurrentBetOfTheDay(r, now)),
     );
-    if (catRows.length === 0) continue;
+    if (catRows.length === 0 && !isEvergreenCategory(cat)) continue;
     // CATEGORY_TO_SLUG, not cat.toLowerCase(). The enum and the route slug are
     // not the same string: SAME_GAME_DOUBLE lives at /predictions/combo-bets
     // and BET_OF_THE_DAY at /predictions/bet-of-the-day, so lowercasing the
@@ -172,12 +173,11 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
-  // Market hubs follow the same inventory gate as their page metadata. The
-  // URL is listed only while its exact selection has published picks today.
-  // Like the pages, they count free-tier tips only (no VIP or Premium).
+  // Substantive free-market guides stay in the sitemap even on quiet days.
+  // Their published lists still contain free-tier tips only (never VIP/Premium).
   const freeRows = rows.filter(isFreeTierRow);
   const straightWinRows = freeRows.filter((r) => r.marketType === "MATCH_WINNER" && isStraightWinSelection(r.selection));
-  if (straightWinRows.length) {
+  if (straightWinRows.length || isEvergreenMarketHub("straight-wins")) {
     entries.push({
       url: absoluteUrl("/predictions/straight-wins"),
       lastModified: maxDate(straightWinRows.map((r) => r.publishedAt)),
@@ -191,7 +191,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
     const selection = r.selection as { line?: unknown; direction?: unknown };
     return selection.line === 2.5 && selection.direction === "OVER";
   });
-  if (over25Rows.length) {
+  if (over25Rows.length || isEvergreenMarketHub("over-2-5-goals")) {
     entries.push({
       url: absoluteUrl("/predictions/over-2-5-goals"),
       lastModified: maxDate(over25Rows.map((r) => r.publishedAt)),
@@ -200,7 +200,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
     });
   }
   const bttsRows = freeRows.filter((r) => r.marketType === "BTTS");
-  if (bttsRows.length) {
+  if (bttsRows.length || isEvergreenMarketHub("btts")) {
     entries.push({
       url: absoluteUrl("/predictions/btts"),
       lastModified: maxDate(bttsRows.map((r) => r.publishedAt)),
@@ -209,7 +209,7 @@ async function categoryEntries(): Promise<MetadataRoute.Sitemap> {
     });
   }
   const doubleChanceRows = freeRows.filter((r) => r.marketType === "DOUBLE_CHANCE");
-  if (doubleChanceRows.length) {
+  if (doubleChanceRows.length || isEvergreenMarketHub("double-chance")) {
     entries.push({
       url: absoluteUrl("/predictions/double-chance"),
       lastModified: maxDate(doubleChanceRows.map((r) => r.publishedAt)),

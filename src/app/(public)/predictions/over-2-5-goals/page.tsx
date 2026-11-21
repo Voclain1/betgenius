@@ -15,6 +15,7 @@ import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { Over25PredictionsEvidence, Over25PredictionsGuide } from "@/components/Over25PredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
+import { shouldIndexMarketHub } from "@/lib/searchLandingPolicy";
 
 const PATH = "/predictions/over-2-5-goals";
 
@@ -29,8 +30,8 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     title: `Over 2.5 Goals Predictions ${feedDayTitle(day)}`,
     description: rows.length
       ? `${rows.length} Over 2.5 Goals predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Read the match evidence and confidence rating for every pick.`
-      : `No Over 2.5 Goals predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
-    robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
+      : `Over 2.5 goals predictions with scoring-pattern analysis and verified results. New picks appear when published; review the market guide in the meantime.`,
+    robots: shouldIndexMarketHub(day) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref("over-2-5-goals", day) },
   };
 }

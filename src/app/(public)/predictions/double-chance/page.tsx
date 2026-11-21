@@ -15,6 +15,7 @@ import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { DoubleChancePredictionsEvidence, DoubleChancePredictionsGuide } from "@/components/DoubleChancePredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
+import { shouldIndexMarketHub } from "@/lib/searchLandingPolicy";
 
 const PATH = "/predictions/double-chance";
 
@@ -29,8 +30,8 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     title: `Double Chance Predictions ${feedDayTitle(day)}`,
     description: rows.length
       ? `${rows.length} Double Chance predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Home-or-Draw, Away-or-Draw and Home-or-Away picks with match evidence.`
-      : `No Double Chance predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
-    robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
+      : `Double chance football predictions covering home or draw, away or draw and home or away, with supporting match analysis and settled results.`,
+    robots: shouldIndexMarketHub(day) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref("double-chance", day) },
   };
 }

@@ -15,6 +15,7 @@ import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { BttsPredictionsEvidence, BttsPredictionsGuide } from "@/components/BttsPredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
+import { shouldIndexMarketHub } from "@/lib/searchLandingPolicy";
 
 const PATH = "/predictions/btts";
 
@@ -26,11 +27,11 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     awayTeam: row.awayTeam ?? row.fixture?.awayTeam?.name,
   })));
   return {
-    title: `BTTS Predictions ${feedDayTitle(day)}`,
+    title: `Both Teams to Score (BTTS) Predictions ${feedDayTitle(day)}`,
     description: rows.length
       ? `${rows.length} BTTS predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Both Teams to Score Yes or No picks with match evidence and confidence ratings.`
-      : `No BTTS predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
-    robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
+      : `Both Teams to Score (BTTS) predictions with Yes/No market explanations, match evidence and settled results. Today's picks appear when published.`,
+    robots: shouldIndexMarketHub(day) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref("btts", day) },
   };
 }
