@@ -108,11 +108,7 @@ export const CATEGORY_TO_SLUG = Object.fromEntries(
 export function categoryFeedWhere(cat: PredictionCategory) {
   return {
     status: "PUBLISHED" as const,
-    // A materially challenged FREE selection is historical evidence, not an
-    // active recommendation. Suppress it across all public category/period
-    // feeds until an admin confirms or replaces it. Paid feeds keep their
-    // separate subscriber-safe review and publication protections.
-    ...(!PAID_FEEDS.has(cat) ? { NOT: { reassessment: { is: { publicHold: true } } } } : {}),
+    // Reassessment is private; only an administrator can remove a published selection.
     // TODAY ignores category tags. Include the assembled double as part of
     // the regular mix, but continue excluding its internally tagged source
     // legs so one fixture never appears as three loose public picks.
