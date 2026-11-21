@@ -8,7 +8,7 @@ import type { FixtureOdds } from "../src/lib/odds";
 import { earlyOddsBand, earlyOddsRefreshDue, earlyQuotedSelection,
   earlyFixturePricedForGeneration } from "../src/lib/generation/earlyOddsPolicy";
 import { earlyOddsFloorCrossing, oddsMovementSignal } from "../src/lib/reassessment/evidence";
-import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS } from "../src/lib/generation/earlyTriage";
+import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS, earlyPriceUnsafeFromPrompt } from "../src/lib/generation/earlyTriage";
 import { earlyMarketGuidance } from "../src/lib/generation/earlyMarketGuidance";
 
 const now = new Date("2026-11-20T12:00:00Z");
@@ -158,6 +158,11 @@ const triage = (confidence: number, leadHours: number, evidenceCredible: boolean
     confidence, leadHours, evidenceCredible, autoEligible, pricedExactSelection,
   });
 assert.equal(EARLY_HOLD_UNTIL_HOURS, 72);
+assert.equal(earlyPriceUnsafeFromPrompt(JSON.stringify({ intent: "EARLY_FREE", earlyPriceUnsafe: true })), true,
+  "model's original unsafe/underpriced early pick is flagged for human review");
+assert.equal(earlyPriceUnsafeFromPrompt(JSON.stringify({ intent: "EARLY_FREE" })), false);
+assert.equal(earlyPriceUnsafeFromPrompt("malformed"), false, "parsing unsafe attribution never crashes");
+
 assert.equal(triage(72, 180, true, true, true), "auto", "fully qualified priced early tip is automatic");
 assert.equal(triage(72, 180, true, true, false), "review", "credible unpriced prediction goes to admin");
 assert.equal(triage(68, 180, true, false, false), "review", "near confidence with no price goes to admin");
@@ -170,6 +175,12 @@ assert.ok(earlyRun.includes("const chosen = [...priced, ...unpriced].slice(0, li
 assert.ok(publish.includes('status: "DRAFT"') && publish.includes('kind: desired === "DRAFT" ? "EARLY_HOLD"') &&
   publish.includes('kind: "EARLY_HOLD"') && publish.includes('status: "PENDING_REVIEW"'),
   "low-credibility holds are durable and later rejoin ordinary admin review");
+assert.ok(generationContextSource.includes("input.earlyPriceUnsafe = true;") &&
+  generationContextSource.includes("const persistedDrafts = earlyFree ? modelDrafts : drafts;") &&
+  publish.includes("earlyPriceUnsafeFromPrompt(row.aiJob?.prompt)") &&
+  publish.includes("generation-price-safety-review") &&
+  publisher.includes("EARLY_PUBLICATION_PRICE_SAFETY_REVIEW_REQUIRED"),
+  "early low-odds and market-anomalous tips are preserved, explicitly labelled and blocked from atomic auto-publication");
 assert.ok(publisher.includes("publishPaidPredictionAtomically("),
   "paid atomic publication stays independent");
 console.log("PASS: early odds, quote-independent generation, recoverable holds, review and atomic price-verified publication");
