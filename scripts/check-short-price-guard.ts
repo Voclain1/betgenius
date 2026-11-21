@@ -92,7 +92,7 @@ check("bulk panel explains AutoOddsFloorError", /1\.12/.test(bulkFailureReason(O
 
 // Wiring.
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
-check("generate.ts passes shortPriceBlock to the model", /const firstBlock = shortPriceBlock\(shortPriceSides\(priceOdds, input\.home, input\.away\)\);/.test(gen) && /callModel\(firstBlock\)/.test(gen) && /shortPriceBlock: block,/.test(gen));
+check("generate.ts passes shortPriceBlock to the model", /const firstBlock = shortPriceBlock\(shortPriceSides\(priceOdds, input\.home, input\.away\)\);/.test(gen) && /callModel\(firstBlock\)/.test(gen) && /shortPriceBlock: block \+ \(pricedEarlyMarkets\.length \?/.test(gen) && /pricedEarlyMarkets\.join\("\\n"\)/.test(gen) && /input\.intent === EARLY_FREE_GENERATION_INTENT && odds/.test(gen));
 check("only unpayable Double Chance drafted: one more ask for the next best pick, not a failure", /first\.every\(\(p\) => unpayable\(p\) \|\| offMarket\(p\)\)/.test(gen) && /shortPriceRetryBlock\(priceOdds, dc, input\.home, input\.away\)/.test(gen) && /await callModel\(retryBlock\)/.test(gen));
 check("generate.ts drops low-odds selections and unpriced team totals", /isUnpayableDoubleChance\(priceOdds, p\.marketType, p\.selection\)/.test(gen) && /automaticOddsFailure\(priceOdds, p\.marketType, p\.selection\)/.test(gen) && /modelDrafts\.filter\(\(p\) => !unpayable\(p\)\)/.test(gen));
 check("generate.ts covers ordinary and Goals and skips manual/handicap/paid paths", /guardsShortPrice = !input\.manual && !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen) && /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM"/.test(gen) && /const priceOdds = guardsShortPrice \? odds : null;/.test(gen));

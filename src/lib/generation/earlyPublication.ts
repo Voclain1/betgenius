@@ -15,7 +15,7 @@ import { isValidSelection, type MarketType } from "@/lib/markets";
 import { DEDICATED_PAID_PROVENANCES, GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
-import { getUsageSnapshot } from "@/lib/football/usage";
+import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS, earlyPriceUnsafeFromPrompt } from "@/lib/generation/earlyTriage";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 
 export type EarlyPublicationMode = "off" | "shadow" | "on";
@@ -35,7 +35,9 @@ export function earlyPublicationMode(value: string | undefined = process.env.EAR
  * mandatory. The paid generation/capacity/value routes are unchanged.
  */
 export const EARLY_PUBLICATION_CONFIDENCE_FLOOR = GENIUS_CONFIDENCE_FLOOR;
-export const EARLY_PUBLISH_MAX_PER_RUN = 8;
+export const EARLY_PUBLISH_MAX_PER_RUN = 16;
+const TRIAGE_RUN_BUDGET_MS = 45_000;
+const TRIAGE_PAGE_SIZE = 80;
 
 /** Trust the immutable saved input of the dedicated job, not only shared
  * fixture cache membership. An admin or paid draft for the same fixture must
@@ -64,6 +66,7 @@ export type EarlyPublicationCandidate = {
   marketType: string; selection: unknown; manualSettlementOnly: boolean;
   categories: string[];
   earlyJobVerified: boolean;
+  earlyPriceUnsafe?: boolean;
 };
 export function earlyPublicationBlock(
   row: EarlyPublicationCandidate,
@@ -79,6 +82,7 @@ export function earlyPublicationBlock(
   if (row.categories.some((category) => ["VIP", "PREMIUM", "BET_OF_THE_DAY"].includes(category))) return "reserved-category";
   if ([...DEDICATED_PAID_PROVENANCES, GOALS_GENERATED_PROVENANCE, "VIP_ROUTE_CONFIRMED"].includes(row.provenance as never)) return "protected-provenance";
   if (!row.earlyJobVerified) return "not-dedicated-early-free-job";
+  if (row.earlyPriceUnsafe) return "generation-price-safety-review";
   if (row.confidence < EARLY_PUBLICATION_CONFIDENCE_FLOOR) return "below-early-confidence-floor";
   // Both teams require actual recent matches and season-level data. A model
   // confidence number without corroborating football evidence is insufficient.
@@ -91,104 +95,220 @@ export function earlyPublicationBlock(
 }
 
 export type EarlyPublicationReport = {
-  ok: boolean; mode: EarlyPublicationMode; considered: number; qualifying: number; published: number;
-  blocked: Record<string, number>; failures: string[];
+  ok: boolean;
+  mode: EarlyPublicationMode;
+  considered: number;
+  qualifying: number;
+  published: number;
+  reviewReady: number;
+  held: number;
+  restored: number;
+  blocked: Record<string, number>;
+  failures: string[];
   summary: string;
 };
 
+/**
+ * Optimistically claim an untouched early row, leaving its saved model result
+ * and original evidence intact. Neither held nor review-ready predictions are
+ * deleted. Audit revisions make the transition traceable.
+ */
+async function transitionEarlyStatus(
+  row: { id: string; status: string; updatedAt: Date },
+  desired: "DRAFT" | "PENDING_REVIEW",
+  reason: string,
+): Promise<Date | null> {
+  if (row.status === desired) return row.updatedAt;
+  return prisma.$transaction(async tx => {
+    const claimed = await tx.prediction.updateMany({
+      where: { id: row.id, status: row.status, updatedAt: row.updatedAt },
+      data: { status: desired },
+    });
+    if (claimed.count !== 1) return null;
+    await tx.predictionRevision.create({
+      data: {
+        predictionId: row.id,
+        kind: desired === "DRAFT" ? "EARLY_HOLD" : "EARLY_REVIEW_READY",
+        publiclyVisible: false,
+        reason: reason.slice(0, 400),
+        beforeJson: { status: row.status },
+        afterJson: { status: desired },
+      },
+    });
+    const updated = await tx.prediction.findUnique({
+      where: { id: row.id }, select: { updatedAt: true },
+    });
+    return updated?.updatedAt ?? null;
+  });
+}
+
 export async function runEarlyFreePublication(input: { now?: Date; limit?: number; actorId: string }): Promise<EarlyPublicationReport> {
   const now = input.now ?? new Date();
+  const startedAt = Date.now();
   const mode = earlyPublicationMode();
-  const report: EarlyPublicationReport = { ok: true, mode, considered: 0, qualifying: 0, published: 0, blocked: {}, failures: [], summary: "" };
+  const report: EarlyPublicationReport = {
+    ok: true, mode, considered: 0, qualifying: 0, published: 0,
+    reviewReady: 0, held: 0, restored: 0, blocked: {}, failures: [], summary: "",
+  };
   const finish = () => {
     report.ok = report.failures.length === 0;
-    report.summary = "Early free publication " + mode + ": " + report.considered + " reviewed, "
-      + report.qualifying + " eligible, " + report.published + " published, " + report.failures.length + " failures";
+    report.summary = "Early free publication " + mode + ": " + report.considered +
+      " triaged, " + report.qualifying + " eligible, " + report.published + " published, " +
+      report.reviewReady + " review-ready, " + report.held + " held, " +
+      report.restored + " restored, " + report.failures.length + " errors";
     return report;
   };
   if (mode === "off" || earlyFixtureMode() !== "on") return finish();
-  const usage = await getUsageSnapshot();
-  if (usage.remaining < 1_000) {
-    report.blocked["low-api-quota"] = 1;
-    return finish();
-  }
 
+  // Publishing verified, already-cached quotes makes NO provider calls. Low
+  // API quota is therefore not a reason to block a qualified publication.
   const limit = Math.max(1, Math.min(EARLY_PUBLISH_MAX_PER_RUN, Math.trunc(input.limit ?? EARLY_PUBLISH_MAX_PER_RUN)));
-  // A row can only enter this lane after a recorded early provider capture.
-  // User-entered drafts, late ordinary picks and all paid outputs remain manual.
   const from = new Date(now.getTime() + 48 * 3_600_000);
   const until = new Date(now.getTime() + EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS * 3_600_000);
   const previouslyQueued = await prisma.upcomingFixture.findMany({
-    where: { earlyQueuedAt: { not: null }, kickoff: { gt: from, lte: until }, status: "NS" },
+    where: { earlyQueuedAt: { not: null }, kickoff: { gt: now, lte: until }, status: "NS" },
     select: { fixtureApiId: true, kickoff: true, leagueApiId: true },
-    take: 400,
   });
+  if (!previouslyQueued.length) return finish();
   const verifiedKickoffs = new Map(previouslyQueued.map(row => [row.fixtureApiId, row]));
-  const fixtureIds = previouslyQueued.map((row) => row.fixtureApiId);
-  if (!fixtureIds.length) return finish();
+  const fixtureIds = previouslyQueued.map(row => row.fixtureApiId);
 
-  const rows = await prisma.prediction.findMany({
-    where: {
-      fixtureApiId: { in: fixtureIds },
-      status: "PENDING_REVIEW",
-      kickoff: { gt: from, lte: until },
-    },
-    include: { categories: true, aiJob: { select: { context: true, prompt: true } } },
-    orderBy: [{ confidence: "desc" }, { kickoff: "asc" }],
-    take: 500,
-  });
-
-  // One bounded cache read for the complete review slate. Publish only priced
-  // EXACT selections; the atomic publisher repeats this check under the lock.
-  const keys = rows.map(row => matchKey(row)).filter((key): key is string => key !== null);
-  const quotes = keys.length ? await prisma.fixtureOddsCache.findMany({
-    where: { matchKey: { in: keys } },
-    select: { matchKey: true, oddsJson: true, fetchedAt: true },
-  }) : [];
-  const byKey = new Map(quotes.map(q => [q.matchKey, q]));
-
-  for (const row of rows) {
-    if (report.published >= limit) break;
-    report.considered++;
-    const captured = row.fixtureApiId != null ? verifiedKickoffs.get(row.fixtureApiId) : null;
-    if (!captured || !row.kickoff || captured.leagueApiId !== row.leagueApiId || Math.abs(captured.kickoff.getTime() - row.kickoff.getTime()) > 15 * 60_000) {
-      report.blocked["kickoff-changed"] = (report.blocked["kickoff-changed"] ?? 0) + 1;
-      continue;
-    }
-    const categories = row.categories.map((c) => c.category);
-    const digest = parseStoredContext(row.aiJob?.context);
-    const reason = earlyPublicationBlock({
-      ...row, categories,
-      earlyJobVerified: isDedicatedEarlyFreeJob(row.aiJob?.prompt, row.fixtureApiId),
-    }, digest, now);
-    if (reason) { report.blocked[reason] = (report.blocked[reason] ?? 0) + 1; continue; }
-    const key = matchKey(row);
-    const cached = key ? byKey.get(key) : null;
-    const price = earlyQuotedSelection({
-      odds: (cached?.oddsJson as FixtureOdds | null) ?? null,
-      fetchedAt: cached?.fetchedAt ?? null, kickoff: row.kickoff!, now,
-      marketType: row.marketType, selection: row.selection,
+  // Stream all relevant predictions in stable order. A fixed top-500 slice
+  // would make older held rows invisible forever as coverage scales.
+  let cursor: string | undefined;
+  scan: while (Date.now() - startedAt < TRIAGE_RUN_BUDGET_MS) {
+    const rows = await prisma.prediction.findMany({
+      where: {
+        fixtureApiId: { in: fixtureIds },
+        OR: [
+          { status: "PENDING_REVIEW", kickoff: { gt: from, lte: until } },
+          // A held prediction must be handed to normal review as it enters the
+          // ordinary 48h window. It can NEVER auto-publish there via this lane.
+          { status: "DRAFT", kickoff: { gt: now, lte: until } },
+        ],
+      },
+      include: {
+        categories: true,
+        aiJob: { select: { context: true, prompt: true } },
+        revisions: { where: { kind: "EARLY_HOLD" }, take: 1, select: { id: true } },
+      },
+      orderBy: [{ kickoff: "asc" }, { id: "asc" }],
+      take: TRIAGE_PAGE_SIZE,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    if (!price.ok) {
-      const blocked = "odds-" + price.reason;
-      report.blocked[blocked] = (report.blocked[blocked] ?? 0) + 1;
-      continue;
+    if (!rows.length) break;
+    cursor = rows[rows.length - 1].id;
+
+    const keys = rows.map(row => matchKey(row)).filter((key): key is string => key !== null);
+    const quotes = keys.length ? await prisma.fixtureOddsCache.findMany({
+      where: { matchKey: { in: keys } },
+      select: { matchKey: true, oddsJson: true, fetchedAt: true },
+    }) : [];
+    const byKey = new Map(quotes.map(q => [q.matchKey, q]));
+
+    for (const row of rows) {
+      if (Date.now() - startedAt >= TRIAGE_RUN_BUDGET_MS) break;
+      if (report.published >= limit) break scan;
+      // DRAFT is a holding state ONLY if this engine placed the hold. Never
+      // hijack an admin-created or manually archived draft.
+      if (row.status === "DRAFT" && row.revisions.length === 0) continue;
+      const captured = row.fixtureApiId != null ? verifiedKickoffs.get(row.fixtureApiId) : null;
+      if (!captured || !row.kickoff || captured.leagueApiId !== row.leagueApiId ||
+          Math.abs(captured.kickoff.getTime() - row.kickoff.getTime()) > 15 * 60_000) {
+        report.blocked["kickoff-changed"] = (report.blocked["kickoff-changed"] ?? 0) + 1;
+        continue;
+      }
+      const categories = row.categories.map(c => c.category);
+      const earlyJobVerified = isDedicatedEarlyFreeJob(row.aiJob?.prompt, row.fixtureApiId);
+      if (!earlyJobVerified || categories.some(c => ["VIP", "PREMIUM", "BET_OF_THE_DAY", "SAME_GAME_DOUBLE"].includes(c)) ||
+          [...DEDICATED_PAID_PROVENANCES, GOALS_GENERATED_PROVENANCE, "VIP_ROUTE_CONFIRMED"].includes(row.provenance as never))
+        continue;
+
+      report.considered++;
+      const digest = parseStoredContext(row.aiJob?.context);
+      const leadHours = (row.kickoff.getTime() - now.getTime()) / 3_600_000;
+      // The ordinary 48-hour pipeline never inherits early auto-publication
+      // authority, although held drafts can join ordinary admin review.
+      const reason = earlyPublicationBlock({
+        ...row, status: "PENDING_REVIEW", categories, earlyJobVerified,
+        earlyPriceUnsafe: earlyPriceUnsafeFromPrompt(row.aiJob?.prompt),
+      }, digest, now);
+      const key = matchKey(row);
+      const cache = key ? byKey.get(key) : null;
+      const price = earlyQuotedSelection({
+        odds: (cache?.oddsJson as FixtureOdds | null) ?? null,
+        fetchedAt: cache?.fetchedAt ?? null,
+        kickoff: row.kickoff, now, marketType: row.marketType, selection: row.selection,
+      });
+
+      const validMarket = !row.manualSettlementOnly &&
+        row.marketType !== "OTHER" && row.marketType !== "SAME_GAME_DOUBLE" &&
+        isValidSelection(row.marketType as MarketType, row.selection);
+      const credibleEvidence = !!(row.contextComplete && digest?.coverage.form && digest.coverage.stats &&
+        digest.teams.home.overall && digest.teams.away.overall &&
+        digest.teams.home.last5.length >= 2 && digest.teams.away.last5.length >= 2 && validMarket);
+      const disposition = classifyEarlyDisposition({
+        confidence: row.confidence, leadHours, evidenceCredible: credibleEvidence,
+        autoEligible: reason === null, pricedExactSelection: price.ok,
+      });
+      if (reason || !price.ok) {
+        const block = reason ?? (price.ok ? "early-quote-unavailable" : "odds-" + price.reason);
+        report.blocked[block] = (report.blocked[block] ?? 0) + 1;
+      }
+      const explanation = [
+        "Early prediction awaiting stronger evidence or bookmaker confirmation",
+        reason ?? "opening price not yet qualified",
+        price.ok ? "verified-price-available" : "odds-" + price.reason,
+        leadHours > EARLY_HOLD_UNTIL_HOURS ? "more than 72h before kickoff" : "within 72h of kickoff",
+      ].join("; ");
+
+      if (disposition === "hold") {
+        if (mode === "on" && row.status !== "DRAFT") {
+          try {
+            if (await transitionEarlyStatus(row, "DRAFT", explanation)) report.held++;
+          } catch (error) {
+            report.failures.push(row.id + ": hold: " + (error instanceof Error ? error.message : String(error)));
+          }
+        }
+        continue;
+      }
+
+      // REVIEW is deliberately the SAME PENDING_REVIEW queue used by ordinary
+      // generation; price gaps and marginal scores never disappear.
+      let publishRow = row;
+      if (row.status === "DRAFT") {
+        if (mode !== "on") continue;
+        try {
+          const updatedAt = await transitionEarlyStatus(row, "PENDING_REVIEW", explanation);
+          if (!updatedAt) continue;
+          publishRow = { ...row, status: "PENDING_REVIEW", updatedAt };
+          report.restored++;
+        } catch (error) {
+          report.failures.push(row.id + ": restore: " + (error instanceof Error ? error.message : String(error)));
+          continue;
+        }
+      }
+      if (disposition === "review") {
+        report.reviewReady++;
+        continue;
+      }
+
+      report.qualifying++;
+      if (mode !== "on") continue;
+      try {
+        // The atomic publisher independently revalidates status, fixture,
+        // exact market/selection, freshness, books and unchanged draft.
+        if (await publishEarlyFreePredictionAtomically(publishRow, input.actorId)) report.published++;
+        else report.blocked["concurrent-publication"] =
+          (report.blocked["concurrent-publication"] ?? 0) + 1;
+      } catch (error) {
+        report.failures.push(row.id + ": publish: " + (error instanceof Error ? error.message : String(error)));
+      }
     }
-    report.qualifying++;
-    if (mode !== "on") continue;
-    try {
-      // The same exact price must remain qualified INSIDE the locked
-      // publication transaction; an altered or expired quote cannot pass.
-      if (await publishEarlyFreePredictionAtomically(row, input.actorId)) report.published++;
-      else report.blocked["concurrent-publication"] = (report.blocked["concurrent-publication"] ?? 0) + 1;
-    } catch (error) {
-      report.failures.push(row.id + ": " + (error instanceof Error ? error.message : String(error)));
-    }
+    if (rows.length < TRIAGE_PAGE_SIZE) break;
   }
 
   if (mode === "on" && report.published) {
-    // Curation derives GENIUS/BANKER tags only from published selections.
-    // Its existing quality floors remain unchanged.
     try {
       const { curateGeniusTips, curateBankerTips } = await import("@/lib/geniusCuration");
       await curateGeniusTips(now);

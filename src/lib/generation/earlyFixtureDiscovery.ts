@@ -3,12 +3,11 @@
  * the ordinary 48h discovery/sweep or the VIP/Premium qualification window.
  *
  * "shadow" writes a bounded future-fixture cache only.
- * "on" additionally seeds a small number of already-quality-filtered free
- * candidates into the existing generation ledger. It NEVER publishes picks.
+ * "on" seeds all eligible quality-filtered free candidates over rotating
+ * runs, with no daily or per-league quota. It NEVER publishes picks.
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { lagosDayBounds } from "@/lib/lagosDate";
 import { leaguesInTiers } from "@/lib/leagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
@@ -17,6 +16,8 @@ import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtur
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
 const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY"]);
+const EARLY_EXPANDED_LEAGUES = leaguesInTiers(["FALLBACK", "DEEP_FALLBACK"]);
+const EXPANDED_CURSOR_KEY = "early-fixture-expanded-discovery-cursor";
 const DAY = 86_400_000;
 
 export type EarlyDiscoveryReport = {
@@ -34,13 +35,16 @@ export type EarlyDiscoveryReport = {
   summary: string;
 };
 
-/** Rotates a unique batch through CORE+SECONDARY, independently of ordinary discovery. */
-async function nextLeagues(batch: number, now: Date): Promise<number[]> {
-  const size = EARLY_LEAGUES.length;
+/** Keep CORE+SECONDARY as the primary scan, use one existing scan slot
+ * per pass for lower tiers. Same 4 provider calls maximum as before. */
+async function nextLeagues(batch: number, now: Date, expanded = false): Promise<number[]> {
+  const pool = expanded ? EARLY_EXPANDED_LEAGUES : EARLY_LEAGUES;
+  const cursor = expanded ? EXPANDED_CURSOR_KEY : CURSOR_KEY;
+  const size = pool.length;
   if (!size) return [];
   const rows = await prisma.$queryRaw<Array<{ holder: string }>>`
     INSERT INTO "AppLock" ("key", "holder", "acquiredAt", "expiresAt")
-    VALUES (${CURSOR_KEY}, ${String(batch)}, ${now}, ${new Date("2999-01-01T00:00:00Z")})
+    VALUES (${cursor}, ${String(batch)}, ${now}, ${new Date("2999-01-01T00:00:00Z")})
     ON CONFLICT ("key") DO UPDATE
       SET "holder" = (((("AppLock"."holder")::integer + ${batch}) % ${size}))::text,
           "acquiredAt" = ${now}
@@ -48,7 +52,7 @@ async function nextLeagues(batch: number, now: Date): Promise<number[]> {
   `;
   const end = Number(rows[0]?.holder ?? batch) % size;
   const start = (end - batch + size) % size;
-  return Array.from({ length: batch }, (_, offset) => EARLY_LEAGUES[(start + offset) % size]);
+  return Array.from({ length: batch }, (_, offset) => pool[(start + offset) % size]);
 }
 
 function validFixture(row: FixtureRow, now: Date, horizonDays: number): boolean {
@@ -103,26 +107,36 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
     return { ...base, summary: "Early fixture capture stood down to protect API quota", elapsedMs: Date.now() - startedAt };
   }
 
+  // A per-request time budget and quota headroom are operational safeguards,
+  // never a lifetime/day/league limit on how much the engine can cover.
   const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
-  // The focused league gets the first slot, followed by the ordinary
-  // round-robin slice. No duplicate provider call within a pass.
+  // Never increase API-Football discovery calls: one regional spotlight,
+  // two priority leagues, and one rotating fallback league per 4-slot pass.
+  // Long-lived coverage grows through the cursor, not a higher call rate.
   const focusedLeague = earlySpotlightLeague(now);
-  const regular = batch > 1 ? await nextLeagues(batch - 1, now) : [];
-  const leagues = [focusedLeague, ...regular.filter(id => id !== focusedLeague)];
-  const { start: lagosStart } = lagosDayBounds(0, now);
-  let todayQueued = mode === "on"
-    ? await prisma.upcomingFixture.count({ where: { earlyQueuedAt: { gte: lagosStart } } })
-    : 0;
+  const expansionSlots = batch >= 4 && EARLY_EXPANDED_LEAGUES.length ? 1 : 0;
+  const ordinarySlots = batch - 1 - expansionSlots;
+  const regular = ordinarySlots > 0 ? await nextLeagues(ordinarySlots, now) : [];
+  const expanded = expansionSlots ? await nextLeagues(expansionSlots, now, true) : [];
+  const leagues = [...new Set([focusedLeague, ...regular, ...expanded])];
 
   for (const leagueApiId of leagues) {
     if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
     const days = discoveryHorizonDays(leagueApiId);
     if (!days) continue;
-    base.scanned++;
     base.byLeague[leagueApiId] = { fixtures: 0, queued: 0 };
     try {
+      // Reallocated fallback slots must NOT add an extra /leagues season lookup.
+      // Reuse season metadata captured by existing enrichment; if absent,
+      // retain the cursor and skip this league until its cache is ready.
+      const expandedTier = EARLY_EXPANDED_LEAGUES.includes(leagueApiId);
+      const cachedSeason = expandedTier ? await prisma.leagueEnrichmentCache.findUnique({
+        where: { leagueApiId }, select: { season: true },
+      }) : null;
+      const season = expandedTier ? cachedSeason?.season : await resolveSeason(leagueApiId, now);
+      if (!season) continue;
       const dates = earlyDateRange(now, days);
-      const season = await resolveSeason(leagueApiId, now);
+      base.scanned++;
       const response = await getFixturesByLeague(leagueApiId, season, dates.from, dates.to);
       if (response === null) {
         base.failures.push({ leagueApiId, reason: "provider returned no usable response" });
@@ -138,23 +152,22 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
         base.cached += chunk.length;
       }
 
-      if (mode !== "on" || todayQueued >= EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY) continue;
-      const available = Math.min(
-        EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_LEAGUE,
-        EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY - todayQueued,
-      );
+      if (mode !== "on" || !rows.length) continue;
       const selected = await candidatesFromFixtures(rows, {
         now,
-        limit: available,
+        limit: rows.length,
         fromHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS,
         untilHours: Math.min(EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS, days * 24),
+        cacheOnly: true, // Only existing standings; never refresh league data for early qualification.
       });
       if (!selected.candidates.length) continue;
       // Tag ONLY newly inserted attempts as early. createMany(skipDuplicates)
       // followed by marking every candidate can falsely authorize manual or
       // preexisting ordinary rows for early publication.
       for (const c of selected.candidates) {
-        if (todayQueued >= EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY) break;
+        // Resume next cron run when the execution budget is consumed. Unqueued
+        // fixtures are rediscovered; no permanent quota drops them.
+        if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
         try {
           await prisma.$transaction(async tx => {
             await tx.generationAttempt.create({
@@ -171,7 +184,6 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
             });
             if (marked.count !== 1) throw new Error("EARLY_FIXTURE_ALREADY_QUEUED");
           });
-          todayQueued++;
           base.candidatesQueued++;
           base.byLeague[leagueApiId].queued++;
         } catch (error) {

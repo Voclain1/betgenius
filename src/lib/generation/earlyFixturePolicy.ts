@@ -7,10 +7,12 @@ import { generationTierOf } from "@/lib/leagues";
 export const EARLY_FIXTURE_POLICY = {
   CORE_DAYS: 14,
   SECONDARY_DAYS: 10,
+  FALLBACK_DAYS: 7,
+  DEEP_FALLBACK_DAYS: 5,
   EARLY_GENERATION_FROM_HOURS: 48,
   EARLY_GENERATION_UNTIL_HOURS: 336,
-  MAX_QUEUE_PER_DAY: 20,
-  MAX_QUEUE_PER_LEAGUE: 8,
+  // No daily or league fixture quota. Cron calls are finite for runtime/API
+  // safety, but the backlog continues every cycle without an exhaustion cap.
   MIN_API_QUOTA_REMAINING: 2_200,
   MAX_RUN_MS: 22_000,
 } as const;
@@ -47,6 +49,8 @@ export function discoveryHorizonDays(leagueApiId: number): number {
   const tier = generationTierOf(leagueApiId);
   return tier === "CORE" ? EARLY_FIXTURE_POLICY.CORE_DAYS
     : tier === "SECONDARY" ? EARLY_FIXTURE_POLICY.SECONDARY_DAYS
+    : tier === "FALLBACK" ? EARLY_FIXTURE_POLICY.FALLBACK_DAYS
+    : tier === "DEEP_FALLBACK" ? EARLY_FIXTURE_POLICY.DEEP_FALLBACK_DAYS
     : 0;
 }
 

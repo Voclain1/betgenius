@@ -28,6 +28,7 @@ import { lagosDateKey } from "@/lib/lagosDate";
 
 import { prisma } from "@/lib/prisma";
 import { generateAndPersistPrediction } from "@/lib/ai/generate";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { findKickoffMismatches, formatKickoffMismatches, type KickoffMismatch } from "@/lib/generation/kickoffAssert";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import {
@@ -267,7 +268,9 @@ export async function runGeneration(opts: {
 
   try {
     const usage = await getUsageSnapshot();
-    if (usage.remaining < MIN_QUOTA_HEADROOM) {
+    // Dedicated early FREE analysis is cache-only and spends ZERO football-API
+    // requests; it may continue even after the paid quota reserve is reached.
+    if (opts.intent !== EARLY_FREE_GENERATION_INTENT && usage.remaining < MIN_QUOTA_HEADROOM) {
       return empty(`api-football daily budget nearly exhausted (${usage.remaining} left)`, usage.remaining);
     }
 
@@ -291,7 +294,7 @@ export async function runGeneration(opts: {
       }
     }
 
-    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds, matchKeys: opts.matchKeys, excludeLeagueApiIds });
+    const candidates = await selectQueuedCandidates({ now: opts.now, limit: opts.limit, leagueApiIds: opts.leagueApiIds, matchKeys: opts.matchKeys, excludeLeagueApiIds, cacheOnly: opts.intent === EARLY_FREE_GENERATION_INTENT });
 
     const report: RunReport = {
       ok: true, claimed: candidates.length, succeeded: 0, failed: 0, abandoned: 0, predictionsCreated: 0,

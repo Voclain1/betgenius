@@ -11,6 +11,8 @@ import { setPredictionCategories } from "@/lib/predictions";
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection, isGeneratableTeamTotal } from "@/lib/markets";
 import { normalizeName, matchKey } from "@/lib/slug";
 import type { FixtureOdds } from "@/lib/odds";
+import { earlyMarketGuidance } from "@/lib/generation/earlyMarketGuidance";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
 import { automaticOddsFailure, automaticOddsRetryBlock, AutoOddsFloorError, type AutoOddsFailure } from "@/lib/autoOddsFloor";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
@@ -55,6 +57,8 @@ export class CertaintyLanguageError extends Error {
 export type GenerateFixtureInput = {
   /** Internal immutable attribution; never a qualification bypass. */
   quotaExperiment?: string;
+  /** Dedicated early FREE row cannot auto-publish if generation-time price checks flagged it. */
+  earlyPriceUnsafe?: boolean;
   fixtureId?: string;
   /**
    * Provider fixture id. Supplied by the scheduled worker, which already has it
@@ -172,7 +176,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   let homeTeamName = input.home;
   let awayTeamName = input.away;
 
-  if ((homeApiId == null || awayApiId == null) && input.leagueApiId) {
+  if ((homeApiId == null || awayApiId == null) && input.leagueApiId && input.intent !== EARLY_FREE_GENERATION_INTENT) {
     const [homeMatch, awayMatch] = await Promise.all([
       homeApiId == null ? searchTeam(input.home) : Promise.resolve(null),
       awayApiId == null ? searchTeam(input.away) : Promise.resolve(null),
@@ -205,6 +209,9 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     awayApiId,
     leagueApiId: input.leagueApiId ?? null,
     round: input.round ?? null,
+    // Early analysis NEVER refreshes missing team/standings/H2H caches.
+    // The ordinary and paid pipelines retain their existing cache-filling behavior.
+    cacheOnly: input.intent === EARLY_FREE_GENERATION_INTENT,
   });
 
   const startedAt = Date.now();
@@ -228,6 +235,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // The dedicated Goals pass (src/lib/goalsGeneration.ts): one market, fixed in
   // the prompt and enforced again below by pickGoalsDraft.
   const goalsOnly = input.intent === GOALS_INTENT;
+  const earlyFree = input.intent === EARLY_FREE_GENERATION_INTENT;
   const provenance = goalsOnly
     ? GOALS_GENERATED_PROVENANCE
     : riskRoute.calibration === "legacy"
@@ -245,8 +253,14 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // Admin/manual generation remains exempt from the automatic price floor.
   const checksMarket = !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const guardsShortPrice = !input.manual && !input.handicapLine && input.intent !== "VIP_PREMIUM";
-  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
+  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId,
+    input.intent === EARLY_FREE_GENERATION_INTENT) : null;
   const priceOdds = guardsShortPrice ? odds : null;
+  // A priced-market shortlist is useful context for EARLY FREE alone.
+  // It is never a recommendation, a probability estimate or a publication
+  // bypass. Normal, paid, Goals and admin prompts remain unchanged.
+  const pricedEarlyMarkets = input.intent === EARLY_FREE_GENERATION_INTENT && odds
+    ? earlyMarketGuidance(odds, new Date(input.kickoff), new Date()) : [];
   const callModel = (block: string) =>
     generatePredictionForFixture({
       digest,
@@ -254,7 +268,10 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       riskCalibration: riskRoute.calibration !== "legacy",
       marketBreadth,
       handicapLine: input.handicapLine,
-      shortPriceBlock: block,
+      shortPriceBlock: block + (pricedEarlyMarkets.length ?
+        "\nEarly bookmaker market availability (context, NOT confidence):\n" +
+        pricedEarlyMarkets.join("\n") +
+        "\nOnly choose a quoted selection if football evidence supports it; otherwise provide a separately justified unpriced pick for admin review.\n" : ""),
       ...(goalsOnly ? { goalsOnly: true } : {}),
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
       ...(riskRoute.calibration === "vip" || input.intent === "VIP_PREMIUM" ? { paidRoute: true } : {}),
@@ -301,7 +318,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // intentionally ignores general short-price retry blocks: do not pay for a
   // second identical call there. Reject the priced-out Goals pick instead.
   const first = Array.isArray(output.predictions) ? output.predictions : [];
-  if (!goalsOnly && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+  if (!goalsOnly && !earlyFree && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
     const dc = first.filter(tooShortDc);
     const floor: AutoOddsFailure[] = first.filter((p) => !tooShortDc(p))
       .map((p) => autoPriceIssue(p))
@@ -327,13 +344,22 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       totalTokens: add(usage.totalTokens, retry.usage.totalTokens),
     };
   }
+  // Do NOT discard an early selection only because its available odds are
+  // too short, anomalous, or in an unsupported market. Persist it for the
+  // hold/review lane, with an immutable warning in the dedicated job prompt.
+  // That warning independently prohibits automatic publication.
+  if (earlyFree && Array.isArray(output.predictions) &&
+      output.predictions.some((p) => unpayable(p) || offMarket(p))) {
+    input.earlyPriceUnsafe = true;
+  }
   const durationMs = Date.now() - startedAt;
 
   // A league was specified (live context was expected) but nothing resolved —
   // no stats, form, availability, h2h or standings for either side. Usually
   // means the football API failed silently (bad key, plan restriction, rate
   // limit) rather than the fixture genuinely having no data.
-  const contextComplete = !input.leagueApiId ? true : !isDigestEmpty(digest);
+  const contextComplete = (!input.leagueApiId ? true : !isDigestEmpty(digest)) &&
+    (input.intent !== EARLY_FREE_GENERATION_INTENT || !sources.stale?.length);
 
   const job = await prisma.aIJob.create({
     data: {
@@ -369,6 +395,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // from the current trimmed feed. Market-sanity rejects remain independent.
   const payable = modelDrafts.filter((p) => !unpayable(p));
   const drafts = payable.filter((p) => !offMarket(p));
+  const persistedDrafts = earlyFree ? modelDrafts : drafts;
   // From here a rejection throws away a job that was paid for and already
   // recorded; it is marked REJECTED so the panel shows that spend apart from
   // the jobs that produced picks.
@@ -376,10 +403,10 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     await prisma.aIJob.update({ where: { id: job.id }, data: { status: "REJECTED" } }).catch(() => {});
     return err;
   };
-  if (modelDrafts.length > 0 && payable.length === 0) {
+  if (!earlyFree && modelDrafts.length > 0 && payable.length === 0) {
     throw await rejected(new AutoOddsFloorError(`${input.home} v ${input.away}`));
   }
-  if (payable.length > 0 && drafts.length === 0) {
+  if (!earlyFree && payable.length > 0 && drafts.length === 0) {
     throw await rejected(new MarketSanityError(`${input.home} v ${input.away}`, offMarket(payable[0])!));
   }
 
@@ -392,7 +419,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const certaintyViolations = scanDraftForCertainty({
     matchPreview: output.matchPreview,
     keyFactors: output.keyFactors,
-    reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
+    reasoning: persistedDrafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (certaintyViolations.length > 0) {
     throw await rejected(new CertaintyLanguageError(certaintyViolations));
@@ -405,7 +432,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const voiceViolations = scanDraftForInternalTerminology({
     matchPreview: output.matchPreview,
     keyFactors: output.keyFactors,
-    reasoning: drafts.map((p) => p.reasoning).join("\n\n"),
+    reasoning: persistedDrafts.map((p) => p.reasoning).join("\n\n"),
   });
   if (voiceViolations.length > 0) {
     throw await rejected(new HouseVoiceError(voiceViolations));
@@ -417,7 +444,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const handicapRejections: Array<{ selection: string; line: number; confidence: number; reason: string }> = [];
 
   const created = (await Promise.all(
-    drafts.map(async (p) => {
+    persistedDrafts.map(async (p) => {
       // Defensive: even with a schema in the prompt, the model can still emit
       // a malformed marketType/selection. Fall back to OTHER (manual-only)
       // rather than persist a settlement field that doesn't match its shape.
@@ -553,6 +580,7 @@ async function loadFixtureOdds(
   awayTeamApiId: number | null,
   kickoff: string,
   fixtureApiId: number | undefined,
+  cacheOnly = false,
 ): Promise<FixtureOdds | null> {
   const key = matchKey({ homeTeamApiId, awayTeamApiId, kickoff });
   if (!key) return null;
@@ -561,7 +589,7 @@ async function loadFixtureOdds(
     if (cached?.fetchedAt && cached.oddsJson) return cached.oddsJson as unknown as FixtureOdds;
     const kickoffDate = new Date(kickoff);
     const triedRecently = cached?.lastAttemptAt && Date.now() - cached.lastAttemptAt.getTime() < 6 * 3_600_000;
-    if (fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
+    if (cacheOnly || fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
     // Dynamic: enrichment is a large module the rest of generation never needs.
     const { refreshOddsCache } = await import("@/lib/enrichment");
     const res = await refreshOddsCache({ matchKey: key, fixtureApiId, kickoff: kickoffDate, kind: "candidate" });

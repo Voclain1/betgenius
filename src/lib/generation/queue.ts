@@ -406,7 +406,7 @@ export async function discoverGenerationCandidates(opts: {
  * leagues are back. Those rows are left untouched rather than cancelled, and
  * become selectable again if the slate thins before they kick off.
  */
-export async function selectQueuedCandidates(opts: { limit: number; now?: Date; leagueApiIds?: number[]; matchKeys?: string[]; excludeLeagueApiIds?: number[] }): Promise<Candidate[]> {
+export async function selectQueuedCandidates(opts: { limit: number; now?: Date; leagueApiIds?: number[]; matchKeys?: string[]; excludeLeagueApiIds?: number[]; cacheOnly?: boolean }): Promise<Candidate[]> {
   const now = opts.now ?? new Date();
   // An empty (not absent) matchKeys array means "nothing was selected", which
   // must return nothing rather than falling through to the whole ledger.
@@ -502,7 +502,7 @@ export async function selectQueuedCandidates(opts: { limit: number; now?: Date; 
   });
   // A queued fixture is not exempt: even rows created under the old broad
   // policy must pass the CURRENT strongest-club rule before inference.
-  const worthwhile = await filterSelectiveQueuedCandidates(candidates, now);
+  const worthwhile = await filterSelectiveQueuedCandidates(candidates, now, opts.cacheOnly === true);
   return worthwhile.slice(0, opts.limit);
 }
 

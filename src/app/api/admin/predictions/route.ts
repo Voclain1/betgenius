@@ -18,7 +18,11 @@ import { leagueTeamMismatch, LEAGUE_TEAM_MISMATCH } from "@/lib/leagueTeamCheck"
  * that cap would push most doubles out of reach. Matches marketType, not the
  * SAME_GAME_DOUBLE tag, which the hidden source legs carry too.
  */
-const ListQuery = z.object({ marketType: z.literal(COMBO_MARKET_TYPE).optional() });
+const ListQuery = z.object({
+  marketType: z.literal(COMBO_MARKET_TYPE).optional(),
+  status: z.enum(["DRAFT", "PENDING_REVIEW", "APPROVED", "PUBLISHED", "ARCHIVED"]).optional(),
+  cursor: z.string().min(1).optional(),
+});
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -26,16 +30,25 @@ export async function GET(req: Request) {
   const query = ListQuery.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!query.success) return NextResponse.json({ error: query.error.flatten() }, { status: 400 });
   const items = await prisma.prediction.findMany({
-    where: query.data.marketType ? { marketType: query.data.marketType } : undefined,
-    orderBy: { createdAt: "desc" },
-    take: 200,
+    where: {
+      ...(query.data.marketType ? { marketType: query.data.marketType } : {}),
+      ...(query.data.status ? { status: query.data.status } : {}),
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 201,
+    ...(query.data.cursor ? { cursor: { id: query.data.cursor }, skip: 1 } : {}),
     include: {
       author: true, approvedBy: true, categories: true, fixture: { include: { homeTeam: true, awayTeam: true } },
       // Which model wrote it, so the list can flag a fallback model's pick.
       aiJob: { select: { model: true } },
+      revisions: { where: { kind: { in: ["EARLY_HOLD", "EARLY_REVIEW_READY"] } },
+        orderBy: { recordedAt: "desc" }, take: 1, select: { kind: true, reason: true } },
     },
   });
-  return NextResponse.json({ items });
+  return NextResponse.json({
+    items: items.slice(0, 200),
+    nextCursor: items.length > 200 ? items[199].id : null,
+  });
 }
 
 const CreateBody = z.object({

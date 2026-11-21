@@ -31,6 +31,7 @@ type Row = {
   settlementNote: string | null;
   fixture?: { homeTeam?: { name: string }; awayTeam?: { name: string } };
   aiJob?: { model: string | null } | null;
+  revisions?: Array<{ kind: string; reason: string }>;
 };
 
 const OUTCOME_STYLES: Record<string, string> = {
@@ -61,6 +62,8 @@ const kickedOff = (kickoff: string | null) => !!kickoff && new Date(kickoff).get
 
 export default function AdminPredictions() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Defaults to the review queue rather than ALL: at generation volume this
   // page is a work list first and an archive second.
   const [filter, setFilter] = useState<string>("PENDING_REVIEW");
@@ -78,16 +81,38 @@ export default function AdminPredictions() {
   // is only the newest 200 rows, which at generation volume would leave most
   // doubles out of reach of a client-side filter.
   const comboView = categoryFilter === ADMIN_COMBO_FILTER;
+  const listUrl = (cursor?: string) => {
+    const params = new URLSearchParams();
+    if (comboView) params.set("marketType", COMBO_MARKET_TYPE);
+    if (filter !== "ALL") params.set("status", filter);
+    if (cursor) params.set("cursor", cursor);
+    return "/api/admin/predictions?" + params.toString();
+  };
   const load = async () => {
-    const url = comboView ? `/api/admin/predictions?marketType=${COMBO_MARKET_TYPE}` : "/api/admin/predictions";
-    const j = await fetch(url).then((r) => r.json());
+    const j = await fetch(listUrl()).then((r) => {
+      if (!r.ok) throw new Error("Could not load predictions");
+      return r.json();
+    });
     setRows(j.items);
-    // Selections refer to rows that may have just changed status — clearing
-    // avoids acting twice on something already actioned.
+    setNextCursor(j.nextCursor ?? null);
     setSelected(new Set());
   };
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const j = await fetch(listUrl(nextCursor)).then((r) => {
+        if (!r.ok) throw new Error("Could not load more predictions");
+        return r.json();
+      });
+      setRows(prev => [...prev, ...j.items.filter((p: Row) => !prev.some(x => x.id === p.id))]);
+      setNextCursor(j.nextCursor ?? null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    } finally { setLoadingMore(false); }
+  };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [comboView]);
+  useEffect(() => { void load(); }, [comboView, filter]);
 
   const act = async (id: string, action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
     const res = await fetch(`/api/admin/predictions/${id}`, {
@@ -363,7 +388,18 @@ export default function AdminPredictions() {
                 </td>
                 <td className="px-3 py-2 text-gray-400">{r.overUnder ?? "—"}</td>
                 <td className="px-3 py-2">{r.confidence}%</td>
-                <td className="px-3 py-2"><span className="chip bg-brand-border">{r.status}</span></td>
+                <td className="px-3 py-2">
+                  <span className="chip bg-brand-border">{r.status}</span>
+                  {r.revisions?.[0] && (
+                    <div className="mt-1 max-w-56 text-[11px] text-amber-300"
+                      title={r.revisions[0].reason}>
+                      {r.revisions[0].kind === "EARLY_HOLD" && r.status === "DRAFT"
+                        ? "Early evidence hold — rechecks automatically"
+                        : r.revisions[0].kind === "EARLY_REVIEW_READY"
+                          ? "Early tip — admin review required" : null}
+                    </div>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {r.outcome !== "PENDING" ? (
                     <span className={`chip ${OUTCOME_STYLES[r.outcome] ?? "bg-brand-border"}`}>{r.outcome}</span>
@@ -406,6 +442,14 @@ export default function AdminPredictions() {
           </tbody>
         </table>
       </div>
+      {nextCursor && (
+        <div className="flex justify-center">
+          <button type="button" onClick={() => void loadMore()} disabled={loadingMore}
+            className="btn btn-secondary text-sm disabled:opacity-50">
+            {loadingMore ? "Loading…" : "Load more predictions"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

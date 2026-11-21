@@ -21,6 +21,8 @@ import {
 
 const core = leaguesInTiers(["CORE"]);
 const secondary = leaguesInTiers(["SECONDARY"]);
+const fallback = leaguesInTiers(["FALLBACK"]);
+const deepFallback = leaguesInTiers(["DEEP_FALLBACK"]);
 assert.ok(core.length > 0 && secondary.length > 0, "real priority scope must exist");
 const regional = [307, 301, 330, 288, 286, 333, 235];
 const cataloguedIds = new Set<number>(LEAGUE_CATALOGUE.map(l => l.id));
@@ -39,16 +41,18 @@ assert.equal(new Set(Array.from({ length: regional.length }, (_, i) =>
   "every requested region gets a dedicated early scan slot in seven half-hour cycles");
 const rawDiscovery = readFileSync("src/lib/generation/earlyFixtureDiscovery.ts", "utf8");
 assert.ok(rawDiscovery.includes("earlySpotlightLeague(now)") &&
-  rawDiscovery.includes("nextLeagues(batch - 1, now)") &&
+  rawDiscovery.includes("nextLeagues(ordinarySlots, now)") &&
   rawDiscovery.includes("candidatesFromFixtures(rows,") &&
   rawDiscovery.includes("byLeague[leagueApiId].queued++"),
-  "regional spotlight preserves three other discovery slots, standard quality filters and diagnostics");
+  "regional spotlight preserves three other slots including lower-league rotation, quality filters and diagnostics");
 
 assert.equal(Math.max(...VISIBLE_FEED_DAYS.map(feedDayOffset)), 5, "visible date rail stops at day five");
 assert.ok(!VISIBLE_FEED_DAYS.includes("day-14"), "day 14 stays off the public rail");
 assert.ok(FEED_DAYS.includes("day-14") && parseFeedDay("day-14") === "day-14", "internal 14-day URL remains valid");
 assert.equal(discoveryHorizonDays(core[0]), 14);
 assert.equal(discoveryHorizonDays(secondary[0]), 10);
+assert.equal(discoveryHorizonDays(fallback[0]), 7);
+assert.equal(discoveryHorizonDays(deepFallback[0]), 5);
 assert.equal(discoveryHorizonDays(-999), 0);
 
 const now = new Date("2026-11-19T09:00:00Z");
@@ -64,7 +68,19 @@ assert.equal(inEarlyGenerationWindow(hoursLater(260), now, secondary[0]), false)
 assert.equal(inEarlyGenerationWindow(hoursLater(240), now, secondary[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(300), now, core[0]), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
-assert.equal(EARLY_FIXTURE_POLICY.MAX_QUEUE_PER_DAY, 20);
+assert.equal(EARLY_FIXTURE_POLICY.MAX_RUN_MS, 22_000, "existing discovery runtime cutoff is preserved");
+assert.ok(!("MAX_QUEUE_PER_DAY" in EARLY_FIXTURE_POLICY) && !("MAX_QUEUE_PER_LEAGUE" in EARLY_FIXTURE_POLICY),
+  "no artificial daily/league limit on early queueing");
+assert.ok(rawDiscovery.includes('leaguesInTiers(["CORE", "SECONDARY"])') &&
+  rawDiscovery.includes('leaguesInTiers(["FALLBACK", "DEEP_FALLBACK"])') &&
+  rawDiscovery.includes("expansionSlots = batch >= 4"),
+  "priority and fallback competitions rotate within the same four provider scans");
+assert.ok(rawDiscovery.includes("const season = expandedTier ? cachedSeason?.season : await resolveSeason(leagueApiId, now);") &&
+  rawDiscovery.includes("if (!season) continue;"),
+  "fallback scan never consumes an extra /leagues lookup when season metadata is missing");
+
+assert.ok(!rawDiscovery.includes("todayQueued") && !rawDiscovery.includes("MAX_QUEUE_PER_DAY"),
+  "early fixtures remain queueable regardless of the number queued earlier today");
 
 // A paid CORE fixture remains VIP for the normal worker but a dedicated
 // early FREE job must be genuinely free-generated rather than re-labelled.
@@ -99,4 +115,4 @@ assert.ok(queueCapture.includes("await tx.generationAttempt.create(") &&
   queueCapture.includes('if (marked.count !== 1) throw new Error("EARLY_FIXTURE_ALREADY_QUEUED")'),
   "new queue provenance is atomic, never bulk-stamped after partial dedupe");
 
-console.log("PASS: early fixture policy, bounded windows, quota, rollout and 48h isolation");
+console.log("PASS: full-tier early fixture discovery without daily limits, quotas, rollout and 48h isolation");
