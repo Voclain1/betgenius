@@ -10,7 +10,7 @@ import { JOB_EARLY_FIXTURE_DISCOVERY, recordRouteRun } from "@/lib/jobRuns";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const Query = z.object({ batch: z.coerce.number().int().min(1).max(16).default(12) });
+const Query = z.object({ batch: z.coerce.number().int().min(1).max(4).default(4) });
 
 async function handle(req: Request) {
   const bearer = req.headers.get("authorization");
