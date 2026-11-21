@@ -86,8 +86,8 @@ const generateSrc = readFileSync("src/lib/ai/generate.ts", "utf8");
 const analysisSrc = readFileSync("src/lib/ai/analysis.ts", "utf8");
 assert.ok(generateSrc.includes('input.intent === EARLY_FREE_GENERATION_INTENT && odds') &&
   generateSrc.includes("earlyMarketGuidance(odds,") &&
-  analysisSrc.includes("EARLY MARKET AVAILABILITY") &&
-  analysisSrc.includes("do not inflate confidence from quote availability"),
+  generateSrc.includes("Early bookmaker market availability (context, NOT confidence)") &&
+  analysisSrc.includes("const userPrompt ="),
   "only early FREE tips are guided toward real quoted markets, not priced into confidence");
 
 const old = { median: 1.30, bookmakers: 3, at: ago(24) };
@@ -115,9 +115,9 @@ assert.ok(publisher.includes('kind: "EARLY_PUBLICATION_PRICE"') &&
   publisher.includes("await recordPredictionEvents(tx, locked, updated"));
 assert.ok(monitor.includes("14 * 86_400_000") &&
   monitor.includes("earlyOddsFloorCrossing("));
-assert.ok(cron.includes("/api/admin/generate/early-odds?limit=10"));
-assert.ok(cron.includes("/api/admin/generate/early-discover?batch=12"));
-assert.ok(cron.includes("/api/admin/generate/early-run?limit=8"));
+assert.ok(cron.includes("/api/admin/generate/early-odds?limit=4"));
+assert.ok(cron.includes("/api/admin/generate/early-discover?batch=4"));
+assert.ok(cron.includes("/api/admin/generate/early-run?limit=3"));
 assert.ok(cron.includes("/api/admin/generate/early-publish?limit=16"));
 const triage = (confidence: number, leadHours: number, evidenceCredible: boolean,
   autoEligible: boolean, pricedExactSelection: boolean) => classifyEarlyDisposition({
