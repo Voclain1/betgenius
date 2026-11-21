@@ -1,0 +1,258 @@
+/*
+ * BetGenius / premium matchday interface
+ *
+ * Presentation-only layer for public pages. Deliberately separate from the
+ * prediction engines, SEO and payment code. All data and route decisions
+ * remain in the existing server components.
+ *
+ * Teal is the primary action colour; match outcomes keep their semantic
+ * success/error colours. Dark theme remains user-selectable.
+ */
+
+.premium-public {
+  --premium-shadow: 0 14px 34px -29px rgb(5 35 45 / 0.3);
+  --premium-shadow-hover: 0 22px 44px -28px rgb(5 35 45 / 0.31);
+  --premium-radius: 22px;
+  line-height: 1.5;
+}
+.premium-public :is(h1, h2, h3) {
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.premium-public :is(a, button) {
+  -webkit-tap-highlight-color: transparent;
+}
+.premium-public :is(a, button, input, select):focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 3px;
+}
+.premium-public :is(.card, .premium-panel, .premium-link-tile, .premium-prediction-card) {
+  border-radius: var(--premium-radius);
+  box-shadow: var(--premium-shadow);
+}
+.premium-public .premium-panel {
+  padding: clamp(1rem, 2.1vw, 1.75rem);
+}
+.premium-public .premium-link-tile {
+  min-height: 130px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.premium-public .premium-link-tile:hover,
+.premium-public .premium-live-tile:hover,
+.premium-public .premium-prediction-card:hover {
+  box-shadow: var(--premium-shadow-hover);
+}
+
+/* Nav and original brand assets. The logo markup and image paths are unchanged. */
+.premium-nav {
+  background: rgb(var(--surface) / 0.94);
+  border-bottom-color: rgb(var(--border) / 0.8);
+  box-shadow: 0 10px 35px -30px rgb(4 34 41 / 0.48);
+}
+.premium-nav [aria-current="page"] {
+  color: rgb(var(--brand));
+  background: rgb(var(--brand) / 0.08);
+}
+.premium-nav :is(a, button) {
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.premium-nav .btn-primary {
+  border-radius: 12px;
+  box-shadow: 0 6px 15px -12px rgb(var(--brand) / 0.7);
+}
+
+/* Homepage hero intentionally hosts the EXISTING scroll-snap slider. */
+.premium-public .premium-home-hero,
+.premium-public .premium-category-hero,
+.premium-public .premium-match-hero {
+  position: relative;
+  isolation: isolate;
+  border-color: rgb(62 118 125 / 0.55);
+  border-radius: 26px;
+  background:
+    radial-gradient(ellipse at 91% 0%, rgb(55 181 162 / 0.15), transparent 42%),
+    linear-gradient(112deg, #071d29 0%, #082d36 58%, #0a514c 100%);
+  box-shadow: 0 26px 54px -34px rgb(3 29 37 / 0.52);
+}
+.premium-public .premium-home-hero::after,
+.premium-public .premium-category-hero::after,
+.premium-public .premium-match-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgb(133 242 204 / 0.6), transparent);
+  pointer-events: none;
+}
+.premium-public .premium-home-hero :where(.btn-primary) {
+  min-height: 42px;
+  padding-inline: 1.3rem;
+}
+.premium-public .premium-home-hero [aria-roledescription="carousel"] {
+  filter: drop-shadow(0 18px 28px rgb(0 0 0 / 0.13));
+}
+.premium-public .premium-category-hero h1,
+.premium-public .premium-match-hero h1 {
+  line-height: 1.08;
+}
+.premium-public .premium-match-hero :where(img) {
+  transition: transform 240ms ease;
+}
+.premium-public .premium-match-hero :where(a:hover img) {
+  transform: scale(1.04);
+}
+
+/* The short, always-visible category grid; no sideways category carousel. */
+.premium-public .premium-category-nav {
+  padding: 0.25rem 0;
+}
+.premium-public .premium-shortcut {
+  min-height: 70px;
+  min-width: 0;
+  border-radius: 17px;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--card));
+  box-shadow: var(--premium-shadow);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.premium-public .premium-shortcut:hover {
+  border-color: rgb(var(--brand) / 0.65);
+  box-shadow: var(--premium-shadow-hover);
+}
+.premium-public .premium-shortcut-icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  flex-shrink: 0;
+  background: rgb(var(--brand) / 0.09);
+  color: rgb(var(--brand));
+}
+.premium-public .premium-period-link {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  border-radius: 12px;
+}
+
+/* Match and prediction cards: narrow, confident hierarchy, quiet supporting data. */
+.premium-public .premium-live-tile {
+  border-radius: 18px;
+  box-shadow: var(--premium-shadow);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.premium-public .premium-prediction-card {
+  gap: 1.15rem;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+.premium-public .premium-prediction-card:hover {
+  border-color: rgb(var(--brand) / 0.45);
+}
+.premium-public .premium-confidence {
+  border-radius: 17px;
+  background: rgb(var(--brand) / 0.055);
+  box-shadow: inset 0 0 0 1px rgb(var(--brand) / 0.085);
+}
+.premium-public .premium-predictions {
+  box-shadow: var(--premium-shadow);
+}
+.premium-public .premium-predictions table {
+  font-variant-numeric: tabular-nums;
+}
+.premium-public .premium-predictions thead {
+  background: rgb(var(--bg) / 0.7);
+}
+.premium-public .premium-predictions tbody tr {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+.premium-public .premium-predictions tbody tr:focus-within {
+  outline: 2px solid rgb(var(--brand) / 0.45);
+  outline-offset: -2px;
+}
+.premium-public .feed-day-track {
+  border-radius: 18px;
+  box-shadow: var(--premium-shadow);
+}
+.premium-public .feed-day-track a {
+  border-radius: 13px;
+}
+
+/* Paid category: stylise the cover, never populate it with hidden pick data. */
+.premium-public .premium-paid-cover {
+  border-radius: 24px;
+  box-shadow: var(--premium-shadow);
+}
+.premium-public .premium-paid-cover > :last-child {
+  background: rgb(var(--card) / 0.89);
+}
+.premium-public .premium-paid-cover .btn-primary {
+  min-height: 44px;
+  border-radius: 13px;
+  justify-content: center;
+}
+
+/* A focused contents rail on match pages and a stable bottom app navigation. */
+.premium-public .premium-match-nav > div {
+  border-radius: 18px;
+  box-shadow: var(--premium-shadow);
+}
+.premium-app-tabs {
+  background: rgb(var(--surface) / 0.97);
+  box-shadow: 0 -10px 34px -28px rgb(5 35 45 / 0.45);
+}
+.premium-app-tabs a[aria-current="page"] {
+  color: rgb(var(--brand));
+}
+.premium-app-tabs a:not([aria-current="page"]):active {
+  background: rgb(var(--brand) / 0.07);
+}
+
+@media (min-width: 640px) {
+  .premium-public .premium-predictions {
+    border-radius: 22px;
+    overflow-x: auto;
+  }
+  .premium-public .premium-predictions th,
+  .premium-public .premium-predictions td {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+  .premium-public .premium-predictions tbody tr:hover {
+    background: rgb(var(--brand) / 0.035);
+  }
+}
+@media (max-width: 639px) {
+  .premium-public .premium-home-hero,
+  .premium-public .premium-category-hero,
+  .premium-public .premium-match-hero {
+    border-radius: 22px;
+  }
+  .premium-public .premium-predictions {
+    box-shadow: none;
+  }
+  .premium-public .premium-predictions tbody tr {
+    border: 1px solid rgb(var(--border));
+    box-shadow: var(--premium-shadow);
+  }
+  .premium-public .premium-predictions tbody tr:active {
+    border-color: rgb(var(--brand) / 0.48);
+  }
+  .premium-public .premium-shortcut {
+    min-height: 66px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .premium-public .premium-link-tile:hover,
+  .premium-public .premium-live-tile:hover,
+  .premium-public .premium-prediction-card:hover,
+  .premium-public .premium-shortcut:hover {
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .premium-public :is(.premium-link-tile, .premium-live-tile, .premium-prediction-card, .premium-shortcut),
+  .premium-public .premium-match-hero img {
+    transition: none !important;
+  }
+}
