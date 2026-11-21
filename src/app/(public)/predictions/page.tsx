@@ -51,9 +51,18 @@ const marketHubs = MARKET_HUBS.map((m) => ({ href: m.href, name: `${m.label} pre
 // These destinations remain available even between rounds.
 const competitionLinks = [
   { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore English Premier League picks, standings, upcoming fixtures and season statistics." },
-  ...[2, 3, 45].flatMap((id) => {
-    const cup = cupById(id);
-    return cup ? [{ href: `/predictions/cup/${cup.slug}`, name: `${cup.name} predictions`, desc: `Browse ${cup.name} fixtures, results and published match predictions.` }] : [];
+  // GSC shows genuine non-branded discovery for Danish Cup games and DFB
+  // Pokal, so link the existing, substantive competition hubs from the index.
+  // Preserve market intent: fixture browsing is not a promise of new tips.
+  ...[
+    { id: 121, label: "Danish Cup games, fixtures & results", desc: "Follow available Danish Cup matches by round, with fixtures, scores and links to published predictions." },
+    { id: 81, label: "DFB Pokal fixtures & results", desc: "Browse DFB Pokal rounds, match results and any published football predictions." },
+    { id: 2, label: "Champions League predictions" },
+    { id: 3, label: "Europa League predictions" },
+    { id: 45, label: "FA Cup predictions" },
+  ].flatMap((entry) => {
+    const cup = cupById(entry.id);
+    return cup ? [{ href: `/predictions/cup/${cup.slug}`, name: entry.label, desc: "desc" in entry && entry.desc ? entry.desc : `Browse ${cup.name} fixtures, results and published match predictions.` }] : [];
   }),
 ];
 

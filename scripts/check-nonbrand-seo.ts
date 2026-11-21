@@ -1,0 +1,32 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { classifySearchQuery, nonbrandReport, compareNonbrandSnapshots, type GscSnapshot } from "./lib/nonbrandSeoReport";
+
+const file = join(process.cwd(), "data/seo/gsc-sprint4-sample.json");
+const snapshot = JSON.parse(readFileSync(file, "utf8")) as GscSnapshot;
+assert.equal(classifySearchQuery("betgenius prediction today"), "branded");
+assert.equal(classifySearchQuery("Bet Genius"), "branded");
+assert.equal(classifySearchQuery("genius prediction"), "ambiguous");
+assert.equal(classifySearchQuery("banker prediction"), "nonbranded");
+assert.equal(classifySearchQuery("danish cup games"), "nonbranded");
+const report = nonbrandReport(snapshot);
+assert.equal(report.sample, true);
+assert.equal(report.rowsReviewed, 13);
+assert.equal(report.categories.branded.impressions, 657);
+assert.equal(report.categories.ambiguous.impressions, 52);
+assert.equal(report.categories.nonbranded.impressions, 968);
+assert.equal(report.categories.nonbranded.clicks, 29);
+assert.equal(report.pages.find((p) => p.page === "/predictions/cup/danish-cup")?.impressions, 600);
+assert.equal(report.pages.find((p) => p.page === "/predictions/banker")?.clicks, 27);
+assert.equal(report.opportunities[0]?.query, "danish cup games");
+assert.ok(report.opportunities.some((o) => o.query === "multibet prediction"));
+assert.equal(compareNonbrandSnapshots(snapshot, snapshot).comparable, false);
+assert.throws(() => nonbrandReport({ ...snapshot, dimensions: ["page", "query"] as unknown as ["query","page"] }), /query \+ page/);
+assert.throws(() => nonbrandReport({ ...snapshot, rows: [snapshot.rows[0], snapshot.rows[0]] }), /Duplicate/);
+assert.throws(() => nonbrandReport({ ...snapshot, rows: [{...snapshot.rows[0], clicks: 999}] }), /invalid/);
+assert.throws(() => nonbrandReport({ ...snapshot, rows: [{...snapshot.rows[0], keys: ["query", "https://other.test/page"]}] }), /canonical/);
+const period2 = { ...snapshot, sample: false, startDate: "2026-12-01", endDate: "2026-12-20" };
+const period1 = { ...snapshot, sample: false };
+assert.equal(compareNonbrandSnapshots(period1, period2).comparable, false); // 28 days vs 20
+console.log("Non-branded GSC report: all classification, aggregation and safety checks passed.");

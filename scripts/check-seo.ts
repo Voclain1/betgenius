@@ -49,6 +49,23 @@ check("team metadata: singular pick is readable", pendingTeam.description.includ
 eq("public SEO origin is the canonical domain, independent of auth configuration", SITE_URL, "https://www.betgenius.ng");
 eq("child sitemap URLs use the canonical domain", absoluteUrl("/sitemaps/static.xml"), "https://www.betgenius.ng/sitemaps/static.xml");
 
+// --- Sprint 4: measured non-branded search landing improvements ---------
+const multiBetLanding = readFileSync(join(process.cwd(), "src/app/(public)/multi-bets/page.tsx"), "utf8");
+const predictionsLanding = readFileSync(join(process.cwd(), "src/app/(public)/predictions/page.tsx"), "utf8");
+check("multi-bets: indexed page has dedicated title and clean canonical",
+  multiBetLanding.includes('title: "Football Multi Bet Predictions & Accumulators"') &&
+  multiBetLanding.includes('canonical: "/multi-bets"') &&
+  !multiBetLanding.includes("robots: { index: false"));
+check("multi-bets: meta describes evidence and no fabricated fixtures or certainty",
+  multiBetLanding.includes("individual selections and available odds") &&
+  !multiBetLanding.includes("sure wins"));
+check("non-branded cup demand: main prediction hub links to real Danish and DFB cup pages",
+  predictionsLanding.includes('id: 121, label: "Danish Cup games, fixtures & results"') &&
+  predictionsLanding.includes('id: 81, label: "DFB Pokal fixtures & results"') &&
+  predictionsLanding.includes('href: `/predictions/cup/${cup.slug}`'));
+check("non-branded cup demand: existing noindex and category rules unchanged",
+  predictionsLanding.includes("hasDiscoveryFilters(searchParams)") &&
+  readFileSync(join(repoRoot, "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
 // production/database dependency merely to prove its public claims.
