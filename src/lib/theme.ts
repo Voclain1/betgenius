@@ -37,4 +37,4 @@ export function isTheme(value: unknown): value is Theme {
  * into a <script> tag — it cannot close over anything, so the storage key is
  * interpolated rather than imported.
  */
-export const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);}else if(t!=="system"&&${JSON.stringify(DEFAULT_THEME)}!=="system"){document.documentElement.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});}}catch(e){}})();`;
+export const THEME_INIT_SCRIPT = `(function(){var r=document.documentElement;if(${JSON.stringify(DEFAULT_THEME)}!=="system")r.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t==="light"||t==="dark"){r.setAttribute("data-theme",t);}else if(t==="system"){r.removeAttribute("data-theme");}}catch(e){}})();`;
