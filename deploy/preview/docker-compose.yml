@@ -1,0 +1,54 @@
+# Preview-only stack. No production containers, volumes, cron workers or ports are modified.
+name: betgenius-preview
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: preview
+      POSTGRES_PASSWORD: ${PREVIEW_DB_PASSWORD}
+      POSTGRES_DB: preview
+    volumes:
+      - preview-db:/var/lib/postgresql/data
+    networks:
+      - preview-internal
+    shm_size: 128mb
+    mem_limit: 512m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U preview -d preview"]
+      interval: 4s
+      timeout: 3s
+      retries: 30
+
+  app:
+    image: ${PREVIEW_IMAGE}:${PREVIEW_TAG}
+    restart: unless-stopped
+    env_file: app-preview.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # SSH smoke testing only; NOT publicly reachable.
+      - "127.0.0.1:3101:3000"
+    networks:
+      preview-internal:
+      edge:
+        aliases: [betgenius-preview-app]
+    mem_limit: 900m
+    cpus: 1.5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+networks:
+  preview-internal:
+    internal: true
+  edge:
+    external: true
+    name: edge
+
+volumes:
+  preview-db:
