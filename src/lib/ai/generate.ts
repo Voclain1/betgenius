@@ -174,7 +174,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   let homeTeamName = input.home;
   let awayTeamName = input.away;
 
-  if ((homeApiId == null || awayApiId == null) && input.leagueApiId) {
+  if ((homeApiId == null || awayApiId == null) && input.leagueApiId && input.intent !== EARLY_FREE_GENERATION_INTENT) {
     const [homeMatch, awayMatch] = await Promise.all([
       homeApiId == null ? searchTeam(input.home) : Promise.resolve(null),
       awayApiId == null ? searchTeam(input.away) : Promise.resolve(null),
@@ -207,6 +207,9 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     awayApiId,
     leagueApiId: input.leagueApiId ?? null,
     round: input.round ?? null,
+    // Early analysis NEVER refreshes missing team/standings/H2H caches.
+    // The ordinary and paid pipelines retain their existing cache-filling behavior.
+    cacheOnly: input.intent === EARLY_FREE_GENERATION_INTENT,
   });
 
   const startedAt = Date.now();
@@ -247,7 +250,8 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // Admin/manual generation remains exempt from the automatic price floor.
   const checksMarket = !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const guardsShortPrice = !input.manual && !input.handicapLine && input.intent !== "VIP_PREMIUM";
-  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId) : null;
+  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId,
+    input.intent === EARLY_FREE_GENERATION_INTENT) : null;
   const priceOdds = guardsShortPrice ? odds : null;
   // A priced-market shortlist is useful context for EARLY FREE alone.
   // It is never a recommendation, a probability estimate or a publication
@@ -260,9 +264,11 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       tiers: riskRoute.promptTiers,
       riskCalibration: riskRoute.calibration !== "legacy",
       marketBreadth,
-      ...(pricedEarlyMarkets.length ? { pricedEarlyMarkets } : {}),
       handicapLine: input.handicapLine,
-      shortPriceBlock: block,
+      shortPriceBlock: block + (pricedEarlyMarkets.length ?
+        "\nEarly bookmaker market availability (context, NOT confidence):\n" +
+        pricedEarlyMarkets.join("\n") +
+        "\nOnly choose a quoted selection if football evidence supports it; otherwise provide a separately justified unpriced pick for admin review.\n" : ""),
       ...(goalsOnly ? { goalsOnly: true } : {}),
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
       ...(riskRoute.calibration === "vip" || input.intent === "VIP_PREMIUM" ? { paidRoute: true } : {}),
@@ -341,7 +347,8 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // no stats, form, availability, h2h or standings for either side. Usually
   // means the football API failed silently (bad key, plan restriction, rate
   // limit) rather than the fixture genuinely having no data.
-  const contextComplete = !input.leagueApiId ? true : !isDigestEmpty(digest);
+  const contextComplete = (!input.leagueApiId ? true : !isDigestEmpty(digest)) &&
+    (input.intent !== EARLY_FREE_GENERATION_INTENT || !sources.stale?.length);
 
   const job = await prisma.aIJob.create({
     data: {
@@ -561,6 +568,7 @@ async function loadFixtureOdds(
   awayTeamApiId: number | null,
   kickoff: string,
   fixtureApiId: number | undefined,
+  cacheOnly = false,
 ): Promise<FixtureOdds | null> {
   const key = matchKey({ homeTeamApiId, awayTeamApiId, kickoff });
   if (!key) return null;
@@ -569,7 +577,7 @@ async function loadFixtureOdds(
     if (cached?.fetchedAt && cached.oddsJson) return cached.oddsJson as unknown as FixtureOdds;
     const kickoffDate = new Date(kickoff);
     const triedRecently = cached?.lastAttemptAt && Date.now() - cached.lastAttemptAt.getTime() < 6 * 3_600_000;
-    if (fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
+    if (cacheOnly || fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
     // Dynamic: enrichment is a large module the rest of generation never needs.
     const { refreshOddsCache } = await import("@/lib/enrichment");
     const res = await refreshOddsCache({ matchKey: key, fixtureApiId, kickoff: kickoffDate, kind: "candidate" });
