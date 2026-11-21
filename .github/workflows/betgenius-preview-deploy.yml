@@ -1,0 +1,120 @@
+# Manual-review environment for PR #225. PUSHES TO THE DESIGN BRANCH ONLY.
+# Runs beside production with isolated Docker project, snapshot DB and Caddy
+# site file. Never merges PRs or invokes deploy-vps.yml.
+name: betgenius-preview-deploy
+
+on:
+  push:
+    branches: [design/teal-premium-ui-2026-11]
+    paths:
+      - .github/workflows/betgenius-preview-deploy.yml
+      - deploy/preview/**
+      - scripts/preview/**
+      - src/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: betgenius-review-preview
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.repository == 'Voclain1/betgenius' && github.ref == 'refs/heads/design/teal-premium-ui-2026-11'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vps-db-tunnel
+        with:
+          enabled: ${{ vars.DB_ON_VPS }}
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check capacity without changing production
+        shell: bash
+        run: |
+          set -euo pipefail
+          available_mb="$(ssh vps 'free -m | awk "/^Mem:/ {print \\$7}"')"
+          disk_mb="$(ssh vps 'df -Pm /var/lib/docker | awk "NR==2 {print \\$4}"')"
+          echo "VPS_AVAILABLE_MEMORY_MB=$available_mb"
+          echo "VPS_FREE_DISK_MB=$disk_mb"
+          test "$available_mb" -gt 1700 || { echo "Not enough spare RAM for preview"; exit 1; }
+          test "$disk_mb" -gt 7500 || { echo "Not enough disk space for preview"; exit 1; }
+          if getent ahostsv4 preview.betgenius.ng >/dev/null; then
+            echo "PREVIEW_DNS=present"
+          else
+            echo "PREVIEW_DNS=missing_record"
+          fi
+
+      - name: Build isolated preview image, no analytics keys
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] && [ -n "$DATABASE_URL_UNPOOLED" ]
+          # Production Dockerfile is unchanged in the PR.
+          sed 's/APP_ENV=production/APP_ENV=preview/g' Dockerfile > Dockerfile.preview
+          export DATABASE_URL="$(node scripts/ci/build-database-url.mjs "$DATABASE_URL")"
+          image="ghcr.io/voclain1/betgenius:preview-${GITHUB_SHA}"
+          DOCKER_BUILDKIT=1 docker build --network host \
+            --secret id=database_url,env=DATABASE_URL \
+            --secret id=database_url_unpooled,env=DATABASE_URL_UNPOOLED \
+            --build-arg "APP_BUILD_ID=preview-${GITHUB_SHA}" \
+            -f Dockerfile.preview -t "$image" .
+          echo "PREVIEW_IMAGE_BUILT=yes"
+
+      - name: Push preview image to GitHub Container Registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin >/dev/null
+          docker push "ghcr.io/voclain1/betgenius:preview-${GITHUB_SHA}"
+
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy isolated snapshot, preview app and private Caddy site
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ssh vps 'mkdir -p /opt/betgenius/preview && chmod 700 /opt/betgenius/preview'
+          scp -q deploy/preview/docker-compose.yml deploy/preview/install.sh deploy/preview/credential-public.pem vps:/opt/betgenius/preview/
+          printf '%s' "$GHCR_TOKEN" | ssh vps 'docker login ghcr.io -u Voclain1 --password-stdin >/dev/null'
+          ssh vps "bash /opt/betgenius/preview/install.sh preview-${GITHUB_SHA}"
+          ssh vps 'docker logout ghcr.io >/dev/null 2>&1 || true'
+
+      - name: Capture mobile and desktop review screenshots
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -f -N -o ExitOnForwardFailure=yes -L 3101:127.0.0.1:3101 vps
+          npm ci --ignore-scripts
+          npm install --no-save --ignore-scripts playwright-core@1.55.0
+          CHROME_PATH=/usr/bin/google-chrome node scripts/preview/capture.mjs
+
+      - name: Upload real staging screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betgenius-preview-mobile-desktop
+          path: preview-artifacts/*.png
+          if-no-files-found: ignore
+          retention-days: 14
