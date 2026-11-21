@@ -13,7 +13,7 @@ export type Theme = (typeof THEMES)[number];
 export const THEME_STORAGE_KEY = "betgenius-theme";
 
 /** The theme applied when nothing is stored. Change this to flip the site default. */
-export const DEFAULT_THEME: Theme = "dark";
+export const DEFAULT_THEME: Theme = "light";
 
 export function isTheme(value: unknown): value is Theme {
   return typeof value === "string" && (THEMES as readonly string[]).includes(value);
