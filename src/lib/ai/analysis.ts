@@ -829,7 +829,7 @@ Prefer one of these EXACT market/selection combinations when it is genuinely
 supported by the match analysis. Do not choose a weak selection merely because
 it is priced; do not inflate confidence from quote availability. If none is
 credible, return your independently supported prediction for later admin review.
-${input.pricedEarlyMarkets.join("\\n")}
+${input.pricedEarlyMarkets.join("\n")}
 ` : "";
   const userPrompt = `Analyse this fixture and return JSON only.
 
