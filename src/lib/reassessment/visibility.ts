@@ -1,22 +1,8 @@
-/** Shared server-side public hold policy for published prediction browsing.
- * FREE rows under an active material-change hold are hidden from all
- * recommendation lists. VIP/Premium remain in their existing paid flows.
+/** Reassessment changes are admin-only metadata. A published prediction must
+ * remain in all its original feeds until an administrator explicitly withdraws
+ * it. These shared predicates are intentionally neutral for older hold rows.
  */
 import type { Prisma } from "@prisma/client";
-import { PAID_ONLY_PROVENANCES } from "@/lib/paidOnly";
 
-export const FREE_REASSESSMENT_VISIBLE: Prisma.PredictionWhereInput = {
-  NOT: { reassessment: { is: { publicHold: true } } },
-};
-
-// Browsing league/team/match lists mixes paid and free predictions. Preserve
-// all tagged VIP/Premium picks for existing entitlement and review controls.
-export const MIXED_REASSESSMENT_VISIBLE: Prisma.PredictionWhereInput = {
-  NOT: {
-    AND: [
-      { reassessment: { is: { publicHold: true } } },
-      { provenance: { notIn: [...PAID_ONLY_PROVENANCES] } },
-      { categories: { none: { category: { in: ["VIP", "PREMIUM"] } } } },
-    ],
-  },
-};
+export const FREE_REASSESSMENT_VISIBLE: Prisma.PredictionWhereInput = {};
+export const MIXED_REASSESSMENT_VISIBLE: Prisma.PredictionWhereInput = {};
