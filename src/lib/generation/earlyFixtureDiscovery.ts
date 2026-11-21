@@ -124,11 +124,19 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
     if (Date.now() - startedAt > EARLY_FIXTURE_POLICY.MAX_RUN_MS) break;
     const days = discoveryHorizonDays(leagueApiId);
     if (!days) continue;
-    base.scanned++;
     base.byLeague[leagueApiId] = { fixtures: 0, queued: 0 };
     try {
+      // Reallocated fallback slots must NOT add an extra /leagues season lookup.
+      // Reuse season metadata captured by existing enrichment; if absent,
+      // retain the cursor and skip this league until its cache is ready.
+      const expandedTier = EARLY_EXPANDED_LEAGUES.includes(leagueApiId);
+      const cachedSeason = expandedTier ? await prisma.leagueEnrichmentCache.findUnique({
+        where: { leagueApiId }, select: { season: true },
+      }) : null;
+      const season = expandedTier ? cachedSeason?.season : await resolveSeason(leagueApiId, now);
+      if (!season) continue;
       const dates = earlyDateRange(now, days);
-      const season = await resolveSeason(leagueApiId, now);
+      base.scanned++;
       const response = await getFixturesByLeague(leagueApiId, season, dates.from, dates.to);
       if (response === null) {
         base.failures.push({ leagueApiId, reason: "provider returned no usable response" });
