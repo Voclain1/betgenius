@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   // finished tabs, not an upcoming-only one, and it scopes from the major
   // leagues out to every competition we cover.
   title: "Football Fixtures",
-  description: "Football fixtures by date, with kickoff times, live status and finished results. Filter from the major leagues out to every competition we cover; any fixture we have published a prediction on links straight to it.",
+  description: "Football fixtures by date, with kickoff times, match status and results across major leagues. Browse upcoming and completed games.",
   // Self-canonical. Without it the page has no canonical at all, so any
   // parameterised or proxied variant of /fixtures competes with the page itself.
   alternates: { canonical: "/fixtures" },
