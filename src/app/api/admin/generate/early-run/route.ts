@@ -9,7 +9,7 @@ import { JOB_EARLY_GENERATION, recordRouteRun } from "@/lib/jobRuns";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
-const Query = z.object({ limit: z.coerce.number().int().min(1).max(12).default(8) });
+const Query = z.object({ limit: z.coerce.number().int().min(1).max(4).default(3) });
 
 async function handle(req: Request) {
   const scheduler = Boolean(process.env.CRON_SECRET && req.headers.get("authorization") === "Bearer " + process.env.CRON_SECRET);
