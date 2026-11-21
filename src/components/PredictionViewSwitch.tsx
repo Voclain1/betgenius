@@ -92,7 +92,7 @@ export function PredictionViewSwitch({
                 type="button"
                 aria-pressed={isActive}
                 onClick={() => choose(option)}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-xl px-3 py-1 text-[11px] font-bold tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
                   isActive ? "bg-brand text-on-brand shadow-sm" : "text-gray-400 hover:bg-brand/5 hover:text-gray-100"
                 }`}
               >
