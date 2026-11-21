@@ -43,8 +43,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          available_mb="$(ssh vps 'free -m | awk "/^Mem:/ {print \\$7}"')"
-          disk_mb="$(ssh vps 'df -Pm /var/lib/docker | awk "NR==2 {print \\$4}"')"
+          available_mb="$(ssh vps 'free -m' | awk '/^Mem:/ {print $7}')"
+          disk_mb="$(ssh vps 'df -Pm /var/lib/docker' | awk 'NR==2 {print $4}')"
           echo "VPS_AVAILABLE_MEMORY_MB=$available_mb"
           echo "VPS_FREE_DISK_MB=$disk_mb"
           test "$available_mb" -gt 1700 || { echo "Not enough spare RAM for preview"; exit 1; }
