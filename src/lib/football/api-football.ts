@@ -7,6 +7,16 @@
  */
 
 import { hasBudget, recordCall, DAILY_LIMIT, RESERVE } from "@/lib/football/usage";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+/** Scope-specific network hard stop, not a global flag: paid/ordinary jobs are unaffected. */
+const forbidProviderCalls = new AsyncLocalStorage<boolean>();
+export function withNoFootballApiCalls<T>(operation: () => Promise<T>): Promise<T> {
+  return forbidProviderCalls.run(true, operation);
+}
+function assertProviderCallsAllowed(): void {
+  if (forbidProviderCalls.getStore() === true) throw new Error("CACHE_ONLY_FOOTBALL_API_CALL_BLOCKED");
+}
 
 const HOST = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
 const KEY = process.env.API_FOOTBALL_KEY || "";
@@ -35,6 +45,7 @@ function throttle(): Promise<void> {
 }
 
 async function apiFetch<T = any>(path: string, params: Record<string, string | number> = {}, timeoutMs?: number): Promise<T | null> {
+  assertProviderCallsAllowed(); // Before quota recording or network dispatch.
   if (!KEY) {
     console.warn("[api-football] Missing API_FOOTBALL_KEY — returning null");
     return null;
@@ -99,6 +110,7 @@ export type AccountStatus = {
  * Still passes through throttle() — the per-minute rate limit does apply here.
  */
 export async function getAccountStatus(): Promise<AccountStatus | null> {
+  assertProviderCallsAllowed();
   if (!KEY) return null;
   await throttle();
   const res = await fetch(`${BASE}/status`, {
