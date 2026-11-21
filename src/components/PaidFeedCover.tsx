@@ -30,7 +30,7 @@ export function PaidFeedCover({
   // A fixed number of placeholders: a count-shaped list would give the count away.
   const rows = 5;
   return (
-    <div className="grid overflow-hidden rounded-3xl border border-brand-border bg-brand-card">
+    <div className="premium-paid-cover grid overflow-hidden rounded-3xl border border-brand-border bg-brand-card">
       {/* Both layers share one grid cell, so the card is as tall as the taller
           of the two and the banner is never clipped on a narrow screen. */}
       <div aria-hidden className="col-start-1 row-start-1 divide-y divide-brand-border opacity-40">
