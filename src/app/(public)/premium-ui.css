@@ -74,16 +74,6 @@
     linear-gradient(112deg, #071d29 0%, #082d36 58%, #0a514c 100%);
   box-shadow: 0 26px 54px -34px rgb(3 29 37 / 0.52);
 }
-.premium-public .premium-home-hero::after,
-.premium-public .premium-category-hero::after,
-.premium-public .premium-match-hero::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgb(133 242 204 / 0.6), transparent);
-  pointer-events: none;
-}
 .premium-public .premium-home-hero :where(.btn-primary) {
   min-height: 42px;
   padding-inline: 1.3rem;
