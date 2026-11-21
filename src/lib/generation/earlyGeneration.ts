@@ -13,7 +13,7 @@ import type { FixtureOdds } from "@/lib/odds";
 
 const MIN_API_HEADROOM = 1_800;
 export type EarlyGenerationResult = {
-  ok: boolean; skipped?: string; selected: number; generated: number; summary: string;
+  ok: boolean; skipped?: string; selected: number; generated: number; pricedSelected?: number; unpricedSelected?: number; summary: string;
   worker?: Awaited<ReturnType<typeof runGeneration>>;
 };
 
@@ -22,7 +22,9 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
   if (earlyFixtureMode() !== "on") return { ok: true, skipped: "early fixture mode is not on", selected: 0, generated: 0, summary: "Early generation disabled" };
   const quota = await getUsageSnapshot();
   if (quota.remaining < MIN_API_HEADROOM) return { ok: true, skipped: "preserving provider quota", selected: 0, generated: 0, summary: "Early generation deferred for quota" };
-  const limit = Math.max(1, Math.min(4, Math.trunc(input.limit ?? 3)));
+  // Operational batch size, not a daily/league generation quota. The queue
+  // resumes on every cron pass, protecting the regular and paid workflows.
+  const limit = Math.max(1, Math.min(12, Math.trunc(input.limit ?? 8)));
   const from = new Date(now.getTime() + 48 * 3_600_000);
   const until = new Date(now.getTime() + EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS * 3_600_000);
   const queued = await prisma.generationAttempt.findMany({
@@ -51,18 +53,25 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
     select: { matchKey: true, oddsJson: true, fetchedAt: true },
   }) : [];
   const byKey = new Map(quotes.map(q => [q.matchKey, q]));
-  // Keep unpriced fixtures in PENDING for the next early-odds warming cycle.
-  // Unlike a failed generation, no inference is spent and no retry is burned.
-  const keys = eligible.filter(a => {
+  // Quote-first, NOT quote-only: unpriced fixtures must still be analysed,
+  // held if weak, or sent to normal editorial review if credible. Only the
+  // later atomic publication step requires an exact, fresh bookmaker quote.
+  const priced: typeof eligible = [];
+  const unpriced: typeof eligible = [];
+  for (const a of eligible) {
     const quote = byKey.get(a.matchKey);
-    return earlyFixturePricedForGeneration({
+    const hasPrice = earlyFixturePricedForGeneration({
       odds: (quote?.oddsJson as FixtureOdds | null) ?? null,
       fetchedAt: quote?.fetchedAt ?? null, kickoff: a.kickoff, now,
     });
-  }).slice(0, limit).map(a => a.matchKey);
-  if (!keys.length) return { ok: true,
-    skipped: "opening bookmaker prices not yet sufficiently verified",
-    selected: 0, generated: 0, summary: "Early generation held unpriced fixtures for a later odds refresh" };
+    (hasPrice ? priced : unpriced).push(a);
+  }
+  const chosen = [...priced, ...unpriced].slice(0, limit);
+  const keys = chosen.map(a => a.matchKey);
+  const pricedSelected = chosen.filter(a => priced.includes(a)).length;
+  if (!keys.length) return { ok: true, skipped: "no available early fixtures",
+    selected: 0, generated: 0, pricedSelected: 0, unpricedSelected: 0,
+    summary: "Early generation found no pending captured fixtures" };
   const worker = await runGeneration({
     authorId: input.actorId, categories: ["FEATURED"], matchKeys: keys,
     intent: EARLY_FREE_GENERATION_INTENT,
@@ -70,6 +79,8 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
     // Never pass adaptiveCombo: early tips are standalone selections.
   });
   return { ok: worker.ok, selected: keys.length, generated: worker.predictionsCreated,
-    summary: "Early free generation selected " + keys.length + ", created " + worker.predictionsCreated,
+    pricedSelected, unpricedSelected: keys.length - pricedSelected,
+    summary: "Early free generation selected " + keys.length + " (" + pricedSelected +
+      " priced, " + (keys.length - pricedSelected) + " awaiting quotes), created " + worker.predictionsCreated,
     worker };
 }
