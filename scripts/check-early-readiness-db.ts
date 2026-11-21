@@ -94,11 +94,11 @@ try {
       const mixedHeld = await tx.prediction.count({
         where: { ...MIXED_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
       });
-      assert.equal(freeHeld, 0, "held FREE pick must disappear from market/category feeds");
-      assert.equal(mixedHeld, 0, "held FREE pick must disappear from mixed league/team/match browsing");
+      assert.equal(freeHeld, 1, "previously published free tip remains visible despite a legacy hold");
+      assert.equal(mixedHeld, 1, "previously published tip remains visible in match and discovery feeds");
 
-      // VIP is an intentionally added admin category: keep its subscriber
-      // visibility; free hubs still must never show this held prediction.
+      // Adding a paid category cannot alter the historical publication or
+      // bypass its existing entitlement controls.
       await tx.predictionCategoryLink.create({
         data: { predictionId: prediction.id, category: "VIP", manual: true },
       });
@@ -109,7 +109,7 @@ try {
         where: { ...FREE_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
       });
       assert.equal(paidHeld, 1, "VIP-tagged selection stays in its existing paid review lane");
-      assert.equal(marketStillHidden, 0, "a paid tag cannot bypass FREE market-hold filtering");
+      assert.equal(marketStillHidden, 1, "a legacy hold never hides an originally public record");
       await tx.predictionCategoryLink.deleteMany({
         where: { predictionId: prediction.id, category: "VIP" },
       });
@@ -133,7 +133,7 @@ try {
       assert.equal(revisions[1].kind, "CONFIRMED");
       assert.equal(await tx.prediction.count({
         where: { ...FREE_REASSESSMENT_VISIBLE, id: prediction.id, status: "PUBLISHED" },
-      }), 1, "admin KEEP clears hold and restores selection on free feeds");
+      }), 1, "admin KEEP retains the original selection in its original feeds");
       validated = true;
       throw new Error(rollback);
     });

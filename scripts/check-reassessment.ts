@@ -83,42 +83,45 @@ assert.ok(monitorSource.includes('lastError: "PUBLISHED_BASELINE_UNAVAILABLE"') 
   monitorSource.includes('const keepReview = row.reassessment?.status === "REVIEW_REQUIRED"'),
   "missing original context cannot certify CURRENT or clear a pending review");
 const categorySource = readFileSync(join(process.cwd(), "src/lib/categoryPredictions.ts"), "utf8");
-assert.ok(categorySource.includes('NOT: { reassessment: { is: { publicHold: true } } }'),
-  "free category feed must filter only live, public reassessment holds");
-assert.ok(categorySource.includes('!PAID_FEEDS.has(cat)'),
-  "paid category feeds must remain under separate protections");
+assert.ok(!categorySource.includes('publicHold: true'),
+  "category feed must never hide a published tip on automatic reassessment");
+assert.ok(categorySource.includes('!PAID_FEEDS.has(cat)') || categorySource.includes('PAID_FEEDS'),
+  "paid feed access rules remain separate");
 
-// The SHADOW -> LIVE transition generates one receipt/notification only on
-// renewed evidence, never a silent hold or repeated notification.
+// Detection records one private receipt for a new material signature; no
+// SHADOW-to-LIVE public disclosure, repeated notice or unapproved withdrawal.
 const receipt = (mode: "on" | "shadow", sameSignature: boolean, existingStatus = "REVIEW_REQUIRED", publicHold = false) =>
   shouldRecordReassessmentReceipt({ mode, sameSignature, existingStatus, publicHold });
 assert.equal(receipt("shadow", true), false);
-assert.equal(receipt("on", true), true);
+assert.equal(receipt("on", true), false);
 assert.equal(receipt("on", true, "REVIEW_REQUIRED", true), false);
 assert.equal(receipt("on", true, "CURRENT", false), false);
 assert.equal(receipt("on", false, "CURRENT", false), true);
-assert.deepEqual(FREE_REASSESSMENT_VISIBLE, { NOT: { reassessment: { is: { publicHold: true } } } });
-assert.ok(JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("VIP") &&
-  JSON.stringify(MIXED_REASSESSMENT_VISIBLE).includes("PREMIUM"),
-  "mixed pages must preserve paid tips under their entitlement review controls");
-const heroSource = readFileSync(join(process.cwd(), "src/lib/heroSlides.ts"), "utf8");
-assert.ok(heroSource.includes("...MIXED_REASSESSMENT_VISIBLE"),
-  "home hero may not promote held free selections");
-const botdSource = readFileSync(join(process.cwd(), "src/lib/betOfTheDay.ts"), "utf8");
-assert.ok(botdSource.includes("...MIXED_REASSESSMENT_VISIBLE") &&
-  botdSource.includes("...FREE_REASSESSMENT_VISIBLE"),
-  "Bet of the Day must not select or show a free prediction under public hold");
-const marketSource = readFileSync(join(process.cwd(), "src/lib/marketPredictions.ts"), "utf8");
-assert.ok(marketSource.includes("...FREE_REASSESSMENT_VISIBLE"), "market pages must respect free holds");
-const homeSource = readFileSync(join(process.cwd(), "src/app/(public)/page.tsx"), "utf8");
-assert.ok(homeSource.includes("...FREE_REASSESSMENT_VISIBLE") &&
-  homeSource.includes("...MIXED_REASSESSMENT_VISIBLE"), "homepage must respect holds");
-const scopeSource = readFileSync(join(process.cwd(), "src/lib/predictionScope.ts"), "utf8");
-assert.ok(scopeSource.includes("...MIXED_REASSESSMENT_VISIBLE"), "league/match/team pages must respect holds");
-assert.ok(monitorSource.includes("const recordReceipt = shouldRecordReassessmentReceipt(") &&
-  monitorSource.includes("if (recordReceipt) {") &&
-  monitorSource.includes('if (mode === "on" && !criticalStatus && recordReceipt)'),
-  "live-first renewal of a shadow alert must create visible receipt and notice");
+assert.deepEqual(FREE_REASSESSMENT_VISIBLE, {}, "free public recommendations ignore admin-only review flags");
+assert.deepEqual(MIXED_REASSESSMENT_VISIBLE, {}, "mixed match/team/league lists ignore review flags");
+assert.ok(monitorSource.includes('publiclyVisible: false') &&
+  monitorSource.includes('publicHold: false') &&
+  !monitorSource.includes('status: "ARCHIVED"') &&
+  !monitorSource.includes('status: "WITHDRAWN"') &&
+  !monitorSource.includes('generatePredictionForFixture(') &&
+  !monitorSource.includes('createNotificationEvent('),
+  "monitoring cannot alter publication, generate rewrites or notify readers");
+assert.ok(monitorSource.includes('alreadyRecorded && row.reassessment?.status === "CURRENT"'),
+  "a reviewed and retained evidence signature must not reopen without new information");
+const matchSource = readFileSync(join(process.cwd(), "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");
+const revisionPage = readFileSync(join(process.cwd(), "src/app/(public)/predictions/updates/[id]/page.tsx"), "utf8");
+const rewriteRoute = readFileSync(join(process.cwd(), "src/app/api/admin/reassessment/rewrite/route.ts"), "utf8");
+const resolveRoute = readFileSync(join(process.cwd(), "src/app/api/admin/reassessment/resolve/route.ts"), "utf8");
+assert.ok(!matchSource.includes("Important prediction update") &&
+  !matchSource.includes("reviewNotices") &&
+  revisionPage.includes("if (!isAdmin(session?.user.role)) notFound()"),
+  "never render public review banners or public reassessment histories, paid or free");
+assert.ok(rewriteRoute.includes('action: z.enum(["GENERATE", "APPLY"])') &&
+  rewriteRoute.includes('kind: "ADMIN_REWRITE_DRAFT"') &&
+  rewriteRoute.includes('kind: "ADMIN_REWRITE_APPLIED"') &&
+  rewriteRoute.includes("unchangedSelection(current, draft)") &&
+  resolveRoute.includes('kind: action === "REPLACE" ? "REPLACED" : "WITHDRAWN", publiclyVisible: false'),
+  "only an administrator can generate/apply an audited rewrite or explicitly withdraw a tip");
 assert.equal(reassessmentMode("bad"), "off");
 assert.equal(earlyPublicationMode("bad"), "off");
 // The free early lane must never inherit the VIP or Premium floor. Its bar is

@@ -41,7 +41,6 @@ import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { marketPathways } from "@/lib/contextualLinks";
 import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds, getTeamFixtureHistories } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
-import { prisma } from "@/lib/prisma";
 import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
@@ -196,15 +195,6 @@ export default async function MatchPage({ params }: { params: { slug: string } }
       ? cleaned
       : { ...lockedPredictionView(r), reasoning: "Subscribe to unlock this tip and full reasoning.", overUnder: null, outcome: null, locked: true } as unknown as typeof cleaned & { locked: true };
   });
-
-  // Only disclose reassessment of selections the current visitor can read.
-  // The public match route must not leak a restricted VIP/Premium decision.
-  const reviewableIds = shaped.filter(r => !("locked" in r && r.locked)).map(r => r.id);
-  const reviewNotices = reviewableIds.length ? await prisma.predictionReassessment.findMany({
-    where: { predictionId: { in: reviewableIds }, status: "REVIEW_REQUIRED", publicHold: true },
-    select: { predictionId: true, summary: true },
-    take: 8,
-  }) : [];
 
   // The one preview worth showing at the top: the highest-confidence row the
   // reader can actually read (rows are already confidence-ordered).
@@ -397,21 +387,6 @@ export default async function MatchPage({ params }: { params: { slug: string } }
           <EditorialAttribution />
         </div>
       </MatchMasthead>
-
-      {reviewNotices.length > 0 && (
-        <section aria-label="Prediction reassessment notices" className="space-y-3 rounded-2xl border border-brand-border p-5">
-          <h2 className="text-sm font-semibold text-amber-300">Important prediction update</h2>
-          <p className="text-sm leading-relaxed text-gray-400">
-            New verified information may affect {reviewNotices.length === 1 ? "a published selection" : "published selections"} for this match.
-            The original recommendations remain recorded while the changes are reviewed.
-          </p>
-          {reviewNotices.map(n => (
-            <Link key={n.predictionId} href={"/predictions/updates/" + n.predictionId} className="block text-sm font-medium text-gray-200 underline underline-offset-4">
-              Read the update history →
-            </Link>
-          ))}
-        </section>
-      )}
 
       <MatchSectionNav sections={sections} />
 

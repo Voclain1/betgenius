@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { canViewCategory, presentedCategory } from "@/lib/access";
 import { getViewerEntitlement } from "@/lib/viewerEntitlement";
@@ -18,6 +21,8 @@ const when = (date: Date) => new Intl.DateTimeFormat("en-NG", {
  * Never expose restricted subscribers' picks to unauthenticated visitors.
  */
 export default async function PredictionUpdatePage({ params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!isAdmin(session?.user.role)) notFound(); // No public reassessment disclosures.
   const row = await prisma.prediction.findUnique({
     where: { id: params.id },
     include: {
