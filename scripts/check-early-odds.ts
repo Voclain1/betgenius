@@ -8,6 +8,7 @@ import type { FixtureOdds } from "../src/lib/odds";
 import { earlyOddsBand, earlyOddsRefreshDue, earlyQuotedSelection,
   earlyFixturePricedForGeneration } from "../src/lib/generation/earlyOddsPolicy";
 import { earlyOddsFloorCrossing, oddsMovementSignal } from "../src/lib/reassessment/evidence";
+import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS } from "../src/lib/generation/earlyTriage";
 
 const now = new Date("2026-11-20T12:00:00Z");
 const HOUR = 3_600_000;
@@ -97,7 +98,27 @@ assert.ok(publisher.includes('kind: "EARLY_PUBLICATION_PRICE"') &&
   publisher.includes("await recordPredictionEvents(tx, locked, updated"));
 assert.ok(monitor.includes("14 * 86_400_000") &&
   monitor.includes("earlyOddsFloorCrossing("));
-assert.ok(cron.includes("/api/admin/generate/early-odds?limit=4"));
+assert.ok(cron.includes("/api/admin/generate/early-odds?limit=10"));
+assert.ok(cron.includes("/api/admin/generate/early-discover?batch=12"));
+assert.ok(cron.includes("/api/admin/generate/early-run?limit=8"));
+assert.ok(cron.includes("/api/admin/generate/early-publish?limit=16"));
+const triage = (confidence: number, leadHours: number, evidenceCredible: boolean,
+  autoEligible: boolean, pricedExactSelection: boolean) => classifyEarlyDisposition({
+    confidence, leadHours, evidenceCredible, autoEligible, pricedExactSelection,
+  });
+assert.equal(EARLY_HOLD_UNTIL_HOURS, 72);
+assert.equal(triage(72, 180, true, true, true), "auto", "fully qualified priced early tip is automatic");
+assert.equal(triage(72, 180, true, true, false), "review", "credible unpriced prediction goes to admin");
+assert.equal(triage(68, 180, true, false, false), "review", "near confidence with no price goes to admin");
+assert.equal(triage(57, 180, false, false, false), "hold", "weak far-ahead fixture stays held");
+assert.equal(triage(57, 70, false, false, false), "review", "weak hold reaches human review inside 72h");
+assert.equal(triage(80, 180, true, false, true), "review", "a quote never bypasses the evidence gate");
+assert.ok(earlyRun.includes("const chosen = [...priced, ...unpriced].slice(0, limit)") &&
+  !earlyRun.includes('skipped: "opening bookmaker prices not yet sufficiently verified"'),
+  "unpriced early fixtures also reach generation");
+assert.ok(publish.includes('status: "DRAFT"') && publish.includes('kind: desired === "DRAFT" ? "EARLY_HOLD"') &&
+  publish.includes('kind: "EARLY_HOLD"') && publish.includes('status: "PENDING_REVIEW"'),
+  "low-credibility holds are durable and later rejoin ordinary admin review");
 assert.ok(publisher.includes("publishPaidPredictionAtomically("),
   "paid atomic publication stays independent");
-console.log("PASS: early odds opening, 14-day bands, exact prices, immutable publication receipts and reassessment");
+console.log("PASS: early odds, quote-independent generation, recoverable holds, review and atomic price-verified publication");
