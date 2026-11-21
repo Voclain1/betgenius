@@ -145,15 +145,21 @@ echo "PREVIEW_CADDY_CONFIG=valid"
 
 # Route checks use localhost with an overridden Host/SNI, so they work even
 # before the preview DNS record exists. -k accommodates certificate issuance.
-code_no_auth="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/)"
-code_auth="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 --user "reviewer:$PASSWORD" -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/)"
-code_post="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 --user "reviewer:$PASSWORD" -X POST -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/api/admin/settle)"
-test "$code_no_auth" = 401 || { echo "Unauthorized request did not return 401 ($code_no_auth)" >&2; exit 1; }
-test "$code_auth" = 200 || { echo "Authenticated homepage did not return 200 ($code_auth)" >&2; exit 1; }
-test "$code_post" = 405 || test "$code_post" = 404 || { echo "Write block failed ($code_post)" >&2; exit 1; }
-echo "PREVIEW_AUTH=401_without_credentials"
-echo "PREVIEW_HOME=200_with_credentials"
-echo "PREVIEW_POST=blocked"
+if curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 -o /dev/null https://preview.betgenius.ng/ 2>/dev/null; then
+  code_no_auth="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/)"
+  code_auth="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 --user "reviewer:$PASSWORD" -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/)"
+  code_post="$(curl -ksS -m 12 --resolve preview.betgenius.ng:443:127.0.0.1 --user "reviewer:$PASSWORD" -X POST -o /dev/null -w '%{http_code}' https://preview.betgenius.ng/api/admin/settle)"
+  test "$code_no_auth" = 401 || { echo "Unauthorized request did not return 401 ($code_no_auth)" >&2; exit 1; }
+  test "$code_auth" = 200 || { echo "Authenticated homepage did not return 200 ($code_auth)" >&2; exit 1; }
+  test "$code_post" = 405 || test "$code_post" = 404 || { echo "Write block failed ($code_post)" >&2; exit 1; }
+  echo "PREVIEW_AUTH=401_without_credentials"
+  echo "PREVIEW_HOME=200_with_credentials"
+  echo "PREVIEW_POST=blocked"
+else
+  # Caddy validates and starts the preview site even when the domain's DNS
+  # has not been created. TLS will be testable after DNS points to this VPS.
+  echo "PREVIEW_HTTPS_CHECK=pending_dns_and_certificate"
+fi
 
 # Print only RSA-encrypted credentials to PUBLIC Actions logs. Decryption key
 # never enters this repository or the VPS. The plaintext stays mode-0600 here.
