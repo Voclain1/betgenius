@@ -299,6 +299,9 @@ check("guides: index and published guides are sitemap entries", sitemapEntriesSo
 const { GUIDES } = require("../src/content/guides") as typeof import("../src/content/guides");
 check("guides: eleven published", GUIDES.length === 11, String(GUIDES.length));
 check("guides: unique slugs", new Set(GUIDES.map((g) => g.slug)).size === GUIDES.length);
+check("guides: search titles fit within 60 characters including brand suffix",
+  GUIDES.every((g) => `${g.title} | BetGenius`.length <= 60),
+  GUIDES.filter((g) => `${g.title} | BetGenius`.length > 60).map((g) => g.slug));
 const { GUIDE_CLUSTERS } = require("../src/content/guides") as typeof import("../src/content/guides");
 const clusteredSlugs = GUIDE_CLUSTERS.flatMap((cluster) => [...cluster.slugs]);
 check("guides: all guides assigned to one relevant topic cluster, with no missing or duplicate slugs",
