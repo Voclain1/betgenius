@@ -53,8 +53,8 @@ export async function generateMetadata(
   const dayText = feedDayText(day);
   // Only categories with a term behind them get one. VIP has measured demand
   // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
-  // Featured, Genius and Premium showed near-zero volume, so they keep their
-  // plain product names rather than being bent around a keyword nobody types.
+  // Paid tier names remain their product names; public feeds receive distinct
+  // market/intent language without claiming that every day has picks.
   const seoTitle = cat === "TODAY" ? "Football Predictions Today"
     : cat === "VIP" ? "VIP Predictions"
     : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : day === "today" ? "Banker Predictions Today | Banker of the Day" : `Banker Predictions — ${feedDayTitle(day)}`)
@@ -62,9 +62,9 @@ export async function generateMetadata(
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
     // The two lines the feed holds are the searched terms; "Goals" alone is not.
-    : cat === "GOALS" ? "Over 1.5 Goals & Total Goals Predictions Today"
-    : cat === "GENIUS" ? "Genius Football Tips Today"
-    : cat === "FEATURED" ? "Featured Football Betting Tips Today"
+    : cat === "GOALS" ? `Over 1.5 Goals & Total Goals Predictions ${feedDayTitle(day)}`
+    : cat === "GENIUS" ? `Genius Football Tips ${feedDayTitle(day)}`
+    : cat === "FEATURED" ? `Featured Football Betting Tips ${feedDayTitle(day)}`
     : name;
   const seoPhrase = cat === "TODAY" ? (day === "today" ? "today's predictions" : "football predictions")
     : cat === "VIP" ? "VIP predictions"
@@ -90,9 +90,8 @@ export async function generateMetadata(
 
   const rows = await getCategoryPredictions(cat, day);
 
-  // Thin/empty content shouldn't claim a rich, specific title as if it had
-  // real picks to show — and search engines shouldn't index a page with
-  // nothing on it yet.
+  // Substantive evergreen guides stay discoverable on quiet days. One-off or
+  // filtered feeds still avoid indexing empty/unstable match inventories.
   if (rows.length === 0) {
     return {
       title: seoTitle,
