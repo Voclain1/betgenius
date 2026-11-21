@@ -16,8 +16,33 @@ function ReviewActions({ id, allowReplacement, onResolved }: { id: string; allow
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [rewrite, setRewrite] = useState<{
+    revisionId: string;
+    draft: { reasoning: string; matchPreview: string; confidence: number;
+      marketType: string; sameSelection: boolean };
+  } | null>(null);
+  async function rewriteAction(kind: "GENERATE" | "APPLY") {
+    if (note.trim().length < 10) { setError("Enter review direction of at least 10 characters."); return; }
+    if (kind === "APPLY" && (!rewrite?.draft.sameSelection ||
+      !window.confirm("Publish the new reasoning and preview to this existing prediction? The original selection and confidence will remain unchanged."))) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/reassessment/rewrite", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ predictionId: id, action: kind, note,
+          ...(kind === "APPLY" ? { revisionId: rewrite?.revisionId } : {}) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof payload.error === "string"
+        ? payload.error : "Rewrite request failed.");
+      if (kind === "GENERATE") setRewrite({ revisionId: payload.revisionId, draft: payload.draft });
+      else { setRewrite(null); onResolved(); }
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
   async function submit() {
     if (note.trim().length < 10) { setError("Please include a reason of at least 10 characters."); return; }
+    if (action !== "KEEP" && !window.confirm("Remove the original public selection? This is an explicit administrator action and will be recorded.")) return;
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/admin/reassessment/resolve", {
@@ -47,6 +72,33 @@ function ReviewActions({ id, allowReplacement, onResolved }: { id: string; allow
           placeholder="What changed and why is this decision justified?"
           className="mt-1 block w-full rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" />
       </label>
+      <div className="rounded-xl border border-brand-border p-4 space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-200">Request a private rewrite</p>
+          <p className="text-xs text-gray-400">The model uses saved evidence, not new football API calls. It cannot publish or remove anything. Review the draft before approving an explanation-only update.</p>
+        </div>
+        <button type="button" disabled={busy || note.trim().length < 10}
+          onClick={() => void rewriteAction("GENERATE")}
+          className="rounded-lg border border-brand-border px-4 py-2 text-sm font-semibold text-gray-200 hover:bg-brand-card disabled:opacity-50">
+          {busy ? "Working…" : "Generate rewrite draft"}
+        </button>
+        {rewrite && (
+          <div className="space-y-2 rounded-lg bg-brand-card p-3">
+            <p className="text-xs font-semibold text-gray-300">Private draft · {rewrite.draft.confidence}% proposed confidence · {rewrite.draft.marketType}</p>
+            <p className="whitespace-pre-wrap text-sm text-gray-300">{rewrite.draft.matchPreview}</p>
+            <p className="whitespace-pre-wrap text-sm text-gray-300">{rewrite.draft.reasoning}</p>
+            {!rewrite.draft.sameSelection ? (
+              <p className="text-xs text-amber-300">This draft proposes a different market or selection. It cannot overwrite the original. Consider a separately approved replacement under the existing qualification gates.</p>
+            ) : (
+              <button type="button" disabled={busy}
+                onClick={() => void rewriteAction("APPLY")}
+                className="rounded-lg border border-brand-border px-4 py-2 text-sm font-semibold text-gray-200 hover:bg-brand-card disabled:opacity-50">
+                Approve revised explanation
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <button type="button" disabled={busy || note.trim().length < 10}
         onClick={() => void submit()}
@@ -72,7 +124,7 @@ export default function ReassessmentDashboard() {
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Prediction health</h1>
         <p className="max-w-3xl text-sm leading-relaxed text-gray-400">
           Upcoming fixture capture, early publication readiness and evidence-driven review.
-          Material changes remain traceable; a suggestion is not an automatically published replacement.
+          All new evidence and rewrite proposals are private. Published predictions remain unchanged and public until an administrator explicitly decides otherwise.
         </p>
       </div>
       {error && <p className="text-red-400">{error}</p>}
@@ -98,7 +150,7 @@ export default function ReassessmentDashboard() {
             <div>
               <h2 className="text-lg font-semibold">Predictions requiring attention</h2>
               <p className="mt-1 text-sm text-gray-400">
-                Confirm updated information before retaining, withdrawing or publishing a replacement.
+                Review the evidence, retain the original, request a private rewrite, or explicitly remove a prediction. Monitoring never changes what visitors see.
               </p>
             </div>
             {!data.flagged.length && <p className="text-sm text-gray-400">No open reassessment cases.</p>}
@@ -115,7 +167,7 @@ export default function ReassessmentDashboard() {
                 <p className="text-sm leading-relaxed text-gray-400">{p.reason ?? "Evidence requires review."}</p>
                 <div className="flex flex-wrap gap-4 text-sm">
                   <Link className="font-medium underline" href={"/admin/predictions/" + p.id}>Review prediction</Link>
-                  <Link className="text-gray-400 underline" href={"/predictions/updates/" + p.id}>View public history</Link>
+                  <Link className="text-gray-400 underline" href={"/predictions/updates/" + p.id}>Internal review history</Link>
                 </div>
                 <ReviewActions id={p.id} allowReplacement={p.proposedConfidence != null && p.proposedConfidence >= 80}
                   onResolved={() => void refresh()} />
