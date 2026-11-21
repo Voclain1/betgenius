@@ -30,6 +30,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:league-team-match
+      - run: npm run check:early-fixtures
+      - run: npm run check:early-odds
       - run: npm run check:odds-outlier
       - run: npm run check:odds-integrity
       - run: npm run check:operations-investigation
