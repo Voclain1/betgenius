@@ -98,7 +98,7 @@ export function isWorthATip(row: FixtureRow, tables: ReadonlyMap<number, readonl
 }
 
 /** Current tables for the selective leagues present in `rows`, refreshing stale ones. Never throws. */
-export async function loadSelectiveTables(rows: readonly FixtureRow[], now: Date = new Date()): Promise<Map<number, LeagueStandingRow[] | null>> {
+export async function loadSelectiveTables(rows: readonly FixtureRow[], now: Date = new Date(), cacheOnly = false): Promise<Map<number, LeagueStandingRow[] | null>> {
   const ids = [...new Set(rows.map((r) => r.league?.id).filter((id): id is number => isSelectiveLeague(id)))];
   const tables = new Map<number, LeagueStandingRow[] | null>();
   for (const leagueApiId of ids) {
@@ -106,7 +106,7 @@ export async function loadSelectiveTables(rows: readonly FixtureRow[], now: Date
       let row = await prisma.leagueEnrichmentCache.findUnique({ where: { leagueApiId }, select: { standingsJson: true, fetchedAt: true, lastAttemptAt: true } });
       const fresh = row?.fetchedAt && now.getTime() - row.fetchedAt.getTime() < STANDINGS_MAX_AGE_MS && row.standingsJson;
       const triedRecently = row?.lastAttemptAt && now.getTime() - row.lastAttemptAt.getTime() < RETRY_AFTER_FAILURE_MS;
-      if (!fresh && !triedRecently) {
+      if (!cacheOnly && !fresh && !triedRecently) {
         // Dynamic: enrichment is a large module the selector otherwise never loads.
         const { refreshLeagueCache } = await import("@/lib/enrichment");
         const kickoff = rows.find((r) => r.league?.id === leagueApiId)?.fixture.date;
@@ -134,7 +134,7 @@ export async function loadSelectiveTables(rows: readonly FixtureRow[], now: Date
  */
 export async function filterSelectiveQueuedCandidates<T extends {
   leagueApiId: number; homeTeamApiId: number; awayTeamApiId: number; kickoff: Date;
-}>(candidates: readonly T[], now: Date): Promise<T[]> {
+}>(candidates: readonly T[], now: Date, cacheOnly = false): Promise<T[]> {
   const narrowed = candidates.filter(c => isSelectiveLeague(c.leagueApiId));
   if (!narrowed.length) return [...candidates];
   const asRow = (c: T): FixtureRow => ({
@@ -142,7 +142,7 @@ export async function filterSelectiveQueuedCandidates<T extends {
     league: { id: c.leagueApiId },
     teams: { home: { id: c.homeTeamApiId }, away: { id: c.awayTeamApiId } },
   } as FixtureRow);
-  const tables = await loadSelectiveTables(narrowed.map(asRow), now);
+  const tables = await loadSelectiveTables(narrowed.map(asRow), now, cacheOnly);
   return candidates.filter(c => !isSelectiveLeague(c.leagueApiId) ||
     isWorthATip(asRow(c), tables));
 }
