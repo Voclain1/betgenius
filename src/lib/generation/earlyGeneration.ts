@@ -5,6 +5,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { runGeneration } from "@/lib/generation/worker";
+import { withNoFootballApiCalls } from "@/lib/football/api-football";
 import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { earlyFixturePricedForGeneration } from "@/lib/generation/earlyOddsPolicy";
@@ -68,12 +69,12 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
   if (!keys.length) return { ok: true, skipped: "no available early fixtures",
     selected: 0, generated: 0, pricedSelected: 0, unpricedSelected: 0,
     summary: "Early generation found no pending captured fixtures" };
-  const worker = await runGeneration({
+  const worker = await withNoFootballApiCalls(() => runGeneration({
     authorId: input.actorId, categories: ["FEATURED"], matchKeys: keys,
     intent: EARLY_FREE_GENERATION_INTENT,
     limit: keys.length, now,
     // Never pass adaptiveCombo: early tips are standalone selections.
-  });
+  }));
   return { ok: worker.ok, selected: keys.length, generated: worker.predictionsCreated,
     pricedSelected, unpricedSelected: keys.length - pricedSelected,
     summary: "Early free generation selected " + keys.length + " (" + pricedSelected +
