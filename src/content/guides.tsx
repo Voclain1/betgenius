@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 
 export type Guide = {
   slug: string;
@@ -31,6 +32,7 @@ export const GUIDES: Guide[] = [
     ],
     related: [
       { href: "/methodology", label: "Prediction methodology", description: "See how BetGenius assesses evidence and measures results." },
+      { href: "/guides/how-to-evaluate-cup-football-predictions", label: "Cup match checklist", description: "Check knockout formats, line-ups and 90-minute settlement." },
       { href: "/track-record", label: "Public track record", description: "Review settled wins, losses, voids and sample sizes." },
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Read the risk and support guidance before betting." },
     ],
@@ -136,6 +138,7 @@ export const GUIDES: Guide[] = [
     ],
     related: [
       { href: "/multi-bets", label: "Multi bets", description: "Curated accumulators built from published picks." },
+      { href: "/guides/how-to-check-a-multi-bet-coupon", label: "Coupon review checklist", description: "Check every leg, price and kickoff before evaluating a multi bet." },
       { href: "/bet-builder", label: "Bet builder", description: "Combine picks and see the combined odds before you stake." },
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits and support before you stake anything." },
     ],
@@ -205,7 +208,78 @@ export const GUIDES: Guide[] = [
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits, warning signs and where to get support." },
     ],
   },
+  {
+    slug: "how-to-evaluate-cup-football-predictions",
+    title: "Cup football predictions: how to assess knockout matches",
+    description: "A practical cup football predictions checklist: knockout formats, team rotation, regulation-time markets, recent form and when historical records mislead.",
+    summary: "Cup fixtures can behave differently from league games. Check the competition stage, available line-ups, market settlement rules and evidence before reading a prediction.",
+    publishedAt: "2026-11-21",
+    reviewedAt: "2026-11-21",
+    readingTime: "7 min read",
+    sections: [
+      { id: "check-the-stage", title: "Start with the competition stage", content: <><p>A league fixture awards points over a season. A cup fixture may determine who advances from one tie, potentially over two legs. The rules vary by competition and round, so establish whether the fixture is a knockout, a group match or one leg of a two-legged tie before interpreting the preview.</p><p>Do not assume every cup uses extra time, away goals or replays. The format and tie-breaking rules can change between seasons; the current competition rules matter more than a memory of a previous tournament.</p><p>Browse the <Link href="/predictions/cup/fa-cup">FA Cup</Link>, <Link href="/predictions/cup/uefa-champions-league">Champions League</Link> or <Link href="/predictions/cup/danish-cup">Danish Cup</Link> hubs to see the listed rounds, fixtures and results. A listed match is not necessarily a published BetGenius prediction.</p></> },
+      { id: "selection-and-rotation", title: "Consider selection and squad rotation", content: <><p>Clubs can field different line-ups in cup matches because of injuries, suspensions, fixture congestion or priorities elsewhere. A familiar first-choice side is not guaranteed to start. Compare recent actual teamsheets with reliable team news, and distinguish a confirmed line-up from a projected one.</p><p>For an early fixture preview, uncertainty may be substantial. A team&apos;s headline league form should not be treated as proof that the same players, tactics or urgency will apply in this cup tie.</p></> },
+      { id: "compare-opponents", title: "Compare opposition strength and home-away form", content: <><p>A run of wins over lower-division opponents can inflate a favourite&apos;s recent record; equally, a lower-league team&apos;s winning streak does not establish that it can reproduce those results against much stronger opposition. Consider the quality of previous opponents, home and away splits and the number of matches behind any percentage.</p><p>Head-to-head results can be useful, but a meeting from years ago may involve different managers, squads or venues. Use the <Link href="/predictions">prediction discovery</Link> pages for current published match reasoning and inspect any available match details rather than treating old cup results as a forecast.</p></> },
+      { id: "know-your-market", title: "Check whether the market means 90 minutes or qualification", content: <><p>A standard match-result selection usually concerns regulation time including stoppage time; a separate &quot;to qualify&quot; or &quot;to lift the trophy&quot; market may use extra time and penalties. They are different questions. For example, a hypothetical tie ending 1–1 after 90 minutes before one team wins on penalties can settle a 90-minute draw and qualification for that team at the same time.</p><p>Similarly, standard <Link href="/predictions/over-2-5-goals">Over 2.5 goals</Link> and <Link href="/predictions/btts">BTTS</Link> markets generally use regulation-time goals unless explicitly labelled otherwise. Read the precise bookmaker rules: they take precedence over general examples.</p></> },
+      { id: "interpret-cup-evidence", title: "Separate available facts from prediction confidence", content: <><p>A prediction can have legitimate evidence yet still fail. Check whether the preview identifies the match date, the competition, recent results, team news and the market actually selected. Missing data should be treated as uncertainty; do not assume every game has a complete statistical record or current odds.</p><p>BetGenius&apos;s confidence label reflects the strength of an assessment, not certainty. Compare the stated pick with its rationale and the <Link href="/track-record">settled public record</Link>; avoid making a decision from the label alone.</p></> },
+      { id: "cup-checklist", title: "Cup prediction checklist before kickoff", content: <><p>Before using a cup preview, check the correct round and season; whether it is one or two legs; whether the line-up is confirmed; how recent each team&apos;s relevant results are; whether the market covers normal time or qualification; and whether the prediction was published before the match started.</p><p>A missing pick does not mean the game was cancelled or that a result is known. It means the site has not published a qualifying selection for that fixture. For general guidance, read <Link href="/guides/how-to-read-football-predictions">how to read football predictions</Link> and the <Link href="/methodology">methodology</Link>. Betting carries risk and no outcome is guaranteed.</p></> },
+    ],
+    related: [
+      { href: "/predictions/cup/fa-cup", label: "FA Cup fixtures and predictions", description: "See the competition rounds, results and published picks." },
+      { href: "/predictions/cup/uefa-champions-league", label: "Champions League hub", description: "Browse available European fixtures and match context." },
+      { href: "/guides/how-to-read-football-predictions", label: "Read football predictions", description: "Interpret market, confidence, evidence and limits." },
+      { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits and support before staking anything." },
+    ],
+  },
+  {
+    slug: "how-to-check-a-multi-bet-coupon",
+    title: "Football multi-bet checklist before kickoff",
+    description: "Review a football multi-bet coupon leg by leg: published selections, kickoff times, settlement rules, bookmaker odds, correlated markets and risk.",
+    summary: "A multi-bet combines several selections, so one weak or outdated leg changes the whole ticket. Use this practical pre-kickoff checking process.",
+    publishedAt: "2026-11-21",
+    reviewedAt: "2026-11-21",
+    readingTime: "7 min read",
+    sections: [
+      { id: "check-each-leg", title: "Verify every selection separately", content: <><p>List each fixture, its kickoff, the exact market and the selected outcome before looking at the total odds. &quot;Home win&quot;, &quot;home or draw&quot;, &quot;Over 2.5&quot; and &quot;BTTS Yes&quot; are not interchangeable. A coupon can look familiar while containing a different market from the underlying published prediction.</p><p>Compare the coupon with the source match analysis where it is visible to you. A match that appears on the <Link href="/multi-bets">multi-bets</Link> page may have been assembled earlier; do not assume the odds, line-ups or available markets are unchanged.</p></> },
+      { id: "check-kickoffs", title: "Check kickoff status and changing evidence", content: <><p>Confirm that each selection is for the intended match and date, and whether it remains upcoming. A published pre-match prediction is a historical assessment once the game has started, not a live call. For postponed, abandoned or rescheduled fixtures, consult the bookmaker&apos;s explicit rules rather than guessing how a leg settles.</p><p>Check confirmed line-ups and meaningful late team news where available. An unexpected absence or change in venue may weaken the reasoning. Missing news is uncertainty, not evidence that everyone is fit.</p></> },
+      { id: "odds-and-return", title: "Recalculate the combined odds", content: <><p>Decimal odds multiply. As a hypothetical example, 1.50 × 1.60 × 1.80 gives 4.32 combined odds. For a ₦1,000 stake, the potential total return would be ₦4,320, including the stake, only if the coupon wins and the displayed prices remain available. The potential profit would be ₦3,320.</p><p>Bookmaker prices and acceptance rules vary. A target like 4x is not a confirmed price or an indication of how likely a coupon is to win. Use the <Link href="/odds-calculator">odds calculator</Link> to understand the implied probabilities and margin of any current quote.</p></> },
+      { id: "combined-risk", title: "Understand why extra legs increase the risk", content: <><p>Every leg needs to meet its condition. If four independent outcomes each had a genuine 70% chance, the chance of all four occurring would be 0.7 × 0.7 × 0.7 × 0.7 = 24.01%, not 70%. Actual football selections may not be independent and quoted odds include the bookmaker&apos;s margin, so this is a teaching example, not a forecast.</p><p>Two legs from the same match can be correlated: a team winning 3–1 affects both a result selection and an Over 2.5 selection. Treat combined markets according to the bookmaker&apos;s permitted combinations and published prices; do not multiply confidence scores as if they were independent, calibrated probabilities.</p></> },
+      { id: "voids-and-records", title: "Know what happens if a leg is void", content: <><p>A void leg may be removed and the combined odds recalculated, but the exact settlement depends on the bookmaker and market. Late exclusions, cash-out, minimum-odds rules and same-game combination restrictions can also differ. Always confirm the rules at the bookmaker that accepts the ticket.</p><p>Evaluate prediction performance with the <Link href="/track-record">public record</Link>, including losses and voids, and read <Link href="/guides/how-accumulators-work">how accumulator risk compounds</Link>. A short winning run cannot establish future reliability.</p></> },
+      { id: "final-checklist", title: "Final multi-bet review", content: <><p>For every leg, verify the match identity, start time, market and exact selection, availability of the current odds, and any changed injury or line-up information. Check whether the multi-bet is priced by your bookmaker and which rules apply if a fixture does not finish normally.</p><p>A sensible option is not to place a bet when the evidence is incomplete or the potential loss is unaffordable. Never add legs solely to inflate returns, never chase losses and use gambling limits. See <Link href="/responsible-gambling">responsible gambling guidance</Link> for support.</p></> },
+    ],
+    related: [
+      { href: "/multi-bets", label: "Multi-bet predictions", description: "Review published combinations and available odds." },
+      { href: "/guides/how-accumulators-work", label: "How accumulators work", description: "Learn why all legs must succeed and risk compounds." },
+      { href: "/odds-calculator", label: "Odds calculator", description: "Convert decimal odds to implied probabilities." },
+      { href: "/responsible-gambling", label: "Responsible gambling", description: "Set boundaries and avoid chasing losses." },
+    ],
+  },
+
 ];
+
+
+/** Topic groups provide curated internal navigation without generating
+ * overlapping search-landing pages. Every guide belongs to one group. */
+export const GUIDE_CLUSTERS = [
+  {
+    id: "reading-predictions",
+    title: "Reading football predictions",
+    intro: "Learn to weigh the evidence behind a match and distinguish a cup tie, a banker and a general prediction.",
+    slugs: ["how-to-read-football-predictions", "how-to-evaluate-cup-football-predictions", "what-is-a-banker-bet"],
+  },
+  {
+    id: "markets-and-prices",
+    title: "Markets, goals and odds",
+    intro: "Understand which match result makes each market win, how bookmaker prices work and what statistics can support a pick.",
+    slugs: ["football-odds-and-implied-probability", "over-under-goals-explained", "both-teams-to-score-explained", "double-chance-explained"],
+  },
+  {
+    id: "multi-bets-and-risk",
+    title: "Multi bets, limits and safety",
+    intro: "Check the leg-by-leg details, understand accumulator risk, and recognise claims that no honest forecast can guarantee.",
+    slugs: ["how-accumulators-work", "how-to-check-a-multi-bet-coupon", "staking-and-betting-limits", "sure-odds-and-correct-score-scams"],
+  },
+] as const;
 
 export function guideBySlug(slug: string): Guide | null {
   return GUIDES.find((guide) => guide.slug === slug) ?? null;

@@ -177,6 +177,7 @@ export default async function MultiBetsPage() {
           <p className="text-xs leading-5 text-gray-500">Odds may move or become unavailable. BetGenius does not guarantee a return, and no accumulator should be treated as certain.</p>
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
             <Link href="/guides/how-accumulators-work" className="font-semibold text-brand hover:underline">How accumulators work</Link>
+            <Link href="/guides/how-to-check-a-multi-bet-coupon" className="font-semibold text-brand hover:underline">Multi-bet coupon checklist</Link>
             <Link href="/odds-calculator" className="font-semibold text-brand hover:underline">Understand odds and implied probability</Link>
             <Link href="/predictions/today" className="font-semibold text-brand hover:underline">Browse individual football predictions</Link>
           </div>

@@ -10,7 +10,7 @@ export function GuideArticle({ guide }: { guide: Guide }) {
   return (
     <article className="mx-auto max-w-6xl">
       <header className="max-w-3xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Betting literacy guide</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand"><Link href="/guides" className="hover:underline">Football prediction guides</Link></p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-gray-100 sm:text-4xl">{guide.title}</h1>
         <p className="mt-4 text-base leading-7 text-gray-300">{guide.summary}</p>
         <div className="mt-5"><EditorialAttribution /></div>
