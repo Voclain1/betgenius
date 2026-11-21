@@ -203,7 +203,7 @@ export function TeamCompetitions({ competitions }: { competitions: TeamCompetiti
 }
 
 /** "Know more about": the feature article, set in a serif with a drop cap. */
-export function TeamAbout({ name, paragraphs, kicker = "Club profile" }: { name: string; paragraphs: string[]; kicker?: string }) {
+export function TeamAbout({ name, paragraphs, kicker = "Team profile" }: { name: string; paragraphs: string[]; kicker?: string }) {
   return (
     <article className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card p-5 sm:p-8">
       <div aria-hidden className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
