@@ -381,6 +381,24 @@ const lateUtc = new Date("2026-09-10T23:30:00Z");
 eq("Lagos date label: today crosses the UTC boundary correctly", lagosDayLabel(0, lateUtc), "Friday, 11 September 2026");
 eq("Lagos date label: yesterday stays relative to the Lagos day", lagosDayLabel(-1, lateUtc), "Thursday, 10 September 2026");
 
+// --- Sprint 3: topical authority and non-branded educational pathways ----
+const predictionsHubSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/page.tsx"), "utf8");
+const multiBetsSource = readFileSync(join(repoRoot, "src/app/(public)/multi-bets/page.tsx"), "utf8");
+check("topic clusters: prediction hub connects to cup, match and coupon guides",
+  predictionsHubSource.includes('href="/guides/how-to-evaluate-cup-football-predictions"') &&
+  predictionsHubSource.includes('href="/guides/how-to-check-a-multi-bet-coupon"') &&
+  predictionsHubSource.includes('id="prediction-research"'));
+check("topic clusters: multi bets link to a coupon-checklist guide",
+  multiBetsSource.includes('href="/guides/how-to-check-a-multi-bet-coupon"'));
+check("topic clusters: cup competition links are cup-specific, not copied to league pages",
+  competitionLinks.includes("isCup = false") &&
+  competitionLinks.includes('isCup && <Link href="/guides/how-to-evaluate-cup-football-predictions"') &&
+  cupPageSource.includes('<CompetitionHubLinks competition={data.cup.name} isCup />') &&
+  !leaguePageSource.includes('isCup />'));
+check("topic clusters: learning pages all retain contextual product links",
+  GUIDES.every((guide) => guide.related.some((item) => !item.href.startsWith("/guides/"))));
+check("topic clusters: no duplicated guide slugs in the curated navigation",
+  new Set(clusteredSlugs).size === clusteredSlugs.length);
 // --- Daily-guide placement ------------------------------------------------
 const todayGuideSource = readFileSync(join(process.cwd(), "src/components/TodayPredictionsGuide.tsx"), "utf8");
 const categoryPageSource = readFileSync(join(process.cwd(), "src/app/(public)/predictions/[category]/page.tsx"), "utf8");

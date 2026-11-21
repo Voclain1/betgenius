@@ -93,6 +93,16 @@ export default function PredictionsIndex({ searchParams = {} }: { searchParams?:
         </div>
       </PremiumPanel>
 
+      <PremiumPanel kicker="Research guides" title="Learn how to assess football predictions" id="prediction-research" bare>
+        <p className="mb-4 max-w-3xl text-sm leading-7 text-gray-400">Prediction pages show published selections. These separate educational guides explain how to examine match evidence, cup rules and combined selections. A guide does not claim that a pick has been published for any fixture.</p>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <LinkTile href="/guides/how-to-read-football-predictions" title="How to read a football prediction" desc="Check the market, available evidence, confidence and uncertainty." />
+          <LinkTile href="/guides/how-to-evaluate-cup-football-predictions" title="Cup football predictions" desc="Understand knockout stages, rotation and 90-minute settlement rules." />
+          <LinkTile href="/guides/how-to-check-a-multi-bet-coupon" title="Multi-bet coupon checklist" desc="Verify each leg, kickoff status, odds and settlement before making a decision." />
+        </div>
+        <p className="mt-4 text-sm"><Link href="/guides" className="font-semibold text-brand hover:underline">Explore all football prediction guides</Link></p>
+      </PremiumPanel>
+
       <PremiumPanel kicker="Reading a pick" title="How to use a BetGenius prediction" id="using-predictions">
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-3">

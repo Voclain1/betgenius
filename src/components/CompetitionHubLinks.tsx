@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export function CompetitionHubLinks({ competition }: { competition: string }) {
+export function CompetitionHubLinks({ competition, isCup = false }: { competition: string; isCup?: boolean }) {
   return (
     <section className="card" aria-labelledby="competition-evidence-heading">
       <h2 id="competition-evidence-heading" className="text-lg font-semibold">How to verify these {competition} predictions</h2>
@@ -12,6 +12,7 @@ export function CompetitionHubLinks({ competition }: { competition: string }) {
         <Link href="/track-record" className="text-brand hover:underline">Check the public track record</Link>
         <Link href="/methodology" className="text-brand hover:underline">Read the methodology</Link>
         <Link href="/guides/how-to-read-football-predictions" className="text-brand hover:underline">How to read a prediction</Link>
+        {isCup && <Link href="/guides/how-to-evaluate-cup-football-predictions" className="text-brand hover:underline">How to assess cup matches</Link>}
         <Link href="/predictions/today" className="text-brand hover:underline">Today&apos;s football predictions</Link>
         <Link href="/predictions/banker" className="text-brand hover:underline">Banker predictions</Link>
         <Link href="/predictions/btts" className="text-brand hover:underline">BTTS predictions</Link>

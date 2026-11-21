@@ -215,7 +215,7 @@ export default async function CupPage({ params, searchParams }: { params: { slug
 
       {about.length > 0 && <TeamAbout name={competitionInSentence(data.cup.name)} paragraphs={about} kicker="Competition profile" />}
 
-      {hubContent && <CompetitionHubLinks competition={data.cup.name} />}
+      {hubContent && <CompetitionHubLinks competition={data.cup.name} isCup />}
     </div>
   );
 }

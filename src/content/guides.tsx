@@ -32,6 +32,7 @@ export const GUIDES: Guide[] = [
     ],
     related: [
       { href: "/methodology", label: "Prediction methodology", description: "See how BetGenius assesses evidence and measures results." },
+      { href: "/guides/how-to-evaluate-cup-football-predictions", label: "Cup match checklist", description: "Check knockout formats, line-ups and 90-minute settlement." },
       { href: "/track-record", label: "Public track record", description: "Review settled wins, losses, voids and sample sizes." },
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Read the risk and support guidance before betting." },
     ],
@@ -137,6 +138,7 @@ export const GUIDES: Guide[] = [
     ],
     related: [
       { href: "/multi-bets", label: "Multi bets", description: "Curated accumulators built from published picks." },
+      { href: "/guides/how-to-check-a-multi-bet-coupon", label: "Coupon review checklist", description: "Check every leg, price and kickoff before evaluating a multi bet." },
       { href: "/bet-builder", label: "Bet builder", description: "Combine picks and see the combined odds before you stake." },
       { href: "/responsible-gambling", label: "Responsible gambling", description: "Limits and support before you stake anything." },
     ],
