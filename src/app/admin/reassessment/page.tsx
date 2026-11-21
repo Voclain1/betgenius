@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 type Dashboard = {
   now: string; fixtures: number; queuedGeneration: number; awaitingPublication: number;
   reviewRequired: number; recentlyWithdrawn: number; monitoringDue: number;
+  autoWithdrawn: Array<{ id: string; fixture: string; kickoff: string; pick: string;
+    confidence: number; publishedAt: string; archivedAt: string }>;
   flagged: Array<{ id: string; fixture: string; kickoff: string; pick: string; confidence: number;
     reason: string | null; checkedAt: string | null; proposedMarket: string | null;
     proposedConfidence: number | null; predictionStatus: string; provenance: string }>;
@@ -109,6 +111,39 @@ function ReviewActions({ id, allowReplacement, onResolved }: { id: string; allow
   );
 }
 
+function RestoreOriginal({ id, onResolved }: { id: string; onResolved: () => void }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function restore() {
+    if (note.trim().length < 10 ||
+      !window.confirm("Restore this originally published selection to all its original public feeds? Verify the match evidence first.")) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/admin/reassessment/resolve", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ predictionId: id, action: "RESTORE", note }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Could not restore original.");
+      onResolved();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-2">
+    <label className="block text-xs text-gray-400">Reason for explicit restoration
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+        className="mt-1 block w-full rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" />
+    </label>
+    {error && <p className="text-xs text-red-400">{error}</p>}
+    <button type="button" disabled={busy || note.trim().length < 10}
+      onClick={() => void restore()}
+      className="rounded-lg border border-brand-border px-4 py-2 text-sm text-gray-200 disabled:opacity-50">
+      {busy ? "Restoring…" : "Restore original publication"}
+    </button>
+  </div>;
+}
+
 export default function ReassessmentDashboard() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState("");
@@ -174,6 +209,27 @@ export default function ReassessmentDashboard() {
               </article>
             ))}
           </section>
+          {data.autoWithdrawn?.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <h2 className="text-lg font-semibold">Previously removed by automatic monitoring</h2>
+                <p className="text-sm text-gray-400">
+                  These originals were archived by the former reassessment worker, not by an administrator.
+                  No restoration is automatic. Check each case and decide explicitly whether to restore it.
+                </p>
+              </div>
+              {data.autoWithdrawn.map(p => (
+                <article key={p.id} className="space-y-3 rounded-2xl border border-brand-border p-5">
+                  <h3 className="font-medium text-gray-100">{p.fixture}</h3>
+                  <p className="text-sm text-gray-300">{p.pick} ({p.confidence}% originally published)</p>
+                  <p className="text-xs text-gray-400">
+                    First published {new Date(p.publishedAt).toLocaleString("en-NG", { timeZone: "Africa/Lagos" })} WAT
+                  </p>
+                  <RestoreOriginal id={p.id} onResolved={() => void refresh()} />
+                </article>
+              ))}
+            </section>
+          )}
         </>
       )}
     </main>
