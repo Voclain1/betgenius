@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getPublishedMatchIndexFor, getLeagueEnrichment, getPublishedTeamIndexFor, publishedTeamHref } from "@/lib/predictionScope";
-import { matchKey, teamSlug, leagueSlug } from "@/lib/slug";
+import { matchKey, teamSlug } from "@/lib/slug";
+import { competitionPredictionHref } from "@/lib/competitionSeo";
 import type { LeagueUpcomingFixture, LeagueStandingRow } from "@/lib/enrichment";
 import type { H2HMeeting } from "@/lib/h2h";
 import { PremiumPanel } from "@/components/PremiumPanel";
@@ -111,7 +112,9 @@ export async function MatchPageFooterLinks({
     .filter((r): r is LeagueStandingRow & { slug: string } => r !== null)
     .slice(0, 6);
 
-  if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0 && pathways.length === 0) return null;
+  const competitionHref = competitionPredictionHref(leagueName, leagueApiId);
+  // A parent competition remains useful even without adjacent published games.
+  if (previous.length === 0 && upcoming.length === 0 && nearby.length === 0 && pathways.length === 0 && !competitionHref) return null;
 
   return (
     <PremiumPanel kicker="Explore" title="More from BetGenius" id="more">
@@ -178,9 +181,9 @@ export async function MatchPageFooterLinks({
         </Section>
       )}
 
-      {leagueName && (
-        <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="inline-block text-sm text-brand hover:underline">
-          All {leagueName} predictions →
+      {competitionHref && (
+        <Link href={competitionHref} className="inline-block text-sm text-brand hover:underline">
+          All {leagueName ?? "competition"} predictions →
         </Link>
       )}
       </div>

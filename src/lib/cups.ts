@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import type { LeaguePlayerStat, LeagueStandingRow } from "@/lib/enrichment";
-import { getPublishedTeamIndex, publishedTeamHref, type LeagueClub } from "@/lib/predictionScope";
+import { getPublishedTeamIndexFor, publishedTeamHref, type LeagueClub } from "@/lib/predictionScope";
 import { cupBySlug, fixtureIsInCupScope, type CupConfig } from "@/lib/cupConfig";
 import { prisma } from "@/lib/prisma";
 export { cupBySlug } from "@/lib/cupConfig";
@@ -56,7 +56,13 @@ export const getCupPageData = cache(async (slug: string, requestedSeason?: numbe
   // Same rule as the league grid: every participating club is listed, but only
   // the ones with a published prediction carry a link — the rest have no team
   // page worth sending a reader or a crawler to.
-  const publishedTeams = await getPublishedTeamIndex();
+  // Only participants in the selected cup need team-page links. Avoid the
+  // site-wide published-team scan on every competition page request.
+  const participatingTeams = fixtures.flatMap((fixture) => [
+    { teamId: fixture.teams.home.id, teamName: fixture.teams.home.name },
+    { teamId: fixture.teams.away.id, teamName: fixture.teams.away.name },
+  ]);
+  const publishedTeams = await getPublishedTeamIndexFor(participatingTeams);
   const clubMap = new Map<number, LeagueClub>();
   for (const fixture of fixtures) {
     for (const team of [fixture.teams.home, fixture.teams.away]) {

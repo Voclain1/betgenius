@@ -28,8 +28,8 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   const title = `${pair.teamAName} vs ${pair.teamBName} head-to-head`;
   const summary =
     stats && stats.sample > 0
-      ? `${stats.sample} meetings: ${pair.teamAName} ${stats.overall.teamAWins}, ${pair.teamBName} ${stats.overall.teamBWins}, ${stats.overall.draws} drawn.`
-      : "Full head-to-head record, results and goal trends.";
+      ? `${stats.sample} recorded meetings: ${pair.teamAName} ${stats.overall.teamAWins} wins, ${pair.teamBName} ${stats.overall.teamBWins} wins, ${stats.overall.draws} draws. Compare past scores and goals.`
+      : "Recorded meetings, past scores and goal trends where available.";
 
   return {
     title: fitMetadataTitleWithSuffix(`${pair.teamAName} vs ${pair.teamBName}`, "head-to-head"),
@@ -210,6 +210,9 @@ export default async function H2HPage({ params }: { params: { slug: string } }) 
               </p>
               <p className="text-sm leading-7 text-gray-300">
                 These fixtures averaged {stats!.avgGoals!.toFixed(1)} total goals. Both teams scored in {Math.round(stats!.bttsPct!)}% of the recorded games, while {Math.round(stats!.over25Pct!)}% finished with more than 2.5 goals. The figures describe previous meetings only; squad changes, venue, competition and current form can make the next match different.
+              </p>
+              <p className="text-sm leading-7 text-gray-300">
+                For current assessments rather than historical scores, see <Link href="/predictions/btts" className="text-brand hover:underline">both teams to score predictions</Link> and <Link href="/predictions/over-2-5-goals" className="text-brand hover:underline">Over 2.5 goals predictions</Link>. Past head-to-head rates alone cannot establish a winning pick.
               </p>
             </div>
           </PremiumPanel>

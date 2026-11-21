@@ -198,6 +198,40 @@ check("competition hubs: cup proof box follows fixtures and reference data", cup
 check("competition hubs: proof links include record, method and responsible use", competitionLinks.includes('href="/track-record"') && competitionLinks.includes('href="/methodology"') && competitionLinks.includes('href="/responsible-gambling"'));
 check("competition hubs: NPFL has an explicit metadata profile", readFileSync(join(repoRoot, "src/lib/seo.tsx"), "utf8").includes('title: "NPFL Predictions — Nigeria Premier League"'));
 
+// --- Sprint 2: competition and match authority --------------------------
+const competitionRoutes = require("../src/lib/competitionSeo") as typeof import("../src/lib/competitionSeo");
+check("competition routes: Champions League and Danish Cup use cup hubs",
+  competitionRoutes.competitionPredictionHref("UEFA Champions League", 2) === "/predictions/cup/uefa-champions-league" &&
+  competitionRoutes.competitionPredictionHref("Danish Cup", 121) === "/predictions/cup/danish-cup");
+check("competition routes: Premier League stays under the league route",
+  competitionRoutes.competitionPredictionHref("Premier League", 39) === "/predictions/league/premier-league-39");
+check("competition routes: missing league id and name creates no link",
+  competitionRoutes.competitionPredictionHref(null, null) === null);
+const footerSource = readFileSync(join(repoRoot, "src/components/MatchPageFooterLinks.tsx"), "utf8");
+const mastheadSource = readFileSync(join(repoRoot, "src/components/MatchMasthead.tsx"), "utf8");
+const standingsSource = readFileSync(join(repoRoot, "src/components/MatchStandingsContext.tsx"), "utf8");
+check("competition routes: all match navigation uses the cup-aware helper",
+  [footerSource, mastheadSource, standingsSource].every((s) => s.includes("competitionPredictionHref(")));
+const cupDataSource = readFileSync(join(repoRoot, "src/lib/cups.ts"), "utf8");
+const predictionScopeSource = readFileSync(join(repoRoot, "src/lib/predictionScope.ts"), "utf8");
+check("cup performance: no global published-match index scan",
+  cupPageSource.includes("getPublishedMatchIndexForCompetition(cup.id)") &&
+  !cupPageSource.includes("getPublishedMatchIndex()") &&
+  predictionScopeSource.includes("return readPublishedMatchIndex({ leagueApiId });"));
+check("cup performance: no global published-team index scan",
+  cupDataSource.includes("getPublishedTeamIndexFor(participatingTeams)") &&
+  !cupDataSource.includes("getPublishedTeamIndex()"));
+check("competition indexing: season variants are noindex and self-canonical",
+  cupPageSource.includes("searchParams?.season !== undefined") &&
+  cupPageSource.includes("index: false, follow: true") &&
+  cupPageSource.includes("canonical: `/predictions/cup/${cup.slug}`"));
+check("competition relevance: published fixture counts are factual",
+  cupPageSource.includes("fixtureCount={data.fixtures.length}") &&
+  cupPageSource.includes("roundCount={data.rounds.length}") &&
+  readFileSync(join(repoRoot, "src/components/CompetitionFixtureSummary.tsx"), "utf8").includes("without invented picks"));
+check("H2H: current BTTS and goals link without presenting past scores as certain",
+  readFileSync(join(repoRoot, "src/app/(public)/predictions/h2h/[slug]/page.tsx"), "utf8").includes("Past head-to-head rates alone cannot establish a winning pick"));
+
 // --- Editorial attribution ------------------------------------------------
 const aboutPage = readFileSync(join(repoRoot, "src/app/(public)/about/page.tsx"), "utf8");
 const matchPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");

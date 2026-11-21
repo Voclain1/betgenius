@@ -7,7 +7,7 @@ import { CupRounds } from "@/components/CupRounds";
 import { LeagueClubGrid } from "@/components/LeagueClubGrid";
 import { LeagueStandingsTable } from "@/components/LeagueStandingsTable";
 import { getCupPageData, cupBySlug } from "@/lib/cups";
-import { getPublishedMatchIndex } from "@/lib/predictionScope";
+import { getPublishedMatchIndexForCompetition } from "@/lib/predictionScope";
 import { fitMetadataTitleWithSuffix, fitMetaDescription } from "@/lib/seo";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { getPublishedByLeagueSlug } from "@/lib/predictionScope";
@@ -25,17 +25,22 @@ import { competitionStats, featuredMatches, seasonParagraph } from "@/lib/compet
 import { competitionInSentence } from "@/lib/teamProfile";
 import { COMPETITION_HISTORY } from "@/lib/competitionHistory";
 import { tabOfStatus } from "@/lib/matchStatus";
+import { CompetitionFixtureSummary } from "@/components/CompetitionFixtureSummary";
 
 export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: { params: { slug: string }; searchParams?: { season?: string } }): Promise<Metadata> {
   const cup = cupBySlug(params.slug);
   if (!cup) return { title: "Cup competition", robots: { index: false, follow: false } };
+  // Archive season filters are browsing states, not separate search results.
+  // The canonical always remains the clean competition hub.
+  const seasonRobots = searchParams?.season !== undefined ? { robots: { index: false, follow: true } } : {};
   if (cup.slug === "danish-cup") {
     return {
       title: "Danish Cup Games, Fixtures & Results",
       description: "Browse Danish Cup games by round, with scheduled fixtures, available scores and participating teams. Open a match prediction where one has been published.",
       alternates: { canonical: `/predictions/cup/${cup.slug}` },
+      ...seasonRobots,
     };
   }
   const hubContent = competitionHubContent(cup.id);
@@ -44,12 +49,14 @@ export async function generateMetadata({ params }: { params: { slug: string } })
       title: hubContent.metadataTitle,
       description: hubContent.metadataDescription,
       alternates: { canonical: `/predictions/cup/${cup.slug}` },
+      ...seasonRobots,
     };
   }
   return {
     title: fitMetadataTitleWithSuffix(cup.name, "fixtures and results"),
     description: fitMetaDescription(`${cup.name} knockout rounds, participating clubs, results, fixtures and top scorers.`),
     alternates: { canonical: `/predictions/cup/${cup.slug}` },
+    ...seasonRobots,
   };
 }
 
@@ -57,12 +64,12 @@ export default async function CupPage({ params, searchParams }: { params: { slug
   const requestedSeason = /^\d{4}$/.test(searchParams.season ?? "") ? Number(searchParams.season) : undefined;
   const cup = cupBySlug(params.slug);
   if (!cup) notFound();
-  const [data, matchIndex] = await Promise.all([getCupPageData(params.slug, requestedSeason), getPublishedMatchIndex()]);
+  const [data, matchIndex] = await Promise.all([getCupPageData(params.slug, requestedSeason), getPublishedMatchIndexForCompetition(cup.id)]);
   if (!data) notFound();
   const hubContent = competitionHubContent(data.cup.id);
   const danishCup = data.cup.slug === "danish-cup";
-  const finishedCount = danishCup ? data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "finished").length : 0;
-  const upcomingCount = danishCup ? data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "upcoming" && new Date(fixture.fixture.date).getTime() > Date.now()).length : 0;
+  const finishedCount = data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "finished").length;
+  const upcomingCount = data.fixtures.filter((fixture) => tabOfStatus(fixture.fixture.status.short) === "upcoming" && new Date(fixture.fixture.date).getTime() > Date.now()).length;
   // Only targeted top-tier competition hubs add prediction/proof data. Other
   // cup pages retain their previous query profile.
   const [scoped, viewer] = hubContent
@@ -113,6 +120,17 @@ export default async function CupPage({ params, searchParams }: { params: { slug
       </CompetitionMasthead>
 
       {hubContent && <CompetitionHubIntro heading={hubContent.heading} intro={hubContent.intro} />}
+      {!danishCup && (
+        <CompetitionFixtureSummary
+          competition={data.cup.name}
+          season={data.season}
+          scope={data.cup.scopeNote}
+          fixtureCount={data.fixtures.length}
+          roundCount={data.rounds.length}
+          finishedCount={finishedCount}
+          upcomingCount={upcomingCount}
+        />
+      )}
 
       {danishCup && (
         <section aria-labelledby="danish-cup-games" className="max-w-3xl space-y-3">

@@ -229,6 +229,12 @@ export const getPublishedMatchIndex = cache(async (): Promise<Record<string, str
   return readPublishedMatchIndex({});
 });
 
+/** One cup's published matches, preserving matchKey identity even if the
+ * provider and publication use different team spellings. Bounded DB query. */
+export async function getPublishedMatchIndexForCompetition(leagueApiId: number): Promise<Record<string, string>> {
+  return readPublishedMatchIndex({ leagueApiId });
+}
+
 async function readPublishedMatchIndex(scope: Prisma.PredictionWhereInput): Promise<Record<string, string>> {
   const rows = await prisma.prediction.findMany({
     where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", homeTeam: { not: null }, awayTeam: { not: null }, kickoff: { not: null }, ...scope },

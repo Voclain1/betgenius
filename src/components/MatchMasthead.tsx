@@ -4,7 +4,8 @@ import { TeamCrest } from "@/components/TeamCrest";
 import { MatchScoreClock } from "@/components/MatchScoreClock";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { teamCrestUrl } from "@/lib/leagues";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { teamSlug } from "@/lib/slug";
+import { competitionPredictionHref } from "@/lib/competitionSeo";
 
 
 const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4", 5: "grid-cols-2 sm:grid-cols-5", 6: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" };
@@ -78,6 +79,7 @@ export function MatchMasthead({
   if (halftime) facts.push(["Half-time", `${halftime.home}-${halftime.away}`]);
   if (localKickoff) facts.push(["Your time", localKickoff]);
 
+  const competitionHref = competitionPredictionHref(leagueName, leagueApiId);
   const league = (
     <>
       <LeagueBadge leagueApiId={leagueApiId} leagueName={leagueName} showName={false} size={18} />
@@ -100,8 +102,8 @@ export function MatchMasthead({
 
       <div className="relative px-5 pb-6 pt-5 sm:px-8 sm:pt-7">
         <div className="flex justify-center">
-          {leagueName ? (
-            <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="inline-flex max-w-full items-center gap-2 hover:opacity-80">
+          {leagueName && competitionHref ? (
+            <Link href={competitionHref} className="inline-flex max-w-full items-center gap-2 hover:opacity-80">
               {league}
             </Link>
           ) : (
