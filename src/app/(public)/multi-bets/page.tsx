@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -12,6 +13,14 @@ import Link from "next/link";
 import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
+
+// Stable search destination: absence of today's combinations is not a reason
+// to invent picks or strip the canonical from an educational multi-bet hub.
+export const metadata: Metadata = {
+  title: "Football Multi Bet Predictions & Accumulators",
+  description: "Browse published football multi-bet predictions, inspect individual selections and available odds, and learn how accumulator risk and settlement work.",
+  alternates: { canonical: "/multi-bets" },
+};
 
 export default async function MultiBetsPage() {
   const session = await getServerSession(authOptions);

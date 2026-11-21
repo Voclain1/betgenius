@@ -69,9 +69,8 @@ const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: "/standings", priority: 0.5 },
   { path: "/statspad", priority: 0.5 },
   { path: "/bet-builder", priority: 0.5 },
-  // /multi-bets is a plain indexable page (no metadata export, so no noindex
-  // gate to mirror) — unlike the category feeds it stays listed even with no
-  // published combos, because the page itself stays indexable when empty.
+  // /multi-bets has stable metadata and a self-canonical, so it stays listed
+  // even with no published combinations (unlike empty short-lived tip feeds).
   { path: "/multi-bets", priority: 0.6 },
   { path: "/pricing", priority: 0.5 },
   { path: "/about", priority: 0.6 },

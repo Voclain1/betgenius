@@ -8,7 +8,7 @@ import Link from "next/link";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 import { MARKET_HUBS } from "@/lib/marketHubs";
-import { cupById } from "@/lib/cupConfig";
+import { CupDiscoveryDirectory } from "@/components/CupDiscoveryDirectory";
 
 const baseMetadata: Metadata = {
   title: "Football Predictions & Betting Tips",
@@ -49,12 +49,8 @@ const marketHubs = MARKET_HUBS.map((m) => ({ href: m.href, name: `${m.label} pre
 
 // Use the cup routing catalogue, rather than league aliases, for cup hubs.
 // These destinations remain available even between rounds.
-const competitionLinks = [
-  { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore English Premier League picks, standings, upcoming fixtures and season statistics." },
-  ...[2, 3, 45].flatMap((id) => {
-    const cup = cupById(id);
-    return cup ? [{ href: `/predictions/cup/${cup.slug}`, name: `${cup.name} predictions`, desc: `Browse ${cup.name} fixtures, results and published match predictions.` }] : [];
-  }),
+const leagueLinks = [
+  { href: "/predictions/league/premier-league-39", name: "Premier League predictions", desc: "Explore Premier League picks, standings, fixtures and season statistics." },
 ];
 
 export default function PredictionsIndex({ searchParams = {} }: { searchParams?: DiscoveryParams }) {
@@ -87,10 +83,11 @@ export default function PredictionsIndex({ searchParams = {} }: { searchParams?:
 
       <PremiumPanel kicker="Competitions" title="Football predictions by competition" id="prediction-competitions" bare>
         <div className="grid gap-4 md:grid-cols-2">
-          {competitionLinks.map((competition) => (
+          {leagueLinks.map((competition) => (
             <LinkTile key={competition.href} href={competition.href} title={competition.name} desc={competition.desc} />
           ))}
         </div>
+        <div className="mt-6"><CupDiscoveryDirectory /></div>
       </PremiumPanel>
 
       <PremiumPanel kicker="Research guides" title="Learn how to assess football predictions" id="prediction-research" bare>

@@ -1,0 +1,129 @@
+{
+  "source": "Connected OpenSEO Google Search Console, Web performance (query filtered by exact page), retrieved 21 Nov 2026",
+  "startDate": "2026-10-22",
+  "endDate": "2026-11-18",
+  "dimensions": [
+    "query",
+    "page"
+  ],
+  "sample": true,
+  "rows": [
+    {
+      "keys": [
+        "danish cup games",
+        "https://www.betgenius.ng/predictions/cup/danish-cup"
+      ],
+      "clicks": 0,
+      "impressions": 517,
+      "position": 7.6
+    },
+    {
+      "keys": [
+        "danish cup",
+        "https://www.betgenius.ng/predictions/cup/danish-cup"
+      ],
+      "clicks": 0,
+      "impressions": 73,
+      "position": 14.9
+    },
+    {
+      "keys": [
+        "danish cup fixtures",
+        "https://www.betgenius.ng/predictions/cup/danish-cup"
+      ],
+      "clicks": 0,
+      "impressions": 10,
+      "position": 7.6
+    },
+    {
+      "keys": [
+        "banker predict",
+        "https://www.betgenius.ng/predictions/banker"
+      ],
+      "clicks": 4,
+      "impressions": 95,
+      "position": 8.8
+    },
+    {
+      "keys": [
+        "banker prediction",
+        "https://www.betgenius.ng/predictions/banker"
+      ],
+      "clicks": 8,
+      "impressions": 76,
+      "position": 9.7
+    },
+    {
+      "keys": [
+        "banker of the day",
+        "https://www.betgenius.ng/predictions/banker"
+      ],
+      "clicks": 4,
+      "impressions": 58,
+      "position": 69.6
+    },
+    {
+      "keys": [
+        "all banker prediction",
+        "https://www.betgenius.ng/predictions/banker"
+      ],
+      "clicks": 11,
+      "impressions": 51,
+      "position": 7.3
+    },
+    {
+      "keys": [
+        "multibet prediction",
+        "https://www.betgenius.ng/multi-bets"
+      ],
+      "clicks": 2,
+      "impressions": 39,
+      "position": 17.5
+    },
+    {
+      "keys": [
+        "multiple bet prediction",
+        "https://www.betgenius.ng/multi-bets"
+      ],
+      "clicks": 0,
+      "impressions": 30,
+      "position": 27.8
+    },
+    {
+      "keys": [
+        "multi bet tips",
+        "https://www.betgenius.ng/multi-bets"
+      ],
+      "clicks": 0,
+      "impressions": 19,
+      "position": 48.1
+    },
+    {
+      "keys": [
+        "betgenius",
+        "https://www.betgenius.ng/multi-bets"
+      ],
+      "clicks": 0,
+      "impressions": 71,
+      "position": 2.4
+    },
+    {
+      "keys": [
+        "betgenius",
+        "https://www.betgenius.ng/predictions"
+      ],
+      "clicks": 21,
+      "impressions": 586,
+      "position": 4.3
+    },
+    {
+      "keys": [
+        "genius prediction",
+        "https://www.betgenius.ng/predictions"
+      ],
+      "clicks": 1,
+      "impressions": 52,
+      "position": 6.9
+    }
+  ]
+}
