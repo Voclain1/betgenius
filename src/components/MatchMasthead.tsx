@@ -1,10 +1,13 @@
 import { kickoffTime, footballDate } from "@/lib/footballTime";
 import Link from "next/link";
+import Image from "next/image";
+import { skipFootballImageOptimization } from "@/lib/footballImage";
 import { TeamCrest } from "@/components/TeamCrest";
 import { MatchScoreClock } from "@/components/MatchScoreClock";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { teamCrestUrl } from "@/lib/leagues";
-import { leagueSlug, teamSlug } from "@/lib/slug";
+import { teamSlug } from "@/lib/slug";
+import { competitionPredictionHref } from "@/lib/competitionSeo";
 
 
 const FACT_COLS: Record<number, string> = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-2 sm:grid-cols-4", 5: "grid-cols-2 sm:grid-cols-5", 6: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" };
@@ -78,6 +81,7 @@ export function MatchMasthead({
   if (halftime) facts.push(["Half-time", `${halftime.home}-${halftime.away}`]);
   if (localKickoff) facts.push(["Your time", localKickoff]);
 
+  const competitionHref = competitionPredictionHref(leagueName, leagueApiId);
   const league = (
     <>
       <LeagueBadge leagueApiId={leagueApiId} leagueName={leagueName} showName={false} size={18} />
@@ -89,19 +93,17 @@ export function MatchMasthead({
     <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
       {/* Both crests, oversized and faded, as the backdrop. */}
       {homeTeamApiId != null && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img aria-hidden src={teamCrestUrl(homeTeamApiId)} alt="" className="pointer-events-none absolute -left-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
+        <Image unoptimized={skipFootballImageOptimization} aria-hidden src={teamCrestUrl(homeTeamApiId)} alt="" width={288} height={288} quality={50} loading="lazy" className="pointer-events-none absolute -left-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
       )}
       {awayTeamApiId != null && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img aria-hidden src={teamCrestUrl(awayTeamApiId)} alt="" className="pointer-events-none absolute -right-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
+        <Image unoptimized={skipFootballImageOptimization} aria-hidden src={teamCrestUrl(awayTeamApiId)} alt="" width={288} height={288} quality={50} loading="lazy" className="pointer-events-none absolute -right-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
       )}
       <div aria-hidden className="pointer-events-none absolute left-1/2 top-16 h-72 w-72 -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.16),transparent)]" />
 
       <div className="relative px-5 pb-6 pt-5 sm:px-8 sm:pt-7">
         <div className="flex justify-center">
-          {leagueName ? (
-            <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="inline-flex max-w-full items-center gap-2 hover:opacity-80">
+          {leagueName && competitionHref ? (
+            <Link href={competitionHref} className="inline-flex max-w-full items-center gap-2 hover:opacity-80">
               {league}
             </Link>
           ) : (

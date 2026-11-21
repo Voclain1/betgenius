@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PredictionTimelineList } from "@/components/PredictionTimelineList";
 import { PredictionViewSwitch } from "@/components/PredictionViewSwitch";
 import { COMPETITION_PAGE_SIZE } from "@/lib/predictionTimeline";
@@ -79,8 +80,11 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
   if (rows.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">League predictions</h1>
-        <div className="card text-gray-400">No published predictions for this league yet.</div>
+        <h1 className="text-2xl font-bold">{researchedLeagueSeo(leagueIdFromSlug(params.slug))?.title ?? "League predictions"}</h1>
+        <div className="card space-y-2 text-sm text-gray-400">
+          <p>No published predictions are available for this competition yet. A fixture listing does not imply that a pick has been published.</p>
+          <p><Link href="/predictions/today" className="text-brand hover:underline">Browse today's football predictions</Link> or return to the <Link href="/predictions" className="text-brand hover:underline">predictions hub</Link>.</p>
+        </div>
       </div>
     );
   }

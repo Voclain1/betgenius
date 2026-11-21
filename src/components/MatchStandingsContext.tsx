@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { leagueSlug } from "@/lib/slug";
+import { competitionPredictionHref } from "@/lib/competitionSeo";
 import type { LeagueStandingRow } from "@/lib/enrichment";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { tableContext, tableSentence } from "@/lib/matchCentre";
@@ -89,7 +89,7 @@ export function MatchStandingsContext({
       id="table-context"
       aside={
         leagueName && (
-          <Link href={`/predictions/league/${leagueSlug(leagueName, leagueApiId)}`} className="text-brand hover:underline">
+          <Link href={competitionPredictionHref(leagueName, leagueApiId) ?? "/predictions"} className="text-brand hover:underline">
             Full table →
           </Link>
         )
