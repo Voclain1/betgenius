@@ -316,7 +316,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             real published pick as its evidence on the right. Collapses to the
             original single column when nothing public is available, so the hero
             never renders a hole. */}
-        <section className="premium-home-hero brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+        <section className="brand-surface relative premium-home-hero overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
           <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
           <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
           <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
