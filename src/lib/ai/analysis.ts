@@ -680,9 +680,6 @@ export type PredictionRequestInput = {
    * (scripts/measure-market-breadth.ts) passes "multi" — see MarketBreadth.
    */
   marketBreadth?: MarketBreadth;
-  /** EARLY FREE only: real bookmaker-listed market/selection labels, with
-   * sufficient depth and freshness. They must never dictate confidence. */
-  pricedEarlyMarkets?: readonly string[];
   /**
    * A real, quoted European Handicap line. When present the market is FIXED to
    * EUROPEAN_HANDICAP on that line and the model's only job is to choose which
@@ -821,16 +818,6 @@ Return selection as {"value": "HOME" | "DRAW" | "AWAY", "line": ${hc.line}}.
       ? GOALS_MARKET_INSTRUCTION
       : `Return JSON only. marketType must be one of: ${AUTO_MARKET_TYPES.join(", ")}.`;
 
-  const earlyMarketBlock = input.pricedEarlyMarkets?.length ? `
-EARLY MARKET AVAILABILITY — reference only, not evidence of a likely result:
-The following selections currently have enough independent bookmaker quotes to
-be potentially publishable if your separate football evidence supports them.
-Prefer one of these EXACT market/selection combinations when it is genuinely
-supported by the match analysis. Do not choose a weak selection merely because
-it is priced; do not inflate confidence from quote availability. If none is
-credible, return your independently supported prediction for later admin review.
-${input.pricedEarlyMarkets.join("\n")}
-` : "";
   const userPrompt = `Analyse this fixture and return JSON only.
 
 Fixture:
@@ -841,7 +828,7 @@ Fixture:
 Evidence digest (JSON):
 ${JSON.stringify(d)}
 ${revisionBlock}${directionBlock}
-${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock ?? "") : ""}${earlyMarketBlock}
+${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock ?? "") : ""}
 ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
