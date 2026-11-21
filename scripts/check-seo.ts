@@ -106,7 +106,7 @@ check("btts hub: evidence renders after the ad-enabled feed", bttsPage.indexOf("
 check("btts hub: keeps the existing ad-enabled list", (bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && bttsPage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("btts hub: links to the exact market record", bttsGuide.includes("/track-record#market-btts") && trackRecordView.includes('id={`market-${mt.toLowerCase().replaceAll("_", "-")}`}'));
 check("btts hub: receives an internal link from the predictions index", predictionsIndex.includes("MARKET_HUBS.map") && marketHubsSrc.includes('href: "/predictions/btts"'));
-check("btts hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('r.marketType === "BTTS"'));
+check("btts hub: sitemap includes the evergreen hub", sitemapEntries.includes("const bttsRows") && sitemapEntries.includes('isEvergreenMarketHub("btts")'));
 
 // --- Double Chance hub ---------------------------------------------------
 const doubleChancePage = readFileSync(join(repoRoot, "src/app/(public)/predictions/double-chance/page.tsx"), "utf8");
@@ -118,7 +118,7 @@ check("double chance hub: evidence renders after the ad-enabled feed", doubleCha
 check("double chance hub: keeps the existing ad-enabled list", (doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"detailed\" />") && doubleChancePage.includes("<CategoryPredictionsList category=\"FEATURED\" rows={shaped as any} withAds view=\"compact\" />")));
 check("double chance hub: links to the exact market record", doubleChanceGuide.includes("/track-record#market-double-chance"));
 check("double chance hub: receives an internal link from the predictions index", predictionsIndex.includes("MARKET_HUBS.map") && marketHubsSrc.includes('href: "/predictions/double-chance"'));
-check("double chance hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('r.marketType === "DOUBLE_CHANCE"'));
+check("double chance hub: sitemap includes the evergreen hub", sitemapEntries.includes("const doubleChanceRows") && sitemapEntries.includes('isEvergreenMarketHub("double-chance")'));
 
 // --- Straight Wins hub and the free-tier rule (all market hubs) ------------
 const straightPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/straight-wins/page.tsx"), "utf8");
@@ -126,12 +126,42 @@ const straightPage = readFileSync(join(repoRoot, "src/app/(public)/predictions/s
 const hubs = require("../src/lib/marketHubs") as typeof import("../src/lib/marketHubs");
 check("straight wins hub: query is home or away wins only", /marketType: "MATCH_WINNER"/.test(marketPredictions) && /path: \["value"\], equals: "HOME"/.test(marketPredictions) && /path: \["value"\], equals: "AWAY"/.test(marketPredictions) && !/equals: "DRAW"/.test(marketPredictions));
 check("straight wins hub: draws are not straight wins", hubs.isStraightWinSelection({ value: "HOME" }) && hubs.isStraightWinSelection({ value: "AWAY" }) && !hubs.isStraightWinSelection({ value: "DRAW" }) && !hubs.isStraightWinSelection(null));
-check("straight wins hub: canonical, noindex when empty, ad-enabled list", straightPage.includes('feedDayHref("straight-wins", day)') && straightPage.includes("rows.length === 0 || day !== \"today\"") && straightPage.includes("withAds view=\"compact\""));
-check("straight wins hub: sitemap inclusion is inventory-gated", sitemapEntries.includes("const straightWinRows") && sitemapEntries.includes("isStraightWinSelection(r.selection)"));
+check("straight wins hub: default day stays indexable, dated variants do not", straightPage.includes('feedDayHref("straight-wins", day)') && straightPage.includes("robots: shouldIndexMarketHub(day)") && straightPage.includes("withAds view=\"compact\""));
+check("straight wins hub: sitemap includes the evergreen hub", sitemapEntries.includes("const straightWinRows") && sitemapEntries.includes('isEvergreenMarketHub("straight-wins")'));
 check("market hubs: every query leaves out VIP and Premium tips", (marketPredictions.match(/\.\.\.FREE_TIERS_ONLY,/g) ?? []).length === 4 && /categories: \{ none: \{ category: \{ in: \[\.\.\.MARKET_HUB_EXCLUDED_CATEGORIES\] \} \} \}/.test(marketPredictions));
 check("market hubs: the sitemap counts free-tier tips only", sitemapEntries.includes("const freeRows = rows.filter(isFreeTierRow)"));
 check("market hubs: VIP and Premium rows are not free-tier", !hubs.isFreeTierRow({ category: "VIP", categories: [] }) && !hubs.isFreeTierRow({ category: "FEATURED", categories: [{ category: "PREMIUM" }] }) && hubs.isFreeTierRow({ category: "GENIUS", categories: [{ category: "GENIUS" }] }));
 check("market hubs: the menu, the feed chips and the homepage link to them", (/predictionNav/.test(readFileSync(join(repoRoot, "src/components/Nav.tsx"), "utf8")) && /MARKET_HUBS/.test(readFileSync(join(repoRoot, "src/lib/predictionNav.ts"), "utf8"))) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/page.tsx"), "utf8")) && /<MarketChips \/>/.test(readFileSync(join(repoRoot, "src/app/(public)/predictions/[category]/page.tsx"), "utf8")));
+
+
+// --- Stable non-branded landing pages (Sprint 1) ------------------------
+const landing = require("../src/lib/searchLandingPolicy") as typeof import("../src/lib/searchLandingPolicy");
+for (const category of landing.EVERGREEN_CATEGORIES) {
+  check(`search landing: ${category} indexable with no picks on its canonical day`,
+    landing.shouldIndexCategoryFeed(category, "today", false, false));
+  check(`search landing: ${category} dated/filter states remain noindex`,
+    !landing.shouldIndexCategoryFeed(category, "tomorrow", false, true) &&
+    !landing.shouldIndexCategoryFeed(category, "today", true, true));
+  check(`search landing: ${category} has honest empty-day metadata`,
+    (landing.evergreenEmptyDescription(category) ?? "").length > 80);
+}
+for (const category of ["VIP", "PREMIUM", "BET_OF_THE_DAY", "SAME_GAME_DOUBLE"]) {
+  check(`search landing: ${category} quiet-day gate is unchanged`,
+    !landing.shouldIndexCategoryFeed(category, "today", false, false));
+}
+check("search landing: every evergreen market hub stays indexed on default day",
+  landing.EVERGREEN_MARKET_HUBS.every((slug) => landing.isEvergreenMarketHub(slug)) &&
+  landing.shouldIndexMarketHub("today") && !landing.shouldIndexMarketHub("yesterday"));
+check("search landing: published category content remains the only picks exposed",
+  categoryPage.includes("getCategoryPredictions(cat, day)") &&
+  readFileSync(join(repoRoot, "src/components/EvergreenCategoryEvidence.tsx"), "utf8").includes("How Genius football tips are selected"));
+check("search landing: category sitemap uses exactly the evergreen category rule",
+  sitemapEntries.includes("!isEvergreenCategory(cat)") &&
+  sitemapEntries.includes('isEvergreenMarketHub("over-2-5-goals")'));
+check("search landing: hub uses descriptive headings and contextual navigation",
+  predictionsIndex.includes("Football predictions and betting tips") &&
+  predictionsIndex.includes('href="/predictions/today"') &&
+  predictionsIndex.includes('href="/predictions/banker"'));
 
 // --- Priority competition hubs ------------------------------------------
 const leaguePageSource = readFileSync(join(repoRoot, "src/app/(public)/predictions/league/[slug]/page.tsx"), "utf8");

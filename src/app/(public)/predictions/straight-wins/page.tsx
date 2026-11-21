@@ -15,6 +15,7 @@ import { feedDayOffset, feedDayText, feedDayTitle } from "@/lib/feedDays";
 import { StraightWinPredictionsEvidence, StraightWinPredictionsGuide } from "@/components/StraightWinPredictionsGuide";
 import { JsonLd, breadcrumbJsonLd, fixtureSample, sportsEventsForFixtures } from "@/lib/seo";
 import { MarketChips } from "@/components/MarketChips";
+import { shouldIndexMarketHub } from "@/lib/searchLandingPolicy";
 
 const PATH = "/predictions/straight-wins";
 
@@ -29,8 +30,8 @@ export async function generateMetadata({ searchParams }: { searchParams?: { date
     title: `Straight Win Predictions ${feedDayTitle(day)}`,
     description: rows.length
       ? `${rows.length} straight win predictions for ${feedDayText(day)}${sample ? `, including ${sample}` : ""}. Home win and away win picks with match evidence.`
-      : `No straight win predictions are published for ${feedDayText(day)}. Browse another day or explore the other prediction markets.`,
-    robots: rows.length === 0 || day !== "today" ? { index: false, follow: true } : undefined,
+      : `Straight win football predictions for outright home or away wins, with form evidence, market explanations and past results. New picks appear when published.`,
+    robots: shouldIndexMarketHub(day) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref("straight-wins", day) },
   };
 }

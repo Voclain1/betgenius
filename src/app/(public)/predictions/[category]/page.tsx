@@ -39,6 +39,8 @@ import { firstResultsDay } from "@/lib/feedResults";
 import { MarketChips } from "@/components/MarketChips";
 import { loadPaidCardDetails, getPaidPerformance } from "@/lib/paidFeedData";
 import { PaidFeedIntro, PaidPerformancePanel } from "@/components/PaidPerformancePanel";
+import { EvergreenCategoryEvidence } from "@/components/EvergreenCategoryEvidence";
+import { evergreenEmptyDescription, isEvergreenCategory, shouldIndexCategoryFeed } from "@/lib/searchLandingPolicy";
 
 export async function generateMetadata(
   { params, searchParams }: { params: { category: string }; searchParams?: DiscoveryParams },
@@ -51,22 +53,24 @@ export async function generateMetadata(
   const dayText = feedDayText(day);
   // Only categories with a term behind them get one. VIP has measured demand
   // (720/mo, KD 50) and "banker" is a real, searched football-betting word;
-  // Featured, Genius and Premium showed near-zero volume, so they keep their
-  // plain product names rather than being bent around a keyword nobody types.
+  // Paid tier names remain their product names; public feeds receive distinct
+  // market/intent language without claiming that every day has picks.
   const seoTitle = cat === "TODAY" ? "Football Predictions Today"
     : cat === "VIP" ? "VIP Predictions"
-    : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : day === "today" ? "Banker Predictions Today" : `Banker Predictions — ${feedDayTitle(day)}`)
+    : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's Banker Predictions" : day === "tomorrow" ? "Banker Predictions Tomorrow" : day === "today" ? "Banker Predictions Today | Banker of the Day" : `Banker Predictions — ${feedDayTitle(day)}`)
     // Grounded in the term readers actually search, same approach as the
     // homepage hero: "Combo Bet Predictions", not the bare category name.
     : cat === "SAME_GAME_DOUBLE" ? "Combo Bet Predictions"
     // The two lines the feed holds are the searched terms; "Goals" alone is not.
-    : cat === "GOALS" ? "Over 1.5 & Over 2.5 Goals Predictions"
+    : cat === "GOALS" ? `Over 1.5 Goals & Total Goals Predictions ${feedDayTitle(day)}`
+    : cat === "GENIUS" ? `Genius Football Tips ${feedDayTitle(day)}`
+    : cat === "FEATURED" ? `Featured Football Betting Tips ${feedDayTitle(day)}`
     : name;
   const seoPhrase = cat === "TODAY" ? (day === "today" ? "today's predictions" : "football predictions")
     : cat === "VIP" ? "VIP predictions"
     : cat === "BANKER" ? "banker predictions"
     : cat === "SAME_GAME_DOUBLE" ? "combo bet predictions — two picks on the same match"
-    : cat === "GOALS" ? "over 1.5 and over 2.5 goals predictions"
+    : cat === "GOALS" ? "over 1.5 and total-goals predictions"
     : name.toLowerCase();
   const emptyDescription = cat === "TODAY"
     ? (day === "today" ? "Today's predictions are not published yet — check back soon for our latest football picks." : `No football predictions are published for ${dayText} yet. Check the other days for available picks.`)
@@ -86,14 +90,13 @@ export async function generateMetadata(
 
   const rows = await getCategoryPredictions(cat, day);
 
-  // Thin/empty content shouldn't claim a rich, specific title as if it had
-  // real picks to show — and search engines shouldn't index a page with
-  // nothing on it yet.
+  // Substantive evergreen guides stay discoverable on quiet days. One-off or
+  // filtered feeds still avoid indexing empty/unstable match inventories.
   if (rows.length === 0) {
     return {
       title: seoTitle,
-      description: emptyDescription,
-      robots: { index: false, follow: true },
+      description: day === "today" && isEvergreenCategory(cat) ? (evergreenEmptyDescription(cat) ?? emptyDescription) : emptyDescription,
+      robots: shouldIndexCategoryFeed(cat, day, hasDiscoveryFilters(searchParams), false) ? undefined : { index: false, follow: true },
       alternates: { canonical: feedDayHref(params.category, day) },
     };
   }
@@ -114,7 +117,7 @@ export async function generateMetadata(
     // different slate after midnight. Keep them available for users and links,
     // but do not let search engines retain them as unstable landing pages.
     // The clean/default feed remains the indexable search destination.
-    robots: day === "today" && !hasDiscoveryFilters(searchParams) ? undefined : { index: false, follow: true },
+    robots: shouldIndexCategoryFeed(cat, day, hasDiscoveryFilters(searchParams), true) ? undefined : { index: false, follow: true },
     alternates: { canonical: feedDayHref(params.category, day) },
   };
 }
@@ -258,7 +261,7 @@ export default async function CategoryPage(
       />
       <CategoryMasthead
         kicker="Predictions"
-        title={cat === "TODAY" ? (day === "today" ? "Football predictions today" : `Football predictions — ${feedDayTitle(day)}`) : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's banker predictions" : day === "tomorrow" ? "Banker predictions tomorrow" : day === "today" ? "Banker predictions today" : `Banker predictions — ${feedDayTitle(day)}`) : NAMES[cat]}
+        title={cat === "GOALS" && day === "today" ? "Total goals predictions today" : cat === "TODAY" ? (day === "today" ? "Football predictions today" : `Football predictions — ${feedDayTitle(day)}`) : cat === "BANKER" ? (day === "yesterday" ? "Yesterday's banker predictions" : day === "tomorrow" ? "Banker predictions tomorrow" : day === "today" ? "Banker predictions today" : `Banker predictions — ${feedDayTitle(day)}`) : NAMES[cat]}
         blurb={blurb}
         dateLabel={`${dateLabel} · West Africa Time`}
         stats={stats}
@@ -334,6 +337,7 @@ export default async function CategoryPage(
         )
       )}
 
+      {day === "today" && (cat === "GENIUS" || cat === "FEATURED" || cat === "GOALS") && <EvergreenCategoryEvidence category={cat} />}
       {paidPerformance && <PaidPerformancePanel tier={cat === "PREMIUM" ? "Premium" : "VIP"} perf={paidPerformance} />}
       {cat === "BANKER" && <BankerPredictionsEvidence record={record} />}
       {cat === "TODAY" && <TodayPredictionsEvidence day={day} />}

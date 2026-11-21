@@ -4,6 +4,7 @@ import { CategoryMasthead } from "@/components/CategoryMasthead";
 import { PremiumPanel } from "@/components/PremiumPanel";
 import { LinkTile } from "@/components/LinkTile";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { JsonLd, breadcrumbJsonLd } from "@/lib/seo";
 import { CATEGORY_BLURBS } from "@/lib/categoryPredictions";
 import { MARKET_HUBS } from "@/lib/marketHubs";
@@ -62,8 +63,8 @@ export default function PredictionsIndex({ searchParams = {} }: { searchParams?:
       <JsonLd data={breadcrumbJsonLd([{ name: "Home", path: "/" }, { name: "Predictions", path: "/predictions" }])} />
       <header className="space-y-2">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand">Predictions</p>
-        <h1 className="text-2xl font-black tracking-tight sm:text-4xl">Find your next match</h1>
-        <p className="text-sm text-gray-400">Published picks, match evidence and markets. Search a team or refine your selection.</p>
+        <h1 className="text-2xl font-black tracking-tight sm:text-4xl">Football predictions and betting tips</h1>
+        <p className="text-sm text-gray-400">Explore <Link href="/predictions/today" className="text-brand hover:underline">today's football predictions</Link>, <Link href="/predictions/banker" className="text-brand hover:underline">Banker of the Day tips</Link>, or <Link href="/predictions/btts" className="text-brand hover:underline">both teams to score predictions</Link>. Search a team or browse by competition and market.</p>
       </header>
 
       <PredictionDiscovery params={searchParams} />
