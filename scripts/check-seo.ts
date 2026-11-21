@@ -301,6 +301,13 @@ const routeExists = (href: string) => {
   if (path.startsWith("/guides/")) return GUIDES.some((g) => `/guides/${g.slug}` === path);
   const appDir = join(repoRoot, "src/app/(public)");
   if (existsSync(join(appDir, path, "page.tsx"))) return true;
+  // Cup competition links are dynamic but only catalogue slugs are valid.
+  // This checks the same registry the actual /predictions/cup/[slug] page uses.
+  const cup = path.match(/^\/predictions\/cup\/([a-z0-9-]+)$/);
+  if (cup) {
+    const { cupBySlug } = require("../src/lib/cupConfig") as typeof import("../src/lib/cupConfig");
+    return cupBySlug(cup[1]) !== null;
+  }
   // /predictions/<category> feeds are one dynamic route.
   const feed = path.match(/^\/predictions\/([a-z0-9-]+)$/);
   return !!feed && ["banker", "goals", "vip", "premium", "today", "featured", "genius"].includes(feed[1]);
