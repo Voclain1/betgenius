@@ -15,7 +15,7 @@ import { isValidSelection, type MarketType } from "@/lib/markets";
 import { DEDICATED_PAID_PROVENANCES, GENIUS_CONFIDENCE_FLOOR } from "@/lib/geniusCuration";
 import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
-import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS } from "@/lib/generation/earlyTriage";
+import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS, earlyPriceUnsafeFromPrompt } from "@/lib/generation/earlyTriage";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 
 export type EarlyPublicationMode = "off" | "shadow" | "on";
@@ -66,6 +66,7 @@ export type EarlyPublicationCandidate = {
   marketType: string; selection: unknown; manualSettlementOnly: boolean;
   categories: string[];
   earlyJobVerified: boolean;
+  earlyPriceUnsafe?: boolean;
 };
 export function earlyPublicationBlock(
   row: EarlyPublicationCandidate,
@@ -81,6 +82,7 @@ export function earlyPublicationBlock(
   if (row.categories.some((category) => ["VIP", "PREMIUM", "BET_OF_THE_DAY"].includes(category))) return "reserved-category";
   if ([...DEDICATED_PAID_PROVENANCES, GOALS_GENERATED_PROVENANCE, "VIP_ROUTE_CONFIRMED"].includes(row.provenance as never)) return "protected-provenance";
   if (!row.earlyJobVerified) return "not-dedicated-early-free-job";
+  if (row.earlyPriceUnsafe) return "generation-price-safety-review";
   if (row.confidence < EARLY_PUBLICATION_CONFIDENCE_FLOOR) return "below-early-confidence-floor";
   // Both teams require actual recent matches and season-level data. A model
   // confidence number without corroborating football evidence is insufficient.
@@ -229,6 +231,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
       // authority, although held drafts can join ordinary admin review.
       const reason = earlyPublicationBlock({
         ...row, status: "PENDING_REVIEW", categories, earlyJobVerified,
+        earlyPriceUnsafe: earlyPriceUnsafeFromPrompt(row.aiJob?.prompt),
       }, digest, now);
       const key = matchKey(row);
       const cache = key ? byKey.get(key) : null;
