@@ -57,6 +57,11 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
 
+      # Run the existing offline SEO assertions on PRs. They cover
+      # canonical/indexing rules, real-content gates and non-branded link paths.
+      - name: Search, competition and match SEO regressions
+        run: npx tsx scripts/check-seo.ts
+
       - name: Competition-stage content grounding
         run: node --import tsx scripts/check-competition-stage.ts
 
