@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { matchKey } from "@/lib/slug";
 import { earlyQuotedSelection } from "@/lib/generation/earlyOddsPolicy";
 import { inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
+import { earlyPriceUnsafeFromPrompt } from "@/lib/generation/earlyTriage";
 import { reassessmentIntervalMinutes } from "@/lib/reassessment/evidence";
 import { isValidSelection, type MarketType } from "./markets";
 import { prisma } from "@/lib/prisma";
@@ -272,8 +273,9 @@ export async function publishEarlyFreePredictionAtomically(
     });
     if (claimed.count !== 1) return false;
     const locked = await tx.prediction.findUniqueOrThrow({
-      where: { id: row.id }, include: { categories: true },
+      where: { id: row.id }, include: { categories: true, aiJob: { select: { prompt: true } } },
     });
+    if (earlyPriceUnsafeFromPrompt(locked.aiJob?.prompt)) throw new Error("EARLY_PUBLICATION_PRICE_SAFETY_REVIEW_REQUIRED");
     if (locked.status !== "PENDING_REVIEW" || locked.fixtureApiId == null || !locked.kickoff ||
       locked.fixtureApiId !== row.fixtureApiId || locked.marketType !== row.marketType ||
       JSON.stringify(locked.selection) !== JSON.stringify(row.selection) ||
