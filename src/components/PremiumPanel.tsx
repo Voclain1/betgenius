@@ -27,7 +27,7 @@ export function PremiumPanel({
         <SectionHead kicker={kicker} title={title} id={id} />
         {aside && <div className="mb-4 shrink-0 text-xs font-semibold">{aside}</div>}
       </div>
-      {bare ? children : <div className="rounded-3xl border border-brand-border bg-brand-card p-5">{children}</div>}
+      {bare ? children : <div className="premium-panel rounded-3xl border border-brand-border bg-brand-card p-5">{children}</div>}
     </section>
   );
 }
