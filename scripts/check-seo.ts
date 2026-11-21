@@ -65,7 +65,7 @@ check("non-branded cup demand: main prediction hub links to real Danish and DFB 
   predictionsLanding.includes('href: `/predictions/cup/${cup.slug}`'));
 check("non-branded cup demand: existing noindex and category rules unchanged",
   predictionsLanding.includes("hasDiscoveryFilters(searchParams)") &&
-  readFileSync(join(repoRoot, "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));
+  readFileSync(join(process.cwd(), "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
 // production/database dependency merely to prove its public claims.
