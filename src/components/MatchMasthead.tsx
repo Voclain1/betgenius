@@ -90,7 +90,7 @@ export function MatchMasthead({
   );
 
   return (
-    <header className="relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+    <header className="premium-match-hero brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
       {/* Both crests, oversized and faded, as the backdrop. */}
       {homeTeamApiId != null && (
         <Image unoptimized={skipFootballImageOptimization} aria-hidden src={teamCrestUrl(homeTeamApiId)} alt="" width={288} height={288} quality={50} loading="lazy" className="pointer-events-none absolute -left-12 -top-10 h-56 w-56 select-none object-contain opacity-[0.06] sm:h-72 sm:w-72" />
