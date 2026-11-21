@@ -174,7 +174,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
   // Stream all relevant predictions in stable order. A fixed top-500 slice
   // would make older held rows invisible forever as coverage scales.
   let cursor: string | undefined;
-  while (Date.now() - startedAt < TRIAGE_RUN_BUDGET_MS) {
+  scan: while (Date.now() - startedAt < TRIAGE_RUN_BUDGET_MS) {
     const rows = await prisma.prediction.findMany({
       where: {
         fixtureApiId: { in: fixtureIds },
@@ -206,7 +206,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
 
     for (const row of rows) {
       if (Date.now() - startedAt >= TRIAGE_RUN_BUDGET_MS) break;
-      if (report.published >= limit) return finish();
+      if (report.published >= limit) break scan;
       // DRAFT is a holding state ONLY if this engine placed the hold. Never
       // hijack an admin-created or manually archived draft.
       if (row.status === "DRAFT" && row.revisions.length === 0) continue;
@@ -249,7 +249,7 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
         autoEligible: reason === null, pricedExactSelection: price.ok,
       });
       if (reason || !price.ok) {
-        const block = reason ?? ("odds-" + price.reason);
+        const block = reason ?? (price.ok ? "early-quote-unavailable" : "odds-" + price.reason);
         report.blocked[block] = (report.blocked[block] ?? 0) + 1;
       }
       const explanation = [
