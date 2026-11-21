@@ -22,7 +22,7 @@ export function CompetitionFixtureSummary({
       </p>
       <p className="text-sm leading-7 text-gray-300">
         Browse the rounds below for scheduled matches and scores. Only fixtures with published BetGenius predictions link to a match page; other fixtures remain listed without invented picks.
-        {" "}<a href="#rounds" className="font-semibold text-brand hover:underline">Browse rounds</a> or <Link href="/predictions/today" className="font-semibold text-brand hover:underline">see today's football predictions</Link>.
+        {" "}<a href="#rounds" className="font-semibold text-brand hover:underline">Browse rounds</a> or <Link href="/predictions/today" className="font-semibold text-brand hover:underline">see today&apos;s football predictions</Link>.
       </p>
     </section>
   );

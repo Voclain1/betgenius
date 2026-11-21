@@ -78,6 +78,7 @@ function TeamLine({ name, logo }: { name: string; logo?: string }) {
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
       ) : (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={logo}
           alt=""
@@ -149,6 +150,7 @@ export function LeagueGroup({
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={league.logo}
             alt=""

@@ -35,6 +35,7 @@ export function LeagueClubGrid({ clubs }: { clubs: LeagueClub[] }) {
                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
               ) : (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={c.crest}
                   alt=""
