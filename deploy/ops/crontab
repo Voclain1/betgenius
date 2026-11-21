@@ -13,4 +13,4 @@
 6,36 * * * * /ops/cron-call.sh /api/admin/generate/early-odds?limit=4
 9,39 * * * * /ops/cron-call.sh /api/admin/generate/early-run?limit=3
 16,46 * * * * /ops/cron-call.sh /api/admin/generate/early-publish?limit=16
-12,42 * * * * /ops/cron-call.sh /api/admin/generate/reassess?limit=3
+6,21,36,51 * * * * /ops/cron-call.sh /api/admin/generate/reassess?limit=3
