@@ -119,7 +119,7 @@ export async function selectCandidates(opts: {
  */
 export async function candidatesFromFixtures(
   rows: FixtureRow[],
-  opts: { now: Date; limit: number; fromHours?: number; untilHours?: number },
+  opts: { now: Date; limit: number; fromHours?: number; untilHours?: number; cacheOnly?: boolean },
 ): Promise<{ candidates: Candidate[]; scanned: number; reservedForPaidTier: number; newToLedger: Set<string> }> {
   const now = opts.now;
   const leagueNameById = new Map<number, string>(LEAGUE_CATALOGUE.map((l) => [l.id, l.name]));
@@ -146,7 +146,7 @@ export async function candidatesFromFixtures(
 
   // Cyprus and Latvia: only matches with a top-three club (selectiveLeagues.ts).
   // The table is read (and refreshed) only when such a fixture is in the slate.
-  const tables = inWindow.some((f) => isSelectiveLeague(f.league?.id)) ? await loadSelectiveTables(inWindow, now) : new Map();
+  const tables = inWindow.some((f) => isSelectiveLeague(f.league?.id)) ? await loadSelectiveTables(inWindow, now, opts.cacheOnly === true) : new Map();
   const keyed = inWindow
     .filter((f) => isWorthATip(f, tables))
     .map((f) => {
