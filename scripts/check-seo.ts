@@ -66,6 +66,15 @@ check("non-branded cup demand: all configured cup tiers are linked from the disc
 check("non-branded cup demand: existing noindex and category rules unchanged",
   predictionsLanding.includes("hasDiscoveryFilters(searchParams)") &&
   readFileSync(join(process.cwd(), "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));
+// --- Post-deployment SEO utility-page snippet guard ----------------------
+for (const section of ["fixtures", "livescores", "standings"]) {
+  const source = readFileSync(join(process.cwd(), `src/app/(public)/${section}/layout.tsx`), "utf8");
+  const description = source.match(/^\s*description: "([^"]+)",?$/m)?.[1] ?? "";
+  check(`utility metadata: ${section} description fits 70–160 characters`,
+    description.length >= 70 && description.length <= 160, { section, length: description.length });
+  check(`utility metadata: ${section} keeps its clean canonical`,
+    source.includes(`canonical: "/${section}"`));
+}
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
 // production/database dependency merely to prove its public claims.
