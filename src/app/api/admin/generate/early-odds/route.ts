@@ -9,7 +9,7 @@ import { JOB_EARLY_ODDS, recordRouteRun } from "@/lib/jobRuns";
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
 
-const Query = z.object({ limit: z.coerce.number().int().min(1).max(6).default(4) });
+const Query = z.object({ limit: z.coerce.number().int().min(1).max(16).default(10) });
 
 async function handle(req: Request) {
   const scheduler = Boolean(process.env.CRON_SECRET &&
