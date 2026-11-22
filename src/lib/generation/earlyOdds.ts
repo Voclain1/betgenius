@@ -15,7 +15,28 @@ const HOUR = 3_600_000;
 const MIN_QUOTA_REMAINING = 1_800;
 export const EARLY_ODDS_MAX_PER_RUN = 6;
 
+/**
+ * How useful a fresh quote is for a fixture, given the early draft (if any)
+ * already generated for it. Pure; unit-checked. Lower is served first.
+ *
+ *   0 "publishable-if-priced" — a draft at/above the 70 floor with complete
+ *     evidence is waiting; a quote is the only thing between it and the site.
+ *   1 "not-generated"         — no draft yet; a quote lets generation run priced-first.
+ *   2 "review-only"           — a draft exists but cannot auto-publish (below the
+ *     floor or incomplete evidence); a quote only informs admin review.
+ */
+export type QuoteYield = "publishable-if-priced" | "not-generated" | "review-only";
+export function quoteYield(drafts: ReadonlyArray<{ confidence: number; contextComplete: boolean }>, floor: number): QuoteYield {
+  if (!drafts.length) return "not-generated";
+  return drafts.some(d => d.contextComplete && d.confidence >= floor) ? "publishable-if-priced" : "review-only";
+}
+const YIELD_ORDER: Record<QuoteYield, number> = { "publishable-if-priced": 0, "not-generated": 1, "review-only": 2 };
+const EARLY_FREE_CONFIDENCE_FLOOR = 70; // == EARLY_PUBLICATION_CONFIDENCE_FLOOR (asserted in scripts/check-early-evidence-freshness.ts)
+
 export type EarlyOddsWarmReport = {
+  /** Fetch budget by expected usefulness, so low-yield spend is visible. */
+  attemptedByYield?: Record<QuoteYield, number>;
+  dueByYield?: Record<QuoteYield, number>;
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
   quoted: number; unquoted: number; failures: string[]; summary: string;
   coverageByLeadDays: Record<string, { fixtures: number; quoted: number; publishable: number }>;
@@ -85,16 +106,30 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   // No first-400-row ceiling: every active queued fixture is considered.
   // Failed/unpriced quotes retry on a lead-time-aware backoff, so provider
   // quota is spent on new opportunities, not repeatedly on one empty market.
-  const due = captured.filter(f => {
+  const dueUnordered = captured.filter(f => {
     const row = byKey.get(f.matchKey);
     return earlyOddsRefreshDue({
       kickoff: f.kickoff, now,
       fetchedAt: row?.fetchedAt ?? null, lastAttemptAt: row?.lastAttemptAt ?? null,
     });
-  }).sort((a, b) => {
+  });
+  // Same fetch budget, better aimed: a quote for a draft that is ready to
+  // publish is worth more than one for a draft that can only go to review.
+  const drafts = dueUnordered.length ? await prisma.prediction.findMany({
+    where: { fixtureApiId: { in: dueUnordered.map(f => f.fixtureApiId) }, status: { in: ["PENDING_REVIEW", "DRAFT"] } },
+    select: { fixtureApiId: true, confidence: true, contextComplete: true },
+  }) : [];
+  const draftsByFixture = new Map<number, Array<{ confidence: number; contextComplete: boolean }>>();
+  for (const d of drafts) if (d.fixtureApiId != null) draftsByFixture.set(d.fixtureApiId, [...(draftsByFixture.get(d.fixtureApiId) ?? []), d]);
+  const yieldOf = new Map(dueUnordered.map(f => [f.matchKey, quoteYield(draftsByFixture.get(f.fixtureApiId) ?? [], EARLY_FREE_CONFIDENCE_FLOOR)]));
+  report.dueByYield = { "publishable-if-priced": 0, "not-generated": 0, "review-only": 0 };
+  report.attemptedByYield = { "publishable-if-priced": 0, "not-generated": 0, "review-only": 0 };
+  for (const y of yieldOf.values()) report.dueByYield[y]++;
+  const due = dueUnordered.sort((a, b) => {
     const ca = byKey.get(a.matchKey), cb = byKey.get(b.matchKey);
-    // First price absent fixtures ahead of refreshing already-priced ones.
-    return Number(!!ca?.fetchedAt) - Number(!!cb?.fetchedAt) ||
+    return YIELD_ORDER[yieldOf.get(a.matchKey)!] - YIELD_ORDER[yieldOf.get(b.matchKey)!] ||
+      // Then price absent fixtures ahead of refreshing already-priced ones.
+      Number(!!ca?.fetchedAt) - Number(!!cb?.fetchedAt) ||
       (ca?.lastAttemptAt?.getTime() ?? 0) - (cb?.lastAttemptAt?.getTime() ?? 0) ||
       a.kickoff.getTime() - b.kickoff.getTime();
   });
@@ -102,6 +137,7 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   for (const target of due.slice(0, limit)) {
     // A bounded call count and a fixed quota reserve, even for a crowded slate.
     report.attempted++;
+    report.attemptedByYield![yieldOf.get(target.matchKey)!]++;
     try {
       const result = await refreshOddsCache({
         matchKey: target.matchKey, fixtureApiId: target.fixtureApiId,

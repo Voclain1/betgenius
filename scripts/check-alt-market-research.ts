@@ -162,8 +162,38 @@ check("7 2-4 incremental is inconclusive", researchDecision(30, 3, 0.2) === "INC
   check("9 Anthropic SDK retries stay at 1 in production", DEFAULT_MAX_RETRIES === 1);
   const analysis = src("src/lib/ai/analysis.ts");
   check("9 production chain is unchanged (no maxRetries override)", /const PROVIDER_CHAIN: AIProvider\[\] = \[makeAnthropicProvider\(\{ effort: "high" \}\), geminiProvider, groqProvider\];/.test(analysis));
+  // Sprint 10 asserted "production generation never sets cacheOnly". Since
+  // PR #218 the dedicated early FREE lane is cache-only BY DESIGN (it must
+  // spend zero API-Football quota), so the rule is now: cache-only is set
+  // ONLY by that intent, never as a literal, and every other lane (ordinary,
+  // VIP/Premium, Goals, European, admin) keeps refreshing caches as before.
   const gen = src("src/lib/ai/generate.ts");
-  check("9 production generation never sets cacheOnly", !/cacheOnly/.test(gen));
+  const code = (text: string) => text.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l));
+  const genLines = code(gen).filter((l) => /cacheOnly/.test(l));
+  const intentGated = /cacheOnly(?::| =) input\.intent === EARLY_FREE_GENERATION_INTENT\b/;
+  const allowedGen = [
+    intentGated, // digest assembly / evidence-reason flag
+    /^\s*homeId: homeApiId, awayId: awayApiId, cacheOnly,\s*$/, // passes the intent-derived const
+    /^\s*cacheOnly = false,\s*$/, // loadFixtureOdds parameter default: refreshes unless told otherwise
+    /^\s*if \(cacheOnly \|\| fixtureApiId == null/, // the read of that parameter
+  ];
+  const stray = genLines.filter((l) => !allowedGen.some((re) => re.test(l)));
+  check("9 production generation sets cacheOnly only from the early FREE intent", genLines.length > 0 && stray.length === 0 && !/cacheOnly:\s*true/.test(gen));
+  check("9 generation's odds lookup is cache-only only for the early FREE intent",
+    /loadFixtureOdds\([^)]*\n?\s*input\.intent === EARLY_FREE_GENERATION_INTENT\)/.test(gen));
+  const worker = src("src/lib/generation/worker.ts");
+  const workerLines = code(worker).filter((l) => /cacheOnly/.test(l));
+  check("9 the worker derives cacheOnly only from the early FREE intent",
+    workerLines.length > 0 && workerLines.every((l) => /cacheOnly: opts\.intent === EARLY_FREE_GENERATION_INTENT/.test(l)));
+  const early = src("src/lib/generation/earlyGeneration.ts");
+  check("9 early FREE generation also runs under the provider-call hard stop", /withNoFootballApiCalls\(\(\) => runGeneration\(\{[\s\S]*?intent: EARLY_FREE_GENERATION_INTENT/.test(early));
+  const walk = (dir: string): string[] => readdirSync(join(__dirname, "..", dir)).flatMap((n) => {
+    const rel = join(dir, n);
+    return statSync(join(__dirname, "..", rel)).isDirectory() ? walk(rel) : /\.tsx?$/.test(n) ? [rel] : [];
+  });
+  const literalCacheOnly = walk("src").filter((f) => code(src(f)).some((l) => /cacheOnly:\s*true/.test(l)));
+  check("9 no production module hard-codes cacheOnly: true outside the early discovery lane",
+    literalCacheOnly.length === 1 && literalCacheOnly[0] === join("src", "lib", "generation", "earlyFixtureDiscovery.ts"));
   const ctx = src("src/lib/ai/generationContext.ts");
   check("9 cacheOnly is opt-in", /cacheOnly\?: boolean/.test(ctx) && /cacheOnly = false/.test(ctx));
   const cacheOnlyTeam = ctx.slice(ctx.indexOf("if (cacheOnly) {"), ctx.indexOf("// Miss or stale"));

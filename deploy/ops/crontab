@@ -11,6 +11,15 @@
 # duplicate the same endpoints in cron-job.org.
 3,33 * * * * /ops/cron-call.sh /api/admin/generate/early-discover?batch=4
 6,36 * * * * /ops/cron-call.sh /api/admin/generate/early-odds?limit=4
-9,39 * * * * /ops/cron-call.sh /api/admin/generate/early-run?limit=3
+# early-run shares the "generation-run" lease (6-minute TTL, worker.ts) with
+# ordinary (10,25,40,55), VIP/Premium (5,20,35,50) and European (15,45)
+# generation, all on cron-job.org in Lagos time (= UTC+1, so the minutes are
+# identical). At :09/:39 an early run still awaiting a model call at :10/:40
+# made ordinary generation stand down. :27/:57 starts early work 8 minutes
+# before the next lease user (VIP at :35/:05) — longer than the lease TTL — so
+# even a run whose model call hangs cannot block VIP/Premium, ordinary or
+# European generation. If an ordinary run that started at :25/:55 is still
+# going, the early run stands down and retries 30 minutes later.
+27,57 * * * * /ops/cron-call.sh /api/admin/generate/early-run?limit=3
 16,46 * * * * /ops/cron-call.sh /api/admin/generate/early-publish?limit=16
 6,21,36,51 * * * * /ops/cron-call.sh /api/admin/generate/reassess?limit=3

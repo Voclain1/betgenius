@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { isAdmin } from "@/lib/access";
@@ -31,9 +32,12 @@ async function handle(req: Request) {
   }
 }
 
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   const started = Date.now();
   const response = await handle(req);
   await recordRouteRun(JOB_EARLY_GENERATION, response, started, p => p?.summary ?? p?.error ?? "status " + response.status);
   return response;
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("early-free-generation", getUnattributed);

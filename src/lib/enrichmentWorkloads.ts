@@ -78,7 +78,8 @@ export async function runEnrichmentWorkload(
       return { id: target.teamApiId, result: r.result, detail: r.detail };
     });
   } else if (workload === "leagues") {
-    const targets = await getScopedLeagueTargets();
+    // Includes leagues of queued early fixtures: same per-run call count (see getScopedLeagueTargets).
+    const targets = await getScopedLeagueTargets({ includeQueuedEarly: true });
     const queue = await orderLeaguesByStaleness(targets);
     scoped = targets.length;
     eligible = queue.length;

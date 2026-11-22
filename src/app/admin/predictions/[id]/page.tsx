@@ -51,6 +51,13 @@ type Prediction = {
   kickoff: string | null;
   contextComplete: boolean;
   aiJob?: { model: string | null } | null;
+  evidenceReview?: {
+    status: "ready" | "needs-freshness-review" | "missing-sporting-evidence" | "no-saved-snapshot";
+    homeRecentMatches: number; awayRecentMatches: number;
+    homeSeasonStats: boolean; awaySeasonStats: boolean;
+    h2hMeetings: number; leagueTableRowsForFixture: number; domesticTables: number;
+    freshness?: Array<{ part: string; status: string; ageHours: number | null; toleranceHours: number | null; supersededBy: string | null; unverifiedMatch?: string | null }> | null;
+  } | null;
   manualSettlementOnly: boolean;
   outcome: string;
   finalHomeScore: number | null;
@@ -327,14 +334,56 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         <span className="chip bg-brand-border">{p.status}</span>
       </div>
 
-      {!p.contextComplete && (
+      {(p.evidenceReview ? p.evidenceReview.status !== "ready" : !p.contextComplete) && (
         <div className="card flex items-start gap-3 border-amber-500/40 bg-amber-500/10">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
           <div className="text-sm text-amber-200">
-            <b>Generated with no live data.</b> Every football-data lookup (team form, injuries, standings, head-to-head)
-            came back empty for this fixture — the analysis used team names alone. Double-check the pick and reasoning
-            before approving, and consider verifying the football-data API is actually returning data (plan/season coverage,
-            rate limit) before generating more like it.
+            {p.evidenceReview?.status === "needs-freshness-review" ? (
+              <>
+                <b>Saved football evidence exists, but its freshness needs review.</b>{" "}
+                The prediction was generated with recorded statistics or match results.
+                Earlier generation marked cached context as incomplete when some sources
+                were too old. This warning does not mean analysis used team names alone.
+                Check the saved data against the fixture date before approving.
+              </>
+            ) : p.evidenceReview?.status === "missing-sporting-evidence" ? (
+              <>
+                <b>No usable football results or season statistics were saved for this prediction.</b>{" "}
+                Its reasoning may contain unsupported claims. Verify the claimed form,
+                scorelines and league positions independently before any approval.
+                New generation now defers this situation before making a model call.
+              </>
+            ) : (
+              <>
+                <b>Generation evidence could not be verified from the saved snapshot.</b>{" "}
+                The original context may be unavailable or in an older format.
+                Review all specific claims before approval; this does not prove
+                the model used no real data.
+              </>
+            )}
+            {p.evidenceReview && p.evidenceReview.status !== "no-saved-snapshot" && (
+              <p className="mt-2 text-xs text-amber-200/80">
+                Saved evidence: home recent matches {p.evidenceReview.homeRecentMatches},
+                away recent matches {p.evidenceReview.awayRecentMatches};
+                season statistics {p.evidenceReview.homeSeasonStats ? "home" : "none"}
+                {p.evidenceReview.awaySeasonStats ? " + away" : ""};
+                head-to-head meetings {p.evidenceReview.h2hMeetings};
+                played table rows {p.evidenceReview.leagueTableRowsForFixture};
+                domestic league records {p.evidenceReview.domesticTables}.
+              </p>
+            )}
+            {p.evidenceReview?.freshness && (
+              <p className="mt-1 text-xs text-amber-200/80">
+                Freshness at generation:{" "}
+                {p.evidenceReview.freshness.map((f) => {
+                  const label = { homeTeam: "home team", awayTeam: "away team", standings: "standings", h2h: "head-to-head" }[f.part] ?? f.part;
+                  const age = f.ageHours == null ? "" : ` ${f.ageHours}h old${f.toleranceHours != null ? ` (limit ${f.toleranceHours}h)` : ""}`;
+                  const sup = f.supersededBy ? `, missing the match of ${f.supersededBy.slice(0, 10)}`
+                    : f.unverifiedMatch ? `, outcome of the match of ${f.unverifiedMatch.slice(0, 10)} not yet confirmed` : "";
+                  return `${label} ${f.status}${age}${sup}`;
+                }).join("; ")}.
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { withJobRun } from "@/lib/jobRuns";
 import { DEFAULT_FETCH_LIMIT, JOB_REFRESH_INSIGHTS, refreshMatchInsights } from "@/lib/insightRefresh";
 
@@ -17,7 +18,7 @@ function authorized(req: NextRequest) {
   return !!process.env.CRON_SECRET && req.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
 }
 
-export async function GET(req: NextRequest) {
+async function getUnattributed(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const raw = req.nextUrl.searchParams.get("fetchLimit");
   const requested = raw === null || raw === "" ? NaN : Number(raw);
@@ -29,3 +30,6 @@ export async function GET(req: NextRequest) {
   );
   return NextResponse.json(result);
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("refresh-insights", getUnattributed);

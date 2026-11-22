@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
@@ -24,8 +25,11 @@ async function isAuthorized(req: Request): Promise<boolean> {
  * Idempotent per Lagos day, so a retry or an overlapping cron cannot publish a
  * second card for a tier. `?dryRun=1` assembles and reports without writing.
  */
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const dryRun = new URL(req.url).searchParams.get("dryRun") === "1";
   return NextResponse.json(await curateAccumulators({ dryRun }));
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("curate-accumulators", getUnattributed);

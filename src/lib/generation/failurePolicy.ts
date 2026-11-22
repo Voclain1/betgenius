@@ -19,14 +19,24 @@ import { MAX_GENERATION_ATTEMPTS, nextAttemptAt } from "@/lib/generation/selecto
  * not one per queued fixture.
  */
 export const PROVIDER_OUTAGE_RETRY_MS = 60 * 60_000;
+/** Four-hour cache refresh interval for genuinely missing evidence. */
+export const MISSING_EVIDENCE_RETRY_MS = 4 * 60 * 60_000;
+
+export function isFootballEvidenceUnavailable(err: unknown): boolean {
+  return (err as { name?: string } | null)?.name === "FootballEvidenceUnavailableError";
+}
 
 export function isProviderOutage(err: unknown): boolean {
   const e = err as { name?: string; message?: string } | null;
   return e?.name === "AllProvidersFailedError" || /^Every AI provider failed/.test(e?.message ?? "");
 }
 
-export function ledgerFailureUpdate(priorAttempts: number, outage: boolean, now: Date): { status: "FAILED" | "ABANDONED"; attempts: number; nextAttemptAt: Date | null } {
+export function ledgerFailureUpdate(priorAttempts: number, outage: boolean, now: Date, evidenceUnavailable = false): { status: "FAILED" | "ABANDONED"; attempts: number; nextAttemptAt: Date | null } {
   if (outage) return { status: "FAILED", attempts: priorAttempts, nextAttemptAt: new Date(now.getTime() + PROVIDER_OUTAGE_RETRY_MS) };
+  // A low-coverage fixture or provider data gap must not exhaust three retries
+  // and be permanently abandoned. Retry until kickoff; no predictions are
+  // deleted or invented during the defer interval.
+  if (evidenceUnavailable) return { status: "FAILED", attempts: priorAttempts, nextAttemptAt: new Date(now.getTime() + MISSING_EVIDENCE_RETRY_MS) };
   const attempts = priorAttempts + 1;
   const retryAt = attempts >= MAX_GENERATION_ATTEMPTS ? null : nextAttemptAt(attempts, now);
   return { status: retryAt === null ? "ABANDONED" : "FAILED", attempts, nextAttemptAt: retryAt };
