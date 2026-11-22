@@ -61,3 +61,28 @@ no "fixed API" claim until production data proves it.
 
 No edits to published rows, odds thresholds, betting markets, entitlement,
 VIP/Premium curation, pricing, cron schedules, or API-Football request pacing.
+
+## Correctness clarification: early-generation false-positive warning
+
+The original `contextComplete` flag has **two meanings**. For an ordinary
+fixture, it was set false when `isDigestEmpty` was true. For the dedicated
+early FREE fixture lane, it was also set false when **any input cache was stale**
+(`sources.stale?.length > 0`), even if some saved digest fields included
+legitimate previous match scores, league statistics or played tables. The
+admin UI falsely rendered both cases as "every lookup came back empty" and
+"used team names alone".
+
+The corrective PR now computes an admin-only summary from the original
+`AIJob.context` snapshot, using `parseStoredContext` (supports legacy v1/v2).
+The admin banner distinguishes **saved match evidence, freshness needs review**
+from **no substantive sporting evidence saved** and **snapshot unavailable**.
+It shows counts of recorded last-five matches, statistics, H2H and table rows.
+The stored digest never leaves the admin API in raw form. This explains why
+someone can observe genuinely accurate form or league positions even where
+the old generic warning appeared.
+
+**Do not claim any particular existing prediction has verified accurate facts**
+without inspecting its own snapshot. The persisted snapshot shows what the
+model was sent, not third-party factual validation or current freshness.
+New truly evidence-free fixture generation is still deferred before the model;
+real but stale/cached evidence is not rejected as "no data".

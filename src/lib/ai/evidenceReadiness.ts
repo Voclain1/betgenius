@@ -52,3 +52,49 @@ export function unavailableEvidenceReason(
     input.cacheOnly ? "Cache-only route: no API calls made for missing evidence." : "Cache refresh attempted where eligible; inspect recorded cache lastError and API usage before retrying.",
   ].join(" ");
 }
+
+/** Admin-only summary from the exact immutable AIJob.context snapshot.
+ *
+ * contextComplete historically represented BOTH no data and (for the early
+ * cache-only lane) data that was present but past a freshness threshold.
+ * Never infer that a model invented facts solely from that boolean.
+ * These counters describe what was stored, not independent verification of
+ * a sentence's correctness or whether the data was current at kickoff.
+ */
+export type SavedEvidenceReview = {
+  status: "ready" | "needs-freshness-review" | "missing-sporting-evidence" | "no-saved-snapshot";
+  homeRecentMatches: number;
+  awayRecentMatches: number;
+  homeSeasonStats: boolean;
+  awaySeasonStats: boolean;
+  h2hMeetings: number;
+  leagueTableRowsForFixture: number;
+  domesticTables: number;
+};
+
+export function assessSavedGenerationEvidence(
+  digest: MatchDigest | null,
+  contextComplete: boolean,
+): SavedEvidenceReview {
+  const base = {
+    homeRecentMatches: 0,
+    awayRecentMatches: 0,
+    homeSeasonStats: false,
+    awaySeasonStats: false,
+    h2hMeetings: 0,
+    leagueTableRowsForFixture: 0,
+    domesticTables: 0,
+  };
+  if (!digest) return { status: "no-saved-snapshot", ...base };
+  const available = hasSubstantiveFootballEvidence(digest);
+  return {
+    status: !available ? "missing-sporting-evidence" : contextComplete ? "ready" : "needs-freshness-review",
+    homeRecentMatches: digest.teams.home?.last5?.length ?? 0,
+    awayRecentMatches: digest.teams.away?.last5?.length ?? 0,
+    homeSeasonStats: !!digest.teams.home?.overall,
+    awaySeasonStats: !!digest.teams.away?.overall,
+    h2hMeetings: digest.h2h?.meetings?.length ?? 0,
+    leagueTableRowsForFixture: digest.standings?.neighbourhood?.filter(row => row.isFixtureTeam && row.played > 0).length ?? 0,
+    domesticTables: [digest.teams.home?.domestic, digest.teams.away?.domestic].filter(row => (row?.played ?? 0) > 0).length,
+  };
+}
