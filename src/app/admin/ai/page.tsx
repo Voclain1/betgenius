@@ -198,9 +198,9 @@ export default function AIPanel() {
                   <span className="chip bg-brand-border">{p.status}</span>
                 </div>
                 {!p.contextComplete && (
-                  <div className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
-                    <AlertTriangle size={13} className="shrink-0" />
-                    Generated with no live data — every football-data lookup came back empty. Verify before approving.
+                  <div className="flex items-center gap-1.5 text-xs text-gray-300">
+                    <AlertTriangle size={13} className="shrink-0 text-amber-400" />
+                    Evidence incomplete or not current at generation. Open the prediction to see exactly which evidence was saved before approving.
                   </div>
                 )}
                 <LeagueBadge leagueApiId={p.leagueApiId} leagueName={p.leagueName} />
@@ -308,7 +308,7 @@ export default function AIPanel() {
                 <li key={i} className="flex items-center justify-between py-2 text-sm">
                   <span className="flex items-center gap-1.5">
                     {r.ok && r.contextComplete === false && (
-                      <AlertTriangle size={13} className="shrink-0 text-amber-400" aria-label="Generated with no live data" />
+                      <AlertTriangle size={13} className="shrink-0 text-amber-400" aria-label="Evidence incomplete or not current at generation" />
                     )}
                     {r.home} vs {r.away}
                   </span>

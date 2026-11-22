@@ -63,6 +63,8 @@
     "check:early-fixtures": "tsx scripts/check-early-fixtures.ts",
     "check:early-odds": "tsx scripts/check-early-odds.ts",
     "check:early-evidence-freshness": "tsx scripts/check-early-evidence-freshness.ts",
+    "check:historical-evidence": "tsx scripts/check-historical-evidence.ts",
+    "diagnose:missing-evidence": "tsx --env-file=.env scripts/diagnose-missing-evidence.ts",
     "audit:early-funnel": "tsx --env-file=.env scripts/audit-early-engine-funnel.ts",
     "audit:api-football-usage": "tsx --env-file=.env scripts/audit-api-football-usage.ts",
     "check:reassessment": "tsx scripts/check-reassessment.ts",

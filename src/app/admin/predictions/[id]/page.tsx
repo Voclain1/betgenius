@@ -56,6 +56,8 @@ type Prediction = {
     homeRecentMatches: number; awayRecentMatches: number;
     homeSeasonStats: boolean; awaySeasonStats: boolean;
     h2hMeetings: number; leagueTableRowsForFixture: number; domesticTables: number;
+    historical?: { classification: string; label: string; warning: string | null;
+      reasons: Array<{ code: string; detail: string }>; review: { kind: string; reason: string; at: string } | null } | null;
     freshness?: Array<{ part: string; status: string; ageHours: number | null; toleranceHours: number | null; supersededBy: string | null; unverifiedMatch?: string | null }> | null;
   } | null;
   manualSettlementOnly: boolean;
@@ -334,16 +336,31 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         <span className="chip bg-brand-border">{p.status}</span>
       </div>
 
-      {(p.evidenceReview ? p.evidenceReview.status !== "ready" : !p.contextComplete) && (
-        <div className="card flex items-start gap-3 border-amber-500/40 bg-amber-500/10">
+      {(p.evidenceReview?.historical
+        ? ["FRESHNESS_UNCERTAIN", "EVIDENCE_INSUFFICIENT", "SNAPSHOT_UNAVAILABLE"].includes(p.evidenceReview.historical.classification)
+        : p.evidenceReview ? p.evidenceReview.status !== "ready" : !p.contextComplete) && (
+        <div className="card flex items-start gap-3">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
-          <div className="text-sm text-amber-200">
-            {p.evidenceReview?.status === "needs-freshness-review" ? (
+          <div className="text-sm text-gray-200">
+            {p.evidenceReview?.historical ? (
+              <>
+                <b>{p.evidenceReview.historical.label}.</b> {p.evidenceReview.historical.warning}
+                {p.evidenceReview.historical.reasons.length > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-gray-300">
+                    {p.evidenceReview.historical.reasons.map((r) => <li key={r.code}>{r.detail}</li>)}
+                  </ul>
+                )}
+                <p className="mt-2 text-xs text-gray-400">
+                  This is an administrator note only; it is never shown publicly and does not change the prediction.{" "}
+                  {p.evidenceReview.historical.review
+                    ? `Reviewed ${new Date(p.evidenceReview.historical.review.at).toLocaleDateString("en-GB")}: ${p.evidenceReview.historical.review.reason}`
+                    : <a className="underline" href="/admin/evidence-review">Review in Evidence review</a>}
+                </p>
+              </>
+            ) : p.evidenceReview?.status === "needs-freshness-review" ? (
               <>
                 <b>Saved football evidence exists, but its freshness needs review.</b>{" "}
                 The prediction was generated with recorded statistics or match results.
-                Earlier generation marked cached context as incomplete when some sources
-                were too old. This warning does not mean analysis used team names alone.
                 Check the saved data against the fixture date before approving.
               </>
             ) : p.evidenceReview?.status === "missing-sporting-evidence" ? (
@@ -351,18 +368,16 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
                 <b>No usable football results or season statistics were saved for this prediction.</b>{" "}
                 Its reasoning may contain unsupported claims. Verify the claimed form,
                 scorelines and league positions independently before any approval.
-                New generation now defers this situation before making a model call.
               </>
             ) : (
               <>
                 <b>Generation evidence could not be verified from the saved snapshot.</b>{" "}
-                The original context may be unavailable or in an older format.
                 Review all specific claims before approval; this does not prove
                 the model used no real data.
               </>
             )}
             {p.evidenceReview && p.evidenceReview.status !== "no-saved-snapshot" && (
-              <p className="mt-2 text-xs text-amber-200/80">
+              <p className="mt-2 text-xs text-gray-400">
                 Saved evidence: home recent matches {p.evidenceReview.homeRecentMatches},
                 away recent matches {p.evidenceReview.awayRecentMatches};
                 season statistics {p.evidenceReview.homeSeasonStats ? "home" : "none"}
@@ -373,7 +388,7 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
               </p>
             )}
             {p.evidenceReview?.freshness && (
-              <p className="mt-1 text-xs text-amber-200/80">
+              <p className="mt-1 text-xs text-gray-400">
                 Freshness at generation:{" "}
                 {p.evidenceReview.freshness.map((f) => {
                   const label = { homeTeam: "home team", awayTeam: "away team", standings: "standings", h2h: "head-to-head" }[f.part] ?? f.part;

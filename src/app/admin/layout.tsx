@@ -15,6 +15,7 @@ const items = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/ai", label: "Generation panel" },
   { href: "/admin/predictions", label: "Predictions" },
+  { href: "/admin/evidence-review", label: "Evidence review" },
   { href: "/admin/generation", label: "Generation" },
   { href: "/admin/failed-generations", label: "Failed generations" },
   { href: "/admin/combos", label: "Combos" },

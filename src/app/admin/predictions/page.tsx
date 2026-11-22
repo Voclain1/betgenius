@@ -352,7 +352,7 @@ export default function AdminPredictions() {
                 <td className="px-3 py-2">
                   <span className="flex items-center gap-1.5">
                     {!r.contextComplete && (
-                      <AlertTriangle size={14} className="shrink-0 text-amber-400" aria-label="Generated with no live data — verify manually" />
+                      <AlertTriangle size={14} className="shrink-0 text-amber-400" aria-label="Evidence flagged at generation: open the prediction or Evidence review for the reason" />
                     )}
                     {r.homeTeam
                       ? `${r.homeTeam} vs ${r.awayTeam}`
