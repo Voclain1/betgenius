@@ -476,7 +476,7 @@ export const getLeagueClubs = cache(async (standings: { teamId: number | null; t
   return standings.map((s) => ({
     teamId: s.teamId,
     teamName: s.teamName,
-    crest: s.teamLogo ?? crestById.get(s.teamId) ?? null,
+    crest: s.teamLogo ?? (s.teamId != null ? crestById.get(s.teamId) : undefined) ?? null,
     slug: publishedTeamHref(publishedTeams, s.teamId, s.teamName),
   }));
 });
