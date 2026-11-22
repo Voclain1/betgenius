@@ -16,6 +16,7 @@ import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { isValidSelection, type MarketType } from "@/lib/markets";
 import { evidenceSnapshotHash } from "@/lib/reassessment/snapshotHash";
+import { proseViolations } from "@/lib/ai/proseGate";
 import { latestSignals } from "@/lib/predictionUpdates";
 import { DECISION_CONFIDENCE_DROP } from "@/lib/reassessment/evidenceDiff";
 
@@ -84,15 +85,21 @@ export async function POST(req: NextRequest) {
           pick: row.pick, confidence: row.confidence,
           reasoning: row.reasoning, matchPreview: row.matchPreview,
         },
-        reviewerNote: note + " Rewrite the analysis of the ORIGINAL published pick. " +
-          "Do not change the originally published selection, confidence or price. " +
-          "If the evidence instead supports a different pick, provide that as a separate draft, not as an edit.",
+        // The football has moved on: write as of now, for the same pick. The
+        // framing lives in its own prompt block; the administrator's note is
+        // passed only as private direction and is never narrated.
+        evidenceUpdate: true,
+        reviewerNote: note,
       });
       const candidate = output.output.predictions?.[0];
       if (!candidate || !Number.isFinite(candidate.confidence) ||
         !isValidSelection(candidate.marketType as MarketType, candidate.selection) ||
         typeof candidate.reasoning !== "string" || candidate.reasoning.trim().length < 20)
         throw new Error("REWRITE_NO_VALID_DRAFT");
+      // The prose gate every reader-facing draft passes (certainty, house
+      // terminology, narrated notes). Nothing is saved when it fails.
+      if (proseViolations({ matchPreview: output.output.matchPreview, keyFactors: output.output.keyFactors, reasoning: candidate.reasoning }).length)
+        throw new Error("REWRITE_PROSE_REJECTED");
       const draft: RewriteDraft = {
         marketType: candidate.marketType, selection: candidate.selection,
         confidence: candidate.confidence,
@@ -185,7 +192,7 @@ export async function POST(req: NextRequest) {
     const expected = new Set(["NO_ACTIVE_ADMIN_REVIEW", "KICKOFF_PASSED", "KICKOFF_UNVERIFIED",
       "NO_CREDIBLE_REASSESSMENT_EVIDENCE", "REWRITE_NO_VALID_DRAFT",
       "REVIEW_CHANGED_DURING_REWRITE", "REWRITE_REVISION_REQUIRED",
-      "REWRITE_DRAFT_STALE", "REWRITE_SELECTION_OR_EVIDENCE_CHANGED", "REWRITE_CONCURRENT_CHANGE",
+      "REWRITE_DRAFT_STALE", "REWRITE_PROSE_REJECTED", "REWRITE_SELECTION_OR_EVIDENCE_CHANGED", "REWRITE_CONCURRENT_CHANGE",
       "ADMIN_AUTHORED_PICK", "DECISION_REQUIRED"]);
     if (expected.has(message))
       return NextResponse.json({ error: message }, { status: 409 });

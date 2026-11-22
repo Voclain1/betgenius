@@ -12,7 +12,7 @@ import { beforeExperimentalModel } from "@/lib/vipQuotaExperiment";
  */
 import { AUTO_MARKET_TYPES, type MarketType, type Selection } from "@/lib/markets";
 import { certaintyProhibitionBlock } from "@/lib/certaintyLanguage";
-import { internalTerminologyProhibitionBlock } from "@/lib/houseVoice";
+import { internalTerminologyProhibitionBlock, editorialStandardsBlock, reviewerDirectionBlock, evidenceUpdateBlock } from "@/lib/houseVoice";
 import { stripUnsupportedClaims } from "@/lib/ai/evidenceClaims";
 import { isModelUnavailable, isQuotaExhausted } from "@/lib/ai/retry";
 import type { MatchDigest } from "@/lib/ai/digest";
@@ -213,7 +213,7 @@ Rules:
 7. Output STRICT JSON matching this TypeScript type — no markdown fences, no commentary:
 
 {
-  "matchPreview": string,          // 2-4 short PLAIN-TEXT paragraphs, separated by a blank line
+  "matchPreview": string,          // 2-4 polished PLAIN-TEXT paragraphs of match journalism (see EDITORIAL STANDARDS), separated by a blank line
   "predictions": [
     {
       "marketType": "MATCH_WINNER" | "DOUBLE_CHANCE" | "OVER_UNDER" | "BTTS" | "CORRECT_SCORE" | "WIN_EITHER_HALF" | "DRAW_NO_BET" | "HT_FT" | "TEAM_TOTAL",
@@ -221,7 +221,7 @@ Rules:
       "overUnderLine": number,
       "overUnderDirection": "OVER" | "UNDER",
       "confidence": number,
-      "reasoning": string        // plain text, no markdown, no bold, no headings
+      "reasoning": string        // the analytical case for this pick (see EDITORIAL STANDARDS); plain text, no markdown, no bold, no headings
     }
   ],
   "keyFactors": string[]           // 3-6 bullet points
@@ -526,7 +526,10 @@ export function buildSystemPrompt(
   // back into the reasoning as though they were facts about the football. This
   // block is appended in EVERY mode, including "off", for the same reason the
   // certainty block is — the rule is about the reader, not about a pipeline.
-  const voiceBlock = internalTerminologyProhibitionBlock();
+  // Editorial standards: what the preview and the reasoning are each FOR, and
+  // how to put uncertainty into football language. Appended in every mode for
+  // the same reason as the two blocks above: it is about the reader.
+  const voiceBlock = internalTerminologyProhibitionBlock() + editorialStandardsBlock();
 
   if (mode === "off") return `${BASE_SYSTEM_PROMPT}${breadthBlock}${certaintyBlock}${voiceBlock}`;
   // Appended to both calibration modes, never to "off" — "off" deliberately
@@ -666,6 +669,12 @@ export type PredictionRequestInput = {
   reviewerNote?: string | null;
   /** Present only on a rewrite — triggers the revision framing and higher sampling temperature. */
   previousDraft?: PreviousDraft | null;
+  /**
+   * A rewrite of a PUBLISHED pick's prose because the football evidence has
+   * moved on (the Prediction Updates workspace). Adds the current-evidence
+   * framing; only meaningful with previousDraft.
+   */
+  evidenceUpdate?: boolean;
   /** Category context conditions market-risk selection in the system prompt. */
   tiers: GenerationTier[];
   /**
@@ -759,23 +768,19 @@ Reasoning: ${input.previousDraft?.reasoning ?? "(none)"}
 Produce a genuinely different analysis: re-examine the evidence, take a
 different angle, and do not restate the sentences above. You may keep the same
 pick if the data still supports it, but the preview and reasoning must be newly
-written, and reconsider whether the confidence level is right.
+written, and reconsider whether the confidence level is right. The reader never
+sees the earlier text: do not refer to it, compare against it, or call this a
+revision, rewrite or new version.
 `
     : "";
 
+  // The editor's direction steers the analysis; it is never narrated to the
+  // reader (it used to say "address it directly and visibly", which invited
+  // "As requested, ..." and "the reviewer noted ..." into published prose).
   const directionBlock = input.reviewerNote?.trim()
-    ? `
-REVIEWER DIRECTION — this is an explicit instruction from a human editor and
-takes priority over your own stylistic preferences. Address it directly and
-visibly in the new draft:
-
-"${input.reviewerNote.trim()}"
-
-Still obey every formatting and data-grounding rule above; the direction changes
-emphasis, tone and judgement, never the output schema or the ban on inventing
-facts not present in the data.
-`
+    ? reviewerDirectionBlock(input.reviewerNote.trim())
     : "";
+  const updateBlock = isRewrite && input.evidenceUpdate ? evidenceUpdateBlock() : "";
 
   const d = input.digest;
 
@@ -827,7 +832,7 @@ Fixture:
 
 Evidence digest (JSON):
 ${JSON.stringify(d)}
-${revisionBlock}${directionBlock}
+${revisionBlock}${updateBlock}${directionBlock}
 ${handicapBlock}${goalsBlock}${!hc && !input.goalsOnly ? (input.shortPriceBlock ?? "") : ""}
 ${marketInstruction}`;
 

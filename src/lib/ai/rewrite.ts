@@ -15,6 +15,7 @@ import { GOALS_GENERATED_PROVENANCE, GOALS_MIN_CONFIDENCE, pickGoalsDraft } from
 import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type MarketType, type Selection } from "@/lib/markets";
 import { buildAnalysis } from "@/lib/predictionAnalysis";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
+import { proseViolations, describeProseViolations } from "@/lib/ai/proseGate";
 
 /** A superseded draft, appended to Prediction.previousDrafts. */
 export type ArchivedDraft = {
@@ -96,6 +97,17 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
         ? `The rewrite returned no Over 1.5 / Over 2.5 pick at ${GOALS_MIN_CONFIDENCE}% or above; the draft is unchanged`
         : "The model returned no predictions in the rewrite",
       502,
+    );
+  }
+
+  // The same prose gate first-pass generation applies (certainty language,
+  // house terminology, narrated reviewer notes). Checked BEFORE anything is
+  // archived or written, so a rejected rewrite leaves the draft untouched.
+  const violations = proseViolations({ matchPreview: output.matchPreview, keyFactors: output.keyFactors, reasoning: draft.reasoning });
+  if (violations.length) {
+    throw new RewriteError(
+      `The new draft used wording that cannot be published (${describeProseViolations(violations)}); the draft is unchanged. Request the rewrite again.`,
+      422,
     );
   }
 

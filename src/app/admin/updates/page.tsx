@@ -45,6 +45,7 @@ const KIND_LABEL: Record<string, string> = {
 
 const ERROR_TEXT: Record<string, string> = {
   REWRITE_DRAFT_STALE: "This draft is out of date: the evidence was refreshed after it was written. Close and prepare a new draft.",
+  REWRITE_PROSE_REJECTED: "The suggested wording did not meet the publication standard, so it was not saved. Prepare the draft again.",
   REVIEW_CHANGED_DURING_REWRITE: "The evidence changed while the draft was being written. Prepare it again.",
   DECISION_REQUIRED: "The new evidence undermines this pick, so an explanation-only update is not allowed. Keep, withdraw or replace it.",
   KICKOFF_PASSED: "The match has started. Nothing can be changed.",
