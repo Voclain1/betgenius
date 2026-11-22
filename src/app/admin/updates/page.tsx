@@ -39,7 +39,7 @@ const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("en-GB",
 const recText = (r: Rec) => r ? `P${r.played} W${r.won} D${r.drawn} L${r.lost}, ${r.goalsFor}-${r.goalsAgainst}` : "none";
 const KIND_LABEL: Record<string, string> = {
   CONFIRMED: "Kept original", ADMIN_REWRITE_APPLIED: "Explanation updated", WITHDRAWN: "Withdrawn", ADMIN_RESTORED: "Restored",
-  EVIDENCE_REVIEW_RETAINED: "Evidence flag retained", EVIDENCE_REVIEW_OPENED: "Private review opened",
+  EVIDENCE_REVIEW_RETAINED: "Evidence flag retained",
 };
 
 async function post(url: string, body: unknown) {
@@ -239,6 +239,16 @@ export default function PredictionUpdatesPage() {
   const [status, setStatus] = useState("");
   const [kickoffFrom, setKickoffFrom] = useState("");
   const [kickoffTo, setKickoffTo] = useState("");
+  // Historical data-quality notes. Default: every upcoming pick, whatever its
+  // generation date (a pick written weeks ago for a match still ahead is
+  // still live). Settled history only on request, under Advanced options.
+  const [histScope, setHistScope] = useState<"upcoming" | "7" | "30" | "90">("upcoming");
+  const histQs = useCallback((cursor?: string) => {
+    const q = new URLSearchParams({ reviewed: "unreviewed", pageSize: "10" });
+    if (histScope === "upcoming") q.set("timing", "upcoming"); else q.set("days", histScope);
+    if (cursor) q.set("cursor", cursor);
+    return "/api/admin/evidence-review?" + q.toString();
+  }, [histScope]);
   const [open, setOpen] = useState<Card | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -262,11 +272,11 @@ export default function PredictionUpdatesPage() {
       if (tab === "reviewed") { setReviewed(page.items ?? []); setNext(page.nextCursor ?? null); setCards([]); }
       else { setCards(page.cards ?? []); setTotal(page.total ?? 0); setNext(page.nextCursor ?? null); }
       if (tab === "needs") {
-        const f = await fetch("/api/admin/evidence-review?reviewed=unreviewed&timing=upcoming&days=30&pageSize=10").then((r) => r.json());
+        const f = await fetch(histQs()).then((r) => r.json());
         setFlags(f.items ?? []); setFlagNext(f.nextCursor ?? null);
       }
     } finally { setLoading(false); }
-  }, [qs, tab]);
+  }, [qs, tab, histQs]);
   useEffect(() => { load(); }, [load]);
 
   async function more() {
@@ -277,7 +287,7 @@ export default function PredictionUpdatesPage() {
   }
   async function moreFlags() {
     if (!flagNext) return;
-    const f = await fetch("/api/admin/evidence-review?reviewed=unreviewed&timing=upcoming&days=30&pageSize=10&cursor=" + encodeURIComponent(flagNext)).then((r) => r.json());
+    const f = await fetch(histQs(flagNext)).then((r) => r.json());
     setFlags((p) => [...p, ...(f.items ?? [])]); setFlagNext(f.nextCursor ?? null);
   }
   async function retainFlag(id: string) {
@@ -328,6 +338,13 @@ export default function PredictionUpdatesPage() {
             <input type="date" className={FIELD + " mt-1"} value={kickoffFrom} onChange={(e) => setKickoffFrom(e.target.value)} /></label>
           <label className="text-xs uppercase tracking-wide text-gray-400">Kickoff to
             <input type="date" className={FIELD + " mt-1"} value={kickoffTo} onChange={(e) => setKickoffTo(e.target.value)} /></label>
+          <label className="text-xs uppercase tracking-wide text-gray-400">Historical notes
+            <select className={FIELD + " mt-1"} value={histScope} onChange={(e) => setHistScope(e.target.value as typeof histScope)}>
+              <option value="upcoming">Upcoming picks (any generation date)</option>
+              <option value="7">Generated in the last 7 days, incl. played</option>
+              <option value="30">Generated in the last 30 days, incl. played</option>
+              <option value="90">Generated in the last 90 days, incl. played</option>
+            </select></label>
         </div>
         <p className="mt-3 text-xs text-gray-500">
           Detailed tools: <Link className="underline" href="/admin/evidence-review">Evidence review (historical data quality)</Link> · <Link className="underline" href="/admin/reassessment">Reassessment</Link>
@@ -350,7 +367,9 @@ export default function PredictionUpdatesPage() {
 
       {tab === "needs" && (
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-300">Evidence needs checking (upcoming, generated in the last 30 days)</h2>
+          <h2 className="text-sm font-semibold text-gray-300">
+            Evidence needs checking ({histScope === "upcoming" ? "upcoming picks, any generation date" : `generated in the last ${histScope} days, including played matches`})
+          </h2>
           <p className="text-xs text-gray-500">A data-quality note about the evidence a pick was written from, not new evidence. &ldquo;Evidence available&rdquo; means coverage, not a check of every statement.</p>
           <ul className="space-y-4">
             {flags.map((f) => (

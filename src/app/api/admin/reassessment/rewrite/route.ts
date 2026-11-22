@@ -59,7 +59,9 @@ export async function POST(req: NextRequest) {
       });
       if (!row || row.status !== "PUBLISHED" || !row.publishedAt ||
         row.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_ACTIVE_ADMIN_REVIEW");
-      if (row.kickoff && row.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      // Fail closed: a kickoff that cannot be verified is treated as started.
+      if (!row.kickoff) throw new Error("KICKOFF_UNVERIFIED");
+      if (row.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
       // A human-written pick is never re-worded by the model (issue #232).
       if (!row.aiJobId) throw new Error("ADMIN_AUTHORED_PICK");
       // Evidence that undermines the pick (postponement, key player out,
@@ -124,7 +126,8 @@ export async function POST(req: NextRequest) {
       });
       if (!current || current.status !== "PUBLISHED" || !current.publishedAt ||
         current.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_ACTIVE_ADMIN_REVIEW");
-      if (current.kickoff && current.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      if (!current.kickoff) throw new Error("KICKOFF_UNVERIFIED");
+      if (current.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
       if (!current.aiJobId) throw new Error("ADMIN_AUTHORED_PICK");
       if ((await latestSignals(predictionId, tx)).some(sig => sig.severity === "CRITICAL")) throw new Error("DECISION_REQUIRED");
       const latest = await tx.predictionRevision.findFirst({
@@ -166,7 +169,7 @@ export async function POST(req: NextRequest) {
       message: "Approved rewrite published in the original record; selection, confidence and publication date preserved." });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const expected = new Set(["NO_ACTIVE_ADMIN_REVIEW", "KICKOFF_PASSED",
+    const expected = new Set(["NO_ACTIVE_ADMIN_REVIEW", "KICKOFF_PASSED", "KICKOFF_UNVERIFIED",
       "NO_CREDIBLE_REASSESSMENT_EVIDENCE", "REWRITE_NO_VALID_DRAFT",
       "REVIEW_CHANGED_DURING_REWRITE", "REWRITE_REVISION_REQUIRED",
       "REWRITE_DRAFT_STALE", "REWRITE_SELECTION_OR_EVIDENCE_CHANGED", "REWRITE_CONCURRENT_CHANGE",

@@ -11,7 +11,10 @@ import {
   adminStatus, decisionRequired, diffEvidence, friendlyReason, possiblyStaleStatements, suggestedAuditNote, DECISION_CONFIDENCE_DROP,
 } from "../src/lib/reassessment/evidenceDiff";
 import { compareKeys, priorityKey } from "../src/lib/predictionUpdates";
-import { REASSESSMENT_CORE_MIN_REMAINING, REASSESSMENT_REFRESH_MIN_REMAINING, MAX_REASSESSMENTS_PER_RUN } from "../src/lib/reassessment/worker";
+import { REASSESSMENT_CORE_MIN_REMAINING, REASSESSMENT_REFRESH_MIN_REMAINING, MAX_REASSESSMENTS_PER_RUN, materialDecision, shouldRecordReassessmentReceipt } from "../src/lib/reassessment/worker";
+import { confirmedLineupSignals, fixtureSignals } from "../src/lib/reassessment/evidence";
+import { DECISION_KINDS } from "../src/lib/predictionUpdates";
+import { createHash } from "node:crypto";
 import { LIVE_POLICY } from "../src/lib/liveSnapshot";
 import { EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_BOOST } from "../src/lib/generation/earlyFixturePolicy";
 import type { MatchDigest } from "../src/lib/ai/digest";
@@ -106,10 +109,68 @@ assert.ok(EARLY_BOOST.MIN_QUOTA_REMAINING > REASSESSMENT_REFRESH_MIN_REMAINING, 
 // Worst case: 1 batched /fixtures + MAX_REASSESSMENTS_PER_RUN lineups per 15-minute run.
 assert.ok((1 + MAX_REASSESSMENTS_PER_RUN) * 96 <= 600, "core monitoring is bounded to under 600 calls a day");
 const worker = src("src/lib/reassessment/worker.ts");
-assert.ok(/budget\.remaining < REASSESSMENT_CORE_MIN_REMAINING[\s\S]{0,200}return finish\(\)/.test(worker), "the quota check stands down BEFORE any provider call");
+assert.ok(/budget\.remaining <= REASSESSMENT_CORE_MIN_REMAINING[\s\S]{0,200}return finish\(\)/.test(worker), "the quota check stands down BEFORE any provider call");
 assert.ok(worker.indexOf("REASSESSMENT_CORE_MIN_REMAINING)") < worker.indexOf("getFixturesByIds(ids)"), "quota gate precedes the batched fixture call");
-assert.ok(/cacheOnly: cacheOnlyEvidence \|\| row\.status !== "PUBLISHED"/.test(worker), "unpublished picks are monitored from caches only");
+assert.ok(/refreshThisRow = !cacheOnlyEvidence && row\.status === "PUBLISHED"/.test(worker) && /cacheOnly: !refreshThisRow/.test(worker), "unpublished picks are monitored from caches only");
 assert.ok(/row\.status === "PUBLISHED" && row\.kickoff\.getTime\(\) - now\.getTime\(\) <= 90 \* 60_000/.test(worker), "lineups are fetched for published picks only");
+
+// ---------------------------------------------------------------- repeat-alert suppression is value-sensitive (PR #233 review)
+{
+  const prior = { teams: {
+    home: { apiId: 1, keyPlayers: [{ name: "Ade Bello" }, { name: "Chris Dube" }] },
+    away: { apiId: 2, keyPlayers: [] },
+  } } as unknown as MatchDigest;
+  const xi = (names: string[]) => [
+    { teamId: 1, starters: [...names, ...Array.from({ length: 11 - names.length }, (_, i) => "Squad " + i)].map((name, id) => ({ id, name })) },
+    { teamId: 2, starters: Array.from({ length: 11 }, (_, i) => ({ id: 100 + i, name: "Away " + i })) },
+  ];
+  const lineupA = confirmedLineupSignals(xi(["Chris Dube"]), prior);           // Ade Bello absent
+  const lineupB = confirmedLineupSignals(xi(["Ade Bello"]), prior);           // Chris Dube absent
+  assert.equal(lineupA[0].code, lineupB[0].code, "same generic code for both lineup changes");
+  // Run the worker's state machine: flag A, admin keeps A, A again, then B, then B again.
+  let state: { hash: string | null; status: string } = { hash: null, status: "CURRENT" };
+  let receipts = 0;
+  const pass = (signals: typeof lineupA) => {
+    const d = materialDecision({ signals, previousHash: state.hash, previousStatus: state.status });
+    if (d.retainedUnchanged) return "suppressed";
+    if (shouldRecordReassessmentReceipt({ mode: "shadow", sameSignature: d.alreadyRecorded, existingStatus: state.status, publicHold: false })) receipts++;
+    state = { hash: d.signature, status: "REVIEW_REQUIRED" };
+    return "open";
+  };
+  assert.equal(pass(lineupA), "open"); assert.equal(receipts, 1);
+  state.status = "CURRENT";                                                      // admin: Keep original
+  assert.equal(pass(lineupA), "suppressed", "the same lineup change after Keep stays closed");
+  assert.equal(pass(lineupB), "open", "a different absent key player reopens the retained case");
+  assert.equal(receipts, 2, "...with one new receipt");
+  assert.equal(pass(lineupB), "open"); assert.equal(receipts, 2, "the reopened case is reopened exactly once (no duplicate receipt)");
+
+  const ko = new Date("2026-11-25T19:00:00Z"), seen = new Date("2026-11-22T12:00:00Z");
+  const shift = (iso: string) => fixtureSignals(ko, { status: "NS", kickoff: new Date(iso), seenAt: seen, fixtureApiId: 1 }, seen);
+  state = { hash: null, status: "CURRENT" }; receipts = 0;
+  assert.equal(pass(shift("2026-11-25T20:00:00Z")), "open");
+  state.status = "CURRENT";
+  assert.equal(pass(shift("2026-11-25T20:00:00Z")), "suppressed", "same kickoff move after Keep stays closed");
+  assert.equal(pass(shift("2026-11-25T21:30:00Z")), "open", "a further kickoff move of the same kind reopens");
+  assert.equal(receipts, 2);
+
+  const legacy = createHash("sha256").update(JSON.stringify(["new-result-home-2026-11-20", "new-unavailable-away-x"])).digest("hex").slice(0, 24);
+  assert.equal(materialDecision({ signals: [{ code: "new-unavailable-away-x" }, { code: "new-result-home-2026-11-20" }], previousHash: legacy, previousStatus: "CURRENT" }).retainedUnchanged, true,
+    "codes that already carry their value hash exactly as before: existing retained cases are not reopened by the upgrade");
+}
+
+// ---------------------------------------------------------------- Reviewed = completed decisions only
+assert.ok(!(DECISION_KINDS as readonly string[]).includes("EVIDENCE_REVIEW_OPENED"), "opening a private review is not a decision");
+
+// ---------------------------------------------------------------- per-call quota floor in the worker
+{
+  const w = src("src/lib/reassessment/worker.ts");
+  assert.ok(/withFootballCallFloor\(REASSESSMENT_CORE_MIN_REMAINING, \(\) => getFixturesByIds\(ids\)\)/.test(w), "batched fixture call under the 1,000 floor");
+  assert.ok(/withFootballCallFloor\(REASSESSMENT_CORE_MIN_REMAINING, \(\) => getFixtureLineups\(/.test(w), "each lineup call under the 1,000 floor");
+  assert.ok(/withFootballCallFloor\(REASSESSMENT_REFRESH_MIN_REMAINING, \(\) => buildGenerationDigest\(/.test(w), "evidence refresh under the 1,500 floor");
+  assert.equal((w.match(/await getFixturesByIds\(|await getFixtureLineups\(/g) ?? []).length, 0, "no unguarded provider call in the worker");
+  const client = src("src/lib/football/api-football.ts");
+  assert.ok(client.indexOf("floorAllowsCall()") < client.indexOf("await recordCall(path)"), "the floor is checked before every dispatch");
+}
 
 // ---------------------------------------------------------------- routes: admin-only, CSRF, no provider calls, guards
 const api = src("src/app/api/admin/prediction-updates/route.ts");
@@ -130,6 +191,7 @@ const ui = src("src/app/admin/updates/page.tsx");
 assert.ok(!/border-[lr]-/.test(ui), "no coloured accent edges");
 assert.ok(!/bg-[a-z-]+\/\d+[^"]*rounded-full|rounded-full[^"]*bg-[a-z-]+\/\d+/.test(ui), "no tinted pill backgrounds behind status text");
 assert.ok(/<details[\s\S]*Advanced options/.test(ui), "technical filters live under Advanced options");
+assert.ok(/useState<"upcoming" \| "7" \| "30" \| "90">\("upcoming"\)/.test(ui) && !/days=30/.test(ui), "historical notes default: upcoming picks, any generation date; longer lookback is opt-in");
 for (const label of ["New evidence", "Needs review", "Reviewed", "Approve &amp; apply", "Keep original", "Prepare private draft"]) assert.ok(ui.includes(label), "UI offers " + label);
 assert.ok(!/\bAI\b/.test(ui), "no 'AI' wording");
 assert.ok(/window\.confirm\("Withdraw/.test(ui), "withdrawal needs a separate confirmation");
@@ -141,4 +203,4 @@ const publicHits = (() => {
 })();
 assert.deepEqual(publicHits, [], "no public page or component reads the workspace");
 
-console.log("PASS: evidence diff, friendly reasons, stale-statement detection, decision rules, statuses, priority, quota order, admin-only routes, server guards, UI rules");
+console.log("PASS: value-sensitive repeat-alert suppression (lineup, kickoff), evidence diff, friendly reasons, stale-statement detection, decision rules, statuses, priority, quota order, admin-only routes, server guards, UI rules");

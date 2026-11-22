@@ -11,8 +11,10 @@ Three tabs. Technical filters (tier, status, kickoff range) and links to the det
 | Tab | Contents |
 |---|---|
 | **New evidence** | Open monitoring cases (`REVIEW_REQUIRED`). Upcoming matches come first, then VIP/Premium before unpublished before free, then the soonest kickoff. Matches that have started go last and are read-only. |
-| **Needs review** | Cases where the evidence could not be confirmed (`UNKNOWN`, upcoming). Below them are the unreviewed historical data-quality notes from PR #231 for upcoming picks, which you can mark *Checked: keep unchanged*. These notes are labelled as data quality, not new evidence. "Evidence available" means coverage only; it is not a check of every statement. |
-| **Reviewed** | The append-only decision trail, newest first: kept, explanation updated, withdrawn, restored, retained. |
+| **Needs review** | Cases where the evidence could not be confirmed (`UNKNOWN`, upcoming). Below them are the unreviewed historical data-quality notes from PR #231, which you can mark *Checked: keep unchanged*. These notes are labelled as data quality, not new evidence. "Evidence available" means coverage only; it is not a check of every statement. |
+| **Reviewed** | Completed decisions only, newest first: kept, explanation updated, withdrawn, restored, retained. Opening a private review (`EVIDENCE_REVIEW_OPENED`) is activity on a case that is still open, so it is not listed here. |
+
+**Historical notes scope.** By default the notes cover **every upcoming pick, whatever its generation date**: a pick written weeks ago for a match still ahead is still live. The heading names the scope in use. Under Advanced options, *Historical notes* adds settled history: generated in the last **7** days (the owner's review window), 30 days or 90 days, including played matches.
 
 Each card shows:
 - the fixture, kickoff in WAT, tier and publication state;
@@ -48,11 +50,11 @@ Paid replacement stays blocked, as before.
 
 Other server-side guards, which apply to the routes and not only to the buttons:
 - **Admin-authored picks** (no generation job) are never re-worded (`ADMIN_AUTHORED_PICK`).
-- **Nothing is changed after kickoff.** Drafting, applying and withdrawing all return `KICKOFF_PASSED`.
+- **Nothing is changed after kickoff.** Drafting, applying and withdrawing all return `KICKOFF_PASSED`. A published pick whose kickoff is missing **fails closed**: drafting and applying return `KICKOFF_UNVERIFIED`, withdrawal is refused, and the card is read-only.
 - **Stale drafts cannot be applied.** A newer monitoring snapshot invalidates the draft (`REWRITE_SELECTION_OR_EVIDENCE_CHANGED`), only the latest draft applies, and a compare-and-swap on the old wording blocks concurrent edits.
 - All routes are **admin-only**, and mutations are **origin-checked**, which guards against CSRF.
 - **Nothing is deleted, hidden or put on public hold** by this workspace.
-- **Duplicate alerts are suppressed.** An unchanged evidence signature keeps a retained case closed, and a genuinely new signature reopens it. This uses the existing monitoring signature (`lastChangeHash`).
+- **Duplicate alerts are suppressed, and the signature is value-sensitive.** An unchanged signature keeps a retained case closed; a genuinely new one reopens it once. The signature (`lastChangeHash`, built by `materialSignature`) includes the substance behind generic codes: the **new kickoff time** for `fixture-kickoff-shift`, the **new coach** for `coach-change-*`, and the **absent players** for `confirmed-lineup-key-player-absence`. So after *Keep original*, a different absent key player, a further kickoff move or another coach change reopens the case. Check times are never part of the signature. Codes that already carry their value (results, absences, fixture status) hash exactly as before, so existing retained cases are not reopened by the upgrade. A case retained on one of the three generic codes before this change may reopen once on its next check.
 
 ## 3. API-Football budget: verified allocation
 
@@ -68,8 +70,14 @@ The allocation was verified before the reassessment threshold was changed. The d
 | 30 | VIP/Premium generation (plus the 300-request paid reserve) |
 
 **The quota-order fix.** Before this change, all reassessment stood down below 1,500 remaining, including the cheap fixture-status check that detects postponements and kickoff changes. The worker now has two levels:
-- From **1,000 to 1,499 remaining**, it keeps the core check and builds evidence from caches only.
-- **Below 1,000**, it makes no call at all.
+- From **1,001 to 1,500 remaining**, it keeps the core check and builds evidence from caches only.
+- **At 1,000 or fewer**, it makes no call at all.
+
+**Floors are enforced per call, not per run.** Each worker provider call runs inside `withFootballCallFloor`, which re-reads the day's usage before **every** dispatch and refuses any call that would leave fewer than the floor:
+- the batched `/fixtures` call and each lineup call: **1,000**;
+- every call inside an evidence refresh: **1,500**. The refresh decision is also re-read before each row.
+
+A run starting at 1,003 remaining therefore makes at most 3 calls and ends at exactly 1,000; it cannot be pushed below by its own optional calls. The Postgres test checks this at 1,000, 1,001, 1,005, 1,006 and 1,010 remaining with the worst-case six calls, and at 1,502 for the refresh floor. Other jobs running at the same moment (live scores, generation) are checked by their own gates as before; the floor reads the shared usage count, so it sees their spending.
 
 The core check is at most one batched `/fixtures` call (up to 15 ids) and up to 5 lineup calls per run, so it is bounded at about 576 a day. It never runs below the live-score reserve, so it cannot reach the early lane (750), ordinary generation (500) or paid generation. The early boost, which stops at 2,000, is unaffected. **The threshold was not lowered below 1,000.**
 

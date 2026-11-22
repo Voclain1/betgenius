@@ -15,7 +15,9 @@ if (process.env.BETGENIUS_DISPOSABLE_PG !== "yes"
     || !/^(postgresql|postgres):\/\/[^/]+@(?:127\.0\.0\.1|localhost):5432\//.test(dbUrl)) {
   throw new Error("Refusing to write outside an explicitly marked disposable local Postgres");
 }
-process.env.API_FOOTBALL_KEY = "";
+// A dummy key so the quota-floor boundary test can dispatch to a STUBBED
+// fetch (below). Every other step runs under withNoFootballApiCalls.
+process.env.API_FOOTBALL_KEY = "dummy-test-key-not-real";
 process.env.PREDICTION_REASSESSMENT_MODE = "shadow";
 
 // Stub the session lookup only; everything else (routes, guards, Prisma) is real.
@@ -32,7 +34,8 @@ async function main() {
   const { NextRequest } = await import("next/server");
   const { prisma } = await import("../src/lib/prisma");
   const { buildStoredContext } = await import("../src/lib/ai/context");
-  const { withNoFootballApiCalls } = await import("../src/lib/football/api-football");
+  const { withNoFootballApiCalls, withFootballCallFloor, getFixturesByIds, getFixtureLineups } = await import("../src/lib/football/api-football");
+  const { listEvidenceReviewPage } = await import("../src/lib/evidenceReview");
   const { listCasePage, listReviewedPage, updatesCounts, compareKeys, priorityKey } = await import("../src/lib/predictionUpdates");
   const { runPublishedReassessment, REASSESSMENT_CORE_MIN_REMAINING } = await import("../src/lib/reassessment/worker");
   const { DAILY_LIMIT, RESERVE } = await import("../src/lib/football/usage");
@@ -90,18 +93,19 @@ async function main() {
     const latest = (k: Date) => buildStoredContext(digest(team(77001, "Alpha", [iso(-6), iso(-1)], "WL"), team(77002, "Beta", [iso(-9), iso(-5)], "WW"), k));
 
     async function seed(o: { tag: string; status?: string; kickoff: Date; categories: string[]; provenance?: string; withJob?: boolean;
-      reassessment?: string | null; signals?: Array<{ code: string; severity: string }>; generatedDaysAgo?: number; confidence?: number }) {
+      reassessment?: string | null; signals?: Array<{ code: string; severity: string }>; generatedDaysAgo?: number; confidence?: number;
+      noSnapshot?: boolean; nullKickoff?: boolean }) {
       let aiJobId: string | null = null;
       const createdAt = new Date(now.getTime() - (o.generatedDaysAgo ?? 0.1) * D);
       if (o.withJob !== false) {
         const job = await prisma.aIJob.create({ data: { userId: admin.id, model: "test", prompt: "{}", rawOutput: "{}", contextComplete: true,
-          context: original(o.kickoff) as object, createdAt } });
+          context: o.noSnapshot ? undefined : original(o.kickoff) as object, createdAt } });
         made.jobs.push(job.id); aiJobId = job.id;
       }
       const status = o.status ?? "PUBLISHED";
       const p = await prisma.prediction.create({ data: {
         authorId: admin.id, category: o.categories[0], status, homeTeam: "Alpha " + o.tag, awayTeam: "Beta", homeTeamApiId: 77001, awayTeamApiId: 77002,
-        kickoff: o.kickoff, leagueApiId: 39, leagueName: "Premier League", fixtureApiId: 990000 + made.preds.length,
+        kickoff: o.nullKickoff ? null : o.kickoff, leagueApiId: 39, leagueName: "Premier League", fixtureApiId: 990000 + made.preds.length,
         marketType: "BTTS", selection: { value: "YES" }, manualSettlementOnly: false, market: "Both Teams Score", pick: "Yes", odds: 1.85,
         confidence: o.confidence ?? 74, reasoning: "Alpha are in excellent form with two straight wins. " + o.tag + " original reasoning.",
         matchPreview: o.tag + " preview", contextComplete: true, aiJobId, provenance: o.provenance ?? "STANDARD_CURATED", createdAt,
@@ -138,7 +142,14 @@ async function main() {
       pending: await seed({ tag: "Pending", status: "PENDING_REVIEW", kickoff: at(2), categories: ["FEATURED"] }),
       unknown: await seed({ tag: "Unknown", kickoff: at(2), categories: ["FEATURED"], reassessment: "UNKNOWN" }),
       quiet: await seed({ tag: "Quiet", kickoff: at(2), categories: ["FEATURED"], reassessment: "CURRENT" }),
+      // Published, open case, but the kickoff cannot be verified.
+      noKickoff: await seed({ tag: "NoKickoff", kickoff: at(2), nullKickoff: true, categories: ["FEATURED"] }),
+      // Upcoming, generated 40 days ago, with a historical data-quality flag.
+      oldFlag: await seed({ tag: "OldFlag", kickoff: at(3), categories: ["FEATURED"], reassessment: null, noSnapshot: true, generatedDaysAgo: 40 }),
     };
+    // An open case with a private review opened: activity, not a decision.
+    await prisma.predictionRevision.create({ data: { predictionId: ids.oldGen, kind: "EVIDENCE_REVIEW_OPENED", publiclyVisible: false,
+      reason: "Opened from evidence review; not yet decided.", beforeJson: {} } });
     const usageBefore = await prisma.apiUsage.findMany({ orderBy: { id: "asc" } });
 
     // ---------------------------------------------------------------- admin-only + CSRF
@@ -160,7 +171,7 @@ async function main() {
     const card = (id: string) => cards.find((c) => c.id === id)!;
     assert.ok(!cards.some((c) => c.id === ids.unknown || c.id === ids.quiet), "only open new-evidence cases on the first tab");
     assert.deepEqual(cards.slice(0, 2).map((c) => c.id), [ids.vip, ids.oldGen], "paid upcoming first, soonest first, regardless of generation date");
-    assert.equal(cards.at(-1)!.id, ids.started, "started matches last");
+    assert.deepEqual(cards.slice(-2).map((c) => c.id), [ids.started, ids.noKickoff], "started matches, then unverifiable kickoffs, last");
     assert.equal(card(ids.started).adminStatus, "Match started (read-only)");
     assert.ok(Object.values(card(ids.started).actions).every((v) => !v), "started: no action at all");
     assert.equal(card(ids.vip).adminStatus, "New evidence");
@@ -183,7 +194,7 @@ async function main() {
     assert.ok((paidOnly.body.cards as C[]).every((c) => c.paid), "tier filter excludes free picks");
     const counts = (await call(updatesRoute.GET, req("/api/admin/prediction-updates?counts=1"))).body as Record<string, number>;
     const delta = Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, v - (countsBefore as Record<string, number>)[k]]));
-    assert.deepEqual(delta, { newEvidence: 8, needingApproval: 7, awaitingDecision: 1, needsMoreEvidence: 1 }, "exact counts");
+    assert.deepEqual(delta, { newEvidence: 9, needingApproval: 7, awaitingDecision: 1, needsMoreEvidence: 1 }, "exact counts (an unverifiable kickoff is not counted as upcoming)");
 
     // ---------------------------------------------------------------- on-demand comparison: cache-only
     const cmp = await call(updatesRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.pending } }));
@@ -206,6 +217,15 @@ async function main() {
     assert.deepEqual(gen.body, { error: "ADMIN_AUTHORED_PICK" }, "no model request for an admin-authored pick");
     const genCrit = await call(rewriteRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.critical, action: "GENERATE", note: "Prepare a draft please." } }));
     assert.deepEqual(genCrit.body, { error: "DECISION_REQUIRED" }, "no model request when a decision is required");
+    // Fail closed when the kickoff cannot be verified.
+    const nkDraft = await draft(ids.noKickoff, "NoKickoff");
+    assert.deepEqual((await apply(ids.noKickoff, nkDraft)).body, { error: "KICKOFF_UNVERIFIED" }, "null kickoff: apply refused");
+    const nkGen = await call(rewriteRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.noKickoff, action: "GENERATE", note: "Prepare a draft please." } }));
+    assert.deepEqual(nkGen.body, { error: "KICKOFF_UNVERIFIED" }, "null kickoff: no draft, no model request");
+    const nkWithdraw = await call(resolveRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.noKickoff, action: "WITHDRAW", note: "Cannot verify kickoff." } }));
+    assert.equal(nkWithdraw.status, 409, "null kickoff: withdrawal refused");
+    assert.equal(((await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=new&pageSize=100"))).body.cards as C[]).find((c) => c.id === ids.noKickoff)?.adminStatus,
+      "Match started (read-only)", "null kickoff is shown read-only");
     const withdrawStarted = await call(resolveRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.started, action: "WITHDRAW", note: "Too late to withdraw this." } }));
     assert.deepEqual(withdrawStarted.body, { error: "KICKOFF_PASSED" }, "never withdrawn after kickoff");
     for (const id of [ids.manual, ids.critical, ids.weak, ids.started]) {
@@ -243,6 +263,20 @@ async function main() {
     const reviewed = await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=reviewed"));
     const kinds = (reviewed.body.items as Array<{ predictionId: string; kind: string }>).filter((i) => i.predictionId === ids.vip || i.predictionId === ids.free).map((i) => i.kind).sort();
     assert.deepEqual(kinds, ["ADMIN_REWRITE_APPLIED", "CONFIRMED"], "reviewed tab shows both decisions");
+    const allReviewed: string[] = [];
+    for (let c: string | null = null, i = 0; i < 50; i++) {
+      const r = await withNoFootballApiCalls(() => listReviewedPage({ cursor: c, pageSize: 50 }));
+      allReviewed.push(...r.items.map((x) => x.predictionId + ":" + x.kind));
+      if (!(c = r.nextCursor)) break;
+    }
+    assert.ok(!allReviewed.some((k) => k.endsWith(":EVIDENCE_REVIEW_OPENED")), "opening a private review is not a decision");
+    assert.ok(!allReviewed.some((k) => k.startsWith(ids.oldGen + ":")), "an open-but-unresolved case does not appear under Reviewed");
+
+    // Historical notes default (workspace): unreviewed, upcoming, ANY generation date.
+    const hist = await withNoFootballApiCalls(() => listEvidenceReviewPage({ reviewed: "unreviewed", timing: "upcoming" }, { pageSize: 100 }));
+    assert.ok(hist.items.some((i) => i.id === ids.oldFlag), "an upcoming pick generated 40 days ago is in the default historical view");
+    const hist7 = await withNoFootballApiCalls(() => listEvidenceReviewPage({ reviewed: "unreviewed", lookbackDays: 7 }, { pageSize: 100 }));
+    assert.ok(!hist7.items.some((i) => i.id === ids.oldFlag), "the 7-day historical lookback is a separate, opt-in scope");
     const after = await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=new&pageSize=100&tier=all"));
     assert.ok(!(after.body.cards as C[]).some((c) => c.id === ids.vip || c.id === ids.free), "decided cases leave the queue");
 
@@ -296,7 +330,53 @@ async function main() {
     assert.ok(revs.every((r) => r.publiclyVisible === false), "every revision is private");
     assert.deepEqual(await prisma.apiUsage.findMany({ orderBy: { id: "asc" } }), usageBefore, "no API-Football request was counted");
 
-    console.log("PASS: admin-only + CSRF, prioritised cards beyond 500, what-changed diff and stale statements, draft → approve (prose only, private before/after audit), keep, decision-required and admin-authored guards, no action after kickoff, quota stand-down, no provider calls");
+    // ---------------------------------------------------------------- quota floor, re-checked before EVERY call
+    // Worst case per run: 1 batched /fixtures + 5 lineups. Dispatch goes to a stub.
+    const realFetch = globalThis.fetch;
+    let dispatched = 0;
+    globalThis.fetch = (async () => { dispatched++; return new Response(JSON.stringify({ errors: [], results: 0, response: [] }), { status: 200, headers: { "content-type": "application/json" } }); }) as typeof fetch;
+    const remainingNow = async () => DAILY_LIMIT - RESERVE - ((await prisma.apiUsage.aggregate({ where: { day: usageDay }, _sum: { count: true } }))._sum.count ?? 0);
+    try {
+      for (const start of [1_000, 1_001, 1_005, 1_006, 1_010]) {
+        await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });
+        const base = DAILY_LIMIT - RESERVE - (await remainingNow());
+        await prisma.apiUsage.create({ data: { day: usageDay, path: usagePath, count: DAILY_LIMIT - RESERVE - start - base } });
+        assert.equal(await remainingNow(), start);
+        dispatched = 0;
+        const before = await remainingNow();
+        await withFootballCallFloor(REASSESSMENT_CORE_MIN_REMAINING, async () => {
+          await getFixturesByIds([990001, 990002]);
+          for (let i = 0; i < 5; i++) await getFixtureLineups(990001 + i);
+        });
+        const after = await remainingNow();
+        assert.equal(dispatched, Math.min(6, start - REASSESSMENT_CORE_MIN_REMAINING), `at ${start} remaining: ${Math.min(6, start - 1000)} of 6 calls dispatched`);
+        assert.equal(before - after, dispatched, "every dispatched call is counted");
+        assert.ok(after >= REASSESSMENT_CORE_MIN_REMAINING, `at ${start} remaining the run ends at ${after}, never below the 1,000 live-score reserve`);
+      }
+      // The refresh floor works the same way at 1,500.
+      await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });
+      const base = DAILY_LIMIT - RESERVE - (await remainingNow());
+      await prisma.apiUsage.create({ data: { day: usageDay, path: usagePath, count: DAILY_LIMIT - RESERVE - 1_502 - base } });
+      dispatched = 0;
+      await withFootballCallFloor(1_500, async () => { for (let i = 0; i < 6; i++) await getFixtureLineups(990001 + i); });
+      assert.equal(dispatched, 2, "refresh floor: at 1,502 remaining only 2 calls, ending at 1,500");
+      // Exactly at the floor the worker stands down before any call.
+      await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });
+      const base2 = DAILY_LIMIT - RESERVE - (await remainingNow());
+      await prisma.apiUsage.create({ data: { day: usageDay, path: usagePath, count: DAILY_LIMIT - RESERVE - REASSESSMENT_CORE_MIN_REMAINING - base2 } });
+      dispatched = 0;
+      const atFloor = await runPublishedReassessment({ now: new Date() });
+      assert.match(atFloor.stoodDown ?? "", /quota headroom too low/, "at exactly 1,000 remaining the worker stands down");
+      assert.equal(dispatched, 0);
+    } finally {
+      globalThis.fetch = realFetch;
+      // Restore the day's usage rows exactly as they were.
+      await prisma.apiUsage.deleteMany({ where: { day: usageDay } });
+      const todays = usageBefore.filter((u) => u.day === usageDay);
+      if (todays.length) await prisma.apiUsage.createMany({ data: todays });
+    }
+
+    console.log("PASS: admin-only + CSRF, null kickoff fails closed, Reviewed = decisions only, historical default = upcoming any generation date, per-call quota floor at 1,000/1,500 boundaries, prioritised cards beyond 500, what-changed diff and stale statements, draft → approve (prose only, private before/after audit), keep, decision-required and admin-authored guards, no action after kickoff, quota stand-down, no provider calls");
   } finally {
     await cleanup();
     await prisma.$disconnect();

@@ -106,7 +106,8 @@ assert.ok(monitorSource.includes('publiclyVisible: false') &&
   !monitorSource.includes('generatePredictionForFixture(') &&
   !monitorSource.includes('createNotificationEvent('),
   "monitoring cannot alter publication, generate rewrites or notify readers");
-assert.ok(monitorSource.includes('alreadyRecorded && row.reassessment?.status === "CURRENT"'),
+assert.ok(monitorSource.includes('retainedUnchanged: alreadyRecorded && input.previousStatus === "CURRENT"')
+  && monitorSource.includes("if (retainedUnchanged) {"),
   "a reviewed and retained evidence signature must not reopen without new information");
 const matchSource = readFileSync(join(process.cwd(), "src/app/(public)/predictions/match/[slug]/page.tsx"), "utf8");
 const revisionPage = readFileSync(join(process.cwd(), "src/app/(public)/predictions/updates/[id]/page.tsx"), "utf8");

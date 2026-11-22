@@ -20,7 +20,12 @@ import {
 } from "@/lib/reassessment/evidenceDiff";
 
 export type UpdatesTab = "new" | "needs" | "reviewed";
-export const DECISION_KINDS = ["CONFIRMED", "ADMIN_REWRITE_APPLIED", "WITHDRAWN", "ADMIN_RESTORED", "EVIDENCE_REVIEW_RETAINED", "EVIDENCE_REVIEW_OPENED"] as const;
+/**
+ * Completed decisions only. Opening a private review (EVIDENCE_REVIEW_OPENED)
+ * is activity on a case that is still open, not a decision, so it never
+ * appears under Reviewed.
+ */
+export const DECISION_KINDS = ["CONFIRMED", "ADMIN_REWRITE_APPLIED", "WITHDRAWN", "ADMIN_RESTORED", "EVIDENCE_REVIEW_RETAINED"] as const;
 
 export type UpdatesFilters = { tier?: "paid" | "free" | "all"; statuses?: string[]; kickoffFrom?: Date; kickoffTo?: Date };
 
