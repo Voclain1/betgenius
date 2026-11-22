@@ -33,7 +33,8 @@ async function main() {
   const H = 3_600_000;
   const now = new Date();
   const at = (h: number) => new Date(now.getTime() + h * H);
-  const ids = { clean: 991_000_001, superseded: 991_000_002, selective: 991_000_003, published: 991_000_004, midweek: 991_000_005 };
+  const ids = { clean: 991_000_001, superseded: 991_000_002, selective: 991_000_003, published: 991_000_004, midweek: 991_000_005,
+    unverified: 991_000_006, unverifiedMidweek: 991_000_007, postponed: 991_000_008, postponedMidweek: 991_000_009 };
   const created: { predictions: string[]; jobs: string[]; users: string[] } = { predictions: [], jobs: [], users: [] };
 
   const cleanup = async () => {
@@ -46,6 +47,7 @@ async function main() {
     await prisma.generationAttempt.deleteMany({ where: { fixtureApiId: { in: fx } } });
     await prisma.fixtureOddsCache.deleteMany({ where: { matchKey: { startsWith: "99" } } });
     await prisma.upcomingFixture.deleteMany({ where: { fixtureApiId: { in: fx } } });
+    await prisma.teamEnrichmentCache.deleteMany({ where: { teamApiId: { in: [99199] } } });
     await prisma.user.deleteMany({ where: { id: { in: created.users } } });
   };
 
@@ -101,10 +103,21 @@ async function main() {
     // Keys starting "99…" so cleanup can find them; team ids chosen accordingly.
     const cleanId = await earlyDraft(ids.clean, 99101, 99102, at(110));
     const supersededId = await earlyDraft(ids.superseded, 99103, 99104, at(112));
-    // Team 99104 played two days ago — after its latest saved match (4 days ago).
-    await prisma.upcomingFixture.create({ data: {
-      fixtureApiId: ids.midweek, leagueApiId: 39, leagueName: "Premier League", homeTeamApiId: 99199, awayTeamApiId: 99104,
-      homeTeam: "Other", awayTeam: "Away 99104", kickoff: at(-48), status: "NS", lastSeenAt: at(-72),
+    const unverifiedId = await earlyDraft(ids.unverified, 99109, 99110, at(114));
+    const postponedId = await earlyDraft(ids.postponed, 99111, 99112, at(116));
+    const midweekFixture = (fixtureApiId: number, home: number, away: number, status: string) => prisma.upcomingFixture.create({ data: {
+      fixtureApiId, leagueApiId: 39, leagueName: "Premier League", homeTeamApiId: home, awayTeamApiId: away,
+      homeTeam: "Other", awayTeam: "Away " + away, kickoff: at(-48), status, lastSeenAt: at(-72),
+    } });
+    // Each away side has a fixture two days ago — after its latest saved match
+    // (4 days ago). Stored status is the pre-kickoff "NS", as in production.
+    await midweekFixture(ids.midweek, 99199, 99104, "NS");
+    await midweekFixture(ids.unverifiedMidweek, 99198, 99110, "NS");
+    await midweekFixture(ids.postponedMidweek, 99197, 99112, "PST");
+    // Only 99104's match is CONFIRMED: its opponent's current cache lists the result.
+    await prisma.teamEnrichmentCache.create({ data: {
+      teamApiId: 99199, teamName: "Other", fetchedAt: at(-6), lastAttemptAt: at(-6),
+      teamDigestJson: { last5: [{ date: at(-48).toISOString(), opponent: "Away 99104", opponentApiId: 99104, venue: "home", result: "L", goalsFor: 0, goalsAgainst: 2 }] },
     } });
     // An already-published row that must not change.
     const pub = await prisma.prediction.create({ data: {
@@ -116,13 +129,19 @@ async function main() {
     created.predictions.push(pub.id);
     const pubBefore = await prisma.prediction.findUniqueOrThrow({ where: { id: pub.id } });
 
-    const known = await knownRecentKickoffs([99103, 99104], at(-24 * 30), now);
-    assert.deepEqual(known.map(k => k.teamApiId), [99104], "known kickoffs: only the queried team that actually played");
+    const known = await knownRecentKickoffs([99103, 99104, 99110], at(-24 * 30), now);
+    assert.deepEqual(known.map(k => [k.teamApiId, !!k.confirmedPlayed]).sort(), [[99104, true], [99110, false]],
+      "loader: only queried teams; a result is confirmed only from a team cache, never from kickoff time");
 
     const report = await runEarlyFreePublication({ now, actorId: admin.id });
-    const after = await prisma.prediction.findMany({ where: { id: { in: [cleanId, supersededId] } }, include: { revisions: true } });
+    const after = await prisma.prediction.findMany({ where: { id: { in: [cleanId, supersededId, unverifiedId, postponedId] } }, include: { revisions: true } });
     const clean = after.find(p => p.id === cleanId)!;
     const sup = after.find(p => p.id === supersededId)!;
+    const unv = after.find(p => p.id === unverifiedId)!;
+    const pst = after.find(p => p.id === postponedId)!;
+    assert.equal(unv.status, "PENDING_REVIEW", "unconfirmed later match: NOT auto-published, kept for admin review, not held as outdated");
+    assert.equal(report.blocked["evidence-currency-unverified"], 1, "distinct reason code for unconfirmed outcomes");
+    assert.equal(pst.status, "PUBLISHED", "a postponed later match does not make the evidence outdated");
     assert.equal(clean.status, "PUBLISHED", "control: a fully qualified early pick still auto-publishes (eligibility not tightened beyond supersession)");
     assert.ok(clean.revisions.some(r => r.kind === "EARLY_PUBLICATION_PRICE"), "with its immutable price receipt");
     assert.notEqual(sup.status, "PUBLISHED", "a pick whose evidence misses a match played since is NOT auto-published");
@@ -157,7 +176,7 @@ async function main() {
     const again = await runEarlyFreeGeneration({ actorId: admin.id, now: new Date(now.getTime() + 30 * 60_000) });
     assert.equal(again.deferredSelective, 0, "not re-selected every run (head-of-line blocking removed)");
 
-    console.log("PASS: supersession gate, unchanged qualified publication, held-not-deleted, published rows untouched, visible uncounted selective deferral");
+    console.log("PASS: supersession gate (confirmed / unverified / postponed), unchanged qualified publication, held-not-deleted, published rows untouched, visible uncounted selective deferral");
   } finally {
     await cleanup();
     await prisma.$disconnect();

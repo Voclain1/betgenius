@@ -48,17 +48,57 @@ export function teamToleranceMs(leadHours: number): number {
 }
 
 /**
- * A match that kicked off at least this long ago is treated as played. Covers
- * 90 minutes, half-time, stoppages and the provider's result latency.
+ * A match that kicked off at least this long ago is ELIGIBLE to be resolved as
+ * played. Kickoff time alone never proves it was played: see resolveKnownMatch.
  */
 export const PLAYED_AFTER_KICKOFF_MS = 150 * 60_000;
 /** last5 dates and kickoffs come from the same provider field; allow rounding. */
 const SAME_MATCH_SLACK_MS = 60 * 60_000;
+/** A delayed or re-timed match against the same opponent within this window is the same match. */
+const SAME_FIXTURE_WINDOW_MS = 72 * 60 * 60_000;
 
-/** Provider statuses that mean the fixture did not produce a result. */
-const NOT_PLAYED = new Set(["PST", "CANC", "ABD", "SUSP", "TBD"]);
+/** Provider statuses that prove a result exists. */
+export const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
+/**
+ * Provider statuses that prove no football result to learn from: postponed,
+ * cancelled, abandoned, awarded or walkover. (An awarded result is a
+ * disciplinary score, not form evidence.)
+ */
+export const NOT_PLAYED_STATUSES = new Set(["PST", "CANC", "ABD", "AWD", "WO"]);
 
-export type KnownKickoff = { teamApiId: number; kickoff: Date; status?: string | null };
+/**
+ * A fixture of one of the teams that we captured. `status` is the LAST status
+ * we observed, which for a past match is usually its pre-kickoff "NS":
+ * discovery only stores future fixtures and only the reassessment worker
+ * refreshes a fixture after kickoff. So status is evidence only when it is a
+ * terminal one; anything else is unresolved until confirmed another way.
+ */
+export type KnownKickoff = {
+  teamApiId: number;
+  kickoff: Date;
+  status?: string | null;
+  /** The other side in that fixture, when known — used to match it to evidence and to confirm it. */
+  opponentApiId?: number | null;
+  /** Set by resolveKnownMatch from independent evidence (a current team cache listing the result). */
+  confirmedPlayed?: boolean;
+};
+
+export type MatchResolution = "played" | "not-played" | "unresolved";
+
+/**
+ * Was this known match actually played?
+ *   played      — terminal finished status, or a current team cache lists it
+ *   not-played  — postponed / cancelled / abandoned / awarded / walkover
+ *   unresolved  — anything else: a stale "NS"/"TBD", a delayed kickoff, live,
+ *                 suspended ("SUSP") or interrupted ("INT") states, unknown.
+ * Pure; unit-checked.
+ */
+export function resolveKnownMatch(k: Pick<KnownKickoff, "status" | "confirmedPlayed">): MatchResolution {
+  const status = (k.status ?? "").toUpperCase();
+  if (NOT_PLAYED_STATUSES.has(status)) return "not-played";
+  if (FINISHED_STATUSES.has(status) || k.confirmedPlayed) return "played";
+  return "unresolved";
+}
 
 /** The most recent match the digest actually contains. */
 export function latestObservedMatch(team: Pick<TeamDigest, "last5"> | null | undefined): Date | null {
@@ -70,34 +110,70 @@ export function latestObservedMatch(team: Pick<TeamDigest, "last5"> | null | und
   return best === null ? null : new Date(best);
 }
 
+export type Supersession = {
+  /** Earliest known match CONFIRMED played but missing from the evidence. */
+  superseded: Date | null;
+  /** Earliest known past match we cannot confirm either way; evidence currency unverified. */
+  unverified: Date | null;
+};
+
 /**
- * The earliest known kickoff of `teamApiId` that the evidence should contain
- * but does not, or null when the evidence is current as far as we can tell.
+ * Matches of `teamApiId` that the evidence should contain but does not.
  *
- * `evidenceAsOf` is the latest observed match, falling back to the cache's
- * fetch time when the digest has no recent matches at all.
+ * A known fixture counts only when it kicked off after the latest match in
+ * the evidence (`evidenceAsOf`), at least PLAYED_AFTER_KICKOFF_MS ago, is not
+ * the fixture being predicted, and is not already in the evidence under a
+ * shifted date (same opponent within 72h). It is then classified by
+ * resolveKnownMatch: played → superseded; unresolved → unverified;
+ * not played → ignored.
  */
-export function supersedingKickoff(input: {
+export function assessSupersession(input: {
   teamApiId: number | null;
   evidenceAsOf: Date | null;
   known: readonly KnownKickoff[];
   now: Date;
   fixtureKickoff?: Date | null;
-}): Date | null {
+  evidenceMatches?: ReadonlyArray<{ date: string; opponentApiId?: number | null }>;
+}): Supersession {
+  const out: Supersession = { superseded: null, unverified: null };
   const { teamApiId, evidenceAsOf, known, now, fixtureKickoff } = input;
-  if (teamApiId == null || !evidenceAsOf) return null;
-  let best: number | null = null;
+  if (teamApiId == null || !evidenceAsOf) return out;
+  const earliest = (cur: Date | null, t: number) => (cur === null || t < cur.getTime() ? new Date(t) : cur);
   for (const k of known) {
     if (k.teamApiId !== teamApiId) continue;
-    if (k.status && NOT_PLAYED.has(k.status)) continue;
     const t = k.kickoff.getTime();
-    // The fixture being predicted is never evidence about itself.
     if (fixtureKickoff && Math.abs(t - fixtureKickoff.getTime()) < SAME_MATCH_SLACK_MS) continue;
     if (t <= evidenceAsOf.getTime() + SAME_MATCH_SLACK_MS) continue;
     if (t > now.getTime() - PLAYED_AFTER_KICKOFF_MS) continue;
-    if (best === null || t < best) best = t;
+    if (k.opponentApiId != null && (input.evidenceMatches ?? []).some(m =>
+      m.opponentApiId === k.opponentApiId && Math.abs(Date.parse(m.date) - t) <= SAME_FIXTURE_WINDOW_MS)) continue;
+    const r = resolveKnownMatch(k);
+    if (r === "played") out.superseded = earliest(out.superseded, t);
+    else if (r === "unresolved") out.unverified = earliest(out.unverified, t);
   }
-  return best === null ? null : new Date(best);
+  return out;
+}
+
+/** Back-compatible: the earliest CONFIRMED superseding kickoff, or null. */
+export function supersedingKickoff(input: Parameters<typeof assessSupersession>[0]): Date | null {
+  return assessSupersession(input).superseded;
+}
+
+/**
+ * Mark known matches confirmed as played when a team cache (fetched after
+ * kickoff) lists a result against that opponent within a day. Pure.
+ */
+export function confirmFromTeamCaches(
+  known: readonly KnownKickoff[],
+  caches: ReadonlyMap<number, ReadonlyArray<{ date: string; opponentApiId?: number | null }>>,
+): KnownKickoff[] {
+  const DAY = 24 * 60 * 60_000;
+  return known.map(k => {
+    if (k.opponentApiId == null) return k;
+    const listed = (team: number, opp: number) => (caches.get(team) ?? []).some(m =>
+      m.opponentApiId === opp && Math.abs(Date.parse(m.date) - k.kickoff.getTime()) <= DAY);
+    return listed(k.teamApiId, k.opponentApiId) || listed(k.opponentApiId, k.teamApiId) ? { ...k, confirmedPlayed: true } : k;
+  });
 }
 
 export type EvidencePartStatus =
@@ -107,6 +183,12 @@ export type EvidencePartStatus =
   | "aged"
   /** Verified, but a match the team has since played is missing from it. */
   | "superseded"
+  /**
+   * Verified and within tolerance, but a later known fixture's outcome could
+   * not be confirmed (stale status, postponement not yet observed, delay).
+   * NOT stale at generation; publication re-checks with current data.
+   */
+  | "unverified"
   /** No cached evidence for this part. */
   | "missing";
 
@@ -119,6 +201,8 @@ export type PartProvenance = {
   latestObservedMatch?: string | null;
   /** Kickoff of a known match missing from the evidence (team parts only). */
   supersededBy?: string | null;
+  /** Kickoff of a later known match whose outcome is unconfirmed (team parts only). */
+  unverifiedMatch?: string | null;
 };
 
 export type EvidenceProvenance = {
@@ -138,6 +222,7 @@ export function classifyPart(input: {
   toleranceMs: number | null;
   now: Date;
   supersededBy?: Date | null;
+  unverifiedMatch?: Date | null;
   latestObserved?: Date | null;
 }): PartProvenance {
   const { present, fetchedAt, toleranceMs, now } = input;
@@ -149,10 +234,12 @@ export function classifyPart(input: {
     toleranceHours: toleranceMs === null ? null : toleranceMs / HOUR,
     ...(input.latestObserved !== undefined ? { latestObservedMatch: input.latestObserved?.toISOString() ?? null } : {}),
     ...(input.supersededBy !== undefined ? { supersededBy: input.supersededBy?.toISOString() ?? null } : {}),
+    ...(input.unverifiedMatch !== undefined ? { unverifiedMatch: input.unverifiedMatch?.toISOString() ?? null } : {}),
   };
   if (!present) return base;
   if (input.supersededBy) return { ...base, status: "superseded" };
   if (toleranceMs !== null && (ageMs === null || ageMs > toleranceMs)) return { ...base, status: "aged" };
+  if (input.unverifiedMatch) return { ...base, status: "unverified" };
   return { ...base, status: "fresh" };
 }
 
@@ -164,20 +251,23 @@ export function staleParts(p: Pick<EvidenceProvenance, "homeTeam" | "awayTeam" |
 
 /**
  * Publication-time recheck of the SAVED digest: has either team played since
- * the evidence the reasoning was written from? Used by early publication so a
- * pick generated days ago cannot go live describing form that is out of date.
+ * the evidence the reasoning was written from (superseded), or is there a
+ * later match whose outcome we cannot confirm (unverified)? Used by early
+ * publication so a pick generated days ago cannot go live describing form
+ * that may no longer be current.
  */
 export function savedEvidenceSupersession(
   digest: MatchDigest,
   known: readonly KnownKickoff[],
   now: Date,
-): { home: Date | null; away: Date | null } {
+): { home: Supersession; away: Supersession } {
   const fixtureKickoff = new Date(digest.fixture.kickoff);
   const fk = Number.isFinite(fixtureKickoff.getTime()) ? fixtureKickoff : null;
-  return {
-    home: supersedingKickoff({ teamApiId: digest.teams.home?.apiId ?? null, evidenceAsOf: latestObservedMatch(digest.teams.home), known, now, fixtureKickoff: fk }),
-    away: supersedingKickoff({ teamApiId: digest.teams.away?.apiId ?? null, evidenceAsOf: latestObservedMatch(digest.teams.away), known, now, fixtureKickoff: fk }),
-  };
+  const side = (team: TeamDigest | undefined) => assessSupersession({
+    teamApiId: team?.apiId ?? null, evidenceAsOf: latestObservedMatch(team), known, now, fixtureKickoff: fk,
+    evidenceMatches: team?.last5 ?? [],
+  });
+  return { home: side(digest.teams.home), away: side(digest.teams.away) };
 }
 
 /** Narrow a stored provenance blob (AIJob.context.provenance). Null when absent or unrecognised. */

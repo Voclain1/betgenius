@@ -78,7 +78,9 @@ export function earlyPublicationBlock(
    * Kickoffs we already hold for the two teams. When either side has played a
    * match since the saved evidence was assembled, the reasoning describes form
    * that is no longer current, so the pick may not go live automatically. It
-   * goes to admin review (or stays held) instead. Omitted = not checked.
+   * goes to admin review (or stays held) instead. A later match we cannot
+   * confirm as played or not played also blocks automatic publication, with
+   * its own reason. Omitted = not checked.
    */
   knownKickoffs?: readonly KnownKickoff[],
 ): string | null {
@@ -87,8 +89,14 @@ export function earlyPublicationBlock(
   if (!row.kickoff || !inEarlyGenerationWindow(row.kickoff, now, row.leagueApiId)) return "outside-early-window";
   if (!row.contextComplete || !digest) return "no-reliable-evidence";
   if (knownKickoffs) {
-    const superseded = savedEvidenceSupersession(digest, knownKickoffs, now);
-    if (superseded.home || superseded.away) return "evidence-superseded";
+    const s = savedEvidenceSupersession(digest, knownKickoffs, now);
+    // Confirmed played since the evidence: the reasoning is out of date.
+    if (s.home.superseded || s.away.superseded) return "evidence-superseded";
+    // A later match whose outcome we cannot confirm (status still "NS", a
+    // postponement or delay we have not observed, suspended/interrupted):
+    // never auto-publish on an assumption either way. Clears by itself once
+    // a team cache confirms the result or the fixture is seen rescheduled.
+    if (s.home.unverified || s.away.unverified) return "evidence-currency-unverified";
   }
   if (row.manualSettlementOnly || row.marketType === "OTHER" || !isValidSelection(row.marketType as MarketType, row.selection)) return "invalid-market";
   if (row.marketType === "SAME_GAME_DOUBLE" || row.categories.includes("SAME_GAME_DOUBLE")) return "combo-source-or-double";

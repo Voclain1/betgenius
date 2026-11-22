@@ -47,7 +47,8 @@ import {
   latestObservedMatch,
   standingsToleranceMs,
   staleParts,
-  supersedingKickoff,
+  assessSupersession,
+  confirmFromTeamCaches,
   teamToleranceMs,
   PLAYED_AFTER_KICKOFF_MS,
   type EvidenceProvenance,
@@ -273,10 +274,13 @@ export type GenerationContextInput = {
   leagueApiId: number | null;
   round?: string | null;
   /**
-   * Research only (scripts/run-alt-market-experiment.ts): read every cache as
-   * it stands, stale or not, and never refresh. No api-football call and no
-   * write. Production generation never sets it. Stale reads are listed in
-   * sources.stale.
+   * Read every cache as it stands and never refresh: no api-football call
+   * and no cache write. Set by research (scripts/run-alt-market-experiment.ts)
+   * and, in production, ONLY by the dedicated early FREE intent (generate.ts,
+   * enforced by scripts/check-alt-market-research.ts §9). Ordinary, paid,
+   * Goals, European and admin generation never set it. Parts outside the
+   * lead-time tolerance or superseded by a later match are listed in
+   * sources.stale (src/lib/ai/evidenceFreshness.ts).
    */
   cacheOnly?: boolean;
 };
@@ -450,10 +454,22 @@ export async function knownRecentKickoffs(teamIds: Array<number | null>, since: 
     },
     select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true },
   });
-  return rows.flatMap(r => [
-    { teamApiId: r.homeTeamApiId, kickoff: r.kickoff, status: r.status },
-    { teamApiId: r.awayTeamApiId, kickoff: r.kickoff, status: r.status },
+  const known: KnownKickoff[] = rows.flatMap(r => [
+    { teamApiId: r.homeTeamApiId, opponentApiId: r.awayTeamApiId, kickoff: r.kickoff, status: r.status },
+    { teamApiId: r.awayTeamApiId, opponentApiId: r.homeTeamApiId, kickoff: r.kickoff, status: r.status },
   ]).filter(k => ids.includes(k.teamApiId));
+  if (!known.length) return known;
+  // Kickoff time is not proof of a result (a stored past status is usually
+  // the pre-kickoff "NS"). Confirm from the CURRENT team caches of either
+  // side: a result listed against that opponent on that date was played.
+  // One indexed read, no provider call.
+  const sides = [...new Set(known.flatMap(k => [k.teamApiId, k.opponentApiId!]))];
+  const caches = await prisma.teamEnrichmentCache.findMany({
+    where: { teamApiId: { in: sides } }, select: { teamApiId: true, teamDigestJson: true },
+  });
+  const byTeam = new Map(caches.map(c => [c.teamApiId,
+    ((c.teamDigestJson as unknown as TeamDigest | null)?.last5 ?? []).map(m => ({ date: m.date, opponentApiId: m.opponentApiId ?? null }))]));
+  return confirmFromTeamCaches(known, byTeam);
 }
 
 async function assessProvenance(input: {
@@ -478,8 +494,10 @@ async function assessProvenance(input: {
       console.warn("[generation-context] supersession lookup failed", error);
     }
   }
-  const sup = (teamApiId: number | null, asOf: Date | null) =>
-    supersedingKickoff({ teamApiId, evidenceAsOf: asOf, known, now, fixtureKickoff: input.kickoff });
+  const sup = (teamApiId: number | null, asOf: Date | null, team: TeamDigest) =>
+    assessSupersession({ teamApiId, evidenceAsOf: asOf, known, now, fixtureKickoff: input.kickoff, evidenceMatches: team.last5 ?? [] });
+  const homeSup = sup(input.homeApiId, homeAsOf, home);
+  const awaySup = sup(input.awayApiId, awayAsOf, away);
   return {
     v: 1,
     assessedAt: now.toISOString(),
@@ -487,11 +505,11 @@ async function assessProvenance(input: {
     cacheOnly: input.cacheOnly,
     homeTeam: classifyPart({
       present: input.sources.homeTeam !== "missing", fetchedAt: input.fetchedAt.get("homeTeam") ?? null,
-      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(home), supersededBy: sup(input.homeApiId, homeAsOf),
+      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(home), supersededBy: homeSup.superseded, unverifiedMatch: homeSup.unverified,
     }),
     awayTeam: classifyPart({
       present: input.sources.awayTeam !== "missing", fetchedAt: input.fetchedAt.get("awayTeam") ?? null,
-      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(away), supersededBy: sup(input.awayApiId, awayAsOf),
+      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(away), supersededBy: awaySup.superseded, unverifiedMatch: awaySup.unverified,
     }),
     standings: classifyPart({
       present: input.sources.standings !== "missing", fetchedAt: input.fetchedAt.get("standings") ?? null,

@@ -14,6 +14,7 @@ import {
   TEAM_TOLERANCE_BY_LEAD, teamToleranceMs, standingsToleranceMs, classifyPart, staleParts,
   supersedingKickoff, savedEvidenceSupersession, latestObservedMatch, parseEvidenceProvenance,
   PLAYED_AFTER_KICKOFF_MS, type EvidenceProvenance,
+  assessSupersession, resolveKnownMatch, confirmFromTeamCaches, FINISHED_STATUSES, NOT_PLAYED_STATUSES,
 } from "../src/lib/ai/evidenceFreshness";
 import { REFRESH_TIERS } from "../src/lib/enrichment";
 import { buildStoredContext, parseStoredContext, parseStoredProvenance } from "../src/lib/ai/context";
@@ -56,21 +57,43 @@ eq(classifyPart({ present: false, fetchedAt: null, toleranceMs: teamToleranceMs(
 eq(classifyPart({ present: true, fetchedAt: at(-2), toleranceMs: teamToleranceMs(120), now, supersededBy: at(-20) }).status, "superseded",
   "a 2h-old cache that misses a match played since is NOT current");
 eq(classifyPart({ present: true, fetchedAt: at(-400), toleranceMs: null, now }).status, "fresh", "H2H has no age floor (event-refreshed)");
+eq(classifyPart({ present: true, fetchedAt: at(-2), toleranceMs: teamToleranceMs(120), now, unverifiedMatch: at(-20) }).status, "unverified",
+  "an unconfirmed later match is recorded as unverified");
+eq(staleParts({ homeTeam: { status: "unverified" }, awayTeam: { status: "fresh" }, standings: { status: "missing" }, h2h: { status: "fresh" } } as never), [],
+  "unverified does NOT freeze contextComplete at generation: publication re-checks it with current data");
 
 // --------------------------------------------------------------- supersession
 const last5 = (dates: string[]) => dates.map((date, i) => ({ date, opponent: "Opp " + i, venue: "home", result: "W", goalsFor: 2, goalsAgainst: 0 })) as unknown as TeamDigest["last5"];
 const asOf = latestObservedMatch({ last5: last5(["2026-11-08T15:00:00Z", "2026-11-15T15:00:00Z"]) })!;
 eq(asOf.toISOString(), "2026-11-15T15:00:00.000Z", "latest observed match is the max last5 date");
-eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: new Date("2026-11-19T19:45:00Z"), status: "NS" }] })?.toISOString(),
-  "2026-11-19T19:45:00.000Z", "a midweek match since the evidence supersedes it");
-eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: new Date(now.getTime() - PLAYED_AFTER_KICKOFF_MS + 60_000) }] }), null,
-  "a match still in progress (or just finished) does not yet count");
-eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: new Date("2026-11-19T19:45:00Z"), status: "PST" }] }), null,
-  "a postponed match produced no result");
-eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 2, kickoff: new Date("2026-11-19T19:45:00Z") }] }), null,
-  "another team's match is irrelevant");
-eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: new Date("2026-11-15T15:00:00Z") }] }), null,
-  "the match already in the evidence is not a superseding match");
+// Kickoff time alone NEVER proves a result: a captured past fixture usually
+// still carries its pre-kickoff "NS" (discovery stores only future fixtures).
+const midweekAt = new Date("2026-11-19T19:45:00Z");
+const sup = (k: Partial<import("../src/lib/ai/evidenceFreshness").KnownKickoff>, extra: Partial<Parameters<typeof assessSupersession>[0]> = {}) =>
+  assessSupersession({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: midweekAt, opponentApiId: 7, ...k }], ...extra });
+eq(sup({ status: "FT" }).superseded?.toISOString(), midweekAt.toISOString(), "finished status (FT): confirmed played, evidence superseded");
+for (const st of ["AET", "PEN"]) eq(sup({ status: st }).superseded?.toISOString(), midweekAt.toISOString(), `${st}: confirmed played`);
+eq(sup({ status: "NS" }), { superseded: null, unverified: midweekAt }, "stale NS 2+ days after kickoff: UNVERIFIED, not assumed played");
+eq(sup({ status: "NS", confirmedPlayed: true }).superseded?.toISOString(), midweekAt.toISOString(), "NS but a current team cache lists the result: played");
+for (const st of ["PST", "CANC", "ABD", "AWD", "WO"]) eq(sup({ status: st }), { superseded: null, unverified: null }, `${st}: no football result, ignored`);
+for (const st of ["SUSP", "INT", "1H", "HT", "2H", "ET", "BT", "P", "LIVE", "TBD", null, "SOMETHING_NEW"])
+  eq(sup({ status: st as string | null }).unverified?.toISOString(), midweekAt.toISOString(), `${st}: unresolved, blocks automatic publication only`);
+eq(sup({ status: "FT", kickoff: new Date(now.getTime() - PLAYED_AFTER_KICKOFF_MS + 60_000) }), { superseded: null, unverified: null },
+  "a match still inside 150 minutes of kickoff is not considered yet");
+eq(sup({ status: "FT", teamApiId: 2 }), { superseded: null, unverified: null }, "another team's match is irrelevant");
+eq(sup({ status: "FT", kickoff: new Date("2026-11-15T15:00:00Z") }), { superseded: null, unverified: null }, "the match already in the evidence");
+eq(sup({ status: "FT", kickoff: new Date("2026-11-19T19:45:00Z") }, { evidenceMatches: [{ date: "2026-11-19T15:00:00Z", opponentApiId: 7 }] }),
+  { superseded: null, unverified: null }, "a delayed/re-timed match already in the evidence (same opponent, ±72h) is not a new match");
+eq(sup({ status: "FT" }, { fixtureKickoff: midweekAt }), { superseded: null, unverified: null }, "the predicted fixture is never evidence about itself");
+eq(supersedingKickoff({ teamApiId: 1, evidenceAsOf: asOf, now, known: [{ teamApiId: 1, kickoff: midweekAt, status: "NS" }] }), null,
+  "back-compatible helper reports only CONFIRMED supersession");
+eq([...FINISHED_STATUSES].sort(), ["AET", "FT", "PEN"], "finished set");
+eq([...NOT_PLAYED_STATUSES].sort(), ["ABD", "AWD", "CANC", "PST", "WO"], "not-played set");
+eq(resolveKnownMatch({ status: "pst" }), "not-played", "status matching is case-insensitive");
+const confirmed = confirmFromTeamCaches(
+  [{ teamApiId: 1, opponentApiId: 7, kickoff: midweekAt, status: "NS" }, { teamApiId: 1, opponentApiId: 8, kickoff: midweekAt, status: "NS" }],
+  new Map([[7, [{ date: "2026-11-19T19:45:00Z", opponentApiId: 1 }]]]));
+eq(confirmed.map(k => !!k.confirmedPlayed), [true, false], "the OPPONENT's current cache listing the result confirms it; a different opponent does not");
 
 // ------------------------------------------------------ provenance round trip
 const prov: EvidenceProvenance = {
@@ -107,10 +130,15 @@ const candidate = {
 };
 eq(earlyPublicationBlock(candidate, d5, now), null, "unchanged behaviour when no kickoff list is supplied");
 eq(earlyPublicationBlock(candidate, d5, now, []), null, "no known later matches: eligible exactly as before");
-const midweek = [{ teamApiId: 20, kickoff: new Date("2026-11-19T19:45:00Z"), status: "NS" }];
+const midweek = [{ teamApiId: 20, opponentApiId: 30, kickoff: new Date("2026-11-19T19:45:00Z"), status: "FT" }];
 eq(earlyPublicationBlock(candidate, d5, now, midweek), "evidence-superseded",
-  "Away FC played on 19 Nov after the saved evidence (latest 16 Nov): no automatic publication");
-eq(savedEvidenceSupersession(d5, midweek, now).home, null, "only the side that played is flagged");
+  "Away FC played (FT) on 19 Nov after the saved evidence (latest 16 Nov): no automatic publication");
+eq(savedEvidenceSupersession(d5, midweek, now).home, { superseded: null, unverified: null }, "only the side that played is flagged");
+eq(earlyPublicationBlock(candidate, d5, now, [{ ...midweek[0], status: "NS" }]), "evidence-currency-unverified",
+  "outcome unknown (stale NS): not assumed played, but not auto-published either");
+eq(earlyPublicationBlock(candidate, d5, now, [{ ...midweek[0], status: "NS", confirmedPlayed: true }]), "evidence-superseded", "confirmed by a team cache");
+eq(earlyPublicationBlock(candidate, d5, now, [{ ...midweek[0], status: "PST" }]), null, "postponed: evidence still current, eligible");
+eq(earlyPublicationBlock(candidate, d5, now, [{ ...midweek[0], status: "ABD" }]), null, "abandoned: no result to learn from, eligible");
 eq(earlyPublicationBlock({ ...candidate, contextComplete: false }, d5, now, midweek), "no-reliable-evidence", "existing gates still evaluated first");
 eq(earlyPublicationBlock({ ...candidate, confidence: 69 }, d5, now, []), "below-early-confidence-floor", "70 floor unchanged");
 eq(classifyEarlyDisposition({ confidence: 74, leadHours: 120, evidenceCredible: false, autoEligible: false, pricedExactSelection: true }), "hold",

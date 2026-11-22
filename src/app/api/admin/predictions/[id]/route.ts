@@ -48,6 +48,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           ? (["homeTeam", "awayTeam", "standings", "h2h"] as const).map((part) => ({
               part, status: provenance[part].status, ageHours: provenance[part].ageHours,
               toleranceHours: provenance[part].toleranceHours, supersededBy: provenance[part].supersededBy ?? null,
+              unverifiedMatch: provenance[part].unverifiedMatch ?? null,
             }))
           : null,
       }

@@ -56,7 +56,7 @@ type Prediction = {
     homeRecentMatches: number; awayRecentMatches: number;
     homeSeasonStats: boolean; awaySeasonStats: boolean;
     h2hMeetings: number; leagueTableRowsForFixture: number; domesticTables: number;
-    freshness?: Array<{ part: string; status: string; ageHours: number | null; toleranceHours: number | null; supersededBy: string | null }> | null;
+    freshness?: Array<{ part: string; status: string; ageHours: number | null; toleranceHours: number | null; supersededBy: string | null; unverifiedMatch?: string | null }> | null;
   } | null;
   manualSettlementOnly: boolean;
   outcome: string;
@@ -378,7 +378,8 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
                 {p.evidenceReview.freshness.map((f) => {
                   const label = { homeTeam: "home team", awayTeam: "away team", standings: "standings", h2h: "head-to-head" }[f.part] ?? f.part;
                   const age = f.ageHours == null ? "" : ` ${f.ageHours}h old${f.toleranceHours != null ? ` (limit ${f.toleranceHours}h)` : ""}`;
-                  const sup = f.supersededBy ? `, missing the match of ${f.supersededBy.slice(0, 10)}` : "";
+                  const sup = f.supersededBy ? `, missing the match of ${f.supersededBy.slice(0, 10)}`
+                    : f.unverifiedMatch ? `, outcome of the match of ${f.unverifiedMatch.slice(0, 10)} not yet confirmed` : "";
                   return `${label} ${f.status}${age}${sup}`;
                 }).join("; ")}.
               </p>
