@@ -29,9 +29,9 @@ import {
 } from "../src/lib/football/usage";
 import { bandOf, attemptErrorClass } from "../src/lib/generation/earlyFunnel";
 import { hasSubstantiveFootballEvidence } from "../src/lib/ai/evidenceReadiness";
-import { EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_FIXTURE_POLICY } from "../src/lib/generation/earlyFixturePolicy";
-import { LIVE_POLICY } from "../src/lib/liveSnapshot";
-import { DAILY_LIMIT, RESERVE, PAID_PRIORITY_RESERVE } from "../src/lib/football/usage";
+import { EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_FIXTURE_POLICY, EARLY_BOOST, earlyBoostGranted } from "../src/lib/generation/earlyFixturePolicy";
+import { LIVE_POLICY, refreshIntervalSeconds } from "../src/lib/liveSnapshot";
+import { DAILY_LIMIT, RESERVE, PAID_PRIORITY_RESERVE, budgetCeiling } from "../src/lib/football/usage";
 import { seasonMetaTtlMs, SEASON_META_LONG_TTL_MS, type LeagueSeason } from "../src/lib/football/api-football";
 
 const H = 3_600_000;
@@ -230,6 +230,86 @@ eq(crossedOld, 7, "REPLAY (verified totals): the old 2,200 threshold was crossed
 eq(crossedNew, ["2026-11-15", "2026-11-20", "2026-11-21"], "REPLAY: at 750 the early lane is shut out only on the 3 days above 6,650 used, late in the day");
 ok(Object.values(VERIFIED_DAILY_USED).every(u => u <= DAILY_LIMIT - RESERVE), "no verified day reached the hard ceiling: VIP/Premium budget never short");
 ok(readFileSync("src/lib/generation/earlyOdds.ts", "utf8").includes('report.stoodDown = "api-football quota headroom too low'), "odds stand-downs are named in the run summary, no longer silent");
+
+// ------------------------------------- 60 s live floor → early-lane surplus
+eq(LIVE_POLICY.MIN_REFRESH_SECONDS, 60, "live-score floor is 60 s (owner decision, 22 Nov 2026)");
+eq([86_400 / 15, 86_400 / LIVE_POLICY.MIN_REFRESH_SECONDS], [5_760, 1_440], "live-score ceiling falls from 5,760 to 1,440 calls a day");
+eq([earlyBoostGranted(null), earlyBoostGranted(undefined), earlyBoostGranted(NaN), earlyBoostGranted(1_999), earlyBoostGranted(2_000)], [false, false, false, false, true],
+  "surplus allowance only with ≥2,000 left; fails closed on unknown quota");
+ok(EARLY_BOOST.MIN_QUOTA_REMAINING > EARLY_LANE_MIN_QUOTA_REMAINING && EARLY_LANE_MIN_QUOTA_REMAINING > ordinaryHeadroom && ordinaryHeadroom > paidPassHeadroom,
+  "boost stops (2,000) well before the early lane (750), ordinary (500) and paid (30) thresholds");
+eq((EARLY_BOOST.DISCOVERY_EXTRA_SLOTS + EARLY_BOOST.ODDS_EXTRA_PER_RUN) * 48, 192, "boost costs at most 192 requests a day");
+const disc = readFileSync("src/lib/generation/earlyFixtureDiscovery.ts", "utf8");
+const oddsSrc = readFileSync("src/lib/generation/earlyOdds.ts", "utf8");
+ok(disc.includes("const boosted = baseBatch >= 4 && earlyBoostGranted(quota.remaining);") && disc.includes("baseBatch + (boosted ? EARLY_BOOST.DISCOVERY_EXTRA_SLOTS : 0)"),
+  "discovery: +2 priority-league slots only on a boosted pass");
+ok(oddsSrc.includes("Math.min(EARLY_ODDS_MAX_PER_RUN, baseLimit + (boosted ? EARLY_BOOST.ODDS_EXTRA_PER_RUN : 0))") && oddsSrc.includes("EARLY_ODDS_MAX_PER_RUN = 6"),
+  "odds: 4 → 6 on a boosted pass, never above the established per-run ceiling of 6");
+ok(![disc, oddsSrc].some(src => /withPaidPriority/.test(src)),
+  "PAID GUARANTEE: early discovery and odds never run with paid priority, so apiFetch refuses them before the 300-request paid reserve");
+eq(DAILY_LIMIT - RESERVE - budgetCeiling(false), PAID_PRIORITY_RESERVE, "the paid-only reserve non-paid callers cannot spend");
+
+// Full-day simulation, second by second. Live-score readers present all day
+// (worst case for live spend). Other jobs spread evenly at a sweep of daily
+// loads (the true non-live load is not in the history). Early discovery at
+// :03/:33 and odds at :06/:36. BEFORE = 15 s live floor, early thresholds
+// 2,200 (discovery) / 1,800 (odds), no boost. AFTER = this change.
+type Policy = { liveFloor: number; discoveryMin: number; oddsMin: number; boost: boolean };
+const BEFORE: Policy = { liveFloor: 15, discoveryMin: 2_200, oddsMin: 1_800, boost: false };
+const AFTER: Policy = { liveFloor: LIVE_POLICY.MIN_REFRESH_SECONDS, discoveryMin: EARLY_LANE_MIN_QUOTA_REMAINING, oddsMin: EARLY_LANE_MIN_QUOTA_REMAINING, boost: true };
+type Day = { used: number; live: number; discovery: number; odds: number; discoveryPasses: number; oddsPasses: number; liveBelowFloor: number; earlyBelowFloor: number; minRemaining: number };
+/** liveSnapshot's pacing with the floor as a parameter (the real function applies today's floor). */
+function pacedInterval(remaining: number, at: Date, floor: number): number | null {
+  const budget = remaining - LIVE_POLICY.GENERATION_RESERVE;
+  if (budget <= 0) return null;
+  const midnight = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1);
+  return Math.max(floor, Math.ceil(Math.max(1, (midnight - at.getTime()) / 1_000) / budget));
+}
+for (const [rem, iso] of [[7_400, "2026-11-21T00:00:00Z"], [1_150, "2026-11-21T19:00:00Z"], [1_000, "2026-11-21T12:00:00Z"], [1_010, "2026-11-21T23:59:00Z"]] as const)
+  eq(pacedInterval(rem, new Date(iso), LIVE_POLICY.MIN_REFRESH_SECONDS), refreshIntervalSeconds(rem, new Date(iso)), `simulation pacing equals the shipped refreshIntervalSeconds (${rem} left at ${iso.slice(11, 16)})`);
+function simulateDay(otherJobs: number, p: Policy): Day {
+  const usable = DAILY_LIMIT - RESERVE;
+  const nonPaidCeiling = budgetCeiling(false);
+  const d: Day = { used: 0, live: 0, discovery: 0, odds: 0, discoveryPasses: 0, oddsPasses: 0, liveBelowFloor: 0, earlyBelowFloor: 0, minRemaining: usable };
+  const start = Date.parse("2026-11-21T00:00:00Z");
+  let nextLive = 0;
+  const spend = (n: number) => { let k = 0; while (k < n && d.used < nonPaidCeiling) { d.used++; k++; } return k; };
+  for (let t = 0; t < 86_400; t++) {
+    d.used = Math.min(nonPaidCeiling, d.used + otherJobs / 86_400);
+    if (t >= nextLive) {
+      const rem = usable - d.used;
+      const i = pacedInterval(rem, new Date(start + t * 1_000), p.liveFloor);
+      if (i != null) {
+        if (rem < LIVE_POLICY.GENERATION_RESERVE) d.liveBelowFloor++;
+        d.live += spend(1);
+        nextLive = t + Math.max(i, p.liveFloor);
+      }
+    }
+    const minute = Math.floor(t / 60) % 30, second = t % 60;
+    if (second === 0 && (minute === 3 || minute === 6)) {
+      const rem = usable - d.used;
+      const floor = minute === 3 ? p.discoveryMin : p.oddsMin;
+      if (rem >= floor) {
+        if (rem < EARLY_LANE_MIN_QUOTA_REMAINING) d.earlyBelowFloor++;
+        const calls = 4 + (p.boost && earlyBoostGranted(rem) ? 2 : 0);
+        if (minute === 3) { d.discovery += spend(calls); d.discoveryPasses++; } else { d.odds += spend(calls); d.oddsPasses++; }
+      }
+    }
+    d.minRemaining = Math.min(d.minRemaining, usable - d.used);
+  }
+  return d;
+}
+const paidReserve = DAILY_LIMIT - RESERVE - budgetCeiling(false);
+for (const other of [2_500, 3_365, 4_500, 5_500]) {
+  const before = simulateDay(other, BEFORE);
+  const after = simulateDay(other, AFTER);
+  ok(after.live <= 1_440 && after.live <= before.live, `other jobs ${other}/day: live scores ${before.live} → ${after.live}`);
+  ok(after.discoveryPasses >= before.discoveryPasses && after.oddsPasses >= before.oddsPasses && after.discovery + after.odds >= before.discovery + before.odds,
+    `other jobs ${other}/day: early passes ${before.discoveryPasses}+${before.oddsPasses} → ${after.discoveryPasses}+${after.oddsPasses}, early calls ${before.discovery + before.odds} → ${after.discovery + after.odds}`);
+  ok(after.used <= before.used, `other jobs ${other}/day: daily total does not rise (${Math.round(before.used)} → ${Math.round(after.used)})`);
+  ok(after.liveBelowFloor === 0 && after.earlyBelowFloor === 0, `other jobs ${other}/day: neither lane ever spends below its own floor`);
+  ok(after.minRemaining >= paidReserve - 1, `other jobs ${other}/day: the paid-only reserve is never touched (lowest remaining ${Math.round(after.minRemaining)})`);
+}
 
 // ---------------------------------------------------------- season list TTL
 const seasonsEPL: LeagueSeason[] = [

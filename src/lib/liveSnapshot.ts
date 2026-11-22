@@ -33,8 +33,19 @@ import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
  */
 
 export const LIVE_POLICY = {
-  /** The fastest refresh: one provider call per this many seconds, site-wide. */
-  MIN_REFRESH_SECONDS: 15,
+  /**
+   * The fastest refresh: one provider call per this many seconds, site-wide.
+   *
+   * 60 since 22 Nov 2026 (owner decision; was 15). At 15 s this snapshot was
+   * a quota filler: it could spend up to 5,760 calls a day and, with the
+   * pacing below, absorbed everything above GENERATION_RESERVE, which kept
+   * every verified day at 6,421–7,125 requests and shut the early prediction
+   * lane out first (docs/API_FOOTBALL_7_DAY_USAGE_REPORT.md). At 60 s it is
+   * at most 1,440 calls a day. The freed allowance is directed to early
+   * discovery and odds by EARLY_BOOST (generation/earlyFixturePolicy.ts),
+   * and the rest stays as headroom in front of ordinary and paid generation.
+   */
+  MIN_REFRESH_SECONDS: 60,
   /** Calls live scores never touch, kept for prediction generation and settlement. */
   GENERATION_RESERVE: 1_000,
   /** Per-instance memo of the stored copy, so a burst of readers is one database read. */

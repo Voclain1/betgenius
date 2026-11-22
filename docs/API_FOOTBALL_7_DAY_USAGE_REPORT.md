@@ -161,3 +161,7 @@ So at least 72–88% of the increase is **not** the early lane. The leading code
 - **Early odds stand-downs named** in the job summary.
 - **Attribution** inside the live-score, top-matches and recent-results fetchers, so homepage server renders are no longer `unattributed`.
 - **Hourly × endpoint × job × outcome telemetry** (from the first round). Benchmarked locally at about 0.23 ms per write, about 1.4k rows per full 7,500-request day, no lost increments.
+
+## 9. Follow-up: 60-second live-score floor (owner decision, 22 Nov 2026)
+
+The live-score floor is now 60 s, so live scores make at most 1,440 calls a day (was up to 5,760). The freed allowance is directed to early discovery and odds (+2 each per pass, only while ≥ 2,000 remain; at most +192/day). VIP/Premium thresholds, the 300 paid-only reserve, and lease timing are unchanged. The modelled before/after day is in the remediation report, review round 4. It is a model; production effect will be measured with the `#h` telemetry.

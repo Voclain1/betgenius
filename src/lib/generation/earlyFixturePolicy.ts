@@ -46,6 +46,35 @@ export const EARLY_FIXTURE_POLICY = {
 export const EARLY_LANE_MIN_QUOTA_REMAINING = 750;
 
 /**
+ * Where the allowance freed by the 60-second live-score floor goes (owner
+ * decision, 22 Nov 2026): to early discovery and early odds coverage, never
+ * at the expense of VIP/Premium.
+ *
+ * Capping live scores alone would not help the early lane: its coverage is
+ * set by fixed per-pass allowances (4 league scans, 4 odds fetches per half
+ * hour), so freed quota would simply go unused. While the day still has real
+ * surplus — at least MIN_QUOTA_REMAINING left — each pass gets
+ * DISCOVERY_EXTRA_SLOTS more league scans and ODDS_EXTRA_PER_RUN more odds
+ * fetches (4 → 6 each, +50%).
+ *
+ * Paid protection: the boost stops while 2,000 requests remain, far above
+ * ordinary generation's stand-down (500) and the paid pass's (30, plus the
+ * 300-request paid-only reserve). Its total cost is bounded at
+ * (2 + 2) × 48 passes = 192 requests a day, against a live-score reduction
+ * of up to 4,320 (5,760 → 1,440). No schedule, lease or paid threshold changes.
+ */
+export const EARLY_BOOST = {
+  MIN_QUOTA_REMAINING: 2_000,
+  DISCOVERY_EXTRA_SLOTS: 2,
+  ODDS_EXTRA_PER_RUN: 2,
+} as const;
+
+/** True when the day has enough surplus for the boosted early allowance. Fails closed on unknown quota. */
+export function earlyBoostGranted(remaining: number | null | undefined): boolean {
+  return typeof remaining === "number" && Number.isFinite(remaining) && remaining >= EARLY_BOOST.MIN_QUOTA_REMAINING;
+}
+
+/**
  * Strong regional interest needs regular sampling even on a busy global slate.
  * A spotlight slot scans one requested domestic league per early-discovery pass,
  * leaving the existing CORE/SECONDARY cursor intact (3 original slots).
