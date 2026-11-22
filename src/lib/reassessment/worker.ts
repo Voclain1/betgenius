@@ -38,8 +38,40 @@ export function reassessmentMode(value: string | undefined = process.env.PREDICT
 }
 
 export const MAX_REASSESSMENTS_PER_RUN = 5;
+/**
+ * Unpublished generated picks (PENDING_REVIEW / held DRAFT) are also checked,
+ * so admins see new evidence before deciding on them. Zero extra provider
+ * calls: their fixture ids join the SAME batched status call (5 + 10 = 15 ≤ 20
+ * ids, still one request), their evidence is always compared cache-only, and
+ * official lineups are never fetched for them. Monitoring only: nothing in
+ * publication reads these review cases.
+ */
+export const MAX_UNPUBLISHED_REASSESSMENTS_PER_RUN = 10;
 const LEASE_KEY = "published-prediction-reassessment";
-const MIN_QUOTA_REMAINING = 1_500;
+/**
+ * Quota gates, split by what each part of a run costs (getUsageSnapshot().remaining).
+ *
+ * WAS a single 1,500 gate for everything. The verified production week
+ * (docs/API_FOOTBALL_7_DAY_USAGE_REPORT.md) shows every UTC day ending with
+ * 6,421–7,125 used, so monitoring of PUBLISHED picks (including VIP/Premium)
+ * stood down for the late part of every day while live scores kept running
+ * down to 1,000 — and the stand-down was silent (no reason in the summary).
+ *
+ * CORE monitoring needs: one batched /fixtures?ids call per run (≤20 ids),
+ * official lineups only inside 90 min of kickoff (≤ MAX_REASSESSMENTS_PER_RUN),
+ * and a CACHE-ONLY evidence comparison. At most 1 + 5 = 6 calls per run,
+ * 96 runs/day ⇒ ≤ 576/day worst case. It runs down to 1,000 remaining —
+ * the same floor as live scores, never below it — so it can never touch the
+ * budget the early lane (750), ordinary generation (500) or the paid pass
+ * (30, plus the 300 paid-only reserve) rely on.
+ *
+ * REFRESH monitoring additionally lets buildGenerationDigest refresh stale team,
+ * league and head-to-head caches (up to ~11 calls per pick). That keeps the
+ * original 1,500 floor. Between 1,000 and 1,500 the run compares against the
+ * cached evidence the enrichment crons keep warm for published picks.
+ */
+export const REASSESSMENT_CORE_MIN_REMAINING = 1_000;
+export const REASSESSMENT_REFRESH_MIN_REMAINING = 1_500;
 
 type SelectionSnapshot = {
   marketType: string; selection: unknown; confidence: number; market: string; pick: string;
@@ -73,6 +105,9 @@ async function claimRun(now: Date): Promise<string | null> {
 }
 
 export type ReassessmentReport = {
+  /** Why the run made no provider calls, or ran cache-only. Was silent before. */
+  stoodDown?: string;
+  evidenceMode?: "refresh" | "cache-only";
   ok: boolean; mode: ReassessmentMode; checked: number; current: number;
   flagged: number; withdrawn: number; skipped: number; failures: string[];
   summary: string;
@@ -86,17 +121,21 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
   };
   const finish = () => {
     report.ok = report.failures.length === 0;
-    report.summary = "Prediction monitoring " + mode + ": checked " + report.checked
+    report.summary = (report.stoodDown ? "Prediction monitoring stood down: " + report.stoodDown + "; " : "")
+      + "Prediction monitoring " + mode + (report.evidenceMode === "cache-only" ? " (cache-only evidence)" : "") + ": checked " + report.checked
       + ", current " + report.current + ", review " + report.flagged + ", withdrawn "
       + report.withdrawn + ", errors " + report.failures.length;
     return report;
   };
   if (mode === "off") return finish();
   const budget = await getUsageSnapshot();
-  if (budget.remaining < MIN_QUOTA_REMAINING) {
+  if (budget.remaining < REASSESSMENT_CORE_MIN_REMAINING) {
     report.skipped++;
+    report.stoodDown = "api-football quota headroom too low (" + budget.remaining + " left, needs " + REASSESSMENT_CORE_MIN_REMAINING + ")";
     return finish();
   }
+  const cacheOnlyEvidence = budget.remaining < REASSESSMENT_REFRESH_MIN_REMAINING;
+  report.evidenceMode = cacheOnlyEvidence ? "cache-only" : "refresh";
   const holder = await claimRun(now);
   if (!holder) { report.skipped++; return finish(); }
   try {
@@ -121,7 +160,17 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         include, orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }], take: 400,
       }),
     ]);
-    const candidates = [...near, ...early]
+    const unpublished = await prisma.prediction.findMany({
+      where: { status: { in: ["PENDING_REVIEW", "DRAFT"] }, aiJobId: { not: null },
+        kickoff: { gt: now, lte: fourteenDays }, fixtureApiId: { not: null } },
+      include, orderBy: [{ kickoff: "asc" }, { id: "asc" }], take: 400,
+    });
+    const unpublishedDue = unpublished
+      .filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now)
+      .sort((a, b) => (a.reassessment?.nextCheckAt?.getTime() ?? 0) - (b.reassessment?.nextCheckAt?.getTime() ?? 0)
+        || (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0))
+      .slice(0, MAX_UNPUBLISHED_REASSESSMENTS_PER_RUN);
+    const publishedDue = [...near, ...early]
       .filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now)
       .sort((a, b) => {
         // Within 6h of kickoff, freshness takes priority. Otherwise check the
@@ -131,6 +180,8 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           (a.reassessment?.nextCheckAt?.getTime() ?? 0) - (b.reassessment?.nextCheckAt?.getTime() ?? 0) ||
           (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0);
       }).slice(0, limit);
+    // Published first: an unpublished check never displaces a published one.
+    const candidates = [...publishedDue, ...unpublishedDue];
     const ids = [...new Set(candidates.map(r => r.fixtureApiId).filter((v): v is number => v != null))];
     // One provider call per 20 fixture IDs. Failure means unknown, not cancellation.
     const freshFixtures = ids.length ? await getFixturesByIds(ids) : [];
@@ -205,6 +256,9 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           home: row.homeTeam ?? "", away: row.awayTeam ?? "", league: row.leagueName,
           kickoff: row.kickoff.toISOString(), homeApiId: row.homeTeamApiId,
           awayApiId: row.awayTeamApiId, leagueApiId: row.leagueApiId, round: null,
+          // Below the refresh floor: compare against the caches the enrichment
+          // crons keep warm, with no refresh calls (see the gates above).
+          cacheOnly: cacheOnlyEvidence || row.status !== "PUBLISHED",
         });
         // Provider-verified cancellation overrides missing statistical feeds:
         // a postponed fixture must not stay recommended because its teams'
@@ -258,7 +312,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         if (isEarlyFree) signals.push(...earlyOddsFloorCrossing(previousOdds, latestOdds, now, row.kickoff));
         const oddsColumns = latestOdds ? { lastOddsMedian: latestOdds.median, lastOddsAt: latestOdds.at } : {};
         // Only official starting XI data, close to kickoff, can trigger this.
-        if (row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
+        if (row.status === "PUBLISHED" && row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
           const lineups = await getFixtureLineups(row.fixtureApiId).catch(() => null);
           const trimmed = trimConfirmedLineups(lineups, row.homeTeamApiId, row.awayTeamApiId);
           if (trimmed) signals.push(...confirmedLineupSignals(trimmed, old));

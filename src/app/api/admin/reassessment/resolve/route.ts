@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
       if (!before || before.status !== "PUBLISHED" || !before.publishedAt || !before.kickoff)
         throw new Error("PREDICTION_NOT_PUBLISHED_OR_STARTED");
       if (before.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_OPEN_REASSESSMENT");
+      // Settled or live picks are never withdrawn after the fact (issue #232).
+      if (action === "WITHDRAW" && before.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
       const paid = isPaidOnlyProvenance(before.provenance)
         || before.categories.some(c => c.category === "VIP" || c.category === "PREMIUM");
       if (paid && action === "REPLACE") throw new Error("PAID_REPLACEMENT_REQUIRES_PAID_GATE");
