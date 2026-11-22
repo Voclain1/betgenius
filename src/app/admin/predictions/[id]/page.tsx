@@ -331,10 +331,11 @@ export default function EditPrediction({ params }: { params: { id: string } }) {
         <div className="card flex items-start gap-3 border-amber-500/40 bg-amber-500/10">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
           <div className="text-sm text-amber-200">
-            <b>Generated with no live data.</b> Every football-data lookup (team form, injuries, standings, head-to-head)
-            came back empty for this fixture — the analysis used team names alone. Double-check the pick and reasoning
-            before approving, and consider verifying the football-data API is actually returning data (plan/season coverage,
-            rate limit) before generating more like it.
+            <b>Insufficient verified football evidence at generation.</b> This existing prediction may include claims
+            that were not supported by its saved match data. Do not rely on its confidence or recent-results reasoning
+            without checking each claim. Missing evidence may reflect unavailable team IDs, thin competition coverage,
+            stale caches, a provider error or quota limits — the warning alone does not identify the cause.
+            Future evidence-free generations are deferred before model analysis, not silently published.
           </div>
         </div>
       )}
