@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withApiJob } from "@/lib/football/usage";
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
 import { tabOfStatus, classifyStatus } from "@/lib/matchStatus";
@@ -218,7 +219,7 @@ async function getTopSnapshot(now: Date): Promise<Snapshot> {
         // Provider dates are UTC; the strip's days are Lagos days (UTC+1), so
         // filtering by Lagos bounds below drops the hour that falls outside.
         let calls = callsToday(previous, now) + 1;
-        const today = await getFixturesByDate(lagosDateKey(now));
+        const today = await withApiJob("site:top-matches", () => getFixturesByDate(lagosDateKey(now)));
         // Tomorrow's slate barely moves, so it is fetched once per Lagos day
         // and carried in the copy for the "no published match today" fallback.
         const tomorrowKey = lagosDateKey(lagosDayBounds(1, now).start);
@@ -226,7 +227,7 @@ async function getTopSnapshot(now: Date): Promise<Snapshot> {
         let fetchedTomorrowKey = previous.tomorrowKey === tomorrowKey ? tomorrowKey : undefined;
         if (!fetchedTomorrowKey && mayRefreshTop({ ...previous, day: utcDay(now), calls }, now, quota)) {
           calls += 1;
-          const tomorrow = await getFixturesByDate(tomorrowKey);
+          const tomorrow = await withApiJob("site:top-matches", () => getFixturesByDate(tomorrowKey));
           if (tomorrow) {
             tomorrowRows = tomorrow.filter(isTopMatchCandidate).map(trimLiveRow);
             fetchedTomorrowKey = tomorrowKey;

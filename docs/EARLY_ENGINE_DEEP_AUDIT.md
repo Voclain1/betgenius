@@ -7,6 +7,8 @@ Companion reports: [API-Football 7-day usage](API_FOOTBALL_7_DAY_USAGE_REPORT.md
 
 ## 0. Evidence basis: read this first
 
+> **Update (22 Nov, later):** the owner supplied read-only production exports (`ApiUsage` per UTC day × endpoint, `JobRun` per WAT day × job). They are committed in `docs/audit/` and incorporated in `API_FOOTBALL_7_DAY_USAGE_REPORT.md` and the remediation report's review round 3. The early funnel itself still needs `audit:early-funnel` to be run.
+
 | Source | Available to this audit? | Notes |
 |---|---|---|
 | Repository code, cron configuration, CI | **Yes** | Every root cause below is confirmed in code, with file references. |
@@ -159,6 +161,7 @@ The confidence floor (70) and two-sided evidence rule are legitimate quality rej
 - The shared lease guarantees no overlap (good), but cron timing decides who stands down. The early run is now at :27/:57: the next lease-sharing job (VIP at :35/:05) is 8 minutes later, longer than the 6-minute lease TTL, so an early run can never block VIP/Premium, ordinary or European generation, even if a model call hangs (see the remediation report, review round 2).
 - Early generation spends **no** API-Football quota and is exempt from the quota headroom check. It cannot starve the paid reserve (`PAID_PRIORITY_RESERVE = 300`).
 - Early discovery and odds stand down below 2,200 and 1,800 remaining requests respectively, before the paid reserve is reached.
+- **Correction (review round 3, verified production data):** those thresholds sat above the live-score snapshot's 1,000 floor. Every verified day used 6,421–7,125 requests, so early discovery stood down in 44 of 123 passes. They were not a legitimate control; they guaranteed the early lane was shut out first. Both are now 750; see `API_FOOTBALL_7_DAY_USAGE_REPORT.md` §1 and §4.
 - *Historical (repository, `usage.ts`):* over 14 Oct–13 Nov the paid pass stood down about 130 times because the daily budget was gone (102 times at 0 left), which led to the paid reserve. So the quota **has** been exhausted in recent production.
 
 ---

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withApiJob } from "@/lib/football/usage";
 import { getLiveFixtures, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
 
@@ -140,7 +141,7 @@ export async function getLiveSnapshot(now: Date = new Date()): Promise<LiveSnaps
       // Counted before the call, like recordCall: a timeout is still spent.
       // The count is for visibility only; the interval is what bounds spend.
       const calls = callsToday(previous, now) + 1;
-      const fetched = await getLiveFixtures();
+      const fetched = await withApiJob("site:live-snapshot", () => getLiveFixtures());
       snapshot = fetched
         ? { version: 1, day: utcDay(now), calls, fetchedAt: now.toISOString(), rows: fetched.map(trimLiveRow) }
         : { ...previous, day: utcDay(now), calls };

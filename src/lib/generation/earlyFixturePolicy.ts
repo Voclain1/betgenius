@@ -13,9 +13,37 @@ export const EARLY_FIXTURE_POLICY = {
   EARLY_GENERATION_UNTIL_HOURS: 336,
   // No daily or league fixture quota. Cron calls are finite for runtime/API
   // safety, but the backlog continues every cycle without an exhaustion cap.
-  MIN_API_QUOTA_REMAINING: 2_200,
+  // See EARLY_LANE_MIN_QUOTA_REMAINING below.
+  MIN_API_QUOTA_REMAINING: 750,
   MAX_RUN_MS: 22_000,
 } as const;
+
+/**
+ * Quota headroom (getUsageSnapshot().remaining = limit − reserve − used) below
+ * which the early lane's provider-facing jobs (discovery, odds warming) stand
+ * down. Shared by both.
+ *
+ * WAS 2,200 (discovery) and 1,800 (odds). Production, 15–21 Nov 2026 (verified
+ * ApiUsage/JobRun exports, docs/API_FOOTBALL_7_DAY_USAGE_REPORT.md): every UTC
+ * day used 6,421–7,125 requests, so both thresholds were crossed EVERY day and
+ * early discovery stood down in 44 of 123 passes (35.8%; 28 of 48 on 21 Nov).
+ * The cause is the live-score snapshot (src/lib/liveSnapshot.ts), which by
+ * design spends everything above its 1,000 GENERATION_RESERVE — the floor it
+ * keeps "for prediction generation and settlement". A threshold above that
+ * floor guaranteed the early lane was the first thing shut out each day.
+ *
+ * The order in which lanes stop as the day's remaining quota falls must be:
+ *   live scores (1,000)  →  early lane (750)  →  ordinary generation (500)
+ *   →  paid VIP/Premium pass (30; plus the 300-request paid-only reserve).
+ * So the early lane sits BELOW the live-score floor: live scores stop filling
+ * first, and the early lane keeps running in the band live scores leave
+ * untouched. On the verified days it would have stood down only once more
+ * than 6,650 requests were used (15, 20 and 21 Nov, late in the UTC day),
+ * instead of after 5,200 every day. Its own spend is unchanged and bounded
+ * (≤4 /fixtures and ≤4 /odds per half hour; ≤384/day), and it stops 250
+ * requests before ordinary generation and 720 before the paid pass.
+ */
+export const EARLY_LANE_MIN_QUOTA_REMAINING = 750;
 
 /**
  * Strong regional interest needs regular sampling even on a busy global slate.

@@ -1,14 +1,69 @@
 {
-  "generatedAt": "2026-11-22",
-  "note": "Machine-readable status of every dataset the 15-21 Nov 2026 audit requested. No production data was accessible from the audit environment (no DB/API credentials; egress to www.betgenius.ng refused). Nothing here is a production measurement unless 'status' is 'measured'.",
+  "generatedAt": "2026-11-22 (updated with owner-supplied production exports)",
+  "note": "Production exports supplied by the owner (Contabo PostgreSQL, read-only) on 22 Nov 2026 are committed in this folder. 'measured' = taken from those exports; other rows still require the read-only scripts.",
   "datasets": [
-    { "name": "daily API usage by UTC day x endpoint (15-22 Nov)", "status": "not-measured", "producibleFromHistory": true, "command": "npx tsx --env-file=.env scripts/audit-api-football-usage.ts --from=2026-11-15 --to=2026-11-21 --out=docs/audit", "output": "api_football_usage_2026-11-15_2026-11-21_by_utc_day.csv" },
-    { "name": "daily API usage by WAT day with success/failed/rate-limited", "status": "not-measured", "producibleFromHistory": false, "reason": "outcome and hour were not recorded before this change; available from deployment via '#h' telemetry rows" },
-    { "name": "API usage by job", "status": "not-measured", "producibleFromHistory": "partial", "reason": "only JobRun.detail-reported call counts exist before this change" },
-    { "name": "hourly API usage (WAT)", "status": "not-measured", "producibleFromHistory": false },
-    { "name": "provider-counted usage", "status": "not-measured", "producibleFromHistory": "dashboard-only", "reason": "/status has no history; the API-Football dashboard is owner-access only" },
-    { "name": "early funnel by kickoff band (15-21 Nov)", "status": "not-measured", "producibleFromHistory": true, "command": "npx tsx --env-file=.env scripts/audit-early-engine-funnel.ts --from=2026-11-15 --to=2026-11-21 --out=docs/audit", "output": "early_funnel_2026-11-15_2026-11-21.{json,csv}" },
-    { "name": "early funnel 22 Nov partial", "status": "not-measured", "producibleFromHistory": true, "command": "npx tsx --env-file=.env scripts/audit-early-engine-funnel.ts --from=2026-11-22 --to=2026-11-22 --out=docs/audit" },
-    { "name": "evidence-completeness pass rate, old vs new rule", "status": "simulated", "file": "early_freshness_simulation.csv", "command": "npx tsx scripts/simulate-early-freshness.ts" }
+    {
+      "name": "daily API usage by UTC day x endpoint (15-22 Nov)",
+      "status": "measured",
+      "producibleFromHistory": true,
+      "command": "npx tsx --env-file=.env scripts/audit-api-football-usage.ts --from=2026-11-15 --to=2026-11-21 --out=docs/audit",
+      "output": "api_football_usage_2026-11-15_2026-11-21_by_utc_day.csv",
+      "file": "api_usage_utc_2026-11-14_to_21.csv",
+      "summary": {
+        "total_15_21": 47262,
+        "avg": 6751.7,
+        "median": 6639,
+        "peak": 7125,
+        "min": 6421
+      }
+    },
+    {
+      "name": "daily API usage by WAT day with success/failed/rate-limited",
+      "status": "not-measured",
+      "producibleFromHistory": false,
+      "reason": "outcome and hour were not recorded before this change; available from deployment via '#h' telemetry rows"
+    },
+    {
+      "name": "API usage by job",
+      "status": "partial",
+      "producibleFromHistory": "partial",
+      "reason": "run counts and quota-keyword summaries per job and WAT day are measured; per-job request counts were never recorded",
+      "file": "job_runs_wat_2026-11-15_to_21.csv"
+    },
+    {
+      "name": "hourly API usage (WAT)",
+      "status": "not-measured",
+      "producibleFromHistory": false
+    },
+    {
+      "name": "provider-counted usage",
+      "status": "not-measured",
+      "producibleFromHistory": "dashboard-only",
+      "reason": "/status has no history; the API-Football dashboard is owner-access only"
+    },
+    {
+      "name": "early funnel by kickoff band (15-21 Nov)",
+      "status": "not-measured",
+      "producibleFromHistory": true,
+      "command": "npx tsx --env-file=.env scripts/audit-early-engine-funnel.ts --from=2026-11-15 --to=2026-11-21 --out=docs/audit",
+      "output": "early_funnel_2026-11-15_2026-11-21.{json,csv}"
+    },
+    {
+      "name": "early funnel 22 Nov partial",
+      "status": "not-measured",
+      "producibleFromHistory": true,
+      "command": "npx tsx --env-file=.env scripts/audit-early-engine-funnel.ts --from=2026-11-22 --to=2026-11-22 --out=docs/audit"
+    },
+    {
+      "name": "evidence-completeness pass rate, old vs new rule",
+      "status": "simulated",
+      "file": "early_freshness_simulation.csv",
+      "command": "npx tsx scripts/simulate-early-freshness.ts"
+    },
+    {
+      "name": "provider-reported (/status) reconciliation",
+      "status": "not-measured",
+      "reason": "no (reconciled) rows in the window; provider dashboard not supplied"
+    }
   ]
 }

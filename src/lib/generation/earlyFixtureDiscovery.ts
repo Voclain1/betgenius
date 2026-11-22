@@ -104,7 +104,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
   const quota = await getUsageSnapshot();
   base.quotaRemaining = quota.remaining;
   if (quota.remaining < EARLY_FIXTURE_POLICY.MIN_API_QUOTA_REMAINING) {
-    return { ...base, summary: "Early fixture capture stood down to protect API quota", elapsedMs: Date.now() - startedAt };
+    return { ...base, summary: "Early fixture capture stood down to protect API quota (" + quota.remaining + " left, needs " + EARLY_FIXTURE_POLICY.MIN_API_QUOTA_REMAINING + ")", elapsedMs: Date.now() - startedAt };
   }
 
   // A per-request time budget and quota headroom are operational safeguards,

@@ -242,3 +242,72 @@ Production latency will differ. At ≤4 requests per second, the added write rat
 ### R2.5 Production evidence
 
 Still blocked. This environment has no database or API-Football credentials, and the proxy refuses the production site. The seven-day tables remain *not measured*. To complete them, run the read-only commands in `EARLY_ENGINE_DEEP_AUDIT.md` §7 in an environment with production read access, or give this session read-only access.
+
+---
+
+## Review round 3: verified production usage (owner exports, 22 Nov 2026)
+
+Source data and full tables: [API_FOOTBALL_7_DAY_USAGE_REPORT.md](API_FOOTBALL_7_DAY_USAGE_REPORT.md). All owner figures were recomputed from the CSVs and reproduce exactly: 47,262 requests over 15–21 Nov UTC, 6,751.7/day average, `/fixtures` 60.7%, `/odds` 9.9%, 136 quota/budget summaries.
+
+### R3.1 What the verified data establishes
+
+1. **The live-score snapshot is a quota filler, and it sets the daily total.** It spends everything above 1,000 remaining (at most one call per 15 s). Its target end-of-day level is 6,400 used; the lowest verified day is 6,421. On Nov 15–19, `/fixtures` moved opposite to the other endpoints (r = −0.64). Upper bound on live-score usage: 3,797/day.
+2. **The early lane was shut out by that filler every day.** Early discovery needed 2,200 remaining (used ≤ 5,200); every verified day used 6,421–7,125. It stood down in 44 of 123 passes (35.8%; 28 of 48 on Nov 21). Early odds needed 1,800 and its stand-downs were silent, so its 0 quota flags are not evidence of no stand-downs.
+3. **Early generation's 17 quota flags were a defect already fixed.** They came from a quota gate on a job that makes 0 API calls; PR #218 removed it on 21 Nov 11:36 WAT. Not caused by #227, not needing #227.
+4. **VIP/Premium was never short of API budget.** Its 8 flags are its own paid attempt quota; no day reached its 7,370 stand-down. Ordinary generation stood down 3 times on Nov 20 (>6,900 used). The non-paid ceiling (7,100) was exceeded on Nov 20–21.
+5. **The `/odds` rise is mostly not the early lane.** Early odds can account for at most 32 (Nov 20) and 192 (Nov 21) of +262 and +696 over the Nov 15–19 mean. The leading candidate is PR #217 extending odds checks to Goals generation from 20 Nov 18:35 UTC. That is unproven: the history has no per-job split.
+6. **`/leagues` (5.3%) is avoidable churn**: season lists re-read every 6 h.
+
+### R3.2 Does quota pressure prevent the early engine from processing or publishing?
+
+| Stage | Affected? | Evidence | Status |
+|---|---|---|---|
+| Discovery (capture and queueing) | **Yes**: 35.8% of passes lost | JobRun keyword + threshold arithmetic | **Fixed in this PR** (threshold below the live floor) |
+| Odds warming (needed for automatic publication) | **Yes**, silently, from 5,600 used daily | threshold arithmetic; summary had no keyword | **Fixed** (threshold + named stand-down) |
+| Generation | Was (17 runs) | old code gate | Fixed by #218 |
+| Publication | No direct effect (no provider calls) | code | Indirect: stale or absent quotes block automatic publication; addressed via odds |
+
+### R3.3 API-saving opportunities (numerical; ranked by impact)
+
+"Verified base" = the endpoint's measured 7-day average. Savings are **estimates** unless marked implemented, and none is presented as measured.
+
+| # | Opportunity | Verified base | Estimated saving/day | Risk | Effect on VIP/Premium | Status |
+|---|---|---|---|---|---|---|
+| 1 | Live-score cadence: replace "spend everything above 1,000 at ≥15 s" with a fixed allowance or a slower floor | live ≤ 3,797/day (bound) | 30 s floor caps live at 2,880; 60 s at 1,440; a 1,500/day allowance caps at 1,500. Saving = current live usage − cap, **up to ~2,350/day (≈35% of usage)** if usage is near its bound | Scores refresh every 30–60 s instead of ~15–20 s while matches are live | none (paid reserve untouched) | **Needs your decision.** A product trade-off. Measure `site:live-snapshot` for 2–3 days first. |
+| 2 | Season-list TTL 48 h away from season boundaries | `/leagues` 355 | **~150–270** | New season picked up ≤6 h late near boundaries (unchanged); no change mid-season | none | **Implemented** |
+| 3 | Player leaderboards refreshed by matchday (or 24 h) instead of 12 h | 313 (3 boards) | **~156** (50%) | Key-player lists up to a day old on matchdays | none | Recommended |
+| 4 | Insights: keep the existing "match finished" trigger, raise the age refetch from 6 h to 24 h | inside `/fixtures`, ≤ 2,880/day cap | up to 75% of insight fetches (absolute **unknown** until measured) | A match in an uncaptured competition is reflected up to 24 h later | none | Recommended after one day of `refresh-insights` telemetry |
+| 5 | Derive enrichment's last-5 from a fresh insights history (last 20) instead of a second call | 183 (pinned) | ≤ **183** | Coupling two caches | none | Recommended (medium complexity) |
+| 6 | Goals-pass odds lookups: reuse the ordinary lane's recent failed attempt instead of retrying every 6 h | part of the +230/+504 | not calculable from history | slightly fewer Goals price checks | none | Measure `generate-goals` `/odds` first |
+
+### R3.4 How saved capacity can reach the early engine
+
+**Today, without opportunity 1, a saving is re-spent on live scores.** The filler's budget is "remaining − 1,000", so freeing 200 `/leagues` calls just makes live scores refresh slightly faster. The threshold change in this PR is what lets the early lane use capacity at all: its bounded spend (≤ 384/day) now runs before the filler's floor instead of after it.
+
+If you adopt opportunity 1 (say a 1,500/day live allowance), the freed capacity becomes real headroom. Options that would turn it into early coverage, each needing your approval because it raises early API spend:
+
+| Use | Extra requests/day | Expected effect |
+|---|---|---|
+| Early odds warming 4 → 6 fixtures per pass (route already allows 6) | +96 | 50% more quote refreshes, aimed first at drafts a fresh quote would publish (#227 ordering) |
+| Early discovery 4 → 6 leagues per pass | +96 | each CORE/SECONDARY league revisited 1.5× as often, so fixtures are captured earlier |
+| Standings workload limit +2 per run (exact limit is set on cron-job.org) | about +2 × runs × 2 calls | fresher tables for queued early leagues (selective gate, evidence) |
+
+### R3.5 Reconciliation with PR #227
+
+| Verified issue | Addressed before this round? | This round |
+|---|---|---|
+| Early discovery shut out daily | **No**: the first-round report treated the 2,200 threshold as a legitimate control | Threshold → 750 below the live floor; replay on verified totals: 3/7 days affected late instead of 7/7 |
+| Early odds silently shut out | No | Same threshold; stand-down named |
+| Early generation quota gate | Fixed by #218 (pre-existing) | — |
+| `/fixtures` 60.7% unexplained | Partly: telemetry would attribute routes, but homepage live-score renders would have been `unattributed` | Fetchers labelled at the source; filler mechanism documented with bound |
+| `/odds` +262/+696 | No (yield ordering redistributes, adds nothing) | Lower-bound diagnostic added to the audit script; telemetry splits by job |
+| `/leagues` churn | No | Boundary-aware TTL |
+| Paid protection | Yes (lease timing, reserves) | Confirmed by data: no paid API stand-down in 7 days |
+| Telemetry safety (`#h` keys) | Yes (budget sums use exact `day`; benchmarked) | unchanged |
+
+**Not claimed:** none of this is proven in production. Validate over one post-deploy week:
+- the early-discovery stand-down rate (expected near 0 on days under 6,650 used);
+- the `/leagues` daily count (expected about 85–205, down from 355);
+- the `site:live-snapshot` share;
+- a per-job `/odds` split;
+- unchanged VIP/Premium output.
