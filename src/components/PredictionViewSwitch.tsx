@@ -82,7 +82,7 @@ export function PredictionViewSwitch({
         {/* Deliberately unlike the day tabs beside it: round, small, icon-led,
             and an inverted (light-on-dark / dark-on-light) active state rather
             than brand green, so the two controls never read as one. */}
-        <div role="group" aria-label="Prediction view" className="inline-flex shrink-0 items-center gap-0.5 rounded-full border-2 border-gray-500 p-0.5">
+        <div role="group" aria-label="Prediction view" className="inline-flex shrink-0 items-center gap-1 rounded-2xl border border-brand-border bg-brand-card p-1 shadow-sm">
           {PREDICTION_VIEWS.map((option) => {
             const isActive = option === view;
             const Icon = ICONS[option];
@@ -92,8 +92,8 @@ export function PredictionViewSwitch({
                 type="button"
                 aria-pressed={isActive}
                 onClick={() => choose(option)}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
-                  isActive ? "bg-gray-100 text-brand-bg" : "text-gray-400 hover:text-gray-100"
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold tracking-wide transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${
+                  isActive ? "bg-brand text-on-brand shadow-sm" : "text-gray-400 hover:bg-brand/5 hover:text-gray-100"
                 }`}
               >
                 <Icon size={13} strokeWidth={2.75} aria-hidden />

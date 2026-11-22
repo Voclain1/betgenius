@@ -1,0 +1,49 @@
+name: preview-capacity-check
+
+on:
+  push:
+    branches: [design/teal-premium-ui-2026-11]
+    paths: [.github/workflows/preview-capacity-check.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/vps-ssh
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Read-only preview readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if getent ahostsv4 preview.betgenius.ng >/dev/null; then
+            echo "DNS_PREVIEW_RESOLVES=yes"
+          else
+            echo "DNS_PREVIEW_RESOLVES=no"
+          fi
+          ssh vps 'bash -s' <<'SCRIPT'
+          set -euo pipefail
+          echo "SERVER_REACHABLE=yes"
+          echo "FREE_MEMORY_MB=$(free -m | awk '/^Mem:/ {print $7}')"
+          echo "AVAILABLE_DISK_MB=$(df -Pm /var/lib/docker | awk 'NR==2 {print $4}')"
+          if docker network inspect edge >/dev/null 2>&1; then echo "EDGE_NETWORK=yes"; else echo "EDGE_NETWORK=no"; fi
+          if docker network inspect betgenius_default >/dev/null 2>&1; then echo "BETGENIUS_NETWORK=yes"; else echo "BETGENIUS_NETWORK=no"; fi
+          if [ -d /opt/school-kit/sites ] && [ -f /opt/school-kit/lib.sh ]; then echo "CADDY_SITE_SUPPORT=yes"; else echo "CADDY_SITE_SUPPORT=no"; fi
+          if [ -f /opt/betgenius/app.env ] && [ -f /opt/betgenius/deploy.env ]; then echo "BETGENIUS_RUNTIME=yes"; else echo "BETGENIUS_RUNTIME=no"; fi
+          if [ -f /opt/school-kit/lib.sh ]; then
+            cd /opt/school-kit
+            . ./lib.sh
+            if compose ps --services --status running | grep -qx caddy; then echo "CADDY_RUNNING=yes"; else echo "CADDY_RUNNING=no"; fi
+          fi
+          if docker ps --format '{{.Names}}' | grep -q '^betgenius-postgres-'; then
+            C=$(docker ps --format '{{.Names}}' | grep '^betgenius-postgres-' | head -1)
+            SIZE=$(docker exec "$C" psql -U betgenius -d betgenius -Atc 'SELECT pg_database_size(current_database()) / 1048576' 2>/dev/null || true)
+            echo "BETGENIUS_DB_SIZE_MB=${SIZE:-unknown}"
+          fi
+          SCRIPT

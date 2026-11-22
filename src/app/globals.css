@@ -37,11 +37,11 @@
   --card: 17 24 32; /* #111820 */
   --border: 28 37 48; /* #1c2530 */
 
-  --brand: 0 200 83; /* #00c853 */
-  --brand-dark: 0 163 68; /* #00a344 */
+  --brand: 25 213 181; /* #00c853 */
+  --brand-dark: 13 174 148; /* #00a344 */
   /* Text that sits ON the brand colour. Black reads best on the bright dark-theme
      green; the light theme uses a deeper green and flips this to white. */
-  --on-brand: 0 0 0;
+  --on-brand: 5 27 31;
 
   --gray-100: 243 244 246;
   --gray-200: 229 231 235;
@@ -61,9 +61,9 @@
   --yellow-300: 253 224 71;
   --yellow-400: 250 204 21;
   --yellow-500: 234 179 8;
-  --blue-300: 147 197 253;
-  --blue-400: 96 165 250;
-  --blue-500: 59 130 246;
+  --blue-300: 116 231 208;
+  --blue-400: 33 207 179;
+  --blue-500: 12 169 148;
   --orange-300: 253 186 116;
   --orange-500: 249 115 22;
   --purple-300: 216 180 254;
@@ -86,28 +86,28 @@
   :root:not([data-theme]) {
     color-scheme: light;
 
-    /* #f0f6f2: a faint brand-green tint rather than a neutral grey, so the
+    /* #f6f9fa: a clean porcelain surface with only a subtle cool cast, so the
        page reads as BetGenius before any green element appears. Cards stay
        pure white, which is what lifts them off it. */
-    --bg: 240 246 242;
+    --bg: 246 249 250;
     --card: 255 255 255;
-    --border: 210 226 216;
+    --border: 219 229 232;
 
-    /* #007c33. Darker than it looks necessary: white-on-brand must clear WCAG
+    /* #006e65. The teal ink clears WCAG AA for text and buttons on white:
        AA (4.5:1) because it is the primary button, and `text-brand` is
        body-size link text on a near-white card, which needs the same. The
        obvious #00963e scored 3.87:1 on both and was rejected — see
        scripts/check-theme-contrast.ts. */
-    --brand: 0 124 51;
-    --brand-dark: 0 97 41;
+    --brand: 0 110 101;
+    --brand-dark: 0 84 77;
     --on-brand: 255 255 255;
 
-    --gray-100: 11 18 32;
-    --gray-200: 22 32 44;
-    --gray-300: 51 64 78;
-    --gray-400: 90 102 114;
-    --gray-500: 113 124 136;
-    --gray-600: 148 158 169;
+    --gray-100: 12 29 39;
+    --gray-200: 26 45 53;
+    --gray-300: 54 71 80;
+    --gray-400: 80 98 106;
+    --gray-500: 108 123 132;
+    --gray-600: 151 165 173;
 
     --emerald-300: 4 108 78;
     --emerald-500: 16 160 112;
@@ -120,9 +120,9 @@
     --yellow-300: 133 100 4;
     --yellow-400: 150 112 6;
     --yellow-500: 168 126 8;
-    --blue-300: 29 78 216; /* blue-700: label text on white */
-    --blue-400: 37 99 235;
-    --blue-500: 59 130 246;
+    --blue-300: 0 110 101; /* blue-700: label text on white */
+    --blue-400: 0 133 122;
+    --blue-500: 12 169 148;
     --orange-300: 194 65 12; /* orange-700 */
     --orange-500: 249 115 22;
     --purple-300: 126 34 206; /* purple-700 */
@@ -133,7 +133,7 @@
     --premium: 126 34 206;
 
     --surface: 255 255 255;
-    --surface-alpha: 0.72;
+    --surface-alpha: 0.90;
   }
 }
 
@@ -143,20 +143,20 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: 240 246 242; /* see the note in the prefers-color-scheme block above */
+  --bg: 246 249 250; /* matches the adaptive light palette above */
   --card: 255 255 255;
-  --border: 210 226 216;
+  --border: 219 229 232;
 
-  --brand: 0 124 51; /* see the note in the prefers-color-scheme block above */
-  --brand-dark: 0 97 41;
+  --brand: 0 110 101; /* see the note in the prefers-color-scheme block above */
+  --brand-dark: 0 84 77;
   --on-brand: 255 255 255;
 
-  --gray-100: 11 18 32;
-  --gray-200: 22 32 44;
-  --gray-300: 51 64 78;
-  --gray-400: 90 102 114;
-  --gray-500: 113 124 136;
-  --gray-600: 148 158 169;
+  --gray-100: 12 29 39;
+  --gray-200: 26 45 53;
+  --gray-300: 54 71 80;
+  --gray-400: 80 98 106;
+  --gray-500: 108 123 132;
+  --gray-600: 151 165 173;
 
   --emerald-300: 4 108 78;
   --emerald-500: 16 160 112;
@@ -169,9 +169,9 @@
   --yellow-300: 133 100 4;
   --yellow-400: 150 112 6;
   --yellow-500: 168 126 8;
-  --blue-300: 29 78 216; /* blue-700: label text on white */
-  --blue-400: 37 99 235;
-  --blue-500: 59 130 246;
+  --blue-300: 0 110 101; /* blue-700: label text on white */
+  --blue-400: 0 133 122;
+  --blue-500: 12 169 148;
   --orange-300: 194 65 12; /* orange-700 */
   --orange-500: 249 115 22;
   --purple-300: 126 34 206; /* purple-700 */
@@ -182,7 +182,7 @@
   --premium: 126 34 206;
 
   --surface: 255 255 255;
-  --surface-alpha: 0.72;
+  --surface-alpha: 0.90;
 }
 
 /* BRAND SURFACE (light theme only)
@@ -194,35 +194,35 @@
    Contrast for these values is checked in scripts/check-theme-contrast.ts. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) .brand-surface {
-    --bg: 0 61 30;
-    --card: 0 77 38; /* #004d26 */
-    --border: 22 104 60;
-    --brand: 110 231 160;
-    --brand-dark: 74 210 130;
-    --on-brand: 0 40 20;
+    --bg: 5 26 34;
+    --card: 7 39 47; /* #004d26 */
+    --border: 32 86 91;
+    --brand: 133 242 204;
+    --brand-dark: 73 220 184;
+    --on-brand: 5 28 34;
     --gray-100: 255 255 255;
-    --gray-200: 236 248 240;
-    --gray-300: 209 235 218;
-    --gray-400: 176 214 190;
-    --gray-500: 150 196 168;
-    --gray-600: 110 160 130;
+    --gray-200: 239 249 249;
+    --gray-300: 205 225 229;
+    --gray-400: 170 203 209;
+    --gray-500: 149 182 190;
+    --gray-600: 112 156 163;
     background-color: rgb(var(--card));
     color: rgb(var(--gray-200));
   }
 }
 :root[data-theme="light"] .brand-surface {
-  --bg: 0 61 30;
-  --card: 0 77 38;
-  --border: 22 104 60;
-  --brand: 110 231 160;
-  --brand-dark: 74 210 130;
-  --on-brand: 0 40 20;
+  --bg: 5 26 34;
+  --card: 7 39 47;
+  --border: 32 86 91;
+  --brand: 133 242 204;
+  --brand-dark: 73 220 184;
+  --on-brand: 5 28 34;
   --gray-100: 255 255 255;
-  --gray-200: 236 248 240;
-  --gray-300: 209 235 218;
-  --gray-400: 176 214 190;
-  --gray-500: 150 196 168;
-  --gray-600: 110 160 130;
+  --gray-200: 239 249 249;
+  --gray-300: 205 225 229;
+  --gray-400: 170 203 209;
+  --gray-500: 149 182 190;
+  --gray-600: 112 156 163;
   /* Solid, whatever translucent card class the element carries: a see-through
      green over the pale page would sit between the two palettes. */
   background-color: rgb(var(--card));
@@ -240,9 +240,9 @@
   --card: 17 24 32;
   --border: 28 37 48;
 
-  --brand: 0 200 83;
-  --brand-dark: 0 163 68;
-  --on-brand: 0 0 0;
+  --brand: 25 213 181;
+  --brand-dark: 13 174 148;
+  --on-brand: 5 27 31;
 
   --gray-100: 243 244 246;
   --gray-200: 229 231 235;
@@ -262,9 +262,9 @@
   --yellow-300: 253 224 71;
   --yellow-400: 250 204 21;
   --yellow-500: 234 179 8;
-  --blue-300: 147 197 253;
-  --blue-400: 96 165 250;
-  --blue-500: 59 130 246;
+  --blue-300: 116 231 208;
+  --blue-400: 33 207 179;
+  --blue-500: 12 169 148;
   --orange-300: 253 186 116;
   --orange-500: 249 115 22;
   --purple-300: 216 180 254;

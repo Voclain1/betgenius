@@ -1,3 +1,4 @@
+import { CalendarDays, Crown, Layers, ShieldCheck, Sparkles, Star, Target, Zap } from "lucide-react";
 import { DiscoveryEntry } from "@/components/PredictionDiscovery";
 import { HomepageExplainer } from "@/components/HomepageExplainer";
 import Link from "next/link";
@@ -189,6 +190,26 @@ async function fetchDaySlate(day: FeedDay) {
   return { pickCount: rows.length, leagueCount: leagues.size, topLeagues, bankerCount, rows };
 }
 
+const CATEGORY_ICONS = {
+  "/predictions/banker": ShieldCheck,
+  "/predictions/today": CalendarDays,
+  "/predictions/premium": Star,
+  "/predictions/vip": Crown,
+  "/predictions/goals": Target,
+  "/multi-bets": Layers,
+  "/predictions/genius": Zap,
+  "/predictions/featured": Sparkles,
+} as const;
+
+function CategoryShortcutIcon({ href }: { href: string }) {
+  const Icon = CATEGORY_ICONS[href as keyof typeof CATEGORY_ICONS] ?? Target;
+  return (
+    <span className="premium-shortcut-icon" aria-hidden="true">
+      <Icon className="h-5 w-5" strokeWidth={1.9} />
+    </span>
+  );
+}
+
 export default async function HomePage({ searchParams }: { searchParams?: { date?: string } }) {
   // Reading searchParams does NOT change this page's render mode: it already
   // renders dynamically on every request because getServerSession below reads
@@ -258,10 +279,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
 
   const ARROW = "inline-flex min-h-9 items-center whitespace-nowrap text-sm font-semibold text-brand hover:underline";
   // Keep all category shortcuts visible: wrap naturally on narrow screens instead of sliding.
-  const PILL_ROW = "flex min-w-0 flex-wrap gap-2";
+  const PILL_ROW = "grid w-full min-w-0 grid-cols-2 gap-2 sm:grid-cols-4";
+  const PERIOD_ROW = "flex min-w-0 flex-wrap gap-2";
 
   return (
-    <div className="space-y-12">
+    <div className="premium-home space-y-10 sm:space-y-12">
       <JsonLd data={websiteJsonLd()} />
       {/* The top banner draws flush under the header, not here: this only
           reserves its place (src/lib/topBanner.ts). */}
@@ -294,7 +316,7 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             real published pick as its evidence on the right. Collapses to the
             original single column when nothing public is available, so the hero
             never renders a hole. */}
-        <section className="brand-surface relative overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
+        <section className="brand-surface relative premium-home-hero overflow-hidden rounded-3xl border border-brand-border bg-brand-card shadow-[0_20px_60px_-30px_rgba(0,0,0,0.6)]">
           <div aria-hidden className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.18),transparent)]" />
           <div aria-hidden className="pointer-events-none absolute -bottom-32 right-0 h-96 w-96 rounded-full bg-[radial-gradient(closest-side,rgb(var(--brand)/0.10),transparent)]" />
           <div className={`relative grid items-center gap-8 p-5 sm:p-8 md:p-10 ${heroSlides.length > 0 ? "lg:grid-cols-[1.2fr,1fr]" : ""}`}>
@@ -342,10 +364,10 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
           longer runs. The groups are told apart by a label and a rule, and the
           longer-run links by their brand outline, so the row can keep growing
           without one list of look-alike buttons. */}
-      <nav aria-label="Prediction categories" className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+      <nav aria-label="Prediction categories" className="premium-category-nav flex flex-col gap-5">
+        <div className="flex w-full min-w-0 flex-col gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Today</span>
-          <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex w-full min-w-0 flex-col gap-3">
             {/* All category shortcuts remain visible without horizontal scrolling. */}
             <div className={PILL_ROW}>
               {HOME_CATEGORY_LINKS.map((c) => (
@@ -354,9 +376,10 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
                   target={homeTargetFor(c.href) ?? "today"}
                   placement="category_nav"
                   href={c.href}
-                  className="shrink-0 whitespace-nowrap rounded-full border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-gray-100 transition hover:border-brand hover:text-brand"
+                  className="premium-shortcut flex min-w-0 items-center gap-2 px-3 py-3 text-left text-[13px] font-bold leading-snug text-gray-100 hover:text-brand sm:px-4"
                 >
-                  {c.label}
+                  <CategoryShortcutIcon href={c.href} />
+                  <span className="min-w-0">{c.label}</span>
                 </HomeLink>
               ))}
             </div>
@@ -366,17 +389,17 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
             <MarketChips />
           </div>
         </div>
-        <span aria-hidden className="h-px w-full bg-brand-border lg:h-8 lg:w-px" />
+        <span aria-hidden className="h-px w-full bg-brand-border" />
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">Longer runs</span>
-          <div className={PILL_ROW}>
+          <div className={PERIOD_ROW}>
             {HOME_PERIOD_LINKS.map((c) => (
               <HomeLink
                 key={c.href}
                 target={homeTargetFor(c.href) ?? "weekend"}
                 placement="category_nav"
                 href={c.href}
-                className="shrink-0 whitespace-nowrap rounded-full border border-brand px-4 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-on-brand"
+                className="premium-period-link shrink-0 whitespace-nowrap border border-brand-border bg-brand-card px-4 py-2 text-sm font-bold text-brand transition hover:border-brand hover:bg-brand/10"
               >
                 {c.label}
               </HomeLink>

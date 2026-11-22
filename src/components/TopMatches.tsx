@@ -176,7 +176,7 @@ function Card({ c }: { c: TopMatchCard }) {
       href={c.href}
       aria-label={label}
       title={`${c.teams.home.name} v ${c.teams.away.name} · ${c.league.name}`}
-      className="group grid h-full grid-cols-[1fr,auto,1fr] items-center gap-1 rounded-2xl border border-brand-border bg-brand-card px-1.5 py-2 transition hover:border-brand sm:px-3 sm:py-2.5"
+      className="premium-live-tile group grid h-full grid-cols-[1fr,auto,1fr] items-center gap-1 rounded-2xl border border-brand-border bg-brand-card px-1.5 py-2 transition hover:border-brand sm:px-3 sm:py-2.5"
     >
       <Side id={c.teams.home.id} name={c.teams.home.name} />
       <div className="flex min-w-[2.5rem] flex-col items-center gap-1">

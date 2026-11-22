@@ -56,7 +56,7 @@ export function MatchSectionNav({ sections }: { sections: { id: string; label: s
   }, [active]);
 
   return (
-    <nav aria-label="Match page sections" className="sticky top-16 z-30 -mx-4 px-4 sm:mx-0 sm:px-0">
+    <nav aria-label="Match page sections" className="premium-match-nav sticky top-16 z-30 -mx-4 px-4 sm:mx-0 sm:px-0">
       <div className="flex items-center gap-1 rounded-full border border-brand-border surface-blur p-1.5 shadow-lg shadow-black/20 backdrop-blur">
         <span className="hidden shrink-0 pl-2.5 pr-2 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500 sm:block">On this page</span>
         {more.left && (

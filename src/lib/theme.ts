@@ -13,7 +13,7 @@ export type Theme = (typeof THEMES)[number];
 export const THEME_STORAGE_KEY = "betgenius-theme";
 
 /** The theme applied when nothing is stored. Change this to flip the site default. */
-export const DEFAULT_THEME: Theme = "dark";
+export const DEFAULT_THEME: Theme = "light";
 
 export function isTheme(value: unknown): value is Theme {
   return typeof value === "string" && (THEMES as readonly string[]).includes(value);
@@ -37,4 +37,4 @@ export function isTheme(value: unknown): value is Theme {
  * into a <script> tag — it cannot close over anything, so the storage key is
  * interpolated rather than imported.
  */
-export const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);}else if(t!=="system"&&${JSON.stringify(DEFAULT_THEME)}!=="system"){document.documentElement.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});}}catch(e){}})();`;
+export const THEME_INIT_SCRIPT = `(function(){var r=document.documentElement;if(${JSON.stringify(DEFAULT_THEME)}!=="system")r.setAttribute("data-theme",${JSON.stringify(DEFAULT_THEME)});try{var t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});if(t==="light"||t==="dark"){r.setAttribute("data-theme",t);}else if(t==="system"){r.removeAttribute("data-theme");}}catch(e){}})();`;

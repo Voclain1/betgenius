@@ -43,7 +43,7 @@ export function AppTabBar() {
       // bottom of the viewport regardless of scroll position or how short the
       // page is. The safe-area padding clears the iOS home indicator and
       // Android's gesture bar — without it the labels sit under both.
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-brand-border bg-brand-bg/95 backdrop-blur"
+      className="premium-app-tabs fixed inset-x-0 bottom-0 z-40 border-t border-brand-border bg-brand-bg/95 backdrop-blur-xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-lg items-stretch">
