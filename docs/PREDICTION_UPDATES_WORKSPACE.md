@@ -51,7 +51,13 @@ Paid replacement stays blocked, as before.
 Other server-side guards, which apply to the routes and not only to the buttons:
 - **Admin-authored picks** (no generation job) are never re-worded (`ADMIN_AUTHORED_PICK`).
 - **Nothing is changed after kickoff.** Drafting, applying and withdrawing all return `KICKOFF_PASSED`. A published pick whose kickoff is missing **fails closed**: drafting and applying return `KICKOFF_UNVERIFIED`, withdrawal is refused, and the card is read-only.
-- **Stale drafts cannot be applied.** A newer monitoring snapshot invalidates the draft (`REWRITE_SELECTION_OR_EVIDENCE_CHANGED`), only the latest draft applies, and a compare-and-swap on the old wording blocks concurrent edits.
+- **Stale drafts cannot be applied.**
+  - **Each draft is bound to the exact saved evidence snapshot it was written from.** It records `evidenceSnapshotHash`, a deterministic hash of `lastEvidence` with keys sorted, so jsonb ordering cannot change it.
+  - **The binding is verified when the draft is saved and again at approval.** A monitoring refresh that changes anything in the snapshot (standings, season record, …) makes the draft stale. That holds even when no new material signal is raised and the alert signature (`lastChangeHash`) is unchanged.
+  - **The route then returns `REWRITE_DRAFT_STALE` and the prose is unchanged.** The workspace marks the draft out of date and asks for a new one.
+  - **Drafts saved before this field existed count as stale** (fail closed).
+  - **Other checks still apply:** only the latest draft applies, and a compare-and-swap on the old wording blocks concurrent edits.
+  - **The alert signature is unchanged** and still drives alerts.
 - All routes are **admin-only**, and mutations are **origin-checked**, which guards against CSRF.
 - **Nothing is deleted, hidden or put on public hold** by this workspace.
 - **Duplicate alerts are suppressed, and the signature is value-sensitive.** An unchanged signature keeps a retained case closed; a genuinely new one reopens it once. The signature (`lastChangeHash`, built by `materialSignature`) includes the substance behind generic codes: the **new kickoff time** for `fixture-kickoff-shift`, the **new coach** for `coach-change-*`, and the **absent players** for `confirmed-lineup-key-player-absence`. So after *Keep original*, a different absent key player, a further kickoff move or another coach change reopens the case. Check times are never part of the signature. Codes that already carry their value (results, absences, fixture status) hash exactly as before, so existing retained cases are not reopened by the upgrade. A case retained on one of the three generic codes before this change may reopen once on its next check.
@@ -73,11 +79,19 @@ The allocation was verified before the reassessment threshold was changed. The d
 - From **1,001 to 1,500 remaining**, it keeps the core check and builds evidence from caches only.
 - **At 1,000 or fewer**, it makes no call at all.
 
-**Floors are enforced per call, not per run.** Each worker provider call runs inside `withFootballCallFloor`, which re-reads the day's usage before **every** dispatch and refuses any call that would leave fewer than the floor:
-- the batched `/fixtures` call and each lineup call: **1,000**;
-- every call inside an evidence refresh: **1,500**. The refresh decision is also re-read before each row.
+**Floors are enforced per call, atomically.** Each worker provider call runs inside `withFootballCallFloor`:
+- the batched `/fixtures` call and each lineup call: floor **1,000**;
+- every call inside an evidence refresh: floor **1,500**. The refresh decision is also re-read before each row.
 
-A run starting at 1,003 remaining therefore makes at most 3 calls and ends at exactly 1,000; it cannot be pushed below by its own optional calls. The Postgres test checks this at 1,000, 1,001, 1,005, 1,006 and 1,010 remaining with the worst-case six calls, and at 1,502 for the refresh floor. Other jobs running at the same moment (live scores, generation) are checked by their own gates as before; the floor reads the shared usage count, so it sees their spending.
+Immediately before dispatch (after the rate-limit throttle), the call takes an **atomic reservation** (`reserveCallAboveFloor`). It is one transaction under the same Postgres advisory lock the paid-quota experiment uses, so it is serialized across requests and server instances. It **counts the call first, then reads the day's total**. If that would leave fewer than the floor, the transaction rolls back and the call is not sent. The reservation is the call's usage record, and it **fails closed** on any error.
+
+What this guarantees:
+- **Scoped calls together never spend below their floor**, however many run in parallel or on however many instances. The integration test fires 12 concurrent calls at 1,003, 1,001 and 1,000 remaining: exactly 3, 1 and 0 are dispatched, ending at 1,000. It also runs sequential worst-case runs at 1,000, 1,001, 1,005, 1,006 and 1,010, and the refresh floor at 1,502. A mutation probe that skips the reservation fails the parallel test.
+
+What it does not do (stated precisely):
+- **Unscoped consumers do not take the lock.** That means live scores, generation, discovery and odds; they record usage with their existing atomic increment. A scoped reservation sees all of their committed usage. But one of them recording in the same instant, after the reservation's read, can still take the shared total lower.
+- **That is by design.** Each of those consumers applies its own floor: live scores 1,000, early lane 750, ordinary generation 500, paid 30 plus the 300 paid reserve. Whatever is spent below 1,000 is spent by a lane that is entitled to it, never by reassessment.
+- **No extra provider requests**, and paid and early work keep their priority.
 
 The core check is at most one batched `/fixtures` call (up to 15 ids) and up to 5 lineup calls per run, so it is bounded at about 576 a day. It never runs below the live-score reserve, so it cannot reach the early lane (750), ordinary generation (500) or paid generation. The early boost, which stops at 2,000, is unaffected. **The threshold was not lowered below 1,000.**
 

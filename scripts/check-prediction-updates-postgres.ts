@@ -36,6 +36,7 @@ async function main() {
   const { buildStoredContext } = await import("../src/lib/ai/context");
   const { withNoFootballApiCalls, withFootballCallFloor, getFixturesByIds, getFixtureLineups } = await import("../src/lib/football/api-football");
   const { listEvidenceReviewPage } = await import("../src/lib/evidenceReview");
+  const { evidenceSnapshotHash } = await import("../src/lib/reassessment/snapshotHash");
   const { listCasePage, listReviewedPage, updatesCounts, compareKeys, priorityKey } = await import("../src/lib/predictionUpdates");
   const { runPublishedReassessment, REASSESSMENT_CORE_MIN_REMAINING } = await import("../src/lib/reassessment/worker");
   const { DAILY_LIMIT, RESERVE } = await import("../src/lib/football/usage");
@@ -123,11 +124,16 @@ async function main() {
       }
       return p.id;
     }
-    const draft = async (id: string, tag: string, o: { confidence?: number; sameSelection?: boolean } = {}) => (await prisma.predictionRevision.create({ data: {
+    const draft = async (id: string, tag: string, o: { confidence?: number; sameSelection?: boolean } = {}) => {
+      // Bound to the exact saved snapshot, as the GENERATE route records it.
+      const snap = (await prisma.predictionReassessment.findUnique({ where: { predictionId: id }, select: { lastEvidence: true } }))?.lastEvidence;
+      return (await prisma.predictionRevision.create({ data: {
       predictionId: id, kind: "ADMIN_REWRITE_DRAFT", publiclyVisible: false, reason: "test draft", beforeJson: {},
       afterJson: { marketType: "BTTS", selection: { value: "YES" }, confidence: o.confidence ?? 74, reasoning: "Updated explanation for " + tag + " that reflects the new result.",
-        matchPreview: "Updated preview " + tag, sameSelection: o.sameSelection ?? true, evidenceHash: "hash-" + tag },
+        matchPreview: "Updated preview " + tag, sameSelection: o.sameSelection ?? true, evidenceHash: "hash-" + tag,
+        evidenceSnapshotHash: evidenceSnapshotHash(snap) },
       recordedAt: new Date(Date.now() + 1_000) } })).id;
+    };
 
     const countsBefore = await updatesCounts();
     const ids = {
@@ -256,6 +262,41 @@ async function main() {
     assert.deepEqual((await apply(ids.vip, vipDraft)).body, { error: "NO_ACTIVE_ADMIN_REVIEW" }, "double-apply refused (concurrency guard)");
     assert.equal((await prisma.predictionReassessment.findUniqueOrThrow({ where: { predictionId: ids.vip } })).publicHold, false, "never a public hold");
 
+    // ---------------------------------------------------------------- stale draft: snapshot refreshed, no new material signal (review round 2, B)
+    {
+      const staleCase = await seed({ tag: "StaleSnap", kickoff: at(2.2), categories: ["FEATURED"] });
+      const sd = await draft(staleCase, "StaleSnap");
+      const fresh = ((await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=new&pageSize=100"))).body.cards as Array<C & { draft: { stale: boolean } | null }>).find((c) => c.id === staleCase)!;
+      assert.equal(fresh.draft?.stale, false); assert.equal(fresh.adminStatus, "Draft ready");
+      // Exactly what the worker writes on a check with no new material signal:
+      // the case stays REVIEW_REQUIRED, lastChangeHash is untouched, lastEvidence is refreshed.
+      const r0 = await prisma.predictionReassessment.findUniqueOrThrow({ where: { predictionId: staleCase } });
+      const refreshed = JSON.parse(JSON.stringify(r0.lastEvidence)) as { digest: { teams: { home: { rank: number; points: number } } } };
+      refreshed.digest.teams.home.rank = 9; refreshed.digest.teams.home.points = 31;   // standings moved, no signal
+      assert.notEqual(evidenceSnapshotHash(refreshed), evidenceSnapshotHash(r0.lastEvidence), "precondition: the snapshot really changed");
+      await prisma.predictionReassessment.update({ where: { predictionId: staleCase }, data: {
+        status: "REVIEW_REQUIRED", checkedAt: new Date(), lastEvidence: refreshed, lastEvidenceAt: new Date(), lastError: null } });
+      const r1 = await prisma.predictionReassessment.findUniqueOrThrow({ where: { predictionId: staleCase } });
+      assert.equal(r1.lastChangeHash, r0.lastChangeHash, "precondition: the material signature did not change");
+      const before = await snap(staleCase);
+      assert.deepEqual((await apply(staleCase, sd)).body, { error: "REWRITE_DRAFT_STALE" }, "a draft from an older snapshot cannot be applied");
+      const afterSnap = await snap(staleCase);
+      assert.equal(afterSnap.reasoning, before.reasoning, "prose unchanged"); assert.equal(afterSnap.matchPreview, before.matchPreview);
+      const staleCard = ((await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=new&pageSize=100"))).body.cards as Array<C & { draft: { stale: boolean } | null }>).find((c) => c.id === staleCase)!;
+      assert.equal(staleCard.draft?.stale, true, "the workspace shows the draft as out of date");
+      assert.equal(staleCard.adminStatus, "New evidence", "...and asks for a new draft rather than offering approval");
+      assert.equal(staleCard.actions.approve, false);
+      // A legacy draft without a snapshot hash fails closed.
+      const legacy = await prisma.predictionRevision.create({ data: { predictionId: staleCase, kind: "ADMIN_REWRITE_DRAFT", publiclyVisible: false, reason: "legacy", beforeJson: {},
+        afterJson: { marketType: "BTTS", selection: { value: "YES" }, confidence: 74, reasoning: "Legacy draft without a snapshot version, long enough.", matchPreview: "x", sameSelection: true, evidenceHash: "hash-StaleSnap" },
+        recordedAt: new Date(Date.now() + 2_000) } });
+      assert.deepEqual((await apply(staleCase, legacy.id)).body, { error: "REWRITE_DRAFT_STALE" }, "a draft with no snapshot version is stale");
+      // A new draft bound to the refreshed snapshot applies normally.
+      const good = await draft(staleCase, "StaleSnap");
+      await prisma.predictionRevision.update({ where: { id: good }, data: { recordedAt: new Date(Date.now() + 3_000) } });
+      assert.equal((await apply(staleCase, good)).status, 200, "a draft written from the current snapshot can be applied");
+    }
+
     // ---------------------------------------------------------------- keep original
     const keep = await call(resolveRoute.POST, req("/x", { method: "POST", body: { predictionId: ids.free, action: "KEEP", note: "Reviewed new evidence; original analysis retained." } }));
     assert.equal(keep.status, 200, JSON.stringify(keep.body));
@@ -352,6 +393,20 @@ async function main() {
         assert.equal(dispatched, Math.min(6, start - REASSESSMENT_CORE_MIN_REMAINING), `at ${start} remaining: ${Math.min(6, start - 1000)} of 6 calls dispatched`);
         assert.equal(before - after, dispatched, "every dispatched call is counted");
         assert.ok(after >= REASSESSMENT_CORE_MIN_REMAINING, `at ${start} remaining the run ends at ${after}, never below the 1,000 live-score reserve`);
+      }
+      // PARALLEL near the boundary (review round 2, A): 12 concurrent scoped
+      // calls at 1,003 remaining must dispatch exactly 3 and end at 1,000.
+      for (const start of [1_003, 1_001, 1_000]) {
+        await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });
+        const b = DAILY_LIMIT - RESERVE - (await remainingNow());
+        await prisma.apiUsage.create({ data: { day: usageDay, path: usagePath, count: DAILY_LIMIT - RESERVE - start - b } });
+        dispatched = 0;
+        await Promise.all([
+          withFootballCallFloor(REASSESSMENT_CORE_MIN_REMAINING, () => Promise.all(Array.from({ length: 6 }, (_, i) => getFixtureLineups(991000 + i)))),
+          withFootballCallFloor(REASSESSMENT_CORE_MIN_REMAINING, () => Promise.all(Array.from({ length: 6 }, (_, i) => getFixturesByIds([992000 + i])))),
+        ]);
+        assert.equal(dispatched, start - REASSESSMENT_CORE_MIN_REMAINING, `parallel at ${start}: exactly ${start - 1000} of 12 dispatched`);
+        assert.equal(await remainingNow(), REASSESSMENT_CORE_MIN_REMAINING, `parallel at ${start}: ends at exactly 1,000`);
       }
       // The refresh floor works the same way at 1,500.
       await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });

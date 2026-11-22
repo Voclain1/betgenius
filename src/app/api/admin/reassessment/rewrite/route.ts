@@ -15,6 +15,7 @@ import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { isValidSelection, type MarketType } from "@/lib/markets";
+import { evidenceSnapshotHash } from "@/lib/reassessment/snapshotHash";
 import { latestSignals } from "@/lib/predictionUpdates";
 import { DECISION_CONFIDENCE_DROP } from "@/lib/reassessment/evidenceDiff";
 
@@ -30,6 +31,8 @@ type RewriteDraft = {
   marketType: string; selection: unknown; confidence: number;
   reasoning: string; matchPreview: string;
   sameSelection: boolean; evidenceHash: string | null;
+  /** Version of the exact saved snapshot the draft was written from. */
+  evidenceSnapshotHash: string | null;
 };
 function unchangedSelection(a: { marketType: string; selection: unknown }, b: { marketType: string; selection: unknown }) {
   return a.marketType === b.marketType && JSON.stringify(a.selection) === JSON.stringify(b.selection);
@@ -97,6 +100,7 @@ export async function POST(req: NextRequest) {
         matchPreview: output.output.matchPreview?.trim() ?? "",
         sameSelection: unchangedSelection(row, candidate),
         evidenceHash: row.reassessment.lastChangeHash,
+        evidenceSnapshotHash: evidenceSnapshotHash(row.reassessment.lastEvidence),
       };
       const saved = await prisma.$transaction(async tx => {
         const current = await tx.prediction.findUnique({
@@ -104,7 +108,9 @@ export async function POST(req: NextRequest) {
         });
         if (!current || current.status !== "PUBLISHED" ||
           current.reassessment?.status !== "REVIEW_REQUIRED" ||
-          current.reassessment.lastChangeHash !== draft.evidenceHash)
+          current.reassessment.lastChangeHash !== draft.evidenceHash ||
+          // The snapshot was refreshed while the draft was being written.
+          evidenceSnapshotHash(current.reassessment.lastEvidence) !== draft.evidenceSnapshotHash)
           throw new Error("REVIEW_CHANGED_DURING_REWRITE");
         return tx.predictionRevision.create({
           data: { predictionId, kind: "ADMIN_REWRITE_DRAFT",
@@ -136,6 +142,13 @@ export async function POST(req: NextRequest) {
       });
       if (!latest || latest.id !== revisionId) throw new Error("REWRITE_DRAFT_STALE");
       const draft = latest.afterJson as RewriteDraft | null;
+      // Bound to the exact snapshot it was written from: a monitoring refresh
+      // without a new material signal (lastChangeHash unchanged) still makes
+      // the draft stale. Drafts saved before this field existed have none:
+      // stale too (fail closed).
+      if (!draft?.evidenceSnapshotHash ||
+        draft.evidenceSnapshotHash !== evidenceSnapshotHash(current.reassessment.lastEvidence))
+        throw new Error("REWRITE_DRAFT_STALE");
       if (!draft || !draft.sameSelection ||
         !unchangedSelection(current, draft) ||
         draft.evidenceHash !== current.reassessment.lastChangeHash ||

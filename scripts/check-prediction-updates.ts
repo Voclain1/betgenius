@@ -169,7 +169,14 @@ assert.ok(!(DECISION_KINDS as readonly string[]).includes("EVIDENCE_REVIEW_OPENE
   assert.ok(/withFootballCallFloor\(REASSESSMENT_REFRESH_MIN_REMAINING, \(\) => buildGenerationDigest\(/.test(w), "evidence refresh under the 1,500 floor");
   assert.equal((w.match(/await getFixturesByIds\(|await getFixtureLineups\(/g) ?? []).length, 0, "no unguarded provider call in the worker");
   const client = src("src/lib/football/api-football.ts");
-  assert.ok(client.indexOf("floorAllowsCall()") < client.indexOf("await recordCall(path)"), "the floor is checked before every dispatch");
+  assert.ok(client.indexOf("floorAllowsCall()") < client.indexOf("await throttle();"), "cheap pre-check before the throttle wait");
+  assert.ok(client.indexOf("await throttle();") < client.indexOf("reserveCallAboveFloor(path, floor)")
+    && client.indexOf("reserveCallAboveFloor(path, floor)") < client.indexOf("res = await fetch("), "the atomic reservation sits between the throttle and dispatch");
+  const usage = src("src/lib/football/usage.ts");
+  const reserve = usage.slice(usage.indexOf("export async function reserveCallAboveFloor"), usage.indexOf("class FloorRefusal"));
+  assert.ok(/pg_advisory_xact_lock\(750000\)/.test(reserve), "reservations are serialized across instances");
+  assert.ok(reserve.indexOf("apiUsage.upsert") < reserve.indexOf("apiUsage.aggregate"), "increment-then-verify (rolls back when the floor would be crossed)");
+  assert.ok(/return false;/.test(reserve), "fails closed");
 }
 
 // ---------------------------------------------------------------- routes: admin-only, CSRF, no provider calls, guards
@@ -184,6 +191,9 @@ assert.equal((rewrite.match(/throw new Error\("ADMIN_AUTHORED_PICK"\)/g) ?? []).
 assert.equal((rewrite.match(/severity === "CRITICAL"\)\) throw new Error\("DECISION_REQUIRED"\)/g) ?? []).length, 2, "critical evidence: refused at draft and at apply");
 assert.ok(/DECISION_CONFIDENCE_DROP\) throw new Error\("DECISION_REQUIRED"\)/.test(rewrite), "a weaker draft cannot be applied as prose");
 assert.ok(/data: \{ reasoning: draft\.reasoning, matchPreview: draft\.matchPreview \}/.test(rewrite), "apply writes prose only");
+assert.ok(/evidenceSnapshotHash: evidenceSnapshotHash\(row\.reassessment\.lastEvidence\)/.test(rewrite), "each draft records the exact snapshot it was written from");
+assert.ok(/evidenceSnapshotHash\(current\.reassessment\.lastEvidence\) !== draft\.evidenceSnapshotHash/.test(rewrite), "verified again when the draft is saved");
+assert.ok(/draft\.evidenceSnapshotHash !== evidenceSnapshotHash\(current\.reassessment\.lastEvidence\)\)\s*throw new Error\("REWRITE_DRAFT_STALE"\)/.test(rewrite), "and at approval");
 assert.ok(/action === "WITHDRAW" && before\.kickoff <= new Date\(\)\) throw new Error\("KICKOFF_PASSED"\)/.test(src("src/app/api/admin/reassessment/resolve/route.ts")), "no withdrawal after kickoff");
 
 // ---------------------------------------------------------------- UI: owner design rules, private, no public surface

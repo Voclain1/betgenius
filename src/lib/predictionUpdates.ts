@@ -14,6 +14,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseStoredContext } from "@/lib/ai/context";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
+import { evidenceSnapshotHash } from "@/lib/reassessment/snapshotHash";
 import {
   adminStatus, decisionRequired, diffEvidence, friendlyReason, possiblyStaleStatements, suggestedAuditNote,
   type AdminStatus, type EvidenceDiff, type Signal,
@@ -102,11 +103,15 @@ export function buildCard(row: CardRow, now: Date): UpdateCard {
   const draftRev = row.revisions.find((r) => r.kind === "ADMIN_REWRITE_DRAFT");
   // A draft only counts for the CURRENT review case: newer than the latest flag.
   const draftJson = draftRev && (!reviewRev || draftRev.recordedAt >= reviewRev.recordedAt)
-    ? draftRev.afterJson as { reasoning?: string; matchPreview?: string; confidence?: number; sameSelection?: boolean; evidenceHash?: string | null } | null : null;
+    ? draftRev.afterJson as { reasoning?: string; matchPreview?: string; confidence?: number; sameSelection?: boolean; evidenceHash?: string | null; evidenceSnapshotHash?: string | null } | null : null;
   const draft = draftRev && draftJson && typeof draftJson.reasoning === "string" ? {
     revisionId: draftRev.id, reasoning: draftJson.reasoning, matchPreview: draftJson.matchPreview ?? "",
     confidence: Number(draftJson.confidence), sameSelection: !!draftJson.sameSelection,
-    stale: (draftJson.evidenceHash ?? null) !== (row.reassessment?.lastChangeHash ?? null), at: draftRev.recordedAt.toISOString(),
+    // Stale when the alert signature OR the exact saved snapshot moved on
+    // (the same rule the apply route enforces).
+    stale: (draftJson.evidenceHash ?? null) !== (row.reassessment?.lastChangeHash ?? null)
+      || !draftJson.evidenceSnapshotHash || draftJson.evidenceSnapshotHash !== evidenceSnapshotHash(row.reassessment?.lastEvidence),
+    at: draftRev.recordedAt.toISOString(),
   } : null;
   const decision = decisionRequired({ signals, originalConfidence: row.confidence, draft: draft && !draft.stale ? draft : null });
   const decisionRev = row.revisions.find((r) => (DECISION_KINDS as readonly string[]).includes(r.kind));

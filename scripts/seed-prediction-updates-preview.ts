@@ -18,6 +18,7 @@ async function main() {
   const { prisma } = await import("../src/lib/prisma");
   const bcrypt = (await import("bcryptjs")).default;
   const { buildStoredContext } = await import("../src/lib/ai/context");
+  const { evidenceSnapshotHash } = await import("../src/lib/reassessment/snapshotHash");
   type MatchDigest = import("../src/lib/ai/digest").MatchDigest;
   const EMAIL = "preview-admin@example.invalid";
   const LEAGUE = "Preview League (disposable)";
@@ -43,7 +44,7 @@ async function main() {
   } as unknown as MatchDigest);
 
   type Seed = { home: string; away: string; kickoffDays: number; cat: string; prov: string; status?: string; reass?: string; signals?: Array<[string, string, string]>;
-    reasoning: string; changed?: boolean; draft?: { reasoning: string; confidence?: number }; decided?: [string, string]; noJob?: boolean; confidence?: number; odds?: number; market?: string; pick?: string };
+    reasoning: string; changed?: boolean; draft?: { reasoning: string; confidence?: number; stale?: boolean }; decided?: [string, string]; noJob?: boolean; confidence?: number; odds?: number; market?: string; pick?: string };
   const seeds: Seed[] = [
     { home: "Northbridge", away: "Eastvale", kickoffDays: 0.4, cat: "VIP", prov: "VIP_GENERATED", changed: true,
       signals: [["new-result-home", "MODERATE", "Northbridge played since this pick was written"]],
@@ -51,7 +52,8 @@ async function main() {
       draft: { reasoning: "Northbridge lost at Harlow on Saturday, ending a two-match winning run, but they still sit 4th and have scored in every home league match this season. Eastvale have scored in each of their last two away games, so both sides finding the net remains the strongest reading of the evidence." } },
     { home: "Kingsport", away: "Marlow Athletic", kickoffDays: 1.2, cat: "PREMIUM", prov: "PREMIUM_GENERATED", changed: true,
       signals: [["new-result-away", "MODERATE", "Marlow Athletic played since this pick was written"], ["new-unavailable-home-9", "MODERATE", "New absence"]],
-      reasoning: "Kingsport have their first-choice midfield available. Marlow Athletic are winless in their last two." },
+      reasoning: "Kingsport have their first-choice midfield available. Marlow Athletic are winless in their last two.",
+      draft: { stale: true, reasoning: "A draft written before the latest evidence refresh; it can no longer be applied." } },
     { home: "Westerly", away: "Rowan Park", kickoffDays: 0.8, cat: "FEATURED", prov: "STANDARD_CURATED", changed: true,
       signals: [["confirmed-lineup-key-player-absence", "CRITICAL", "Official lineup: Westerly's top scorer is not starting"]],
       reasoning: "Westerly's top scorer has six goals in his last five starts and should decide this one." },
@@ -86,9 +88,13 @@ async function main() {
       summary: s.reass === "UNKNOWN" ? "Fixture status could not be confirmed from the latest snapshot; no change recorded." : "New evidence" } });
     if ((s.reass ?? "REVIEW_REQUIRED") === "REVIEW_REQUIRED")
       await prisma.predictionRevision.create({ data: { predictionId: p.id, kind: "REVIEW_REQUIRED", publiclyVisible: false, reason: "monitoring", beforeJson: {},
-        evidenceJson: (s.signals ?? []).map(([code, severity, message]) => ({ code, severity, source: "fixture", message })), recordedAt: new Date(now - 12 * 60_000) } });
+        evidenceJson: (s.signals ?? []).map(([code, severity, message]) => ({ code, severity, source: "fixture", message })),
+        // A stale draft's case was flagged earlier, then drafted, then the snapshot refreshed (12 min ago).
+        recordedAt: new Date(now - (s.draft?.stale ? 60 : 12) * 60_000) } });
     if (s.draft) await prisma.predictionRevision.create({ data: { predictionId: p.id, kind: "ADMIN_REWRITE_DRAFT", publiclyVisible: false, reason: "preview draft", beforeJson: {},
-      afterJson: { marketType: "BTTS", selection: { value: "YES" }, confidence: s.draft.confidence ?? 74, reasoning: s.draft.reasoning, matchPreview: s.home + " host " + s.away + " after a first defeat in three.", sameSelection: true, evidenceHash: "preview-" + n } } });
+      afterJson: { marketType: "BTTS", selection: { value: "YES" }, confidence: s.draft.confidence ?? 74, reasoning: s.draft.reasoning, matchPreview: s.home + " host " + s.away + " after a first defeat in three.", sameSelection: true, evidenceHash: "preview-" + n,
+      evidenceSnapshotHash: evidenceSnapshotHash(s.draft.stale ? before : after) },
+      recordedAt: new Date(now - (s.draft.stale ? 30 : 5) * 60_000) } });
     if (s.decided) await prisma.predictionRevision.create({ data: { predictionId: p.id, kind: s.decided[0], publiclyVisible: false, reason: s.decided[1], beforeJson: {}, recordedAt: new Date(now - n * H) } });
   }
   assert.ok(n === seeds.length);

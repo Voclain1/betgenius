@@ -42,10 +42,19 @@ const KIND_LABEL: Record<string, string> = {
   EVIDENCE_REVIEW_RETAINED: "Evidence flag retained",
 };
 
+const ERROR_TEXT: Record<string, string> = {
+  REWRITE_DRAFT_STALE: "This draft is out of date: the evidence was refreshed after it was written. Close and prepare a new draft.",
+  REVIEW_CHANGED_DURING_REWRITE: "The evidence changed while the draft was being written. Prepare it again.",
+  DECISION_REQUIRED: "The new evidence undermines this pick, so an explanation-only update is not allowed. Keep, withdraw or replace it.",
+  KICKOFF_PASSED: "The match has started. Nothing can be changed.",
+  KICKOFF_UNVERIFIED: "The kickoff time cannot be verified, so nothing can be changed.",
+  ADMIN_AUTHORED_PICK: "This pick was written by an administrator and is never re-worded automatically.",
+};
+
 async function post(url: string, body: unknown) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(typeof payload.error === "string" ? payload.error : "Request failed");
+  if (!res.ok) throw new Error(typeof payload.error === "string" ? (ERROR_TEXT[payload.error] ?? payload.error) : "Request failed");
   return payload;
 }
 
@@ -143,7 +152,9 @@ function ReviewModal({ card, onClose, onDone }: { card: Card; onClose: () => voi
                   <p className="mt-2 text-xs text-gray-400">Selection, confidence, odds, categories and publication time stay exactly as published.</p>
                 </>
               ) : (
-                <p className="mt-2 text-sm text-gray-400">No draft yet. Preparing one makes a single private model request; nothing is published.</p>
+                <p className="mt-2 text-sm text-gray-400">
+                  {card.draft?.stale ? "The earlier draft is out of date (the evidence was refreshed after it was written). " : "No draft yet. "}
+                  Preparing one makes a single private model request; nothing is published.</p>
               )}
             </div>
           </section>
@@ -204,6 +215,10 @@ function UpdateCardView({ card, onReview, onDone }: { card: Card; onReview: () =
       <p className="text-sm"><span className="text-gray-400">Current pick:</span> {card.current.market}: <b>{card.current.pick}</b> · {card.current.confidence}%{card.current.odds ? ` · ${card.current.odds.toFixed(2)}` : ""}</p>
       {card.reasons.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-sm text-gray-200">{card.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
       {card.adminStatus === "Needs more evidence" && card.summary && <p className="text-sm text-gray-300">{card.summary}</p>}
+      {card.draft?.stale && card.upcoming && (
+        <p className="flex items-center gap-1.5 text-sm text-gray-300"><RefreshCw size={14} aria-hidden />
+          The private draft from {when(card.draft.at)} is out of date: the evidence was refreshed after it was written. Prepare a new draft to continue.</p>
+      )}
       <p className="text-xs text-gray-500">Last checked {when(card.lastChecked)} · written from evidence of {when(card.snapshot.originalAt)}{card.snapshot.latestAt ? ` · latest snapshot ${when(card.snapshot.latestAt)}` : ""}</p>
       {compare && (
         <div className="space-y-1 text-sm">
