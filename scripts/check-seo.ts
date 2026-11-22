@@ -66,6 +66,15 @@ check("non-branded cup demand: all configured cup tiers are linked from the disc
 check("non-branded cup demand: existing noindex and category rules unchanged",
   predictionsLanding.includes("hasDiscoveryFilters(searchParams)") &&
   readFileSync(join(process.cwd(), "src/app/(public)/predictions/cup/[slug]/page.tsx"), "utf8").includes("seasonRobots"));
+// --- Post-deployment SEO utility-page snippet guard ----------------------
+for (const section of ["fixtures", "livescores", "standings"]) {
+  const source = readFileSync(join(process.cwd(), `src/app/(public)/${section}/layout.tsx`), "utf8");
+  const description = source.match(/^\s*description: "([^"]+)",?$/m)?.[1] ?? "";
+  check(`utility metadata: ${section} description fits 70–160 characters`,
+    description.length >= 70 && description.length <= 160, { section, length: description.length });
+  check(`utility metadata: ${section} keeps its clean canonical`,
+    source.includes(`canonical: "/${section}"`));
+}
 // --- Banker hub ----------------------------------------------------------
 // Static checks keep this regression gate offline: the hub must not add a
 // production/database dependency merely to prove its public claims.
@@ -299,6 +308,9 @@ check("guides: index and published guides are sitemap entries", sitemapEntriesSo
 const { GUIDES } = require("../src/content/guides") as typeof import("../src/content/guides");
 check("guides: eleven published", GUIDES.length === 11, String(GUIDES.length));
 check("guides: unique slugs", new Set(GUIDES.map((g) => g.slug)).size === GUIDES.length);
+check("guides: search titles fit within 60 characters including brand suffix",
+  GUIDES.every((g) => `${g.title} | BetGenius`.length <= 60),
+  GUIDES.filter((g) => `${g.title} | BetGenius`.length > 60).map((g) => g.slug));
 const { GUIDE_CLUSTERS } = require("../src/content/guides") as typeof import("../src/content/guides");
 const clusteredSlugs = GUIDE_CLUSTERS.flatMap((cluster) => [...cluster.slugs]);
 check("guides: all guides assigned to one relevant topic cluster, with no missing or duplicate slugs",

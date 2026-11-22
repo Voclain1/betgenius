@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   // geo-qualified term is. It is also accurate: the feed is API-Football's
   // `live: all`, so Nigerian football is in it, not excluded from it.
   title: "Live Score Nigeria — Today's Football Scores",
-  description: "Live football scores from Nigeria and every other league we cover — in-play minutes and goals, plus today's upcoming kickoffs and finished results, grouped by competition.",
+  description: "Live football scores from Nigeria and major leagues worldwide. Follow in-play goals, match status and full-time results.",
   // Self-canonical. Without it the page has no canonical at all, so any
   // parameterised or proxied variant of /livescores competes with the page itself.
   alternates: { canonical: "/livescores" },

@@ -123,7 +123,7 @@ export const GUIDES: Guide[] = [
   },
   {
     slug: "how-accumulators-work",
-    title: "How accumulators work, and why the risk compounds",
+    title: "How accumulators work and why risk compounds",
     description: "How accumulator odds multiply, why every extra leg makes a win much less likely, and how to judge a multi bet honestly.",
     summary: "An accumulator's odds multiply, and so do its risks. A worked example shows how quickly the chance of every leg landing falls.",
     publishedAt: "2026-10-11",
@@ -210,7 +210,7 @@ export const GUIDES: Guide[] = [
   },
   {
     slug: "how-to-evaluate-cup-football-predictions",
-    title: "Cup football predictions: how to assess knockout matches",
+    title: "Cup football predictions: knockout match guide",
     description: "A practical cup football predictions checklist: knockout formats, team rotation, regulation-time markets, recent form and when historical records mislead.",
     summary: "Cup fixtures can behave differently from league games. Check the competition stage, available line-ups, market settlement rules and evidence before reading a prediction.",
     publishedAt: "2026-11-21",

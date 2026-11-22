@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   // competition list is config, and a number in a meta tag would be free to
   // drift away from it.
   title: "Football League Tables & Standings",
-  description: "League tables across every competition we cover, from the Premier League, La Liga, Serie A, Bundesliga and Ligue 1 through to the Nigerian NPFL — played, won, drawn, lost, goal difference and recent form.",
+  description: "Football league tables for the Premier League, La Liga, Serie A, Bundesliga, NPFL and more. View standings, form and goal difference.",
   // Self-canonical. Without it the page has no canonical at all, so any
   // parameterised or proxied variant of /standings competes with the page itself.
   alternates: { canonical: "/standings" },

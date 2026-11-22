@@ -215,7 +215,7 @@ export type TeamAboutInput = {
 /**
  * The "Know more about" paragraphs: plain sentences built from stored facts.
  *
- * Every clause is conditional on its own data, so a club with only a venue
+ * Every clause is conditional on its own data, so a team with only a venue
  * gets one sentence rather than a template with holes. Nothing is inferred:
  * no founding year, honours or history, because nothing the site stores
  * vouches for them. Pure, so it is unit-checked.
@@ -226,7 +226,12 @@ export function buildTeamAbout(input: TeamAboutInput): string[] {
 
   // Identity: country, ground, coach.
   const identity: string[] = [];
-  const where = profile?.country && profile.country !== "World" ? `a football club from ${profile.country}` : "a football club";
+  // Provider fixtures include international national teams as well as clubs.
+  // TeamProfile does not expose an authoritative team-kind field, so avoid
+  // asserting that every team is a club. "Football team" is accurate for both.
+  const where = profile?.country && profile.country !== "World"
+    ? `a football team from ${profile.country}`
+    : "a football team";
   if (venue.name) {
     const city = venue.city ? ` in ${venue.city}` : "";
     const capacity = venue.capacity ? `, which holds ${venue.capacity.toLocaleString("en-GB")} spectators` : "";
