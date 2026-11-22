@@ -22,6 +22,7 @@ type Card = {
   current: { market: string; pick: string; confidence: number; odds: number | null; publishedAt: string | null; provenance: string; reasoning: string; matchPreview: string | null };
   adminStatus: string; reasons: string[]; signals: Signal[]; summary: string | null; lastChecked: string | null;
   snapshot: { originalAt: string | null; latestAt: string | null; source: string };
+  latestEvidenceUnavailable: boolean;
   diff: Diff; possiblyStale: string[];
   draft: { revisionId: string; reasoning: string; matchPreview: string; confidence: number; sameSelection: boolean; stale: boolean; at: string } | null;
   decision: { required: boolean; reasons: string[] };
@@ -215,6 +216,10 @@ function UpdateCardView({ card, onReview, onDone }: { card: Card; onReview: () =
       <p className="text-sm"><span className="text-gray-400">Current pick:</span> {card.current.market}: <b>{card.current.pick}</b> · {card.current.confidence}%{card.current.odds ? ` · ${card.current.odds.toFixed(2)}` : ""}</p>
       {card.reasons.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-sm text-gray-200">{card.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
       {card.adminStatus === "Needs more evidence" && card.summary && <p className="text-sm text-gray-300">{card.summary}</p>}
+      {card.latestEvidenceUnavailable && (
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-300"><AlertTriangle size={15} aria-hidden />
+          The latest check ({when(card.lastChecked)}) could not load current evidence. This case stays open; what changed is from the last complete snapshot.</p>
+      )}
       {card.draft?.stale && card.upcoming && (
         <p className="flex items-center gap-1.5 text-sm text-gray-300"><RefreshCw size={14} aria-hidden />
           The private draft from {when(card.draft.at)} is out of date: the evidence was refreshed after it was written. Prepare a new draft to continue.</p>

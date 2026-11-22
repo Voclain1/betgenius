@@ -431,7 +431,68 @@ async function main() {
       if (todays.length) await prisma.apiUsage.createMany({ data: todays });
     }
 
-    console.log("PASS: admin-only + CSRF, null kickoff fails closed, Reviewed = decisions only, historical default = upcoming any generation date, per-call quota floor at 1,000/1,500 boundaries, prioritised cards beyond 500, what-changed diff and stale statements, draft → approve (prose only, private before/after audit), keep, decision-required and admin-authored guards, no action after kickoff, quota stand-down, no provider calls");
+    // ---------------------------------------------------------------- review round 3: a failed refresh never clears an open case
+    {
+      // Published, kickoff in 2h (the most urgent due check), open REVIEW_REQUIRED with a recorded CRITICAL signal.
+      const crit = await seed({ tag: "MissingCache", kickoff: new Date(Date.now() + 2 * H), categories: ["VIP"], provenance: "VIP_GENERATED",
+        signals: [{ code: "confirmed-lineup-key-player-absence", severity: "CRITICAL" }] });
+      // No other due published row may outrank it, and no team cache exists for its teams.
+      await prisma.predictionReassessment.updateMany({ where: { predictionId: { in: made.preds.filter((id) => id !== crit) } }, data: { nextCheckAt: new Date(Date.now() + 30 * D) } });
+      await prisma.teamEnrichmentCache.deleteMany({ where: { teamApiId: { in: [77001, 77002] } } }).catch(() => {});
+      const reassBefore = await prisma.predictionReassessment.findUniqueOrThrow({ where: { predictionId: crit } });
+      const predBefore = await snap(crit);
+      const revsBefore = await prisma.predictionRevision.findMany({ where: { predictionId: crit }, orderBy: { id: "asc" } });
+      const realFetch = globalThis.fetch;
+      let calls = 0;
+      // Provider stub: the fixture itself is confirmed (unchanged, not started),
+      // but every team refresh comes back empty, so both team caches are missing.
+      const critRow = await prisma.prediction.findUniqueOrThrow({ where: { id: crit }, select: { fixtureApiId: true, kickoff: true } });
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        calls++;
+        const u = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        const body = u.pathname === "/fixtures" && u.searchParams.get("id") === String(critRow.fixtureApiId)
+          ? [{ fixture: { id: critRow.fixtureApiId, date: critRow.kickoff!.toISOString(), status: { short: "NS" } }, teams: { home: { id: 77001 }, away: { id: 77002 } }, league: { id: 39 } }]
+          : [];
+        return new Response(JSON.stringify({ errors: [], results: body.length, response: body }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch;
+      // 1,400 remaining: core monitoring runs (floor 1,000), evidence is cache-only
+      // (refresh floor 1,500), and there is no team cache: both sides "missing".
+      await prisma.apiUsage.deleteMany({ where: { day: usageDay, path: usagePath } });
+      const used3 = (await prisma.apiUsage.aggregate({ where: { day: usageDay }, _sum: { count: true } }))._sum.count ?? 0;
+      await prisma.apiUsage.create({ data: { day: usageDay, path: usagePath, count: DAILY_LIMIT - RESERVE - 1_400 - used3 } });
+      let report: Awaited<ReturnType<typeof runPublishedReassessment>>;
+      try { report = await runPublishedReassessment({ now: new Date(), limit: 1 }); }
+      finally {
+        globalThis.fetch = realFetch;
+        await prisma.apiUsage.deleteMany({ where: { day: usageDay } });
+        const todays = usageBefore.filter((u) => u.day === usageDay);
+        if (todays.length) await prisma.apiUsage.createMany({ data: todays });
+      }
+      assert.ok(report.checked >= 1 && calls >= 1, "the worker really ran this case: " + report.summary);
+      assert.equal(report.evidenceMode, "cache-only");
+      const reassAfter = await prisma.predictionReassessment.findUniqueOrThrow({ where: { predictionId: crit } });
+      assert.equal(reassAfter.lastError, "LATEST_EVIDENCE_UNAVAILABLE", "the missing-cache branch was taken");
+      assert.equal(reassAfter.status, "REVIEW_REQUIRED", "the open case is NOT reclassified UNKNOWN");
+      assert.equal(reassAfter.summary, reassBefore.summary, "original summary kept");
+      assert.equal(reassAfter.lastChangeHash, reassBefore.lastChangeHash, "material signature kept");
+      assert.deepEqual(reassAfter.lastEvidence, reassBefore.lastEvidence, "last complete snapshot kept (any draft stays valid)");
+      assert.equal(reassAfter.publicHold, false);
+      assert.ok(reassAfter.checkedAt && reassAfter.checkedAt > (reassBefore.checkedAt ?? new Date(0)), "check time recorded");
+      assert.deepEqual(await prisma.predictionRevision.findMany({ where: { predictionId: crit }, orderBy: { id: "asc" } }), revsBefore, "audit trail untouched");
+      assert.deepEqual(await snap(crit), predBefore, "no published field changed");
+      const card = ((await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=new&pageSize=100"))).body.cards as Array<C & { latestEvidenceUnavailable: boolean }>).find((c) => c.id === crit);
+      assert.ok(card, "still in New evidence");
+      assert.equal(card!.adminStatus, "Awaiting your decision", "the critical signal still drives the decision");
+      assert.equal(card!.latestEvidenceUnavailable, true, "the failed refresh is shown");
+      assert.equal(card!.actions.keep, true, "Keep original stays available");
+      assert.equal(card!.actions.withdraw, true, "Withdraw stays available");
+      const needsNow = ((await call(updatesRoute.GET, req("/api/admin/prediction-updates?tab=needs&pageSize=100"))).body.cards as C[]);
+      assert.ok(!needsNow.some((c) => c.id === crit), "not moved to Needs more evidence");
+      const kept = await call(resolveRoute.POST, req("/x", { method: "POST", body: { predictionId: crit, action: "KEEP", note: "Lineup absence reviewed; original retained." } }));
+      assert.equal(kept.status, 200, "the administrator can still resolve the original signal");
+    }
+
+    console.log("PASS: failed refresh keeps an open critical case actionable, admin-only + CSRF, null kickoff fails closed, Reviewed = decisions only, historical default = upcoming any generation date, per-call quota floor at 1,000/1,500 boundaries, prioritised cards beyond 500, what-changed diff and stale statements, draft → approve (prose only, private before/after audit), keep, decision-required and admin-authored guards, no action after kickoff, quota stand-down, no provider calls");
   } finally {
     await cleanup();
     await prisma.$disconnect();

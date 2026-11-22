@@ -79,6 +79,8 @@ export type UpdateCard = {
   summary: string | null;
   lastChecked: string | null;
   snapshot: { originalAt: string | null; latestAt: string | null; source: "monitoring snapshot" | "none" };
+  /** The latest monitoring check could not load current evidence (refresh failed); the open case is kept. */
+  latestEvidenceUnavailable: boolean;
   diff: EvidenceDiff | null;
   possiblyStale: string[];
   draft: { revisionId: string; reasoning: string; matchPreview: string; confidence: number; sameSelection: boolean; stale: boolean; at: string } | null;
@@ -137,6 +139,8 @@ export function buildCard(row: CardRow, now: Date): UpdateCard {
     lastChecked: row.reassessment?.checkedAt?.toISOString() ?? null,
     snapshot: { originalAt: row.aiJob?.createdAt.toISOString() ?? null, latestAt: row.reassessment?.lastEvidenceAt?.toISOString() ?? null,
       source: latest ? "monitoring snapshot" : "none" },
+    // The latest check could not load current team evidence or confirm the fixture state.
+    latestEvidenceUnavailable: row.reassessment?.lastError === "LATEST_EVIDENCE_UNAVAILABLE" || row.reassessment?.lastError === "FIXTURE_STATE_UNAVAILABLE",
     diff, possiblyStale: possiblyStaleStatements([row.matchPreview, row.reasoning].filter(Boolean).join("\n"), diff, signals),
     draft, decision, latestDecision,
     suggestedNotes: { update: suggestedAuditNote(signals, "update"), keep: suggestedAuditNote(signals, "keep") },

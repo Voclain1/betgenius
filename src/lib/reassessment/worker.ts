@@ -72,6 +72,8 @@ const LEASE_KEY = "published-prediction-reassessment";
  * cached evidence the enrichment crons keep warm for published picks.
  */
 export const REASSESSMENT_CORE_MIN_REMAINING = 1_000;
+/** Marker for a check that could not load current team evidence (cleared by the next complete check). */
+export const LATEST_EVIDENCE_UNAVAILABLE = "LATEST_EVIDENCE_UNAVAILABLE";
 export const REASSESSMENT_REFRESH_MIN_REMAINING = 1_500;
 
 type SelectionSnapshot = {
@@ -289,14 +291,22 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         // enrichment requests failed. Other changes still fail closed.
         const criticalFixtureAlreadyKnown = signals.some(s => s.source === "fixture" && s.severity === "CRITICAL");
         if ((sources.homeTeam === "missing" || sources.awayTeam === "missing") && !criticalFixtureAlreadyKnown) {
+          // A failed refresh never clears an open review (like the other
+          // missing-data branches): the case, its signal, summary, signature
+          // and snapshot stay exactly as recorded, so the administrator can
+          // still resolve it. Only the check time and an "evidence
+          // unavailable" marker change; the next complete check clears it.
+          const keepReview = row.reassessment?.status === "REVIEW_REQUIRED";
+          const unavailable = "One or both teams lack current evidence; no assumption of unchanged conditions.";
           await prisma.predictionReassessment.upsert({
             where: { predictionId: row.id },
             create: { predictionId: row.id, status: "UNKNOWN", checkedAt: now,
-              nextCheckAt: new Date(now.getTime() + 3_600_000),
-              summary: "One or both teams lack current evidence; no assumption of unchanged conditions." },
-            update: { status: "UNKNOWN", checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
-              summary: "One or both teams lack current evidence; no assumption of unchanged conditions." },
+              nextCheckAt: new Date(now.getTime() + 3_600_000), summary: unavailable, lastError: LATEST_EVIDENCE_UNAVAILABLE },
+            update: keepReview
+              ? { checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000), lastError: LATEST_EVIDENCE_UNAVAILABLE }
+              : { status: "UNKNOWN", checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000), summary: unavailable, lastError: LATEST_EVIDENCE_UNAVAILABLE },
           });
+          if (keepReview) report.flagged++;
           report.skipped++;
           continue;
         }

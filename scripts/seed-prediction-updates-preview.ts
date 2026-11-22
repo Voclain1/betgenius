@@ -44,7 +44,7 @@ async function main() {
   } as unknown as MatchDigest);
 
   type Seed = { home: string; away: string; kickoffDays: number; cat: string; prov: string; status?: string; reass?: string; signals?: Array<[string, string, string]>;
-    reasoning: string; changed?: boolean; draft?: { reasoning: string; confidence?: number; stale?: boolean }; decided?: [string, string]; noJob?: boolean; confidence?: number; odds?: number; market?: string; pick?: string };
+    reasoning: string; changed?: boolean; draft?: { reasoning: string; confidence?: number; stale?: boolean }; decided?: [string, string]; noJob?: boolean; unavailable?: boolean; confidence?: number; odds?: number; market?: string; pick?: string };
   const seeds: Seed[] = [
     { home: "Northbridge", away: "Eastvale", kickoffDays: 0.4, cat: "VIP", prov: "VIP_GENERATED", changed: true,
       signals: [["new-result-home", "MODERATE", "Northbridge played since this pick was written"]],
@@ -55,7 +55,7 @@ async function main() {
       reasoning: "Kingsport have their first-choice midfield available. Marlow Athletic are winless in their last two.",
       draft: { stale: true, reasoning: "A draft written before the latest evidence refresh; it can no longer be applied." } },
     { home: "Westerly", away: "Rowan Park", kickoffDays: 0.8, cat: "FEATURED", prov: "STANDARD_CURATED", changed: true,
-      signals: [["confirmed-lineup-key-player-absence", "CRITICAL", "Official lineup: Westerly's top scorer is not starting"]],
+      signals: [["confirmed-lineup-key-player-absence", "CRITICAL", "Official lineup: Westerly's top scorer is not starting"]], unavailable: true,
       reasoning: "Westerly's top scorer has six goals in his last five starts and should decide this one." },
     { home: "Ashgrove", away: "Calder Town", kickoffDays: 2.5, cat: "FEATURED", prov: "STANDARD_CURATED", status: "PENDING_REVIEW", changed: true,
       signals: [["new-result-home", "MODERATE", "Ashgrove played"]], reasoning: "Ashgrove are in strong form with two straight wins." },
@@ -84,8 +84,9 @@ async function main() {
       publishedAt: status === "PUBLISHED" ? new Date(now - 20 * H) : null, createdAt: new Date(now - 30 * H),
       categories: { create: [{ category: s.cat, manual: false }] } } });
     await prisma.predictionReassessment.create({ data: { predictionId: p.id, status: s.reass ?? "REVIEW_REQUIRED", publicHold: false,
-      checkedAt: new Date(now - 12 * 60_000), lastEvidence: after as object, lastEvidenceAt: new Date(now - 12 * 60_000), lastChangeHash: "preview-" + n,
-      summary: s.reass === "UNKNOWN" ? "Fixture status could not be confirmed from the latest snapshot; no change recorded." : "New evidence" } });
+      checkedAt: new Date(now - 12 * 60_000), lastEvidence: after as object, lastEvidenceAt: new Date(now - (s.unavailable ? 3 * 60 : 12) * 60_000), lastChangeHash: "preview-" + n,
+      summary: s.reass === "UNKNOWN" ? "Fixture status could not be confirmed from the latest snapshot; no change recorded." : "New evidence",
+      lastError: s.unavailable ? "LATEST_EVIDENCE_UNAVAILABLE" : null } });
     if ((s.reass ?? "REVIEW_REQUIRED") === "REVIEW_REQUIRED")
       await prisma.predictionRevision.create({ data: { predictionId: p.id, kind: "REVIEW_REQUIRED", publiclyVisible: false, reason: "monitoring", beforeJson: {},
         evidenceJson: (s.signals ?? []).map(([code, severity, message]) => ({ code, severity, source: "fixture", message })),
