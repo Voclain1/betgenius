@@ -33,6 +33,12 @@ on:
       - "scripts/diagnose-missing-evidence.ts"
       - "src/lib/evidenceReview.ts"
       - "src/lib/ai/historicalEvidence.ts"
+      - "src/lib/predictionUpdates.ts"
+      - "src/app/admin/updates/**"
+      - "src/app/admin/layout.tsx"
+      - "src/app/api/admin/prediction-updates/**"
+      - "scripts/check-prediction-updates.ts"
+      - "scripts/check-prediction-updates-postgres.ts"
       - "src/lib/ai/evidenceReadiness.ts"
       - "src/app/api/admin/evidence-review/**"
       - "scripts/check-early-evidence-freshness.ts"
@@ -73,6 +79,7 @@ jobs:
       - run: npx tsx scripts/check-early-odds.ts
       - run: npx tsx scripts/check-early-evidence-freshness.ts
       - run: npm run check:reassessment
+      - run: npm run check:prediction-updates
       - run: npm run check:period-predictions
 
   postgres-readiness:
@@ -109,3 +116,4 @@ jobs:
       - run: npx tsx scripts/check-early-readiness-db.ts
       - run: npx tsx scripts/check-early-remediation-postgres.ts
       - run: npx tsx scripts/check-evidence-review-postgres.ts
+      - run: npx tsx scripts/check-prediction-updates-postgres.ts

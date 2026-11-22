@@ -15,6 +15,9 @@ import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { isValidSelection, type MarketType } from "@/lib/markets";
+import { evidenceSnapshotHash } from "@/lib/reassessment/snapshotHash";
+import { latestSignals } from "@/lib/predictionUpdates";
+import { DECISION_CONFIDENCE_DROP } from "@/lib/reassessment/evidenceDiff";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +31,8 @@ type RewriteDraft = {
   marketType: string; selection: unknown; confidence: number;
   reasoning: string; matchPreview: string;
   sameSelection: boolean; evidenceHash: string | null;
+  /** Version of the exact saved snapshot the draft was written from. */
+  evidenceSnapshotHash: string | null;
 };
 function unchangedSelection(a: { marketType: string; selection: unknown }, b: { marketType: string; selection: unknown }) {
   return a.marketType === b.marketType && JSON.stringify(a.selection) === JSON.stringify(b.selection);
@@ -57,7 +62,14 @@ export async function POST(req: NextRequest) {
       });
       if (!row || row.status !== "PUBLISHED" || !row.publishedAt ||
         row.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_ACTIVE_ADMIN_REVIEW");
-      if (row.kickoff && row.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      // Fail closed: a kickoff that cannot be verified is treated as started.
+      if (!row.kickoff) throw new Error("KICKOFF_UNVERIFIED");
+      if (row.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      // A human-written pick is never re-worded by the model (issue #232).
+      if (!row.aiJobId) throw new Error("ADMIN_AUTHORED_PICK");
+      // Evidence that undermines the pick (postponement, key player out,
+      // critical price move) is a decision, not prose: no draft is generated.
+      if ((await latestSignals(predictionId)).some(sig => sig.severity === "CRITICAL")) throw new Error("DECISION_REQUIRED");
       // Use the latest monitoring snapshot only: no new football API calls.
       const digest = parseStoredContext(row.reassessment.lastEvidence);
       if (!digest || !digest.coverage.stats || !digest.coverage.form)
@@ -88,6 +100,7 @@ export async function POST(req: NextRequest) {
         matchPreview: output.output.matchPreview?.trim() ?? "",
         sameSelection: unchangedSelection(row, candidate),
         evidenceHash: row.reassessment.lastChangeHash,
+        evidenceSnapshotHash: evidenceSnapshotHash(row.reassessment.lastEvidence),
       };
       const saved = await prisma.$transaction(async tx => {
         const current = await tx.prediction.findUnique({
@@ -95,7 +108,9 @@ export async function POST(req: NextRequest) {
         });
         if (!current || current.status !== "PUBLISHED" ||
           current.reassessment?.status !== "REVIEW_REQUIRED" ||
-          current.reassessment.lastChangeHash !== draft.evidenceHash)
+          current.reassessment.lastChangeHash !== draft.evidenceHash ||
+          // The snapshot was refreshed while the draft was being written.
+          evidenceSnapshotHash(current.reassessment.lastEvidence) !== draft.evidenceSnapshotHash)
           throw new Error("REVIEW_CHANGED_DURING_REWRITE");
         return tx.predictionRevision.create({
           data: { predictionId, kind: "ADMIN_REWRITE_DRAFT",
@@ -117,18 +132,30 @@ export async function POST(req: NextRequest) {
       });
       if (!current || current.status !== "PUBLISHED" || !current.publishedAt ||
         current.reassessment?.status !== "REVIEW_REQUIRED") throw new Error("NO_ACTIVE_ADMIN_REVIEW");
-      if (current.kickoff && current.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      if (!current.kickoff) throw new Error("KICKOFF_UNVERIFIED");
+      if (current.kickoff <= new Date()) throw new Error("KICKOFF_PASSED");
+      if (!current.aiJobId) throw new Error("ADMIN_AUTHORED_PICK");
+      if ((await latestSignals(predictionId, tx)).some(sig => sig.severity === "CRITICAL")) throw new Error("DECISION_REQUIRED");
       const latest = await tx.predictionRevision.findFirst({
         where: { predictionId, kind: "ADMIN_REWRITE_DRAFT" },
         orderBy: { recordedAt: "desc" },
       });
       if (!latest || latest.id !== revisionId) throw new Error("REWRITE_DRAFT_STALE");
       const draft = latest.afterJson as RewriteDraft | null;
+      // Bound to the exact snapshot it was written from: a monitoring refresh
+      // without a new material signal (lastChangeHash unchanged) still makes
+      // the draft stale. Drafts saved before this field existed have none:
+      // stale too (fail closed).
+      if (!draft?.evidenceSnapshotHash ||
+        draft.evidenceSnapshotHash !== evidenceSnapshotHash(current.reassessment.lastEvidence))
+        throw new Error("REWRITE_DRAFT_STALE");
       if (!draft || !draft.sameSelection ||
         !unchangedSelection(current, draft) ||
         draft.evidenceHash !== current.reassessment.lastChangeHash ||
         typeof draft.reasoning !== "string" || draft.reasoning.trim().length < 20)
         throw new Error("REWRITE_SELECTION_OR_EVIDENCE_CHANGED");
+      // Prose cannot carry a weaker case under the original confidence.
+      if (Number(draft.confidence) < current.confidence - DECISION_CONFIDENCE_DROP) throw new Error("DECISION_REQUIRED");
       const old = snapshot(current);
       const claim = await tx.prediction.updateMany({
         where: { id: predictionId, status: "PUBLISHED",
@@ -155,10 +182,11 @@ export async function POST(req: NextRequest) {
       message: "Approved rewrite published in the original record; selection, confidence and publication date preserved." });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const expected = new Set(["NO_ACTIVE_ADMIN_REVIEW", "KICKOFF_PASSED",
+    const expected = new Set(["NO_ACTIVE_ADMIN_REVIEW", "KICKOFF_PASSED", "KICKOFF_UNVERIFIED",
       "NO_CREDIBLE_REASSESSMENT_EVIDENCE", "REWRITE_NO_VALID_DRAFT",
       "REVIEW_CHANGED_DURING_REWRITE", "REWRITE_REVISION_REQUIRED",
-      "REWRITE_DRAFT_STALE", "REWRITE_SELECTION_OR_EVIDENCE_CHANGED", "REWRITE_CONCURRENT_CHANGE"]);
+      "REWRITE_DRAFT_STALE", "REWRITE_SELECTION_OR_EVIDENCE_CHANGED", "REWRITE_CONCURRENT_CHANGE",
+      "ADMIN_AUTHORED_PICK", "DECISION_REQUIRED"]);
     if (expected.has(message))
       return NextResponse.json({ error: message }, { status: 409 });
     console.error("[admin-reassessment-rewrite]", error);

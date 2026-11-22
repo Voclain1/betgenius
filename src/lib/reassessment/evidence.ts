@@ -12,7 +12,24 @@ export type EvidenceSignal = {
   severity: "MODERATE" | "CRITICAL";
   message: string;
   source: "fixture" | "availability" | "form" | "coach" | "lineup" | "odds";
+  /**
+   * The substantive value behind a generic code (the new kickoff, the new
+   * coach, the absent players), so a DIFFERENT change of the same kind is a
+   * different material signature. Stable across checks; never a check time.
+   */
+  identity?: string;
 };
+
+/**
+ * Identity of a set of material signals, used to suppress repeat alerts and
+ * to reopen a retained case when something genuinely new appears.
+ * Signals without an identity hash exactly as before (codes only), so
+ * existing retained cases are not reopened by this change.
+ */
+export function materialSignature(signals: Array<Pick<EvidenceSignal, "code" | "identity">>): unknown {
+  const keys = [...new Set(signals.map(s => s.identity ? s.code + "|" + s.identity : s.code))].sort();
+  return keys;
+}
 
 export type FixtureEvidence = { status: string; kickoff: Date; seenAt: Date; fixtureApiId: number };
 export type OddsObservation = { median: number; bookmakers: number; at: Date };
@@ -88,6 +105,8 @@ export function fixtureSignals(originalKickoff: Date, fixture: FixtureEvidence |
       severity: shift > 24 * 3_600_000 ? "CRITICAL" : "MODERATE",
       message: "Provider reports a kickoff change of " + Math.round(shift / 60_000) + " minutes.",
       source: "fixture",
+      // The new kickoff itself: a further move is a new change.
+      identity: fixture.kickoff.toISOString(),
     });
   }
   return signals;
@@ -140,7 +159,8 @@ export function compareFootballEvidence(before: MatchDigest | null, after: Match
     if (oldTeam.coach?.name && newTeam.coach?.name
       && normalized(oldTeam.coach.name) !== normalized(newTeam.coach.name)) {
       all.push({ code: "coach-change-" + side, severity: "MODERATE",
-        message: side + " has a different confirmed head coach.", source: "coach" });
+        message: side + " has a different confirmed head coach.", source: "coach",
+        identity: normalized(newTeam.coach.name) });
     }
   }
   return all;
@@ -167,5 +187,6 @@ export function confirmedLineupSignals(
     severity: "CRITICAL",
     message: "Key players not in the confirmed starting XIs: " + absent.slice(0, 4).join(", "),
     source: "lineup",
+    identity: absent.map(normalized).sort().join(";"),
   }] : [];
 }

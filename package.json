@@ -68,6 +68,8 @@
     "audit:early-funnel": "tsx --env-file=.env scripts/audit-early-engine-funnel.ts",
     "audit:api-football-usage": "tsx --env-file=.env scripts/audit-api-football-usage.ts",
     "check:reassessment": "tsx scripts/check-reassessment.ts",
+    "check:prediction-updates": "tsx scripts/check-prediction-updates.ts",
+    "preview:prediction-updates": "tsx scripts/seed-prediction-updates-preview.ts",
     "check:live-snapshot": "tsx scripts/check-live-snapshot.ts",
     "check:bulk-generation-dedupe": "tsx scripts/check-bulk-generation-dedupe.ts",
     "check:short-price-guard": "tsx scripts/check-short-price-guard.ts",

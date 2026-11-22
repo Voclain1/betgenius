@@ -9,7 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getUsageSnapshot } from "@/lib/football/usage";
-import { getFixturesByIds, getFixtureLineups } from "@/lib/football/api-football";
+import { getFixturesByIds, getFixtureLineups, withFootballCallFloor } from "@/lib/football/api-football";
 import { trimConfirmedLineups } from "@/lib/lineups";
 import { buildGenerationDigest } from "@/lib/ai/generationContext";
 import { buildStoredContext, parseStoredContext } from "@/lib/ai/context";
@@ -21,6 +21,7 @@ import { isDedicatedEarlyFreeJob } from "@/lib/generation/earlyPublication";
 import {
   compareFootballEvidence, confirmedLineupSignals, fixtureSignals, reassessmentIntervalMinutes, oddsMovementSignal, earlyOddsFloorCrossing,
   type EvidenceSignal, type FixtureEvidence,
+  materialSignature,
 } from "@/lib/reassessment/evidence";
 
 export type ReassessmentMode = "off" | "shadow" | "on";
@@ -38,8 +39,42 @@ export function reassessmentMode(value: string | undefined = process.env.PREDICT
 }
 
 export const MAX_REASSESSMENTS_PER_RUN = 5;
+/**
+ * Unpublished generated picks (PENDING_REVIEW / held DRAFT) are also checked,
+ * so admins see new evidence before deciding on them. Zero extra provider
+ * calls: their fixture ids join the SAME batched status call (5 + 10 = 15 ≤ 20
+ * ids, still one request), their evidence is always compared cache-only, and
+ * official lineups are never fetched for them. Monitoring only: nothing in
+ * publication reads these review cases.
+ */
+export const MAX_UNPUBLISHED_REASSESSMENTS_PER_RUN = 10;
 const LEASE_KEY = "published-prediction-reassessment";
-const MIN_QUOTA_REMAINING = 1_500;
+/**
+ * Quota gates, split by what each part of a run costs (getUsageSnapshot().remaining).
+ *
+ * WAS a single 1,500 gate for everything. The verified production week
+ * (docs/API_FOOTBALL_7_DAY_USAGE_REPORT.md) shows every UTC day ending with
+ * 6,421–7,125 used, so monitoring of PUBLISHED picks (including VIP/Premium)
+ * stood down for the late part of every day while live scores kept running
+ * down to 1,000 — and the stand-down was silent (no reason in the summary).
+ *
+ * CORE monitoring needs: one batched /fixtures?ids call per run (≤20 ids),
+ * official lineups only inside 90 min of kickoff (≤ MAX_REASSESSMENTS_PER_RUN),
+ * and a CACHE-ONLY evidence comparison. At most 1 + 5 = 6 calls per run,
+ * 96 runs/day ⇒ ≤ 576/day worst case. It runs down to 1,000 remaining —
+ * the same floor as live scores, never below it — so it can never touch the
+ * budget the early lane (750), ordinary generation (500) or the paid pass
+ * (30, plus the 300 paid-only reserve) rely on.
+ *
+ * REFRESH monitoring additionally lets buildGenerationDigest refresh stale team,
+ * league and head-to-head caches (up to ~11 calls per pick). That keeps the
+ * original 1,500 floor. Between 1,000 and 1,500 the run compares against the
+ * cached evidence the enrichment crons keep warm for published picks.
+ */
+export const REASSESSMENT_CORE_MIN_REMAINING = 1_000;
+/** Marker for a check that could not load current team evidence (cleared by the next complete check). */
+export const LATEST_EVIDENCE_UNAVAILABLE = "LATEST_EVIDENCE_UNAVAILABLE";
+export const REASSESSMENT_REFRESH_MIN_REMAINING = 1_500;
 
 type SelectionSnapshot = {
   marketType: string; selection: unknown; confidence: number; market: string; pick: string;
@@ -55,6 +90,22 @@ export function publishedSelectionSnapshot(p: {
 }
 function digestSignature(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
+}
+
+/**
+ * Repeat-alert suppression. The signature is value-sensitive
+ * (materialSignature): a retained case stays closed while the SAME change is
+ * seen again, and reopens when a different change of the same kind appears
+ * (another kickoff move, another coach, a different absent key player).
+ */
+export function materialDecision(input: {
+  signals: Array<Pick<EvidenceSignal, "code" | "identity">>;
+  previousHash: string | null | undefined;
+  previousStatus: string | null | undefined;
+}): { signature: string; alreadyRecorded: boolean; retainedUnchanged: boolean } {
+  const signature = digestSignature(materialSignature(input.signals));
+  const alreadyRecorded = signature === input.previousHash;
+  return { signature, alreadyRecorded, retainedUnchanged: alreadyRecorded && input.previousStatus === "CURRENT" };
 }
 
 async function claimRun(now: Date): Promise<string | null> {
@@ -73,6 +124,9 @@ async function claimRun(now: Date): Promise<string | null> {
 }
 
 export type ReassessmentReport = {
+  /** Why the run made no provider calls, or ran cache-only. Was silent before. */
+  stoodDown?: string;
+  evidenceMode?: "refresh" | "cache-only";
   ok: boolean; mode: ReassessmentMode; checked: number; current: number;
   flagged: number; withdrawn: number; skipped: number; failures: string[];
   summary: string;
@@ -86,17 +140,23 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
   };
   const finish = () => {
     report.ok = report.failures.length === 0;
-    report.summary = "Prediction monitoring " + mode + ": checked " + report.checked
+    report.summary = (report.stoodDown ? "Prediction monitoring stood down: " + report.stoodDown + "; " : "")
+      + "Prediction monitoring " + mode + (report.evidenceMode === "cache-only" ? " (cache-only evidence)" : "") + ": checked " + report.checked
       + ", current " + report.current + ", review " + report.flagged + ", withdrawn "
       + report.withdrawn + ", errors " + report.failures.length;
     return report;
   };
   if (mode === "off") return finish();
   const budget = await getUsageSnapshot();
-  if (budget.remaining < MIN_QUOTA_REMAINING) {
+  // Every provider call below re-checks this floor (withFootballCallFloor), so
+  // the run cannot take the day below it however many calls it makes.
+  if (budget.remaining <= REASSESSMENT_CORE_MIN_REMAINING) {
     report.skipped++;
+    report.stoodDown = "api-football quota headroom too low (" + budget.remaining + " left, needs " + REASSESSMENT_CORE_MIN_REMAINING + ")";
     return finish();
   }
+  const cacheOnlyEvidence = budget.remaining < REASSESSMENT_REFRESH_MIN_REMAINING;
+  report.evidenceMode = cacheOnlyEvidence ? "cache-only" : "refresh";
   const holder = await claimRun(now);
   if (!holder) { report.skipped++; return finish(); }
   try {
@@ -121,7 +181,17 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         include, orderBy: [{ kickoff: "asc" }, { publishedAt: "asc" }], take: 400,
       }),
     ]);
-    const candidates = [...near, ...early]
+    const unpublished = await prisma.prediction.findMany({
+      where: { status: { in: ["PENDING_REVIEW", "DRAFT"] }, aiJobId: { not: null },
+        kickoff: { gt: now, lte: fourteenDays }, fixtureApiId: { not: null } },
+      include, orderBy: [{ kickoff: "asc" }, { id: "asc" }], take: 400,
+    });
+    const unpublishedDue = unpublished
+      .filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now)
+      .sort((a, b) => (a.reassessment?.nextCheckAt?.getTime() ?? 0) - (b.reassessment?.nextCheckAt?.getTime() ?? 0)
+        || (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0))
+      .slice(0, MAX_UNPUBLISHED_REASSESSMENTS_PER_RUN);
+    const publishedDue = [...near, ...early]
       .filter(row => !row.reassessment?.nextCheckAt || row.reassessment.nextCheckAt <= now)
       .sort((a, b) => {
         // Within 6h of kickoff, freshness takes priority. Otherwise check the
@@ -131,9 +201,12 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           (a.reassessment?.nextCheckAt?.getTime() ?? 0) - (b.reassessment?.nextCheckAt?.getTime() ?? 0) ||
           (a.kickoff?.getTime() ?? 0) - (b.kickoff?.getTime() ?? 0);
       }).slice(0, limit);
+    // Published first: an unpublished check never displaces a published one.
+    const candidates = [...publishedDue, ...unpublishedDue];
     const ids = [...new Set(candidates.map(r => r.fixtureApiId).filter((v): v is number => v != null))];
     // One provider call per 20 fixture IDs. Failure means unknown, not cancellation.
-    const freshFixtures = ids.length ? await getFixturesByIds(ids) : [];
+    const freshFixtures = ids.length
+      ? await withFootballCallFloor(REASSESSMENT_CORE_MIN_REMAINING, () => getFixturesByIds(ids)) : [];
     const byId = new Map((freshFixtures ?? []).map(f => [f.fixture.id, f]));
 
     for (const row of candidates) {
@@ -201,24 +274,39 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           report.skipped++;
           continue;
         }
-        const { digest, sources } = await buildGenerationDigest({
-          home: row.homeTeam ?? "", away: row.awayTeam ?? "", league: row.leagueName,
-          kickoff: row.kickoff.toISOString(), homeApiId: row.homeTeamApiId,
+        // Re-read before each row: earlier rows (and other jobs) spend quota.
+        const refreshThisRow = !cacheOnlyEvidence && row.status === "PUBLISHED"
+          && (await getUsageSnapshot()).remaining > REASSESSMENT_REFRESH_MIN_REMAINING;
+        const league = row.leagueName, kickoffIso = row.kickoff.toISOString();
+        const { digest, sources } = await withFootballCallFloor(REASSESSMENT_REFRESH_MIN_REMAINING, () => buildGenerationDigest({
+          home: row.homeTeam ?? "", away: row.awayTeam ?? "", league,
+          kickoff: kickoffIso, homeApiId: row.homeTeamApiId,
           awayApiId: row.awayTeamApiId, leagueApiId: row.leagueApiId, round: null,
-        });
+          // Below the refresh floor: compare against the caches the enrichment
+          // crons keep warm, with no refresh calls (see the gates above).
+          cacheOnly: !refreshThisRow,
+        }));
         // Provider-verified cancellation overrides missing statistical feeds:
         // a postponed fixture must not stay recommended because its teams'
         // enrichment requests failed. Other changes still fail closed.
         const criticalFixtureAlreadyKnown = signals.some(s => s.source === "fixture" && s.severity === "CRITICAL");
         if ((sources.homeTeam === "missing" || sources.awayTeam === "missing") && !criticalFixtureAlreadyKnown) {
+          // A failed refresh never clears an open review (like the other
+          // missing-data branches): the case, its signal, summary, signature
+          // and snapshot stay exactly as recorded, so the administrator can
+          // still resolve it. Only the check time and an "evidence
+          // unavailable" marker change; the next complete check clears it.
+          const keepReview = row.reassessment?.status === "REVIEW_REQUIRED";
+          const unavailable = "One or both teams lack current evidence; no assumption of unchanged conditions.";
           await prisma.predictionReassessment.upsert({
             where: { predictionId: row.id },
             create: { predictionId: row.id, status: "UNKNOWN", checkedAt: now,
-              nextCheckAt: new Date(now.getTime() + 3_600_000),
-              summary: "One or both teams lack current evidence; no assumption of unchanged conditions." },
-            update: { status: "UNKNOWN", checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000),
-              summary: "One or both teams lack current evidence; no assumption of unchanged conditions." },
+              nextCheckAt: new Date(now.getTime() + 3_600_000), summary: unavailable, lastError: LATEST_EVIDENCE_UNAVAILABLE },
+            update: keepReview
+              ? { checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000), lastError: LATEST_EVIDENCE_UNAVAILABLE }
+              : { status: "UNKNOWN", checkedAt: now, nextCheckAt: new Date(now.getTime() + 3_600_000), summary: unavailable, lastError: LATEST_EVIDENCE_UNAVAILABLE },
           });
+          if (keepReview) report.flagged++;
           report.skipped++;
           continue;
         }
@@ -258,8 +346,8 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         if (isEarlyFree) signals.push(...earlyOddsFloorCrossing(previousOdds, latestOdds, now, row.kickoff));
         const oddsColumns = latestOdds ? { lastOddsMedian: latestOdds.median, lastOddsAt: latestOdds.at } : {};
         // Only official starting XI data, close to kickoff, can trigger this.
-        if (row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
-          const lineups = await getFixtureLineups(row.fixtureApiId).catch(() => null);
+        if (row.status === "PUBLISHED" && row.kickoff.getTime() - now.getTime() <= 90 * 60_000) {
+          const lineups = await withFootballCallFloor(REASSESSMENT_CORE_MIN_REMAINING, () => getFixtureLineups(row.fixtureApiId!)).catch(() => null);
           const trimmed = trimConfirmedLineups(lineups, row.homeTeamApiId, row.awayTeamApiId);
           if (trimmed) signals.push(...confirmedLineupSignals(trimmed, old));
         }
@@ -287,11 +375,11 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
           continue;
         }
 
-        const newSignature = digestSignature(unique.map(s => s.code).sort());
-        const alreadyRecorded = newSignature === row.reassessment?.lastChangeHash;
+        const { signature: newSignature, alreadyRecorded, retainedUnchanged } = materialDecision({
+          signals: unique, previousHash: row.reassessment?.lastChangeHash, previousStatus: row.reassessment?.status });
         // An administrator explicitly retained this exact evidence signature:
         // a subsequent monitoring pass must not override that human decision.
-        if (alreadyRecorded && row.reassessment?.status === "CURRENT") {
+        if (retainedUnchanged) {
           await prisma.predictionReassessment.update({
             where: { predictionId: row.id },
             data: { checkedAt: now, nextCheckAt, lastEvidence: evidence,
@@ -308,7 +396,7 @@ export async function runPublishedReassessment(input: { now?: Date; limit?: numb
         const summary = unique.map(s => s.message).join(" ").slice(0, 1000);
         const before = publishedSelectionSnapshot(row);
         const signalPayload = unique.map(s => ({
-          code: s.code, severity: s.severity, source: s.source, message: s.message,
+          code: s.code, severity: s.severity, source: s.source, message: s.message, ...(s.identity ? { identity: s.identity } : {}),
         }));
         // Monitoring is read-only with respect to published selections.
         // Even a critical cancellation is exclusively an administrator's decision.

@@ -6,7 +6,7 @@
  * Falls back to empty arrays if not configured (so dev mode still renders).
  */
 
-import { hasBudget, recordCall, recordApiOutcome, classifyProviderPayload, noteDispatch, recordRepeat, DAILY_LIMIT, RESERVE } from "@/lib/football/usage";
+import { hasBudget, usedToday, recordCall, reserveCallAboveFloor, recordApiOutcome, classifyProviderPayload, noteDispatch, recordRepeat, DAILY_LIMIT, RESERVE } from "@/lib/football/usage";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /** Scope-specific network hard stop, not a global flag: paid/ordinary jobs are unaffected. */
@@ -16,6 +16,25 @@ export function withNoFootballApiCalls<T>(operation: () => Promise<T>): Promise<
 }
 function assertProviderCallsAllowed(): void {
   if (forbidProviderCalls.getStore() === true) throw new Error("CACHE_ONLY_FOOTBALL_API_CALL_BLOCKED");
+}
+
+/**
+ * Scope-specific quota floor: inside `operation`, a request is dispatched only
+ * if the day still has MORE than `minRemaining` requests left, re-checked
+ * before EVERY request (so a job that makes several optional calls cannot
+ * walk the remaining quota below its stand-down point). A refused request
+ * returns null like any other quota refusal. Other jobs are unaffected.
+ */
+const providerCallFloor = new AsyncLocalStorage<number>();
+export function withFootballCallFloor<T>(minRemaining: number, operation: () => Promise<T>): Promise<T> {
+  return providerCallFloor.run(minRemaining, operation);
+}
+/** Cheap early refusal (skips the throttle wait); NOT the guarantee, see reserveCallAboveFloor. */
+async function floorAllowsCall(): Promise<boolean> {
+  const floor = providerCallFloor.getStore();
+  if (floor == null) return true;
+  const remaining = DAILY_LIMIT - RESERVE - (await usedToday());
+  return remaining - 1 >= floor;
 }
 
 const HOST = process.env.API_FOOTBALL_HOST || "v3.football.api-sports.io";
@@ -46,6 +65,11 @@ function throttle(): Promise<void> {
 
 async function apiFetch<T = any>(path: string, params: Record<string, string | number> = {}, timeoutMs?: number): Promise<T | null> {
   assertProviderCallsAllowed(); // Before quota recording or network dispatch.
+  if (!(await floorAllowsCall())) {
+    console.warn(`[api-football] Scoped quota floor reached (${providerCallFloor.getStore()} must remain) — refusing ${path}`);
+    recordApiOutcome(path, "quota_refused");
+    return null;
+  }
   if (!KEY) {
     console.warn("[api-football] Missing API_FOOTBALL_KEY — returning null");
     return null;
@@ -68,7 +92,17 @@ async function apiFetch<T = any>(path: string, params: Record<string, string | n
   // Recorded before awaiting the response: the account is charged the moment
   // the request is dispatched, so counting on success only would under-count
   // exactly the timeouts and 429s that matter most for staying under the cap.
-  await recordCall(path);
+  const floor = providerCallFloor.getStore();
+  if (floor != null) {
+    // Scoped floor: the atomic reservation, immediately before dispatch.
+    if (!(await reserveCallAboveFloor(path, floor))) {
+      console.warn(`[api-football] Scoped quota floor reached (${floor} must remain) — refusing ${path}`);
+      recordApiOutcome(path, "quota_refused");
+      return null;
+    }
+  } else {
+    await recordCall(path);
+  }
   if (noteDispatch(url.toString())) recordRepeat(path);
 
   // Never through Next's data cache. With `next: { revalidate: 60 }` every

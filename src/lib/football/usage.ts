@@ -228,6 +228,36 @@ export async function recordCall(path: string, day: string = utcDay()): Promise<
 }
 
 /**
+ * Atomic reservation for a call made under a scoped quota floor
+ * (withFootballCallFloor). Serialized across instances by the same advisory
+ * lock the paid-quota experiment uses, and INCREMENT-THEN-VERIFY: the call is
+ * counted first, then the day's total is read; if that leaves fewer than
+ * `floor` requests, the transaction rolls back and the call is refused. So
+ * scoped calls can never jointly spend below their floor, however many run
+ * in parallel or on how many instances. This IS the call's usage record
+ * (recordCall is not called again for it). Fails CLOSED: on any error the
+ * call is not dispatched.
+ */
+export async function reserveCallAboveFloor(path: string, floor: number, day: string = utcDay()): Promise<boolean> {
+  if (experimentScope() && process.env.VIP_QUOTA_EXPERIMENT !== "on") throw new Error("quota experiment disabled before API dispatch");
+  try {
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(750000)`;
+      await tx.apiUsage.upsert({ where: { day_path: { day, path } }, create: { day, path, count: 1 }, update: { count: { increment: 1 } } });
+      const used = (await tx.apiUsage.aggregate({ where: { day }, _sum: { count: true } }))._sum.count ?? 0;
+      if (DAILY_LIMIT - RESERVE - used < floor) throw new FloorRefusal();
+      if (process.env.VIP_QUOTA_EXPERIMENT === "on" && used > Math.min(7500, budgetCeiling(inPaidPriority()))) throw new FloorRefusal();
+    });
+  } catch (err) {
+    if (!(err instanceof FloorRefusal)) console.error("[api-football/usage] floor reservation failed; refusing", path, err);
+    return false;
+  }
+  if (process.env.VIP_QUOTA_EXPERIMENT === "on") await experimentScope()?.recordApi();
+  return true;
+}
+class FloorRefusal extends Error {}
+
+/**
  * True when there's budget left to spend. Callers should treat `false` as a
  * hard stop for the rest of the UTC day, not a retryable condition.
  *
