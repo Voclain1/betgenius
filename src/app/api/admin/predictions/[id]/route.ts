@@ -13,6 +13,8 @@ import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUn
 import { z } from "zod";
 import { parseStoredContext, parseStoredProvenance } from "@/lib/ai/context";
 import { assessSavedGenerationEvidence } from "@/lib/ai/evidenceReadiness";
+import { historicalEvidenceFor } from "@/lib/evidenceReview";
+import { withNoFootballApiCalls } from "@/lib/football/api-football";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
@@ -53,9 +55,13 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           : null,
       }
     : null;
+  // Full historical classification (src/lib/ai/historicalEvidence.ts):
+  // evidence age at generation and matches missed at generation, from saved
+  // snapshots and captured kickoffs only. Read-only; never calls the provider.
+  const historical = prediction.aiJob ? await withNoFootballApiCalls(() => historicalEvidenceFor(prediction.id)) : null;
   const result = { ...prediction,
     aiJob: prediction.aiJob ? { model: prediction.aiJob.model } : null,
-    evidenceReview,
+    evidenceReview: evidenceReview ? { ...evidenceReview, historical } : null,
   };
   return NextResponse.json({ prediction: result });
 }

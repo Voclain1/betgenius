@@ -28,6 +28,13 @@ on:
       - "scripts/check-reassessment.ts"
       - "scripts/check-early-readiness-db.ts"
       - "scripts/check-early-remediation-postgres.ts"
+      - "scripts/check-evidence-review-postgres.ts"
+      - "scripts/check-historical-evidence.ts"
+      - "scripts/diagnose-missing-evidence.ts"
+      - "src/lib/evidenceReview.ts"
+      - "src/lib/ai/historicalEvidence.ts"
+      - "src/lib/ai/evidenceReadiness.ts"
+      - "src/app/api/admin/evidence-review/**"
       - "scripts/check-early-evidence-freshness.ts"
       - "src/lib/ai/evidenceFreshness.ts"
       - "src/lib/ai/generationContext.ts"
@@ -101,3 +108,4 @@ jobs:
       - run: npx prisma db push --skip-generate
       - run: npx tsx scripts/check-early-readiness-db.ts
       - run: npx tsx scripts/check-early-remediation-postgres.ts
+      - run: npx tsx scripts/check-evidence-review-postgres.ts
