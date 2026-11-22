@@ -11,7 +11,7 @@ import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { hasValidMutationOrigin } from "@/lib/requestSecurity";
 import { withNoFootballApiCalls } from "@/lib/football/api-football";
-import { applyEvidenceReviewAction, listEvidenceReview, EvidenceReviewError } from "@/lib/evidenceReview";
+import { applyEvidenceReviewAction, listEvidenceReviewPage, summarizeEvidenceReview, EvidenceReviewError, type ReviewFilters } from "@/lib/evidenceReview";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +22,20 @@ const Query = z.object({
   paid: z.enum(["paid", "free", "all"]).default("all"),
   reviewed: z.enum(["unreviewed", "reviewed", "all"]).default("all"),
   timing: z.enum(["upcoming", "past", "all"]).default("all"),
-  from: z.string().date().optional(),
-  to: z.string().date().optional(),
+  // Kickoff window (WAT calendar dates, inclusive).
+  kickoffFrom: z.string().date().optional(),
+  kickoffTo: z.string().date().optional(),
+  // Creation scope: `days` matches `npm run diagnose:missing-evidence -- --days=N` exactly;
+  // createdFrom/createdTo give an explicit WAT-date window.
+  days: z.coerce.number().int().min(1).max(3650).optional(),
+  createdFrom: z.string().date().optional(),
+  createdTo: z.string().date().optional(),
+  cursor: z.string().max(512).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  summary: z.enum(["1"]).optional(),
 });
+const watStart = (d: string) => new Date(d + "T00:00:00+01:00");
+const watEnd = (d: string) => new Date(watStart(d).getTime() + 86_400_000);
 const Body = z.object({
   predictionId: z.string().min(1).max(128),
   action: z.enum(["RETAIN", "OPEN_PRIVATE_REVIEW"]),
@@ -38,11 +49,17 @@ export async function GET(req: NextRequest) {
   if (!q.success) return NextResponse.json({ error: q.error.flatten() }, { status: 400 });
   const classes = (q.data.class ?? "").split(",").filter((c): c is typeof CLASSES[number] => (CLASSES as readonly string[]).includes(c));
   const statuses = (q.data.status ?? "").split(",").map((s) => s.trim().toUpperCase()).filter((s) => ["PUBLISHED", "PENDING_REVIEW", "DRAFT", "APPROVED", "ARCHIVED"].includes(s));
-  const result = await withNoFootballApiCalls(() => listEvidenceReview({
+  const filters: ReviewFilters = {
     classes, statuses, paid: q.data.paid, reviewed: q.data.reviewed, timing: q.data.timing,
-    from: q.data.from ? new Date(q.data.from + "T00:00:00+01:00") : undefined,
-    to: q.data.to ? new Date(new Date(q.data.to + "T00:00:00+01:00").getTime() + 86_400_000) : undefined,
-  }));
+    kickoffFrom: q.data.kickoffFrom ? watStart(q.data.kickoffFrom) : undefined,
+    kickoffTo: q.data.kickoffTo ? watEnd(q.data.kickoffTo) : undefined,
+    lookbackDays: q.data.days,
+    createdFrom: q.data.createdFrom ? watStart(q.data.createdFrom) : undefined,
+    createdTo: q.data.createdTo ? watEnd(q.data.createdTo) : undefined,
+  };
+  const result = q.data.summary
+    ? await withNoFootballApiCalls(() => summarizeEvidenceReview(filters))
+    : await withNoFootballApiCalls(() => listEvidenceReviewPage(filters, { cursor: q.data.cursor, pageSize: q.data.pageSize }));
   return NextResponse.json(result);
 }
 

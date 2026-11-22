@@ -48,7 +48,7 @@ The output gives: counts by classification × status × tier (paid/free) × comp
 
 | Class | Rule | Admin warning |
 |---|---|---|
-| **Evidence available** | Both sides have sporting evidence and recent results. Each side's latest saved result is ≤ 21 days old at generation. No known match was missed at generation. Fresh provenance (jobs from 22 Nov) or a historical completeness flag of `true`. | none |
+| **Evidence available** *(coverage, not verification: the saved evidence covered both teams and was current at generation; it does not independently verify each statement in the reasoning)* | Both sides have sporting evidence and recent results. Each side's latest saved result is ≤ 21 days old at generation. No known match was missed at generation. Fresh provenance (jobs from 22 Nov) or a historical completeness flag of `true`. | none |
 | **Freshness uncertain** | Real evidence, but at least one of: the old incomplete flag; aged/superseded/unverified provenance; a latest result > 21 days old; season statistics only; a known match played (or unconfirmed) before generation but missing from the evidence; unknown generation time | "Football evidence was saved, but whether it was current when this pick was written needs verification." |
 | **Evidence insufficient** | No substantive sporting evidence (#226's test), or one side has neither results nor season statistics | "Meaningful football evidence was missing when this pick was written. Statements in its reasoning may be unsupported." |
 | **Snapshot unavailable** | Generated, but no readable snapshot was saved | "The evidence behind this pick cannot be reconstructed. This does not show that the pick is wrong." |
@@ -60,7 +60,12 @@ The output gives: counts by classification × status × tier (paid/free) × comp
 
 ## 3. Admin review (`/admin/evidence-review`, admin-only)
 
-- **Filters:** classification (with counts), status, tier (VIP/Premium vs free), upcoming vs played, reviewed vs not.
+- **Scope, with two independent date dimensions:**
+  - **Generated** (by `Prediction.createdAt`): last 7/30/90/365 days or any time, or an explicit date range. "Last N days" uses exactly the diagnostic's predicate, so the two reconcile.
+  - **Kickoff**: an explicit date range, or upcoming vs played.
+- **Filters:** classification, status, tier (VIP/Premium vs free), reviewed vs not.
+- **Paging over the whole matching population.** There is no recency cap. The list uses a stable keyset cursor (newest generation first), so rows are never skipped or repeated; it shows 25 at a time with "Load more".
+- **Counts come from a separate full-scope summary.** They cover the entire scope up to 20,000 rows; beyond that the page says so and asks you to narrow the dates.
 - **Each row shows:** the original selection, confidence, preview and reasoning; per-side evidence (recent results, season stats, latest-result age at generation); head-to-head and table rows; the freshness record; and **a plain-language reason for each flag**.
 - **Actions:**
   - **Retain unchanged**: a private `EVIDENCE_REVIEW_RETAINED` revision. The prediction is not touched.
@@ -88,7 +93,13 @@ The output gives: counts by classification × status × tier (paid/free) × comp
 ## 6. Deployment and validation
 
 1. Merge after review; deploy as usual. **No schema change, no environment change, no cron change.**
-2. On the production host (read-only): `npm run diagnose:missing-evidence -- --days=30`. Record the counts and the editorial list.
-3. In `/admin/evidence-review`, check that the class counts match the diagnostic for the same window, then work the editorial list.
-4. Spot-check that a public match page for a reviewed published pick shows the original selection and no review wording.
-5. Confirm `ApiUsage` shows no `evidence-review` attribution (there should be none: the routes make no provider calls).
+2. On the production host (read-only): `npm run diagnose:missing-evidence -- --days=30`. Record `historicalClassification.byClass` and the editorial list.
+3. In `/admin/evidence-review`, set the scope to match:
+   - Generated: **Last 30 days**; no generated-date or kickoff-date range;
+   - Status **All**, Tier **All**, Kickoff **All**, Review **All**;
+   - tick all four classes.
+
+   The class counts beside the checkboxes must equal the diagnostic's `byClass`. This parity is asserted in CI on seeded rows with distinct creation and kickoff dates. A kickoff-date filter is a different scope and will not match.
+4. Work the editorial list: set Review to **Not yet reviewed** and use "Load more" until the list ends.
+5. Spot-check that a reviewed published pick's public page shows the original selection with no review wording.
+6. Confirm `ApiUsage` shows no `evidence-review` attribution (there should be none: the routes make no provider calls).

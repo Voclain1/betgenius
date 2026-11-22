@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { MatchDigest, TeamDigest } from "../src/lib/ai/digest";
-import { classifyHistoricalEvidence, CLASS_LABEL, CLASS_WARNING, FLAGGED_CLASSES, RECENCY_BOUND_DAYS, KICKOFF_CAPTURE_STARTED } from "../src/lib/ai/historicalEvidence";
+import { classifyHistoricalEvidence, CLASS_LABEL, CLASS_MEANING, CLASS_WARNING, FLAGGED_CLASSES, RECENCY_BOUND_DAYS, KICKOFF_CAPTURE_STARTED } from "../src/lib/ai/historicalEvidence";
 import { classifyPart, type EvidenceProvenance } from "../src/lib/ai/evidenceFreshness";
 import { assessSavedGenerationEvidence } from "../src/lib/ai/evidenceReadiness";
 
@@ -94,6 +94,11 @@ ok(Object.values({ ...CLASS_LABEL, ...CLASS_WARNING }).every((t) => !t || !/\bAI
 ok(CLASS_WARNING.SNAPSHOT_UNAVAILABLE!.includes("does not show that the pick is wrong") && CLASS_WARNING.FRESHNESS_UNCERTAIN!.includes("needs verification"),
   "warnings never imply a pick is inaccurate");
 
+ok(/not an independent verification of every statement/.test(CLASS_MEANING.EVIDENCE_AVAILABLE), "'Evidence available' is defined as coverage, not verification of claims");
+ok(/It is not an independent check of every statement in the reasoning/.test(readFileSync("src/app/admin/evidence-review/page.tsx", "utf8")),
+  "the review page states the same limit");
+ok(!/verified/i.test(CLASS_LABEL.EVIDENCE_AVAILABLE + (CLASS_WARNING.EVIDENCE_AVAILABLE ?? "")), "no 'verified' wording on the available class");
+
 // ----------------------------------------------------------- guarantees (source)
 const src = (p: string) => readFileSync(p, "utf8");
 const review = src("src/lib/evidenceReview.ts");
@@ -106,7 +111,9 @@ ok(/create: \{[^}]*publicHold: false/.test(upsert) && /update: \{[^}]*publicHold
 ok(!/football\/api-football|refresh(Team|League|H2H|Odds)Cache/.test(review.replace(/import type[^\n]*\n/g, "")), "the review service imports no provider client or cache writer");
 const route = src("src/app/api/admin/evidence-review/route.ts");
 ok((route.match(/isAdmin\(session\?\.user\.role\)/g) ?? []).length === 2 && /hasValidMutationOrigin\(req\)/.test(route), "GET and POST are admin-only; POST checks origin");
-ok((route.match(/withNoFootballApiCalls\(/g) ?? []).length === 2, "both handlers run under the provider-call hard stop");
+ok((route.match(/withNoFootballApiCalls\(/g) ?? []).length === 3, "list, summary and action handlers all run under the provider-call hard stop");
+ok(/days: z\.coerce\.number/.test(route) && /createdFrom/.test(route) && /kickoffFrom/.test(route) && /summary: z\.enum/.test(route),
+  "API exposes the diagnostic-comparable creation scope, a separate kickoff scope, and full-scope summaries");
 ok(/withNoFootballApiCalls\(\(\) => historicalEvidenceFor/.test(src("src/app/api/admin/predictions/[id]/route.ts")), "the detail API's classification also runs under the hard stop");
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((n) => { const p = join(dir, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const publicFiles = [...walk("src/app/(public)"), ...walk("src/components")].filter((f) => /\.tsx?$/.test(f));

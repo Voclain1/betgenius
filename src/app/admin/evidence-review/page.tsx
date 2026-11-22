@@ -9,7 +9,7 @@ type Side = { recentMatches: number; seasonStats: boolean; latestMatch: string |
 type Item = {
   id: string; fixture: string; league: string | null; status: string; categories: string[]; paid: boolean;
   market: string; pick: string; confidence: number; reasoning: string; matchPreview: string | null;
-  kickoff: string | null; publishedAt: string | null; upcoming: boolean;
+  kickoff: string | null; publishedAt: string | null; createdAt: string; upcoming: boolean;
   classification: string; label: string; warning: string | null;
   evidence: { reasons: Reason[]; indicators: { generatedAt: string | null; contextCompleteFlag: boolean; home: Side; away: Side;
     h2hMeetings: number; standingsRowsForFixture: number; provenance: Record<string, string> | null; supersessionCheckable: boolean } };
@@ -17,7 +17,8 @@ type Item = {
   reassessment: { status: string; publicHold: boolean } | null;
   actions: { retain: boolean; openPrivateReview: boolean; rewriteDraft: boolean; reviewPage: boolean };
 };
-type Result = { items: Item[]; counts: Record<string, number>; scanned: number; truncated: boolean };
+type Page = { items: Item[]; nextCursor: string | null; exhausted: boolean; examined: number };
+type Summary = { byClass: Record<string, number>; matching: number; generatedInScope: number; complete: boolean };
 
 const CLASSES = [
   { id: "FRESHNESS_UNCERTAIN", label: "Freshness uncertain", Icon: HelpCircle, tone: "text-amber-300" },
@@ -73,16 +74,61 @@ export default function EvidenceReviewPage() {
   const [paid, setPaid] = useState("all");
   const [reviewed, setReviewed] = useState("unreviewed");
   const [timing, setTiming] = useState("all");
-  const [data, setData] = useState<Result | null>(null);
+  // Creation scope. "30" here is exactly `npm run diagnose:missing-evidence -- --days=30`.
+  const [days, setDays] = useState("30");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
+  const [kickoffFrom, setKickoffFrom] = useState("");
+  const [kickoffTo, setKickoffTo] = useState("");
+  const [items, setItems] = useState<Item[]>([]);
+  const [next, setNext] = useState<string | null>(null);
+  const [exhausted, setExhausted] = useState(false);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const params = useCallback(() => {
+    const qs = new URLSearchParams({ class: classes.join(","), paid, reviewed, timing });
+    if (status) qs.set("status", status);
+    if (days !== "all" && !createdFrom && !createdTo) qs.set("days", days);
+    if (createdFrom) qs.set("createdFrom", createdFrom);
+    if (createdTo) qs.set("createdTo", createdTo);
+    if (kickoffFrom) qs.set("kickoffFrom", kickoffFrom);
+    if (kickoffTo) qs.set("kickoffTo", kickoffTo);
+    return qs;
+  }, [classes, status, paid, reviewed, timing, days, createdFrom, createdTo, kickoffFrom, kickoffTo]);
+
   const load = useCallback(async () => {
-    setError("");
-    const qs = new URLSearchParams({ class: classes.join(","), paid, reviewed, timing, ...(status ? { status } : {}) });
-    const res = await fetch("/api/admin/evidence-review?" + qs.toString());
-    if (!res.ok) { setError("Could not load the review list."); return; }
-    setData(await res.json());
-  }, [classes, status, paid, reviewed, timing]);
+    setError(""); setLoading(true);
+    try {
+      const qs = params();
+      const [pageRes, sumRes] = await Promise.all([
+        fetch("/api/admin/evidence-review?" + qs.toString()),
+        fetch("/api/admin/evidence-review?" + qs.toString() + "&summary=1"),
+      ]);
+      if (!pageRes.ok || !sumRes.ok) throw new Error("Could not load the review list.");
+      const page = (await pageRes.json()) as Page;
+      setItems(page.items); setNext(page.nextCursor); setExhausted(page.exhausted);
+      setSummary((await sumRes.json()) as Summary);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); }
+  }, [params]);
   useEffect(() => { load(); }, [load]);
+
+  async function loadMore() {
+    if (!next) return;
+    setLoading(true);
+    try {
+      const qs = params(); qs.set("cursor", next);
+      const res = await fetch("/api/admin/evidence-review?" + qs.toString());
+      if (!res.ok) throw new Error("Could not load more.");
+      const page = (await res.json()) as Page;
+      setItems((prev) => [...prev, ...page.items]); setNext(page.nextCursor); setExhausted(page.exhausted);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); }
+  }
+
+  const scopeText = createdFrom || createdTo
+    ? `generated ${createdFrom || "…"} to ${createdTo || "…"}`
+    : days === "all" ? "generated at any time" : `generated in the last ${days} days`;
 
   return (
     <div className="space-y-8">
@@ -94,9 +140,13 @@ export default function EvidenceReviewPage() {
           retaining records your decision privately, and rewrites or withdrawals continue through their existing approval steps.
           Visible to administrators only.
         </p>
+        <p className="max-w-3xl text-xs text-gray-500">
+          &ldquo;Evidence available&rdquo; describes coverage: football evidence was saved for both teams and was current when the pick
+          was written. It is not an independent check of every statement in the reasoning.
+        </p>
       </header>
 
-      <section className="flex flex-wrap items-end gap-4 text-sm">
+      <section className="space-y-4 text-sm">
         <fieldset className="space-y-1">
           <legend className="text-xs uppercase tracking-wide text-gray-400">Classification</legend>
           <div className="flex flex-wrap gap-3">
@@ -104,39 +154,57 @@ export default function EvidenceReviewPage() {
               <label key={c.id} className="flex items-center gap-1.5">
                 <input type="checkbox" checked={classes.includes(c.id)}
                   onChange={(e) => setClasses(e.target.checked ? [...classes, c.id] : classes.filter((x) => x !== c.id))} />
-                {c.label}{data?.counts[c.id] != null ? ` (${data.counts[c.id]})` : ""}
+                {c.label}{summary ? ` (${summary.byClass[c.id] ?? 0})` : ""}
               </label>
             ))}
           </div>
         </fieldset>
-        <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Status</span>
-          <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All</option><option value="PUBLISHED">Published</option><option value="PENDING_REVIEW">Pending review</option>
-            <option value="DRAFT">Draft (held)</option><option value="ARCHIVED">Archived</option>
-          </select></label>
-        <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Tier</span>
-          <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={paid} onChange={(e) => setPaid(e.target.value)}>
-            <option value="all">All</option><option value="paid">VIP / Premium</option><option value="free">Free</option>
-          </select></label>
-        <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Kickoff</span>
-          <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={timing} onChange={(e) => setTiming(e.target.value)}>
-            <option value="all">All</option><option value="upcoming">Upcoming</option><option value="past">Played</option>
-          </select></label>
-        <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Review</span>
-          <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={reviewed} onChange={(e) => setReviewed(e.target.value)}>
-            <option value="unreviewed">Not yet reviewed</option><option value="reviewed">Reviewed</option><option value="all">All</option>
-          </select></label>
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Generated</span>
+            <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={days} onChange={(e) => setDays(e.target.value)} disabled={!!(createdFrom || createdTo)}>
+              <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+              <option value="365">Last 365 days</option><option value="all">Any time</option>
+            </select></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Generated from</span>
+            <input type="date" className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={createdFrom} onChange={(e) => setCreatedFrom(e.target.value)} /></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Generated to</span>
+            <input type="date" className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={createdTo} onChange={(e) => setCreatedTo(e.target.value)} /></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Kickoff from</span>
+            <input type="date" className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={kickoffFrom} onChange={(e) => setKickoffFrom(e.target.value)} /></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Kickoff to</span>
+            <input type="date" className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={kickoffTo} onChange={(e) => setKickoffTo(e.target.value)} /></label>
+        </div>
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Status</span>
+            <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">All</option><option value="PUBLISHED">Published</option><option value="PENDING_REVIEW">Pending review</option>
+              <option value="DRAFT">Draft (held)</option><option value="ARCHIVED">Archived</option>
+            </select></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Tier</span>
+            <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={paid} onChange={(e) => setPaid(e.target.value)}>
+              <option value="all">All</option><option value="paid">VIP / Premium</option><option value="free">Free</option>
+            </select></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Kickoff</span>
+            <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={timing} onChange={(e) => setTiming(e.target.value)}>
+              <option value="all">All</option><option value="upcoming">Upcoming</option><option value="past">Played</option>
+            </select></label>
+          <label className="space-y-1"><span className="block text-xs uppercase tracking-wide text-gray-400">Review</span>
+            <select className="block rounded-lg border border-brand-border bg-brand-card p-2 text-sm text-gray-200" value={reviewed} onChange={(e) => setReviewed(e.target.value)}>
+              <option value="unreviewed">Not yet reviewed</option><option value="reviewed">Reviewed</option><option value="all">All</option>
+            </select></label>
+        </div>
       </section>
 
       {error && <p className="text-sm text-red-300">{error}</p>}
-      {data && (
+      {summary && (
         <p className="text-xs text-gray-400">
-          {data.items.length} shown from the {data.scanned} most recent generated predictions{data.truncated ? " (narrow the filters to see older rows)" : ""}.
+          {summary.matching} matching predictions across {summary.generatedInScope} {scopeText}
+          {summary.complete ? " (counts cover the full scope)" : " (counts cover the first 20,000 rows of this scope; narrow the dates for complete counts)"}.
+          Showing {items.length}{exhausted ? "" : " so far"}.
         </p>
       )}
-
       <ul className="space-y-6">
-        {data?.items.map((item) => {
+        {items.map((item) => {
           const cls = CLASSES.find((c) => c.id === item.classification);
           const Icon = cls?.Icon ?? HelpCircle;
           return (
@@ -145,7 +213,7 @@ export default function EvidenceReviewPage() {
                 <div className="space-y-1">
                   <Link href={`/admin/predictions/${item.id}`} className="text-lg font-semibold hover:underline">{item.fixture}</Link>
                   <p className="text-xs text-gray-400">
-                    {item.league ?? "Unknown competition"} · kickoff {when(item.kickoff)} · {item.status}
+                    {item.league ?? "Unknown competition"} · kickoff {when(item.kickoff)} · generated {when(item.createdAt)} · {item.status}
                     {item.publishedAt ? ` · published ${when(item.publishedAt)}` : ""} · {item.categories.join(", ")}{item.paid ? " · paid" : ""}
                   </p>
                 </div>
@@ -183,7 +251,10 @@ export default function EvidenceReviewPage() {
           );
         })}
       </ul>
-      {data && data.items.length === 0 && <p className="text-sm text-gray-400">No predictions match these filters.</p>}
+      {!loading && items.length === 0 && <p className="text-sm text-gray-400">No predictions match these filters.</p>}
+      {next && !exhausted && (
+        <button className="btn btn-ghost" disabled={loading} onClick={loadMore}>{loading ? "Loading…" : "Load more"}</button>
+      )}
     </div>
   );
 }

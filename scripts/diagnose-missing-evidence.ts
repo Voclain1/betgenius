@@ -10,7 +10,9 @@
  * summary, it reports the historical classification used by the admin
  * Evidence review (src/lib/ai/historicalEvidence.ts): counts by class x
  * status x tier x competition, reason codes, and the prediction ids that need
- * individual editorial verification. Ids and codes only: no team names,
+ * individual editorial verification. Scope is Prediction.createdAt, the same
+ * predicate as the admin page's "Generated: last N days" (asserted equal in
+ * scripts/check-evidence-review-postgres.ts). Ids and codes only: no team names,
  * reasoning text, prompts or provider errors.
  */
 import { prisma } from "../src/lib/prisma";

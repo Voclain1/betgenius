@@ -25,7 +25,12 @@ import {
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 
 export const EVIDENCE_REVIEW_KINDS = ["EVIDENCE_REVIEW_RETAINED", "EVIDENCE_REVIEW_OPENED"] as const;
-const MAX_ROWS = 500;
+/** Rows examined per database batch while paging or summarising. */
+const BATCH = 250;
+/** A page request examines at most this many rows before returning a cursor (bounded request time). */
+export const PAGE_SCAN_BUDGET = 2_000;
+/** A summary covers at most this many rows; beyond it the result says so (`complete: false`). */
+export const SUMMARY_ROW_LIMIT = 20_000;
 
 export const EVIDENCE_REVIEW_SELECT = {
   id: true, status: true, category: true, provenance: true, market: true, pick: true, marketType: true,
@@ -86,19 +91,29 @@ export function classifyRow(row: Pick<Row, "aiJobId" | "aiJob" | "contextComplet
   });
 }
 
+/**
+ * Scope of the review. Two independent date dimensions, never conflated:
+ *  - creation (Prediction.createdAt): `lookbackDays` uses EXACTLY the
+ *    predicate of `npm run diagnose:missing-evidence -- --days=N`
+ *    (createdAt >= now − N days, generated rows), so the two reconcile;
+ *    `createdFrom/createdTo` give an explicit window.
+ *  - kickoff: `kickoffFrom/kickoffTo` and `timing`.
+ */
 export type ReviewFilters = {
   classes?: HistoricalEvidenceClass[];
   statuses?: string[];
   paid?: "paid" | "free" | "all";
-  from?: Date; to?: Date;
   reviewed?: "unreviewed" | "reviewed" | "all";
   timing?: "upcoming" | "past" | "all";
+  kickoffFrom?: Date; kickoffTo?: Date;
+  createdFrom?: Date; createdTo?: Date;
+  lookbackDays?: number;
 };
 
 export type ReviewItem = {
   id: string; fixture: string; league: string | null; status: string; categories: string[]; paid: boolean;
   market: string; pick: string; confidence: number; reasoning: string; matchPreview: string | null;
-  kickoff: string | null; publishedAt: string | null; upcoming: boolean;
+  kickoff: string | null; publishedAt: string | null; createdAt: string; upcoming: boolean;
   classification: HistoricalEvidenceClass; label: string; warning: string | null;
   evidence: HistoricalEvidence;
   review: { kind: string; reason: string; at: string } | null;
@@ -106,55 +121,156 @@ export type ReviewItem = {
   actions: { retain: boolean; openPrivateReview: boolean; rewriteDraft: boolean; reviewPage: boolean };
 };
 
-export async function listEvidenceReview(filters: ReviewFilters = {}, now: Date = new Date()): Promise<{ items: ReviewItem[]; counts: Record<string, number>; scanned: number; truncated: boolean }> {
+/** The database-side scope (everything except the classification, tier and review-state filters, which need the row). */
+export function reviewScopeWhere(f: ReviewFilters, now: Date): Prisma.PredictionWhereInput {
   const kickoff: Prisma.DateTimeNullableFilter = {
-    ...(filters.from ? { gte: filters.from } : {}),
-    ...(filters.to ? { lt: filters.to } : {}),
-    ...(filters.timing === "upcoming" ? { gt: now } : filters.timing === "past" ? { lte: now } : {}),
+    ...(f.kickoffFrom ? { gte: f.kickoffFrom } : {}),
+    ...(f.kickoffTo ? { lt: f.kickoffTo } : {}),
+    ...(f.timing === "upcoming" ? { gt: now } : f.timing === "past" ? { lte: now } : {}),
   };
-  const where: Prisma.PredictionWhereInput = {
+  const created: Prisma.DateTimeFilter = {
+    ...(f.lookbackDays && f.lookbackDays > 0 ? { gte: new Date(now.getTime() - f.lookbackDays * 24 * 3_600_000) } : {}),
+    ...(f.createdFrom ? { gte: f.createdFrom } : {}),
+    ...(f.createdTo ? { lt: f.createdTo } : {}),
+  };
+  return {
     aiJobId: { not: null },
-    ...(filters.statuses?.length ? { status: { in: filters.statuses } } : {}),
+    ...(f.statuses?.length ? { status: { in: f.statuses } } : {}),
     ...(Object.keys(kickoff).length ? { kickoff } : {}),
+    ...(Object.keys(created).length ? { createdAt: created } : {}),
   };
-  const rows = await prisma.prediction.findMany({ where, select: SELECT, orderBy: [{ kickoff: "desc" }, { id: "asc" }], take: MAX_ROWS + 1 });
-  const truncated = rows.length > MAX_ROWS;
-  const page = rows.slice(0, MAX_ROWS);
-  const known = await loadKnownKickoffs(page);
-  const counts: Record<string, number> = {};
+}
+
+/** Opaque keyset cursor: the last row examined, in (createdAt desc, id desc) order. */
+type Cursor = { c: string; i: string };
+export function encodeCursor(row: { createdAt: Date; id: string }): string {
+  return Buffer.from(JSON.stringify({ c: row.createdAt.toISOString(), i: row.id } satisfies Cursor)).toString("base64url");
+}
+export function decodeCursor(raw: string | null | undefined): Cursor | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Cursor;
+    return typeof v?.c === "string" && Number.isFinite(Date.parse(v.c)) && typeof v.i === "string" && v.i.length <= 128 ? v : null;
+  } catch { return null; }
+}
+function afterCursor(c: Cursor | null): Prisma.PredictionWhereInput {
+  if (!c) return {};
+  const at = new Date(c.c);
+  return { OR: [{ createdAt: { lt: at } }, { createdAt: at, id: { lt: c.i } }] };
+}
+
+const isPaid = (r: Row) => isPaidOnlyProvenance(r.provenance) || r.categories.some((c) => c.category === "VIP" || c.category === "PREMIUM");
+const reviewOf = (r: Row) => r.revisions[0] ? { kind: r.revisions[0].kind, reason: r.revisions[0].reason, at: r.revisions[0].recordedAt.toISOString() } : null;
+
+/** Row-level filters other than classification (tier, review state). */
+function passesRowFilters(r: Row, f: ReviewFilters): boolean {
+  const paid = isPaid(r);
+  if (f.paid === "paid" && !paid) return false;
+  if (f.paid === "free" && paid) return false;
+  const reviewed = r.revisions.length > 0;
+  if (f.reviewed === "unreviewed" && reviewed) return false;
+  if (f.reviewed === "reviewed" && !reviewed) return false;
+  return true;
+}
+function passesClass(cls: HistoricalEvidenceClass, f: ReviewFilters): boolean {
+  return f.classes?.length ? f.classes.includes(cls) : FLAGGED_CLASSES.includes(cls);
+}
+
+function toItem(r: Row, evidence: HistoricalEvidence, now: Date): ReviewItem {
+  const upcoming = !!r.kickoff && r.kickoff > now;
+  const published = r.status === "PUBLISHED" && !!r.publishedAt;
+  return {
+    id: r.id, fixture: [r.homeTeam, r.awayTeam].filter(Boolean).join(" vs ") || "Unknown fixture",
+    league: r.leagueName, status: r.status, categories: r.categories.map((c) => c.category), paid: isPaid(r),
+    market: r.market, pick: r.pick, confidence: r.confidence, reasoning: r.reasoning, matchPreview: r.matchPreview,
+    kickoff: r.kickoff?.toISOString() ?? null, publishedAt: r.publishedAt?.toISOString() ?? null, createdAt: r.createdAt.toISOString(), upcoming,
+    classification: evidence.classification, label: CLASS_LABEL[evidence.classification], warning: CLASS_WARNING[evidence.classification],
+    evidence, review: reviewOf(r),
+    reassessment: r.reassessment ? { status: r.reassessment.status, publicHold: r.reassessment.publicHold } : null,
+    actions: {
+      retain: true,
+      // Published picks before kickoff only: settled picks are never rewritten or withdrawn after the fact.
+      openPrivateReview: published && upcoming && r.reassessment?.status !== "REVIEW_REQUIRED",
+      rewriteDraft: r.status === "PENDING_REVIEW",
+      reviewPage: published && r.reassessment?.status === "REVIEW_REQUIRED",
+    },
+  };
+}
+
+/**
+ * One page of matching predictions, newest generation first, across the
+ * WHOLE matching population (no recency cap). Classification is computed per
+ * row, so the page walks the scope in batches until it has `pageSize`
+ * matches, the scope is exhausted, or PAGE_SCAN_BUDGET rows were examined.
+ * `nextCursor` is the last row EXAMINED, so following it never skips or
+ * repeats a row. `exhausted: true` means there is nothing after this page.
+ */
+export async function listEvidenceReviewPage(
+  filters: ReviewFilters = {},
+  opts: { cursor?: string | null; pageSize?: number; now?: Date; scanBudget?: number } = {},
+): Promise<{ items: ReviewItem[]; nextCursor: string | null; exhausted: boolean; examined: number }> {
+  const now = opts.now ?? new Date();
+  const pageSize = Math.min(100, Math.max(1, Math.trunc(opts.pageSize ?? 25)));
+  const budget = Math.max(BATCH, opts.scanBudget ?? PAGE_SCAN_BUDGET);
+  const scope = reviewScopeWhere(filters, now);
+  let cursor = decodeCursor(opts.cursor);
   const items: ReviewItem[] = [];
-  for (const r of page) {
-    const evidence = classifyRow(r, known);
-    counts[evidence.classification] = (counts[evidence.classification] ?? 0) + 1;
-    const categories = r.categories.map((c) => c.category);
-    const paid = isPaidOnlyProvenance(r.provenance) || categories.some((c) => c === "VIP" || c === "PREMIUM");
-    const review = r.revisions[0] ? { kind: r.revisions[0].kind, reason: r.revisions[0].reason, at: r.revisions[0].recordedAt.toISOString() } : null;
-    if (filters.classes?.length && !filters.classes.includes(evidence.classification)) continue;
-    if (!filters.classes?.length && !FLAGGED_CLASSES.includes(evidence.classification)) continue;
-    if (filters.paid === "paid" && !paid) continue;
-    if (filters.paid === "free" && paid) continue;
-    if (filters.reviewed === "unreviewed" && review) continue;
-    if (filters.reviewed === "reviewed" && !review) continue;
-    const upcoming = !!r.kickoff && r.kickoff > now;
-    const published = r.status === "PUBLISHED" && !!r.publishedAt;
-    items.push({
-      id: r.id, fixture: [r.homeTeam, r.awayTeam].filter(Boolean).join(" vs ") || "Unknown fixture",
-      league: r.leagueName, status: r.status, categories, paid,
-      market: r.market, pick: r.pick, confidence: r.confidence, reasoning: r.reasoning, matchPreview: r.matchPreview,
-      kickoff: r.kickoff?.toISOString() ?? null, publishedAt: r.publishedAt?.toISOString() ?? null, upcoming,
-      classification: evidence.classification, label: CLASS_LABEL[evidence.classification], warning: CLASS_WARNING[evidence.classification],
-      evidence, review,
-      reassessment: r.reassessment ? { status: r.reassessment.status, publicHold: r.reassessment.publicHold } : null,
-      actions: {
-        retain: true,
-        // Published picks before kickoff only: settled picks are never rewritten or withdrawn after the fact.
-        openPrivateReview: published && upcoming && r.reassessment?.status !== "REVIEW_REQUIRED",
-        rewriteDraft: r.status === "PENDING_REVIEW",
-        reviewPage: published && r.reassessment?.status === "REVIEW_REQUIRED",
-      },
+  let examined = 0;
+  for (;;) {
+    const rows = await prisma.prediction.findMany({
+      where: { AND: [scope, afterCursor(cursor)] }, select: SELECT,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: BATCH,
     });
+    if (!rows.length) return { items, nextCursor: null, exhausted: true, examined };
+    const known = await loadKnownKickoffs(rows);
+    for (const r of rows) {
+      examined++;
+      cursor = { c: r.createdAt.toISOString(), i: r.id };
+      if (passesRowFilters(r, filters)) {
+        const evidence = classifyRow(r, known);
+        if (passesClass(evidence.classification, filters)) items.push(toItem(r, evidence, now));
+      }
+      if (items.length >= pageSize || examined >= budget) {
+        return { items, nextCursor: encodeCursor({ createdAt: new Date(cursor.c), id: cursor.i }), exhausted: false, examined };
+      }
+    }
+    if (rows.length < BATCH) return { items, nextCursor: null, exhausted: true, examined };
   }
-  return { items, counts, scanned: page.length, truncated };
+}
+
+/**
+ * Counts across the ENTIRE matching scope (same filters as the list, every
+ * class), for honest totals. Bounded at SUMMARY_ROW_LIMIT rows: beyond that
+ * `complete` is false and the admin is told to narrow the dates.
+ */
+export async function summarizeEvidenceReview(
+  filters: ReviewFilters = {},
+  opts: { now?: Date; rowLimit?: number } = {},
+): Promise<{ byClass: Record<string, number>; matching: number; generatedInScope: number; complete: boolean }> {
+  const now = opts.now ?? new Date();
+  const limit = opts.rowLimit ?? SUMMARY_ROW_LIMIT;
+  const scope = reviewScopeWhere(filters, now);
+  const byClass: Record<string, number> = {};
+  let matching = 0, generatedInScope = 0;
+  let cursor: Cursor | null = null;
+  for (;;) {
+    const rows: Row[] = await prisma.prediction.findMany({
+      where: { AND: [scope, afterCursor(cursor)] }, select: SELECT,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: BATCH,
+    });
+    if (!rows.length) return { byClass, matching, generatedInScope, complete: true };
+    const known = await loadKnownKickoffs(rows);
+    for (const r of rows) {
+      generatedInScope++;
+      cursor = { c: r.createdAt.toISOString(), i: r.id };
+      if (!passesRowFilters(r, filters)) continue;
+      const cls = classifyRow(r, known).classification;
+      byClass[cls] = (byClass[cls] ?? 0) + 1;
+      if (passesClass(cls, filters)) matching++;
+      if (generatedInScope >= limit) return { byClass, matching, generatedInScope, complete: false };
+    }
+    if (rows.length < BATCH) return { byClass, matching, generatedInScope, complete: true };
+  }
 }
 
 /** One prediction's classification, for the admin detail page. Null when the prediction does not exist. */

@@ -11,8 +11,10 @@
  * written, and whether a match the team had already played was missing.
  *
  * RULES.
- *  - Never "verified" merely because cached data exists. EVIDENCE_AVAILABLE
- *    needs both sides' sporting evidence, recent results for both, nothing
+ *  - Never "verified" merely because cached data exists, and never more than
+ *    coverage: EVIDENCE_AVAILABLE means the saved evidence covered both teams
+ *    and was current at generation; it does NOT verify each reasoning claim.
+ *    It needs both sides' sporting evidence, recent results for both, nothing
  *    older than the recency bound at generation, no known match missed at
  *    generation, and either fresh provenance (jobs since 22 Nov 2026) or a
  *    historical completeness flag that was true.
@@ -183,6 +185,19 @@ export const CLASS_LABEL: Record<HistoricalEvidenceClass, string> = {
 };
 
 /** The admin warning sentence for each class. Never used on public pages. */
+/**
+ * What each class asserts. EVIDENCE_AVAILABLE is about evidence presence and
+ * coverage at generation time, never an independent verification of each
+ * statement in the reasoning.
+ */
+export const CLASS_MEANING: Record<HistoricalEvidenceClass, string> = {
+  EVIDENCE_AVAILABLE: "Football evidence was saved for both teams and was current when the pick was written. This describes evidence coverage; it is not an independent verification of every statement in the reasoning.",
+  FRESHNESS_UNCERTAIN: "Football evidence was saved, but whether it was current when the pick was written needs verification.",
+  EVIDENCE_INSUFFICIENT: "Meaningful football evidence was missing when the pick was written.",
+  SNAPSHOT_UNAVAILABLE: "The saved evidence cannot be reconstructed.",
+  NOT_GENERATED: "Created by an administrator; no generation evidence applies.",
+};
+
 export const CLASS_WARNING: Record<HistoricalEvidenceClass, string | null> = {
   EVIDENCE_AVAILABLE: null,
   FRESHNESS_UNCERTAIN: "Football evidence was saved, but whether it was current when this pick was written needs verification.",
