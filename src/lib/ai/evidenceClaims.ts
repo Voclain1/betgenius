@@ -50,6 +50,70 @@ export function evidenceClaimIssues(d: MatchDigest, text: string): ClaimIssue[] 
   return issues;
 }
 
+/**
+ * Recent-form claims the saved digest cannot support (added 22 Nov 2026).
+ *
+ * The H2H checks above caught invented head-to-head figures, but a draft could
+ * still say "Oxford have won four of their last five" with nothing in the
+ * evidence to support it — the pattern behind the 22 Nov missing-evidence
+ * incident. This checks three explicit, team-named shapes only:
+ *   "<Team> have won|lost|drawn N of their last M"
+ *   "<Team> are unbeaten in their last M"
+ *   "<Team> are without a win / winless in their last M"
+ * A claim is supported when the team's last-M matches in `last5` (all
+ * competitions) OR its season `form` string agree. It is unsupported when the
+ * evidence holds fewer than M matches, or when both sources contradict it.
+ * Venue- or competition-scoped claims ("last five home games", "league") are
+ * skipped: the digest cannot verify them reliably and a false strip would
+ * remove a true sentence.
+ *
+ * GENERATION-TIME ONLY. Deliberately not part of evidenceClaimIssues, which the
+ * public match page also applies to already-published rows: published
+ * predictions must not change automatically.
+ */
+export function formClaimIssues(d: MatchDigest, text: string): ClaimIssue[] {
+  const issues: ClaimIssue[] = [];
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/);
+  const sides = [
+    { names: [d.fixture?.home, d.teams?.home?.name], team: d.teams?.home },
+    { names: [d.fixture?.away, d.teams?.away?.name], team: d.teams?.away },
+  ];
+  for (const sentence of sentences) {
+    if (/\b(home|away|league|cup|european|continental|on the road|at home)\b/i.test(sentence)) continue;
+    for (const side of sides) {
+      const names = [...new Set(side.names.filter((n): n is string => !!n?.trim()))];
+      for (const name of names) {
+        const t = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const record = sentence.match(new RegExp(`${t}(?:'s)? (?:have |has |had )?(won|lost|drawn|drew) ${number} (?:games |matches )?(?:of|from|in) (?:their|its|the) (?:last|previous) ${number}\\b`, "i"));
+        const unbeaten = sentence.match(new RegExp(`${t} (?:are|is|have been|has been|remain|remains|went) unbeaten in (?:their|its|the) (?:last|previous) ${number}\\b`, "i"));
+        const winless = sentence.match(new RegExp(`${t} (?:are|is|have been|has been|remain|remains|went) (?:without a win|winless) in (?:their|its|the) (?:last|previous) ${number}\\b`, "i"));
+        if (!record && !unbeaten && !winless) continue;
+        const m = count((record ? record[3] : (unbeaten ?? winless)![1]));
+        if (!(m >= 1)) continue;
+        const recent = [...(side.team?.last5 ?? [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, m).map(r => r.result);
+        const seasonForm = (side.team?.form ?? "").replace(/[^WDL]/g, "");
+        const samples = [recent.length >= m ? recent : null, seasonForm.length >= m ? seasonForm.slice(-m).split("") : null]
+          .filter((x): x is string[] => x !== null);
+        if (!samples.length) {
+          issues.push({ code: "form-unsupported-sample", claim: sentence, evidence: `${name}: the evidence holds fewer than ${m} recent results.` });
+          continue;
+        }
+        const holds = (rs: string[]) => {
+          if (record) {
+            const n = count(record[2]);
+            const want = /^won/i.test(record[1]) ? "W" : /^lost/i.test(record[1]) ? "L" : "D";
+            return rs.filter(r => r === want).length === n;
+          }
+          return unbeaten ? !rs.includes("L") : !rs.includes("W");
+        };
+        if (!samples.some(holds))
+          issues.push({ code: "form-record", claim: sentence, evidence: `${name}: last ${m} recorded results ${samples.map(x => x.join("")).join(" / ")}.` });
+      }
+    }
+  }
+  return issues;
+}
+
 export function assertEvidenceClaims(d: MatchDigest, output: { matchPreview?: string; keyFactors?: string[]; predictions?: { reasoning?: string }[] }) {
   const text = [output.matchPreview, ...(output.keyFactors ?? []), ...(output.predictions ?? []).map(p => p.reasoning)].filter(Boolean).join("\n");
   const issues = evidenceClaimIssues(d, text);
@@ -95,6 +159,7 @@ export function stripUnsupportedClaims<T extends DraftProse>(d: MatchDigest, out
     if (typeof text !== "string" || !text) return text;
     const bad = new Set<string>(unsupportedStaffSentences(text, ctx));
     for (const issue of evidenceClaimIssues(d, text)) bad.add(issue.claim);
+    for (const issue of formClaimIssues(d, text)) bad.add(issue.claim);
     for (const sentence of conflictingClaims) if (text.includes(sentence)) bad.add(sentence);
     if (nonKnockout) for (const s of text.split(/(?<=[.!?])\s+|\n+/)) if (KNOCKOUT_TIE.test(s)) bad.add(s);
     removed.push(...bad);

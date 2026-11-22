@@ -17,6 +17,8 @@ import { GOALS_GENERATED_PROVENANCE } from "@/lib/goalsGeneration";
 import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { classifyEarlyDisposition, EARLY_HOLD_UNTIL_HOURS, earlyPriceUnsafeFromPrompt } from "@/lib/generation/earlyTriage";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
+import { savedEvidenceSupersession, latestObservedMatch, type KnownKickoff } from "@/lib/ai/evidenceFreshness";
+import { knownRecentKickoffs } from "@/lib/ai/generationContext";
 
 export type EarlyPublicationMode = "off" | "shadow" | "on";
 export function earlyPublicationMode(value: string | undefined = process.env.EARLY_FREE_PUBLICATION_MODE): EarlyPublicationMode {
@@ -72,11 +74,22 @@ export function earlyPublicationBlock(
   row: EarlyPublicationCandidate,
   digest: MatchDigest | null,
   now: Date,
+  /**
+   * Kickoffs we already hold for the two teams. When either side has played a
+   * match since the saved evidence was assembled, the reasoning describes form
+   * that is no longer current, so the pick may not go live automatically. It
+   * goes to admin review (or stays held) instead. Omitted = not checked.
+   */
+  knownKickoffs?: readonly KnownKickoff[],
 ): string | null {
   if (row.status !== "PENDING_REVIEW") return "not-awaiting-review";
   if (row.fixtureApiId == null) return "no-provider-fixture";
   if (!row.kickoff || !inEarlyGenerationWindow(row.kickoff, now, row.leagueApiId)) return "outside-early-window";
   if (!row.contextComplete || !digest) return "no-reliable-evidence";
+  if (knownKickoffs) {
+    const superseded = savedEvidenceSupersession(digest, knownKickoffs, now);
+    if (superseded.home || superseded.away) return "evidence-superseded";
+  }
   if (row.manualSettlementOnly || row.marketType === "OTHER" || !isValidSelection(row.marketType as MarketType, row.selection)) return "invalid-market";
   if (row.marketType === "SAME_GAME_DOUBLE" || row.categories.includes("SAME_GAME_DOUBLE")) return "combo-source-or-double";
   if (row.categories.some((category) => ["VIP", "PREMIUM", "BET_OF_THE_DAY"].includes(category))) return "reserved-category";
@@ -205,6 +218,19 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
       select: { matchKey: true, oddsJson: true, fetchedAt: true },
     }) : [];
     const byKey = new Map(quotes.map(q => [q.matchKey, q]));
+    // One indexed read per page: kickoffs of every team on the page since the
+    // oldest saved evidence, so supersession is checked without provider calls.
+    const pageDigests = new Map(rows.map(r => [r.id, parseStoredContext(r.aiJob?.context)]));
+    const asOfs = [...pageDigests.values()].flatMap(d => d ? [latestObservedMatch(d.teams.home), latestObservedMatch(d.teams.away)] : [])
+      .filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
+    let known: KnownKickoff[] | undefined;
+    try {
+      known = asOfs.length ? await knownRecentKickoffs(rows.flatMap(r => [r.homeTeamApiId, r.awayTeamApiId]), asOfs[0], now) : [];
+    } catch (error) {
+      // Fail CLOSED for automatic publication: an unknown is not "current".
+      report.failures.push("supersession lookup: " + (error instanceof Error ? error.message : String(error)));
+      known = undefined;
+    }
 
     for (const row of rows) {
       if (Date.now() - startedAt >= TRIAGE_RUN_BUDGET_MS) break;
@@ -225,14 +251,17 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
         continue;
 
       report.considered++;
-      const digest = parseStoredContext(row.aiJob?.context);
+      const digest = pageDigests.get(row.id) ?? null;
       const leadHours = (row.kickoff.getTime() - now.getTime()) / 3_600_000;
       // The ordinary 48-hour pipeline never inherits early auto-publication
       // authority, although held drafts can join ordinary admin review.
       const reason = earlyPublicationBlock({
         ...row, status: "PENDING_REVIEW", categories, earlyJobVerified,
         earlyPriceUnsafe: earlyPriceUnsafeFromPrompt(row.aiJob?.prompt),
-      }, digest, now);
+      }, digest, now, known);
+      const superseded = reason === "evidence-superseded";
+      // Lookup failed: never auto-publish on an unchecked assumption.
+      const supersessionUnchecked = known === undefined;
       const key = matchKey(row);
       const cache = key ? byKey.get(key) : null;
       const price = earlyQuotedSelection({
@@ -244,12 +273,12 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
       const validMarket = !row.manualSettlementOnly &&
         row.marketType !== "OTHER" && row.marketType !== "SAME_GAME_DOUBLE" &&
         isValidSelection(row.marketType as MarketType, row.selection);
-      const credibleEvidence = !!(row.contextComplete && digest?.coverage.form && digest.coverage.stats &&
+      const credibleEvidence = !!(row.contextComplete && !superseded && digest?.coverage.form && digest.coverage.stats &&
         digest.teams.home.overall && digest.teams.away.overall &&
         digest.teams.home.last5.length >= 2 && digest.teams.away.last5.length >= 2 && validMarket);
       const disposition = classifyEarlyDisposition({
         confidence: row.confidence, leadHours, evidenceCredible: credibleEvidence,
-        autoEligible: reason === null, pricedExactSelection: price.ok,
+        autoEligible: reason === null && !supersessionUnchecked, pricedExactSelection: price.ok,
       });
       if (reason || !price.ok) {
         const block = reason ?? (price.ok ? "early-quote-unavailable" : "odds-" + price.reason);

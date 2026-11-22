@@ -11,7 +11,7 @@ import { setBetOfTheDay } from "@/lib/betOfTheDay";
 import { comboMarketEditError, isComboPrediction, mergeEditedCategories } from "@/lib/comboAdmin";
 import { ADMIN_MARKET_TYPES, isValidSelection, deriveMarketAndPick, deriveOverUnderText } from "@/lib/markets";
 import { z } from "zod";
-import { parseStoredContext } from "@/lib/ai/context";
+import { parseStoredContext, parseStoredProvenance } from "@/lib/ai/context";
 import { assessSavedGenerationEvidence } from "@/lib/ai/evidenceReadiness";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
@@ -38,8 +38,19 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   // contextComplete=false as proof no sporting data was used. The early
   // cache-only route also uses that flag when cached evidence is stale.
   // Keep the raw digest server-side; the admin needs only its coverage counts.
+  const provenance = prediction.aiJob ? parseStoredProvenance(prediction.aiJob.context) : null;
   const evidenceReview = prediction.aiJob
-    ? assessSavedGenerationEvidence(parseStoredContext(prediction.aiJob.context), prediction.contextComplete)
+    ? {
+        ...assessSavedGenerationEvidence(parseStoredContext(prediction.aiJob.context), prediction.contextComplete),
+        // Per-part freshness recorded at generation (jobs from 22 Nov 2026 on).
+        // Statuses, ages and tolerances only; no raw evidence leaves the server.
+        freshness: provenance
+          ? (["homeTeam", "awayTeam", "standings", "h2h"] as const).map((part) => ({
+              part, status: provenance[part].status, ageHours: provenance[part].ageHours,
+              toleranceHours: provenance[part].toleranceHours, supersededBy: provenance[part].supersededBy ?? null,
+            }))
+          : null,
+      }
     : null;
   const result = { ...prediction,
     aiJob: prediction.aiJob ? { model: prediction.aiJob.model } : null,

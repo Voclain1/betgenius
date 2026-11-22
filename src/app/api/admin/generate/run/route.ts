@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { paidPublicationOutcome } from "@/lib/vipPremiumReadiness";
 import {
   JOB_GENERATE,
@@ -335,7 +336,7 @@ async function handleGenerationRequest(req: Request): Promise<NextResponse> {
  * exactly the comparison that matters: ordinary generation firing 96 times a day
  * while the paid pass fires 4 times in a fortnight.
  */
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   const url = new URL(req.url);
   const categories = (url.searchParams.get("categories") ?? "").toUpperCase();
   const job =
@@ -368,3 +369,6 @@ export async function GET(req: Request) {
   );
   return response;
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob((req: Request) => { const q = new URL(req.url).searchParams; return q.get("vipPremium") === "1" ? "generate-vip-premium" : q.get("goals") === "1" ? "generate-goals" : q.get("european") === "1" ? "generate-european-clubs" : (q.get("categories") ?? "").toUpperCase().includes("BET_OF_THE_DAY") ? "generate-bet-of-the-day" : "generate-ordinary"; }, getUnattributed);

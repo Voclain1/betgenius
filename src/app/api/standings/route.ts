@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getStandings, resolveSeason } from "@/lib/football/api-football";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { cupSupports } from "@/lib/cupConfig";
 
 export const revalidate = 3600;
 
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   const url = new URL(req.url);
   const leagueId = Number(url.searchParams.get("league") || 39);
   if (!LEAGUE_CATALOGUE.some((league) => league.id === leagueId) || !cupSupports(leagueId, "standings")) {
@@ -19,3 +20,6 @@ export async function GET(req: Request) {
   const meta = LEAGUE_CATALOGUE.find((l) => l.id === leagueId);
   return NextResponse.json({ league: meta, season, table });
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("site:standings", getUnattributed);

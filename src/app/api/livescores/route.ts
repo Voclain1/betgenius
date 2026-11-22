@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getLiveSnapshot } from "@/lib/liveSnapshot";
 
 export const dynamic = "force-dynamic";
@@ -12,10 +13,13 @@ export const dynamic = "force-dynamic";
  * costs. The 5-second shared cache lets the CDN answer bursts of polls
  * without touching the database, at no visible cost to freshness.
  */
-export async function GET() {
+async function getUnattributed() {
   const snapshot = await getLiveSnapshot();
   return NextResponse.json(
     { live: snapshot.rows, fetchedAt: snapshot.fetchedAt },
     { headers: { "Cache-Control": "public, s-maxage=5, stale-while-revalidate=10" } },
   );
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("site:livescores", getUnattributed);

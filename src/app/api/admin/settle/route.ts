@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
@@ -44,7 +45,7 @@ async function isAuthorized(req: Request): Promise<boolean> {
   return isAdmin(session?.user.role);
 }
 
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   // Recorded AFTER the auth gate, so a rejected probe never lands in the run
   // history — the history answers "did the scheduled job run", and a 403 is
@@ -110,3 +111,6 @@ async function runSettlement(req: Request) {
     doubleResults,
   };
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("settle", getUnattributed);

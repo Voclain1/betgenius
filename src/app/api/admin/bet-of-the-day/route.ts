@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
@@ -24,7 +25,7 @@ async function isAuthorized(req: Request): Promise<boolean> {
  * gate, so "why isn't my pick the Bet of the Day" needs an answerable form
  * that doesn't involve changing the live slot to find out.
  */
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const url = new URL(req.url);
@@ -57,3 +58,6 @@ export async function GET(req: Request) {
   });
   return NextResponse.json(result);
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("select-bet-of-the-day", getUnattributed);

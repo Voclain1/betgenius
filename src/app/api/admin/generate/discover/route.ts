@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 
@@ -34,7 +35,7 @@ async function handle(req: Request): Promise<NextResponse> {
  * `coverage`. A quiet "no fallback work" run is expected on most days and
  * reads as healthy.
  */
-export async function GET(req: Request) {
+async function getUnattributed(req: Request) {
   const startedAt = Date.now();
   const response = await handle(req);
   await recordRouteRun(JOB_GENERATION_DISCOVERY, response, startedAt, (p) =>
@@ -42,3 +43,6 @@ export async function GET(req: Request) {
   );
   return response;
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob("generation-discovery", getUnattributed);

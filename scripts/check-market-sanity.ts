@@ -103,7 +103,7 @@ const listApi = readFileSync(join(__dirname, "../src/app/api/admin/predictions/r
 check("admin list loads the model and flags backup picks", /aiJob: \{ select: \{ model: true \} \}/.test(listApi) && /isBackupModel\(r\.aiJob\?\.model\)/.test(list));
 const detail = readFileSync(join(__dirname, "../src/app/admin/predictions/[id]/page.tsx"), "utf8");
 const detailApi = readFileSync(join(__dirname, "../src/app/api/admin/predictions/[id]/route.ts"), "utf8");
-check("admin detail loads the model and flags backup picks", /aiJob: \{ select: \{ model: true \} \}/.test(detailApi) && /isBackupModel\(p\.aiJob\?\.model\)/.test(detail));
+check("admin detail loads the model and flags backup picks", /aiJob: \{ select: \{ model: true(?:, context: true)? \} \}/.test(detailApi) && /isBackupModel\(p\.aiJob\?\.model\)/.test(detail));
 
 if (failures > 0) {
   console.error(`\n${failures} check(s) failed`);

@@ -389,7 +389,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       // original prompt instead of merely equivalent.
       // Cast: MatchDigest is a plain JSON-serialisable object, but Prisma's
       // InputJsonValue won't accept a named interface without it.
-      context: buildStoredContext(digest) as unknown as Prisma.InputJsonValue,
+      context: buildStoredContext(digest, sources.provenance) as unknown as Prisma.InputJsonValue,
     },
   });
 
