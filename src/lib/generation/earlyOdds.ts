@@ -7,12 +7,13 @@ import { prisma } from "@/lib/prisma";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { refreshOddsCache } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
-import { earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
+import { earlyFixtureMode, inEarlyGenerationWindow, EARLY_LANE_MIN_QUOTA_REMAINING } from "@/lib/generation/earlyFixturePolicy";
 import { earlyFixturePricedForGeneration, earlyOddsRefreshDue } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
 
 const HOUR = 3_600_000;
-const MIN_QUOTA_REMAINING = 1_800;
+/** Was 1,800; see EARLY_LANE_MIN_QUOTA_REMAINING for the production evidence. */
+const MIN_QUOTA_REMAINING = EARLY_LANE_MIN_QUOTA_REMAINING;
 export const EARLY_ODDS_MAX_PER_RUN = 6;
 
 /**
@@ -38,6 +39,8 @@ export type EarlyOddsWarmReport = {
   attemptedByYield?: Record<QuoteYield, number>;
   dueByYield?: Record<QuoteYield, number>;
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
+  /** Why the pass made no provider calls, when it stood down. Was silent before: a quota stand-down read as an idle pass. */
+  stoodDown?: string;
   quoted: number; unquoted: number; failures: string[]; summary: string;
   coverageByLeadDays: Record<string, { fixtures: number; quoted: number; publishable: number }>;
 };
@@ -53,7 +56,8 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   };
   const finish = () => {
     report.ok = report.failures.length === 0;
-    report.summary = "Early bookmaker quotes " + mode + ": " + report.considered +
+    report.summary = (report.stoodDown ? "Early bookmaker quotes stood down: " + report.stoodDown + "; " : "") +
+      "Early bookmaker quotes " + mode + ": " + report.considered +
       " captured fixtures, " + report.due + " due, " + report.attempted +
       " fetched, " + report.quoted + " priced, " + report.unquoted + " unavailable, " +
       report.failures.length + " errors";
@@ -61,7 +65,10 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   };
   if (mode !== "on") return finish();
   const usage = await getUsageSnapshot();
-  if (usage.remaining < MIN_QUOTA_REMAINING) return finish();
+  if (usage.remaining < MIN_QUOTA_REMAINING) {
+    report.stoodDown = "api-football quota headroom too low (" + usage.remaining + " left, needs " + MIN_QUOTA_REMAINING + ")";
+    return finish();
+  }
 
   const limit = Math.min(EARLY_ODDS_MAX_PER_RUN, Math.max(1, Math.trunc(input.limit ?? 4)));
   const fixtures = await prisma.upcomingFixture.findMany({

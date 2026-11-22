@@ -89,7 +89,7 @@ check("a corrupt stored copy reads as empty, not as a licence to call", parseLiv
   const route = readFileSync(join(__dirname, "..", "src", "app", "api", "livescores", "route.ts"), "utf8");
   check("/api/livescores reads the shared snapshot, never the provider directly", route.includes("getLiveSnapshot()") && !route.includes("getLiveFixtures"));
   const lib = readFileSync(join(__dirname, "..", "src", "lib", "liveSnapshot.ts"), "utf8");
-  check("the provider call sits behind the quota-paced lease", lib.indexOf("refreshIntervalSeconds(usage") < lib.indexOf("claimRefresh(now, interval)") && lib.indexOf("claimRefresh(now, interval)") < lib.indexOf("await getLiveFixtures()"));
+  check("the provider call sits behind the quota-paced lease", lib.indexOf("refreshIntervalSeconds(usage") < lib.indexOf("claimRefresh(now, interval)") && lib.indexOf("claimRefresh(now, interval)") < lib.indexOf("() => getLiveFixtures()") && (lib.match(/getLiveFixtures\(\)/g) ?? []).length === 1);
 }
 
 if (failures) {

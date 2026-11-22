@@ -97,6 +97,33 @@ async function main() {
     bump(repeatsByEndpointJob, `${parts[0]} ${parts[1]}`, raw.count);
   }
 
+  // (5) /odds lower-bound attribution from FixtureOddsCache. Each row keeps only
+  // its LAST attempt, so this counts distinct fixtures last priced per UTC day
+  // (a lower bound on calls), split by what the fixture is. Read-only.
+  const oddsRows = await prisma.fixtureOddsCache.findMany({
+    where: { lastAttemptAt: { gte: new Date(`${utcFrom}T00:00:00Z`), lt: new Date(`${utcTo}T23:59:59Z`) } },
+    select: { matchKey: true, fixtureApiId: true, lastAttemptAt: true, fetchedAt: true },
+  });
+  const oddsFixtureIds = [...new Set(oddsRows.map(r => r.fixtureApiId).filter((x): x is number => x != null))];
+  const [earlyQueued, preds] = await Promise.all([
+    prisma.upcomingFixture.findMany({ where: { fixtureApiId: { in: oddsFixtureIds }, earlyQueuedAt: { not: null } }, select: { fixtureApiId: true } }),
+    prisma.prediction.findMany({ where: { fixtureApiId: { in: oddsFixtureIds } }, select: { fixtureApiId: true, provenance: true, status: true } }),
+  ]);
+  const early = new Set(earlyQueued.map(e => e.fixtureApiId));
+  const goals = new Set(preds.filter(p => p.provenance === "GOALS_GENERATED").map(p => p.fixtureApiId));
+  const published = new Set(preds.filter(p => p.status === "PUBLISHED").map(p => p.fixtureApiId));
+  const oddsFixturesByUtcDay: Record<string, Record<string, number>> = {};
+  for (const r of oddsRows) {
+    const d = r.lastAttemptAt!.toISOString().slice(0, 10);
+    const o = (oddsFixturesByUtcDay[d] ??= {});
+    const id = r.fixtureApiId ?? -1;
+    bump(o, "total");
+    bump(o, early.has(id) ? "early-queued" : "not-early-queued");
+    if (goals.has(id)) bump(o, "has-goals-pick");
+    if (published.has(id)) bump(o, "has-published-pick");
+    bump(o, r.fetchedAt && r.fetchedAt >= r.lastAttemptAt! ? "last-attempt-priced" : "last-attempt-unpriced");
+  }
+
   // (4) Partial historical attribution from JobRun.
   const runs = await prisma.jobRun.findMany({ where: { ranAt: { gte: start, lt: end } }, select: { job: true, ranAt: true, summary: true, detail: true } });
   const jobRunAttribution: Record<string, { runs: number; reportedProviderCalls: number; quotaStandDowns: number }> = {};
@@ -131,6 +158,7 @@ async function main() {
       byEndpointDay, byJobDay, hourlyWat: hourly, failuresByWatHour: failuresByHour, repeatsWithin10mByEndpointJob: repeatsByEndpointJob,
     },
     jobRunAttribution,
+    oddsFixturesByUtcDay: { note: "distinct fixtures whose LAST odds attempt fell on that UTC day: a lower bound on /odds calls, not a call count", days: oddsFixturesByUtcDay },
   };
   const json = JSON.stringify(report, null, 2);
   if (OUT) {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withApiJob } from "@/lib/football/usage";
 import { getFixturesByDate, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot, utcDay } from "@/lib/football/usage";
 import { GENERATION_TIERS, isSeniorWomensCompetition, leaguePriorityRank } from "@/lib/leagues";
@@ -129,7 +130,7 @@ async function getRecentSnapshot(now: Date): Promise<RecentSnapshot> {
         snapshot = previous;
       } else {
         const dates = [utcDay(new Date(now.getTime() - 86_400_000)), utcDay(now)];
-        const slates = await Promise.all(dates.map((d) => getFixturesByDate(d)));
+        const slates = await withApiJob("site:recent-results", () => Promise.all(dates.map((d) => getFixturesByDate(d))));
         const calls = recentCallsToday(previous, now) + dates.length;
         snapshot = slates.every((s) => s === null)
           ? { ...previous, day: utcDay(now), calls }

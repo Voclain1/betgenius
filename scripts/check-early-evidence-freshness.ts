@@ -29,6 +29,10 @@ import {
 } from "../src/lib/football/usage";
 import { bandOf, attemptErrorClass } from "../src/lib/generation/earlyFunnel";
 import { hasSubstantiveFootballEvidence } from "../src/lib/ai/evidenceReadiness";
+import { EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_FIXTURE_POLICY } from "../src/lib/generation/earlyFixturePolicy";
+import { LIVE_POLICY } from "../src/lib/liveSnapshot";
+import { DAILY_LIMIT, RESERVE, PAID_PRIORITY_RESERVE } from "../src/lib/football/usage";
+import { seasonMetaTtlMs, SEASON_META_LONG_TTL_MS, type LeagueSeason } from "../src/lib/football/api-football";
 
 const H = 3_600_000;
 const now = new Date("2026-11-22T12:00:00.000Z");
@@ -207,6 +211,38 @@ ok(af.indexOf("await recordCall(path)") < af.indexOf("res = await fetch(") && af
 eq([bandOf(5), bandOf(30), bandOf(100), bandOf(200), bandOf(400)], ["A", "B", "C", "D", "E"], "audit kickoff groups");
 eq(attemptErrorClass("Evidence pending, retry not counted: No usable results ..."), "no-usable-evidence", "PR #226 deferral classified");
 eq(attemptErrorClass("Early deferred, retry not counted: selective-league ..."), "early-deferred-selective", "selective deferral classified");
+
+
+// ------------------------------------------------------ quota allocation order
+// Verified production ApiUsage totals per UTC day, 15–21 Nov 2026 (owner export).
+const VERIFIED_DAILY_USED = { "2026-11-15": 6908, "2026-11-16": 6544, "2026-11-17": 6501, "2026-11-18": 6421, "2026-11-19": 6639, "2026-11-20": 7124, "2026-11-21": 7125 };
+const workerSrc = readFileSync("src/lib/generation/worker.ts", "utf8");
+const ordinaryHeadroom = Number(/const BASE_QUOTA_HEADROOM = (\d+);/.exec(workerSrc)?.[1]) + PAID_PRIORITY_RESERVE;
+const paidPassHeadroom = Number(/export const PAID_PASS_MIN_QUOTA_HEADROOM = (\d+);/.exec(workerSrc)?.[1]);
+eq(EARLY_FIXTURE_POLICY.MIN_API_QUOTA_REMAINING, EARLY_LANE_MIN_QUOTA_REMAINING, "discovery uses the shared early-lane threshold");
+ok(readFileSync("src/lib/generation/earlyOdds.ts", "utf8").includes("const MIN_QUOTA_REMAINING = EARLY_LANE_MIN_QUOTA_REMAINING;"), "odds warming uses the shared early-lane threshold");
+ok(LIVE_POLICY.GENERATION_RESERVE > EARLY_LANE_MIN_QUOTA_REMAINING && EARLY_LANE_MIN_QUOTA_REMAINING > ordinaryHeadroom && ordinaryHeadroom > paidPassHeadroom,
+  `stop order as quota falls: live scores (${LIVE_POLICY.GENERATION_RESERVE}) → early lane (${EARLY_LANE_MIN_QUOTA_REMAINING}) → ordinary (${ordinaryHeadroom}) → paid (${paidPassHeadroom})`);
+const usedAtStandDown = (threshold: number) => DAILY_LIMIT - RESERVE - threshold;
+const crossedOld = Object.values(VERIFIED_DAILY_USED).filter(u => u > usedAtStandDown(2_200)).length;
+const crossedNew = Object.entries(VERIFIED_DAILY_USED).filter(([, u]) => u > usedAtStandDown(EARLY_LANE_MIN_QUOTA_REMAINING)).map(([d]) => d);
+eq(crossedOld, 7, "REPLAY (verified totals): the old 2,200 threshold was crossed on all 7 days (stand-down after 5,200 used)");
+eq(crossedNew, ["2026-11-15", "2026-11-20", "2026-11-21"], "REPLAY: at 750 the early lane is shut out only on the 3 days above 6,650 used, late in the day");
+ok(Object.values(VERIFIED_DAILY_USED).every(u => u <= DAILY_LIMIT - RESERVE), "no verified day reached the hard ceiling: VIP/Premium budget never short");
+ok(readFileSync("src/lib/generation/earlyOdds.ts", "utf8").includes('report.stoodDown = "api-football quota headroom too low'), "odds stand-downs are named in the run summary, no longer silent");
+
+// ---------------------------------------------------------- season list TTL
+const seasonsEPL: LeagueSeason[] = [
+  { year: 2025, start: "2025-08-15", end: "2026-05-24", current: false },
+  { year: 2026, start: "2026-08-14", end: "2027-05-23", current: true },
+];
+eq(seasonMetaTtlMs(seasonsEPL, new Date("2026-11-22T12:00:00Z")), SEASON_META_LONG_TTL_MS, "mid-season: 48h (was re-read every 6h: 355 /leagues calls/day)");
+eq(seasonMetaTtlMs(seasonsEPL, new Date("2026-08-01T12:00:00Z")), 6 * H, "within 21 days of a season start: 6h kept");
+eq(seasonMetaTtlMs(seasonsEPL, new Date("2026-05-10T12:00:00Z")), 6 * H, "within 21 days of a season end: 6h kept");
+eq(seasonMetaTtlMs([{ year: 2025, start: "2025-02-01", end: "2025-11-30", current: true }], new Date("2026-03-01T00:00:00Z")), 6 * H,
+  "past every listed season (a new one may be missing): 6h kept");
+eq(seasonMetaTtlMs([], now), 6 * H, "empty list: 6h");
+eq(seasonMetaTtlMs([{ year: 2026, start: "2026-01-20", end: "2026-12-06", current: true }], now), 6 * H, "calendar-year league ending in 14 days: 6h");
 
 // ------------------------------------------------------------ scheduling
 const cron = readFileSync("deploy/ops/crontab", "utf8");

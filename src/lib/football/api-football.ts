@@ -227,6 +227,28 @@ const seasonMetaCache = new Map<number, { seasons: LeagueSeason[]; at: number }>
  * 2025/26 table in October 2026.
  */
 const SEASON_META_TTL_MS = 6 * 60 * 60_000;
+/**
+ * Away from any season boundary the list cannot change in a way that matters:
+ * pickSeason only moves when a season starts or ends. Production 15–21 Nov 2026
+ * spent 2,484 /leagues requests (355/day, 5.3% of all usage) re-reading season
+ * lists every 6h. The short TTL is kept within SEASON_BOUNDARY_WINDOW_MS of any
+ * listed start or end, which is exactly when a newly added season can matter.
+ */
+export const SEASON_META_LONG_TTL_MS = 48 * 60 * 60_000;
+export const SEASON_BOUNDARY_WINDOW_MS = 21 * 24 * 60 * 60_000;
+
+/** How long a fetched season list is trusted at `now`. Pure; unit-checked. */
+export function seasonMetaTtlMs(seasons: LeagueSeason[], now: Date): number {
+  if (!seasons.length) return SEASON_META_TTL_MS;
+  const t = now.getTime();
+  const nearBoundary = seasons.some((s) => [s.start, s.end].some((d) => {
+    const at = Date.parse(d);
+    return !Number.isFinite(at) || Math.abs(at - t) <= SEASON_BOUNDARY_WINDOW_MS;
+  }));
+  // A date past every listed season also means a new season may be missing.
+  const pastAll = seasons.every((s) => Date.parse(s.end) < t);
+  return nearBoundary || pastAll ? SEASON_META_TTL_MS : SEASON_META_LONG_TTL_MS;
+}
 
 /**
  * API-Football's `season` param is the year a season STARTED, not the calendar
@@ -237,7 +259,7 @@ const SEASON_META_TTL_MS = 6 * 60 * 60_000;
  */
 export async function resolveSeason(leagueId: number, date: Date): Promise<number> {
   const cached = seasonMetaCache.get(leagueId);
-  let seasons = cached && Date.now() - cached.at < SEASON_META_TTL_MS ? cached.seasons : null;
+  let seasons = cached && Date.now() - cached.at < seasonMetaTtlMs(cached.seasons, new Date()) ? cached.seasons : null;
   if (!seasons) {
     const raw = await apiFetch<Array<{ seasons: LeagueSeason[] }>>("/leagues", { id: leagueId });
     const fetched = raw?.[0]?.seasons ?? [];
