@@ -12,7 +12,7 @@ import { leaguesInTiers } from "@/lib/leagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { candidatesFromFixtures } from "@/lib/generation/selector";
-import { EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
+import { EARLY_BOOST, EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyBoostGranted, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
 const EARLY_LEAGUES = leaguesInTiers(["CORE", "SECONDARY"]);
@@ -30,6 +30,8 @@ export type EarlyDiscoveryReport = {
   cached: number;
   candidatesQueued: number;
   quotaRemaining: number | null;
+  /** Whether this pass used the surplus allowance freed by the live-score floor (EARLY_BOOST). */
+  boost?: { granted: boolean; baseSlots: number; slots: number };
   failures: Array<{ leagueApiId: number; reason: string }>;
   elapsedMs: number;
   summary: string;
@@ -98,7 +100,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
   const now = opts.now ?? new Date();
   const mode = earlyFixtureMode();
   const base = { ok: true, mode, scanned: 0, byLeague: {} as EarlyDiscoveryReport["byLeague"], fixturesSeen: 0, cached: 0, candidatesQueued: 0,
-    quotaRemaining: null as number | null, failures: [] as EarlyDiscoveryReport["failures"], elapsedMs: 0, summary: "" };
+    quotaRemaining: null as number | null, boost: undefined as EarlyDiscoveryReport["boost"], failures: [] as EarlyDiscoveryReport["failures"], elapsedMs: 0, summary: "" };
   if (mode === "off") return { ...base, summary: "EARLY_FIXTURE_MODE=off; no calls or writes", elapsedMs: Date.now() - startedAt };
 
   const quota = await getUsageSnapshot();
@@ -109,10 +111,15 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
 
   // A per-request time budget and quota headroom are operational safeguards,
   // never a lifetime/day/league limit on how much the engine can cover.
-  const batch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
-  // Never increase API-Football discovery calls: one regional spotlight,
-  // two priority leagues, and one rotating fallback league per 4-slot pass.
-  // Long-lived coverage grows through the cursor, not a higher call rate.
+  const baseBatch = Math.min(4, Math.max(1, Math.trunc(opts.batchSize ?? 4)));
+  // Surplus allowance (EARLY_BOOST): extra CORE/SECONDARY cursor slots only
+  // while the day has at least 2,000 requests left. Below that, the original
+  // 4-slot pass is unchanged.
+  const boosted = baseBatch >= 4 && earlyBoostGranted(quota.remaining);
+  const batch = baseBatch + (boosted ? EARLY_BOOST.DISCOVERY_EXTRA_SLOTS : 0);
+  base.boost = { granted: boosted, baseSlots: baseBatch, slots: batch };
+  // Base pass: one regional spotlight, two priority leagues and one rotating
+  // fallback league (4 calls). A boosted pass adds priority-league slots only.
   const focusedLeague = earlySpotlightLeague(now);
   const expansionSlots = batch >= 4 && EARLY_EXPANDED_LEAGUES.length ? 1 : 0;
   const ordinarySlots = batch - 1 - expansionSlots;
@@ -199,7 +206,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
 
   base.elapsedMs = Date.now() - startedAt;
   base.ok = base.failures.length === 0;
-  base.summary = "Early fixture " + mode + ": scanned " + base.scanned + " leagues, cached "
+  base.summary = "Early fixture " + mode + (base.boost?.granted ? " (surplus allowance " + base.boost.slots + " slots)" : "") + ": scanned " + base.scanned + " leagues, cached "
     + base.cached + " fixtures, queued " + base.candidatesQueued + ", failures " + base.failures.length;
   return base;
 }

@@ -311,3 +311,46 @@ If you adopt opportunity 1 (say a 1,500/day live allowance), the freed capacity 
 - the `site:live-snapshot` share;
 - a per-job `/odds` split;
 - unchanged VIP/Premium output.
+
+---
+
+## Review round 4: 60-second live-score floor, with the saving directed to the early lane (owner decision, 22 Nov 2026)
+
+**Requirement.** Implement a 60-second live-score refresh floor. The saved allowance must benefit early discovery and odds coverage without reducing VIP/Premium reliability.
+
+### Changes
+- `LIVE_POLICY.MIN_REFRESH_SECONDS` 15 → **60**: live scores are capped at **1,440** provider calls a day (was 5,760). The existing pacing (stretching as quota runs down, never freezing) is unchanged.
+- **The saving is routed explicitly.** Capping live scores alone would not help: the early lane's coverage is set by fixed per-pass allowances, so freed quota would sit unused. New `EARLY_BOOST`: while **≥ 2,000** requests remain, each early pass gets **+2** priority-league discovery scans (4 → 6) and **+2** odds fetches (4 → 6, still within the established per-run ceiling of 6). Cost is at most 192 requests a day. Every pass reports `boost` in `JobRun.detail` and names it in its summary.
+- **Public copy corrected.** The Livescores page now says scores "refresh about once a minute" (it said "approximately every 15 seconds").
+- **Browser polling is left at 15 s.** Polls read our own CDN-cached copy and cost no API-Football calls, so a new score reaches readers within one poll (worst-case lag about 75 s). Comments corrected.
+
+### VIP/Premium protection (each asserted in CI)
+1. **Structural:** early discovery and odds never run under `withPaidPriority`, so `apiFetch` refuses them once 7,100 are used. The last **300** requests are reachable only by the paid pass.
+2. **Stop order as quota falls:** boost (2,000) → live scores (1,000) → early lane (750) → ordinary (500) → paid (30).
+3. **No schedule, lease or paid-threshold change.** Discovery (:03/:33) and odds (:06/:36) do not take the generation lease.
+
+### Full-day simulation (a model, not production data)
+`scripts/check-early-evidence-freshness.ts` runs it second by second. Live-score readers are present all day (the worst case for live spend), and other jobs spend at a sweep of loads, because the true non-live load is not in the history. **Before** = 15 s floor, early thresholds 2,200 / 1,800, no boost. **After** = this change. The model's pacing is asserted identical to the shipped `refreshIntervalSeconds`. At 2,500–3,365 other requests, the "before" totals (6,614–6,940) fall inside the verified production range (6,421–7,125). Early discovery's 30–32 of 48 passes are close to the verified 32 of 48 on Nov 20.
+
+| Other jobs/day | Policy | Live scores | Early discovery calls (passes/48) | Early odds calls (passes/48) | Day total | Lowest remaining |
+|---|---|---:|---:|---:|---:|---:|
+| 2,500 | before | 3,846 | 128 (32) | 140 (35) | 6,614 | 786 |
+| 2,500 | **after** | **1,440** | **288 (48)** | **288 (48)** | **4,516** | 2,884 |
+| 3,365 | before | 3,327 | 120 (30) | 128 (32) | 6,940 | 460 |
+| 3,365 | **after** | **1,440** | **288 (48)** | **288 (48)** | **5,381** | 2,019 |
+| 4,500 | before | 2,815 | 108 (27) | 116 (29) | 7,100 | 300 |
+| 4,500 | **after** | **1,418** | **272 (48)** | **272 (48)** | **6,462** | 938 |
+| 5,500 | before | 2,476 | 96 (24) | 108 (27) | 7,100 | 300 |
+| 5,500 | **after** | **1,210** | **246 (44)** | **246 (44)** | 7,100 | 300 |
+
+**Reading it.**
+- Early discovery and odds go from 24–35 passes to 44–48 of 48. Early calls roughly double to 2.3×: 268 → 576 a day at typical load.
+- The daily total falls by 1,559–2,098 at the loads matching last week.
+- At every load, the paid-only reserve (300) is untouched.
+- At a heavy 5,500 other-request day the non-paid ceiling is still reached: the model's other jobs ignore their own thresholds, so this overstates real use. The early lane still gets 44 passes instead of 24–27.
+
+**What it does not show.** Real live-score usage (now labelled `site:live-snapshot`), real early yield (fixtures captured, quotes obtained) and real paid output. Validate after deployment:
+- `site:live-snapshot` ≤ 1,440 a day;
+- `early-fixture-discovery` boost granted on most passes;
+- `/odds` calls by `early-free-odds` about 6 per pass;
+- VIP/Premium runs and promotions unchanged versus last week.

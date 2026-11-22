@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { refreshOddsCache } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
-import { earlyFixtureMode, inEarlyGenerationWindow, EARLY_LANE_MIN_QUOTA_REMAINING } from "@/lib/generation/earlyFixturePolicy";
+import { earlyFixtureMode, inEarlyGenerationWindow, EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_BOOST, earlyBoostGranted } from "@/lib/generation/earlyFixturePolicy";
 import { earlyFixturePricedForGeneration, earlyOddsRefreshDue } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
 
@@ -41,6 +41,8 @@ export type EarlyOddsWarmReport = {
   ok: boolean; mode: string; considered: number; due: number; attempted: number;
   /** Why the pass made no provider calls, when it stood down. Was silent before: a quota stand-down read as an idle pass. */
   stoodDown?: string;
+  /** Whether this pass used the surplus allowance freed by the live-score floor (EARLY_BOOST). */
+  boost?: { granted: boolean; baseLimit: number; limit: number };
   quoted: number; unquoted: number; failures: string[]; summary: string;
   coverageByLeadDays: Record<string, { fixtures: number; quoted: number; publishable: number }>;
 };
@@ -57,7 +59,7 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
   const finish = () => {
     report.ok = report.failures.length === 0;
     report.summary = (report.stoodDown ? "Early bookmaker quotes stood down: " + report.stoodDown + "; " : "") +
-      "Early bookmaker quotes " + mode + ": " + report.considered +
+      "Early bookmaker quotes " + mode + (report.boost?.granted ? " (surplus allowance " + report.boost.limit + "/run)" : "") + ": " + report.considered +
       " captured fixtures, " + report.due + " due, " + report.attempted +
       " fetched, " + report.quoted + " priced, " + report.unquoted + " unavailable, " +
       report.failures.length + " errors";
@@ -70,7 +72,11 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
     return finish();
   }
 
-  const limit = Math.min(EARLY_ODDS_MAX_PER_RUN, Math.max(1, Math.trunc(input.limit ?? 4)));
+  const baseLimit = Math.min(EARLY_ODDS_MAX_PER_RUN, Math.max(1, Math.trunc(input.limit ?? 4)));
+  const boosted = earlyBoostGranted(usage.remaining);
+  // Never above the established per-run ceiling (EARLY_ODDS_MAX_PER_RUN = 6).
+  const limit = Math.min(EARLY_ODDS_MAX_PER_RUN, baseLimit + (boosted ? EARLY_BOOST.ODDS_EXTRA_PER_RUN : 0));
+  report.boost = { granted: boosted, baseLimit, limit };
   const fixtures = await prisma.upcomingFixture.findMany({
     where: {
       earlyQueuedAt: { not: null }, status: "NS",

@@ -4,7 +4,12 @@ import { classifyStatus, isIrregular, statusLabel } from "@/lib/matchStatus";
 import { clockPhase } from "@/lib/predictionStatus";
 import type { FixtureRow } from "@/lib/football/api-football";
 
-/** Matches the shared snapshot's fastest refresh (LIVE_POLICY.MIN_REFRESH_SECONDS). */
+/**
+ * Deliberately faster than the shared snapshot's fastest refresh
+ * (LIVE_POLICY.MIN_REFRESH_SECONDS, 60 s): polls read our own CDN-cached copy
+ * and cost no API-Football calls, so a newly fetched score reaches the page
+ * within one poll (worst-case lag about 75 s).
+ */
 const LIVE_POLL_MS = 15_000;
 
 /**

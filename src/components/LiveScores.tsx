@@ -14,7 +14,12 @@ import type { FixtureRow } from "@/lib/football/api-football";
  * add provider calls (src/lib/liveSnapshot.ts).
  */
 
-/** Matches the shared snapshot's fastest refresh (LIVE_POLICY.MIN_REFRESH_SECONDS). */
+/**
+ * Deliberately faster than the shared snapshot's fastest refresh
+ * (LIVE_POLICY.MIN_REFRESH_SECONDS, 60 s): polls read our own CDN-cached copy
+ * and cost no API-Football calls, so a newly fetched score reaches the page
+ * within one poll (worst-case lag about 75 s).
+ */
 const POLL_MS = 15_000;
 /** Kickoff to full time with stoppage and a half-time over-run. */
 export const LIVE_WINDOW_MS = 150 * 60_000;
