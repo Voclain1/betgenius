@@ -211,9 +211,15 @@ eq(attemptErrorClass("Early deferred, retry not counted: selective-league ..."),
 // ------------------------------------------------------------ scheduling
 const cron = readFileSync("deploy/ops/crontab", "utf8");
 const earlyRun = cron.split("\n").find(l => l.includes("/api/admin/generate/early-run"))!;
-eq(earlyRun.split(" ")[0], "0,30", "early-run moved off :09/:39 (one minute before ordinary generation's :10/:40)");
-const leaseMinutes = [5, 10, 15, 20, 25, 35, 40, 45, 50, 55];
-ok([0, 30].every(m => leaseMinutes.every(l => Math.min(Math.abs(l - m), 60 - Math.abs(l - m)) >= 5)), "≥5 minutes from every lease-sharing job");
+const earlyMinutes = earlyRun.split(" ")[0].split(",").map(Number);
+eq(earlyMinutes, [27, 57], "early-run moved off :09/:39 (one minute before ordinary generation's :10/:40)");
+const leaseTtlMin = Number(/const LEASE_TTL_MS = (\d+) \* 60_000;/.exec(readFileSync("src/lib/generation/worker.ts", "utf8"))?.[1]);
+eq(leaseTtlMin, 6, "generation lease TTL");
+const leaseUsers = { vipPremium: [5, 20, 35, 50], ordinary: [10, 25, 40, 55], european: [15, 45] };
+const minutesUntilNext = (m: number, xs: number[]) => Math.min(...xs.map(x => (x - m + 60) % 60 || 60));
+for (const [lane, mins] of Object.entries(leaseUsers))
+  ok(earlyMinutes.every(m => minutesUntilNext(m, mins) > leaseTtlMin),
+    `GUARANTEE: an early run's lease expires before the next ${lane} slot, even if its model call hangs`);
 ok(cron.includes("3,33 * * * * /ops/cron-call.sh /api/admin/generate/early-discover?batch=4") && cron.includes("6,36 * * * * /ops/cron-call.sh /api/admin/generate/early-odds?limit=4"),
   "provider-facing early schedules unchanged (no extra API-Football calls)");
 

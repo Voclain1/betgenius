@@ -169,7 +169,11 @@ async function main() {
       for (const [k, v] of Object.entries(d.blocked)) if (typeof v === "number") bump(publicationBlocked, k, v);
   }
   const jobSummary = Object.fromEntries(Object.entries(jobs).map(([k, v]) => [k, {
-    runs: v.runs, failed: v.failed, medianMs: median(v.ms), sums: v.sums, quotaStandDowns: v.quotaStandDowns,
+    runs: v.runs, failed: v.failed, medianMs: median(v.ms),
+    // Lease hold-time tail: what decides whether a run can block the next lease user.
+    p95Ms: v.ms.length ? [...v.ms].sort((a, b) => a - b)[Math.min(v.ms.length - 1, Math.floor(v.ms.length * 0.95))] : null,
+    maxMs: v.ms.length ? Math.max(...v.ms) : null,
+    sums: v.sums, quotaStandDowns: v.quotaStandDowns,
     leaseStandDowns: Object.values(v.leaseStandDownsByLagosMinute).reduce((a, b) => a + b, 0),
     leaseStandDownsByLagosMinute: v.leaseStandDownsByLagosMinute,
   }]));

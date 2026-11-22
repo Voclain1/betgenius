@@ -100,6 +100,8 @@ Live API responses are **never** used by the early lane; everything is a previou
 | Holding / retries | DRAFT hold with revision; re-triaged every cycle; handed to admin at 72h | none | Sound |
 | Reassessment near kickoff | Published only | Drafts not reassessed | **Gap (fixed at publication time)** |
 
+**Correction (review round 2).** The supersession check described in §2.2 originally treated any captured fixture more than 150 minutes past kickoff as played. That was wrong, because a past fixture's stored status is usually its pre-kickoff `NS`. It now resolves each match as played, not played or unresolved; see the remediation report, review round 2.
+
 **Verdict.** The architecture *can* support 4–7 day assessment: discovery horizons, cache-only generation and recoverable holds are all in place. Before this change it delivered almost nothing in that window, for three code-confirmed reasons: the freshness contradiction, soonest-first ordering under backlog, and head-of-line blocking. Odds remain the binding constraint for *automatic* publication 4–7 days out, and that is correct. Without a bookmaker price the engine now keeps the assessed draft and publishes it automatically once a qualifying quote arrives, if the draft is still valid.
 
 ### 3.2 Throughput bounds (code-derived)
@@ -154,7 +156,7 @@ The confidence floor (70) and two-sided evidence rule are legitimate quality rej
 
 ### 4.3 Competition with paid and ordinary generation
 
-- The shared lease guarantees no overlap (good), but cron timing decides who stands down. The early run is now at :00/:30, the only minutes with no lease-sharing job within five minutes.
+- The shared lease guarantees no overlap (good), but cron timing decides who stands down. The early run is now at :27/:57: the next lease-sharing job (VIP at :35/:05) is 8 minutes later, longer than the 6-minute lease TTL, so an early run can never block VIP/Premium, ordinary or European generation, even if a model call hangs (see the remediation report, review round 2).
 - Early generation spends **no** API-Football quota and is exempt from the quota headroom check. It cannot starve the paid reserve (`PAID_PRIORITY_RESERVE = 300`).
 - Early discovery and odds stand down below 2,200 and 1,800 remaining requests respectively, before the paid reserve is reached.
 - *Historical (repository, `usage.ts`):* over 14 Oct–13 Nov the paid pass stood down about 130 times because the daily budget was gone (102 times at 0 left), which led to the paid reserve. So the quota **has** been exhausted in recent production.

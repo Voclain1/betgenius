@@ -72,7 +72,7 @@ Full detail: [API_FOOTBALL_7_DAY_USAGE_REPORT.md](API_FOOTBALL_7_DAY_USAGE_REPOR
 | Evidence | Issue 1 and 2 evidence, plus: `early-run` at :09/:39 shares the `generation-run` lease with ordinary generation at :10/:40 (**Code**, `worker.ts` `LOCK_KEY`, crontab, `GENERATION_SCHEDULING.md`); odds warming spent its 4 fetches per pass without regard to whether a draft could publish. |
 | Root cause | Confirmed: the freshness contradiction (dominant), ordering, head-of-line blocking, odds aim; plausible: lease contention (depends on run duration, **not measured**). |
 | Frequency | **Not measured** (funnel audit `9_auto_published` vs `7_early_generated`; `leaseStandDownsByLagosMinute`). |
-| Solution implemented | Fixes from Issues 1–2; `early-run` moved to :00/:30; early odds fetches ordered *publishable-if-priced*, then *not generated*, then *review-only*, with `attemptedByYield` reported. |
+| Solution implemented | Fixes from Issues 1–2; `early-run` moved to :27/:57 (lease-TTL guarantee, review round 2); early odds fetches ordered *publishable-if-priced*, then *not generated*, then *review-only*, with `attemptedByYield` reported. |
 | Expected improvement | More drafts eligible (Issue 1 simulation), and quotes aimed at them. Expected direction is up; magnitude **not claimed** until measured. |
 | Potential consequences | More automatic publications means more public early tips, each still behind the 70% floor, two-sided evidence and an exact fresh quote. |
 | Verification | Integration test: a fully qualified draft still auto-publishes (control), a superseded one is held, and a published row is untouched. |
@@ -103,7 +103,7 @@ Expected loss points by code (ranked): evidence completeness (C/D bands), odds a
 | 5 | Skip leagues workload refresh when standings already refreshed after the league's latest kickoff (event-based, like H2H) | Up to (leagues refreshed/run × runs/day × 2) on non-matchdays; **not calculable** without the workload's production limit | Medium | none | ↑ (frees budget) | ↑ | stale table if kickoff data is missing | Recommended |
 | 6 | Coalesce concurrent team refreshes (generation cache miss vs teams workload) | Equal to the `#d` repeats measured | Medium | none | — | ↑ | lock contention | Recommended after measurement |
 | 7 | Skip `/injuries` when the team has no fixture in 72h (it changes daily but matters near kickoff) | ~1 per far-team refresh | Low | ↓ slightly for 4–7d | — | none | stale availability shown on team pages | Needs owner decision |
-| 8 | Relax 22s soft deadline for VPS-scheduled early run | 0 API; more model calls per hour | Low | — | ↑ | none if timed at :00/:30 | longer lease hold | Needs owner decision |
+| 8 | Relax 22s soft deadline for VPS-scheduled early run | 0 API; more model calls per hour | Low | — | ↑ | none: the :27/:57 slot is clear for longer than the lease TTL | longer lease hold | Needs owner decision |
 
 ---
 
@@ -120,7 +120,7 @@ Expected loss points by code (ranked): evidence completeness (C/D bands), odds a
 | 5 | Odds fetches not aimed at publishable drafts | `src/lib/generation/earlyOdds.ts` | Same budget, ordered by yield | unit; `check-early-odds` | 0 (same ≤4/pass) | none | review-only drafts quoted later | revert file |
 | 6 | New leagues never had standings | `src/lib/enrichment.ts`, `src/lib/enrichmentWorkloads.ts` | Rotation of a fixed-size workload | unit (scope guard) | 0 (fixed per-run limit; player-stats scope unchanged) | none | slower refresh of published leagues | revert files |
 | 7 | Unchecked recent-form claims | `src/lib/ai/evidenceClaims.ts` | Strip sentences contradicted by, or beyond, saved last5/form | unit; match-evidence render | 0 | none (generation-time text only) | rare strip of a true but oddly phrased sentence | revert function call |
-| 8 | Lease contention with ordinary generation | `deploy/ops/crontab` | :00/:30 are ≥5 min from every lease user | unit (schedule) | 0 | none | none known | restore `9,39` |
+| 8 | Lease contention with ordinary generation | `deploy/ops/crontab` | :27/:57: the next lease user is 8 min away, more than the 6-min lease TTL | unit (schedule) | 0 | none | none known | restore `9,39` |
 | 9 | No hourly/job/outcome usage data | `src/lib/football/usage.ts`, `api-football.ts`, 15 route files | Namespaced rows excluded from budget sums | unit (sorting, classification, attribution) | 0 provider; +1 DB upsert per request | none | DB write volume | `API_TELEMETRY=off` |
 | 10 | Admin couldn't see which part was stale | `src/app/api/admin/predictions/[id]/route.ts`, admin page | Shows per-part status/age/limit (admin only) | tsc, build | 0 | none | none | revert |
 | 11 | CI assertion broken by PR #226 | `scripts/check-market-sanity.ts` | Allows the added `context` select | ran | 0 | none | none | — |
@@ -143,7 +143,7 @@ Expected loss points by code (ranked): evidence completeness (C/D bands), odds a
 | Evidence freshness | **Simulated** 0.9–6.3% complete (3–14d); superseded caches accepted | **Simulated** 15–74% complete (3–7d) depending on cron lag; superseded excluded | Supersession blind to uncaptured competitions |
 | Automatic publications | Not measured | Up (direction only; no magnitude claimed) | More public early tips, all still behind unchanged gates |
 | Retry success | Gated fixtures silently re-selected forever | Visible, uncounted 6h deferral; PR #226 4h evidence retry | Deferred fixtures may reach 48h before a table appears; ordinary lane then covers them |
-| Paid generation reliability | Early run could hold the lease into paid/ordinary slots | :00/:30, ≥5 min clear; early lane spends 0 provider calls | cron-job.org schedules are outside the repo and could drift |
+| Paid generation reliability | Early run could hold the lease into paid/ordinary slots | :27/:57: an early run's lease always expires before the next VIP/ordinary/European slot; early lane spends 0 provider calls | cron-job.org schedules are outside the repo and could drift |
 
 ---
 
@@ -163,3 +163,82 @@ Expected loss points by code (ranked): evidence completeness (C/D bands), odds a
 | Requires additional evidence | All 15–21 Nov production numbers; queue depth; enrichment lag; duplicate volume |
 | Requires your approval | Merge and deploy of this PR; E7 (injury refresh policy); E8 (soft deadline / model throughput); automatic regeneration of superseded holds; a dedicated telemetry table (`db push`); running the read-only audits with production credentials |
 | Out of scope (unchanged) | Confidence thresholds; Free/VIP/Premium rules; payments, subscriptions, entitlements; public frontend design and copy; existing published predictions; additional data providers |
+
+---
+
+## Review round 2 (22 November 2026, after PR #227 opened)
+
+### R2.1 CI: `alt-market-checks` failed 1 of 70 ("production generation never sets cacheOnly")
+
+- **Diagnosis:** an outdated source-text assertion, not a regression. PR #218 (on master since 21 Nov) made the dedicated early FREE lane cache-only by design (`cacheOnly: input.intent === EARLY_FREE_GENERATION_INTENT` in `generate.ts`). The workflow's path filter does not include `generate.ts`, so the check never re-ran on master. PR #227 touched `generationContext.ts`, which is on the filter.
+- **Fix:** replaced with five checks that enforce the intended rule and are stricter than before outside the early lane:
+  1. every `cacheOnly` in `generate.ts` is derived from the early FREE intent, with no literal `true`;
+  2. generation's odds lookup is cache-only only for that intent;
+  3. the worker derives it only from that intent;
+  4. early generation runs under the provider-call hard stop;
+  5. no production module hard-codes `cacheOnly: true` outside early discovery.
+- **Mutation-tested:** making ordinary generation cache-only (in `generate.ts` or the worker) fails three of the new checks. The suite now reports 74 passed, 0 failed.
+
+### R2.2 PR #226 reconciliation
+
+PR #226 is **open and unmerged** on GitHub, which is correct. "Merged into this branch" meant a fast-forward of the branch onto #226's head. Its two commits (`7a22d4a`, `0db2e0e`) appear **once each, with identical SHAs**, in #227's history; there is no merge commit and nothing was duplicated or rewritten. #226's head on GitHub is unchanged. If #226 merges first, #227's diff shrinks to the new work. If #227 merges first, #226 becomes empty and can be closed.
+
+### R2.3 Publication safety: a kickoff time does not prove a match was played
+
+- **Defect (confirmed):** supersession treated a captured fixture more than 150 minutes past kickoff as played unless its stored status was PST/CANC/ABD/SUSP/TBD. Discovery persists only *future* fixtures, and only the reassessment worker refreshes status after kickoff, so a past fixture's stored status is almost always its pre-kickoff `NS`. Postponements, abandonments and delays we never observed were treated as played.
+- **Fix:** three-way resolution (`resolveKnownMatch`, `assessSupersession`):
+
+| Outcome | Evidence | Effect on automatic publication |
+|---|---|---|
+| played | stored FT/AET/PEN, **or** either side's *current* team cache lists the result against that opponent within a day | `evidence-superseded`: held (>72h) or admin review |
+| not played | PST, CANC, ABD, AWD, WO; or the fixture was seen rescheduled (kickoff moved, so it leaves the window) | none: evidence still current |
+| unresolved | stale NS/TBD, live states (1H/HT/2H/ET/BT/P/LIVE), SUSP, INT, any unknown status | `evidence-currency-unverified`: not auto-published, stays in admin review, clears by itself once a cache confirms the outcome |
+
+- A delayed or re-timed match already in the evidence (same opponent within 72h) is no longer mistaken for a new match.
+- At generation, "unverified" is recorded but does **not** freeze `contextComplete`, because publication re-checks it with current data. "Superseded" still does.
+- **Tests:** unit suite (110 assertions) covers every status above, case-insensitivity, the 150-minute window, opponent-cache confirmation and delayed-match matching. The Postgres integration test runs the real loader and publisher:
+  - a cache-confirmed match is held as superseded;
+  - an unresolved `NS` stays in review with the distinct reason;
+  - a postponed match does not block publication;
+  - a fully qualified control still publishes;
+  - an existing published row is unchanged.
+- **Residual limit:** matches in competitions we never capture are invisible to supersession, and the age tolerance still bounds those.
+
+### R2.4 Resource consumption and paid protection
+
+**Model calls (code-derived bounds; production frequency not measured)**
+
+| Path | Before | After | Bound |
+|---|---|---|---|
+| Early generation | ≤3 fixtures/run × 48 runs (practically ~1–2/run; 22s soft deadline) | unchanged ceiling | ≤144/day hard, ≈≤96 practical |
+| Runs previously wasted by head-of-line blocking (0 calls) | 0 | now generate | up to the same ceiling, not above it |
+| Calls per fixture | 1 | 1 | ledger plus existing-prediction exclusion in both lanes. An early generation *replaces* the ordinary-lane generation for that fixture inside 48h. It is additive only for fixtures the ordinary lane would never cover (for example fallback leagues on healthy days). |
+| Evidence/selective deferrals | — | 0 model calls | defer before the model |
+| Form-claim rejection (whole reasoning unsupported) | n/a | ≤ +2 calls per affected fixture | existing 3-attempt ceiling; measure with `attemptErrorClass = unsupported-claim` |
+| VIP/Premium | 8 attempts per kickoff day, 12 calls/day spend cap | unchanged | more early coverage can widen the overlay's candidate pool, not its cap |
+| Goals | own run limit and daily cap | unchanged | — |
+
+**Indirect API-Football effects of more publications:** published rows enter PUBLISHED-scoped enrichment (teams already covered via PENDING_REVIEW; new H2H pairs; odds for published picks within 72h; fixture details; reassessment). Every one of those workloads is capped per run (cron-job.org limits, or `limit=3` for reassessment, which is one batched `/fixtures?ids=` call per run). They can use more of their existing per-run allowance, never more than it. All of them stop 300 requests before the daily ceiling (paid reserve), so the VIP/Premium budget is untouched.
+
+**Paid lease protection:** with early-run at :27/:57, the next lease user is ≥8 minutes away, longer than the 6-minute lease TTL. That guarantee is asserted in CI.
+
+**Database load added**
+
+| Source | Added queries | Frequency |
+|---|---|---|
+| Generation context (all lanes) | +1 `UpcomingFixture` range read, +1 `TeamEnrichmentCache` read by unique ids | per generation (~hundreds/day) |
+| Early publication | +2 reads per 80-row page | 48 runs/day |
+| Early odds / early run / leagues workload | +1 read each | per run |
+| Telemetry | +1 upsert per dispatched request; +1 per repeat; +1 per budget refusal | ≤ daily request volume (≤7,500 at the configured limit) |
+
+**Telemetry micro-benchmark (disposable local Postgres 16, not production).** 7,500 writes (a full day at the configured limit) through the real `recordApiOutcome`:
+- 1.7 s total, about 0.23 ms per write;
+- 7,500 of 7,500 increments counted, none lost under fire-and-forget concurrency;
+- 1,440 distinct rows, about 0.5 MB including indexes;
+- the budget check's `day = 'YYYY-MM-DD'` aggregate stayed at about 0.5 ms.
+
+Production latency will differ. At ≤4 requests per second, the added write rate is negligible against the existing per-request budget upsert and aggregate. Row growth is about 1–3k rows/day (about 0.5–1M a year), so a 90-day retention prune is recommended (a DB delete, which needs owner approval).
+
+### R2.5 Production evidence
+
+Still blocked. This environment has no database or API-Football credentials, and the proxy refuses the production site. The seven-day tables remain *not measured*. To complete them, run the read-only commands in `EARLY_ENGINE_DEEP_AUDIT.md` §7 in an environment with production read access, or give this session read-only access.
