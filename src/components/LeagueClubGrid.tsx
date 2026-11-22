@@ -20,7 +20,7 @@ import type { LeagueClub } from "@/lib/predictionScope";
 export function LeagueClubGrid({ clubs }: { clubs: LeagueClub[] }) {
   return (
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-      {clubs.map((c) => {
+      {clubs.map((c, index) => {
         const tile = (
           <>
             {c.crest ? (
@@ -56,11 +56,11 @@ export function LeagueClubGrid({ clubs }: { clubs: LeagueClub[] }) {
         );
         const base = "flex flex-col items-center gap-1.5 rounded-lg border border-brand-border bg-brand-card p-2 text-center";
         return c.slug ? (
-          <Link key={c.teamId} href={`/predictions/team/${c.slug}`} className={`${base} transition hover:border-brand`}>
+          <Link key={c.teamId ?? `missing-id-${index}-${c.teamName}`} href={`/predictions/team/${c.slug}`} className={`${base} transition hover:border-brand`}>
             {tile}
           </Link>
         ) : (
-          <div key={c.teamId} className={base}>
+          <div key={c.teamId ?? `missing-id-${index}-${c.teamName}`} className={base}>
             {tile}
           </div>
         );

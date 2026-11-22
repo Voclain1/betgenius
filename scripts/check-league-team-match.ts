@@ -35,6 +35,30 @@ for (const f of routes) {
   check(`${f}: asks for confirmation with 409 LEAGUE_TEAM_MISMATCH`, /leagueTeamMismatch\(/.test(s) && /status: 409/.test(s) && /LEAGUE_TEAM_MISMATCH/.test(s));
   check(`${f}: an explicit confirmation lets it through`, /leagueConfirmed/.test(s));
 }
+// Liga MX crash (22 Nov 2026): cached standings contained null teamId.
+// Prisma rejects a findMany where teamApiId.in contains [null]. Keep all clubs
+// visible while secondary crest lookups only receive valid numeric IDs.
+const { missingLeagueCrestTeamIds } = require("../src/lib/leagueClubIds") as typeof import("../src/lib/leagueClubIds");
+const crestIds = missingLeagueCrestTeamIds([
+  { teamId: null, teamLogo: null },
+  { teamId: undefined, teamLogo: null },
+  { teamId: 0, teamLogo: null },
+  { teamId: Number.NaN, teamLogo: null },
+  { teamId: 262001, teamLogo: null },
+  { teamId: 262001, teamLogo: null },
+  { teamId: 262002, teamLogo: "" },
+  { teamId: 262003, teamLogo: "https://example.com/crest.png" },
+]);
+check("Liga MX: null and malformed team IDs never enter Prisma Int[] lookup",
+  JSON.stringify(crestIds) === "[262001,262002]", JSON.stringify(crestIds));
+const leagueScope = src("src/lib/predictionScope.ts");
+check("Liga MX: league-club query uses validated team IDs",
+  leagueScope.includes("const needsCrest = missingLeagueCrestTeamIds(standings);") &&
+  leagueScope.includes("teamApiId: { in: needsCrest }"));
+const leagueGrid = src("src/components/LeagueClubGrid.tsx");
+check("Liga MX: clubs without IDs retain a stable fallback tile key",
+  leagueGrid.includes("missing-id-${index}-${c.teamName}"));
+
 const patch = src("src/app/api/admin/predictions/[id]/route.ts");
 check("edit: only checked when the league or a team name changes", /placementChanged/.test(patch) && /!leagueConfirmed && placementChanged/.test(patch));
 check("edit: a provider fixture id is trusted (no check)", /fixtureApiId: before\.fixtureApiId/.test(patch));

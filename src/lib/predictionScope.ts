@@ -14,6 +14,7 @@ import type { LeagueStandingRow } from "@/lib/enrichment";
 import { orderForDisplay } from "@/lib/predictionOrdering";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import { isSubstantiveH2H } from "@/lib/h2hEvidence";
+import { missingLeagueCrestTeamIds } from "@/lib/leagueClubIds";
 
 // Backs the four public scope pages: /predictions/league, /team, /match and
 // /h2h. Each one resolves its slug with a WHERE on an indexed, denormalised
@@ -439,7 +440,7 @@ export function publishedTeamHref(index: PublishedTeamIndex, teamId: number | nu
   return bySlug && index.slugs.includes(bySlug) ? bySlug : null;
 }
 
-export type LeagueClub = { teamId: number; teamName: string; crest: string | null; /** Team-page slug, or null when nothing is published for this club yet. */ slug: string | null };
+export type LeagueClub = { teamId: number | null; teamName: string; crest: string | null; /** Team-page slug, or null when nothing is published for this club yet. */ slug: string | null };
 
 /**
  * The clubs in a league, with a crest each where one can be resolved — backs
@@ -451,8 +452,10 @@ export type LeagueClub = { teamId: number; teamName: string; crest: string | nul
  * renders initials). The cache is read once for the whole grid rather than per
  * club.
  */
-export const getLeagueClubs = cache(async (standings: { teamId: number; teamName: string; teamLogo: string | null }[]): Promise<LeagueClub[]> => {
-  const needsCrest = standings.filter((s) => !s.teamLogo).map((s) => s.teamId);
+export const getLeagueClubs = cache(async (standings: { teamId: number | null; teamName: string; teamLogo: string | null }[]): Promise<LeagueClub[]> => {
+  // Cached standings can contain a null teamId despite the TS provider type.
+  // Never pass null to Prisma's Int[] filter; retain the club tile by name.
+  const needsCrest = missingLeagueCrestTeamIds(standings);
   const [cached, publishedTeams] = await Promise.all([
     needsCrest.length > 0
       ? prisma.teamEnrichmentCache.findMany({
