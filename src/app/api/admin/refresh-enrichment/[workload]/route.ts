@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { attributeApiJob } from "@/lib/football/usage";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
@@ -16,7 +17,7 @@ async function isAuthorized(req: Request): Promise<boolean> {
   return isAdmin(session?.user.role);
 }
 
-export async function GET(req: Request, { params }: { params: { workload: string } }) {
+async function getUnattributed(req: Request, { params }: { params: { workload: string } }) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!ENRICHMENT_WORKLOADS.includes(params.workload as EnrichmentWorkload)) {
     return NextResponse.json({ error: "Unknown enrichment workload", workloads: ENRICHMENT_WORKLOADS }, { status: 404 });
@@ -54,3 +55,6 @@ export async function GET(req: Request, { params }: { params: { workload: string
   if (url.searchParams.get("verbose") === "1") return NextResponse.json(report);
   return NextResponse.json(toCompactWorkloadReport(report));
 }
+
+// API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const GET = attributeApiJob((_req: Request, ctx: { params: { workload: string } }) => "enrichment:" + ctx.params.workload, getUnattributed);

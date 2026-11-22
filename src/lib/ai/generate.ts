@@ -3,7 +3,7 @@ import { evaluateHandicapEdge, type SourcedHandicapLine } from "@/lib/handicapLi
 import { Prisma } from "@prisma/client";
 import { generatePredictionForFixture } from "@/lib/ai/analysis";
 import { buildStoredContext } from "@/lib/ai/context";
-import { isDigestEmpty } from "@/lib/ai/digest";
+import { hasSubstantiveFootballEvidence, FootballEvidenceUnavailableError, unavailableEvidenceReason } from "@/lib/ai/evidenceReadiness";
 import { buildAnalysis } from "@/lib/predictionAnalysis";
 import { searchTeam } from "@/lib/football/api-football";
 import { buildGenerationDigest } from "@/lib/ai/generationContext";
@@ -214,6 +214,17 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     cacheOnly: input.intent === EARLY_FREE_GENERATION_INTENT,
   });
 
+  // No model can support match statistics or confidence when there is zero
+  // sporting evidence. Deferring BEFORE the model call prevents fabricated
+  // recent scores from becoming reviewable tips and saves model tokens.
+  // The generation ledger retains the fixture for a later evidence retry.
+  const cacheOnly = input.intent === EARLY_FREE_GENERATION_INTENT;
+  if (!hasSubstantiveFootballEvidence(digest)) {
+    throw new FootballEvidenceUnavailableError(unavailableEvidenceReason({
+      homeId: homeApiId, awayId: awayApiId, cacheOnly,
+    }, sources));
+  }
+
   const startedAt = Date.now();
   const riskRoute = resolveGenerationRisk(input.categories, input.leagueApiId, input.intent);
   /**
@@ -358,7 +369,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // no stats, form, availability, h2h or standings for either side. Usually
   // means the football API failed silently (bad key, plan restriction, rate
   // limit) rather than the fixture genuinely having no data.
-  const contextComplete = (!input.leagueApiId ? true : !isDigestEmpty(digest)) &&
+  const contextComplete = hasSubstantiveFootballEvidence(digest) &&
     (input.intent !== EARLY_FREE_GENERATION_INTENT || !sources.stale?.length);
 
   const job = await prisma.aIJob.create({
@@ -378,7 +389,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       // original prompt instead of merely equivalent.
       // Cast: MatchDigest is a plain JSON-serialisable object, but Prisma's
       // InputJsonValue won't accept a named interface without it.
-      context: buildStoredContext(digest) as unknown as Prisma.InputJsonValue,
+      context: buildStoredContext(digest, sources.provenance) as unknown as Prisma.InputJsonValue,
     },
   });
 

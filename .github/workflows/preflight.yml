@@ -62,6 +62,11 @@ jobs:
       - name: Search, competition and match SEO regressions
         run: npx tsx scripts/check-seo.ts
 
+      - name: Early evidence freshness, queue, odds-yield and API telemetry checks
+        run: npx tsx scripts/check-early-evidence-freshness.ts
+      - name: Generation missing-evidence safety
+        run: npx tsx scripts/check-generation-evidence.ts
+
       - name: Non-branded Search Console measurement regression
         run: npx tsx scripts/check-nonbrand-seo.ts
 

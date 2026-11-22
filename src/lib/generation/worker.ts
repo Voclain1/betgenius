@@ -38,7 +38,7 @@ import {
 } from "@/lib/generation/selector";
 import { assessCoverage, selectQueuedCandidates } from "@/lib/generation/queue";
 import { PAID_PRIORITY_RESERVE, withPaidPriority } from "@/lib/football/usage";
-import { isProviderOutage, ledgerFailureUpdate } from "@/lib/generation/failurePolicy";
+import { isProviderOutage, isFootballEvidenceUnavailable, ledgerFailureUpdate } from "@/lib/generation/failurePolicy";
 import { excludedLeagueIds, type CoverageMode } from "@/lib/generation/coverage";
 import { coverageRollout, laneCompetitionIds } from "@/lib/generation/competitionEligibility";
 import type { GenerationTier } from "@/lib/leagues";
@@ -193,7 +193,7 @@ async function releaseLock(holder: string): Promise<void> {
  */
 async function recordAttempt(
   c: Candidate,
-  outcome: { ok: true; predictionIds: string[] } | { ok: false; error: string; outage?: boolean },
+  outcome: { ok: true; predictionIds: string[] } | { ok: false; error: string; outage?: boolean; evidenceUnavailable?: boolean },
 ): Promise<{ terminal: boolean }> {
   const attempts = c.priorAttempts + 1;
   const now = new Date();
@@ -220,7 +220,7 @@ async function recordAttempt(
   // a permanently broken fixture is something you can see, not something that
   // silently stopped happening. A provider-wide outage is not the fixture's
   // fault and does not count (src/lib/generation/failurePolicy.ts).
-  const policy = ledgerFailureUpdate(c.priorAttempts, !!outcome.outage, now);
+  const policy = ledgerFailureUpdate(c.priorAttempts, !!outcome.outage, now, !!outcome.evidenceUnavailable);
   const status = policy.status;
   const data = {
     fixtureApiId: c.fixtureApiId,
@@ -230,7 +230,7 @@ async function recordAttempt(
     kickoff: c.kickoff,
     status,
     attempts: policy.attempts,
-    lastError: `${outcome.outage ? "Provider outage, retry not counted: " : ""}${outcome.error}`.slice(0, 500),
+    lastError: `${outcome.outage ? "Provider outage, retry not counted: " : outcome.evidenceUnavailable ? "Evidence pending, retry not counted: " : ""}${outcome.error}`.slice(0, 500),
     lastAttemptAt: now,
     nextAttemptAt: policy.nextAttemptAt,
   };
@@ -422,7 +422,8 @@ export async function runGeneration(opts: {
       } catch (err: any) {
         const message = err?.message ?? String(err);
         const outage = isProviderOutage(err);
-        const { terminal } = await recordAttempt(c, { ok: false, error: message, outage });
+        const evidenceUnavailable = isFootballEvidenceUnavailable(err);
+        const { terminal } = await recordAttempt(c, { ok: false, error: message, outage, evidenceUnavailable });
         if (terminal) report.abandoned++;
         else report.failed++;
         report.results.push({ fixture: label, kickoff: c.kickoff.toISOString(), ok: false, error: message, terminal });

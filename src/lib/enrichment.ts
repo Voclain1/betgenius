@@ -520,7 +520,7 @@ export async function orderTeamsByPriority(targets: TeamTarget[], now: Date = ne
 }
 
 /** Distinct league ids referenced by PUBLISHED predictions, each paired with the most recent row's kickoff (for season resolution). */
-export async function getScopedLeagueTargets(): Promise<LeagueTarget[]> {
+export async function getScopedLeagueTargets(opts: { includeQueuedEarly?: boolean } = {}): Promise<LeagueTarget[]> {
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED", leagueApiId: { not: null } },
     select: { leagueApiId: true, kickoff: true },
@@ -529,6 +529,24 @@ export async function getScopedLeagueTargets(): Promise<LeagueTarget[]> {
   const byId = new Map<number, LeagueTarget>();
   for (const r of rows) {
     if (!byId.has(r.leagueApiId!)) byId.set(r.leagueApiId!, { leagueApiId: r.leagueApiId!, kickoff: r.kickoff });
+  }
+  // Leagues with a queued (not yet generated) fixture in the next 7 days.
+  // Without this, a competition new to the engine never had standings cached,
+  // so the cache-only early lane could neither see its table nor evaluate the
+  // selective strongest-clubs gate, and its fixtures were deferred until the
+  // ordinary 48h window. This does NOT add provider calls: the league workload
+  // refreshes a fixed `limit` of the stalest targets per run (orderLeaguesByStaleness
+  // has no freshness skip), so a wider scope only changes the rotation.
+  // Opt-in, standings workload only: player-stats has a TTL skip, so a wider
+  // scope there WOULD add calls.
+  if (!opts.includeQueuedEarly) return [...byId.values()];
+  const queued = await prisma.generationAttempt.findMany({
+    where: { status: { in: ["PENDING", "FAILED"] }, leagueApiId: { not: null }, kickoff: { gt: new Date(), lte: new Date(Date.now() + 7 * 24 * 60 * 60_000) } },
+    select: { leagueApiId: true, kickoff: true },
+    orderBy: { kickoff: "asc" },
+  });
+  for (const q of queued) {
+    if (!byId.has(q.leagueApiId!)) byId.set(q.leagueApiId!, { leagueApiId: q.leagueApiId!, kickoff: q.kickoff });
   }
   return [...byId.values()];
 }

@@ -138,7 +138,7 @@ const earlyRun = readFileSync("src/lib/generation/earlyGeneration.ts", "utf8");
 const publish = readFileSync("src/lib/generation/earlyPublication.ts", "utf8");
 const publisher = readFileSync("src/lib/predictions.ts", "utf8");
 const monitor = readFileSync("src/lib/reassessment/worker.ts", "utf8");
-assert.ok(warm.includes("MIN_QUOTA_REMAINING = 1_800") && warm.includes("refreshOddsCache(") &&
+assert.ok(warm.includes("MIN_QUOTA_REMAINING = EARLY_LANE_MIN_QUOTA_REMAINING") && warm.includes("refreshOddsCache(") &&
   warm.includes("EARLY_ODDS_MAX_PER_RUN = 6"), "early odds warming cannot exceed the established per-run request bound");
 assert.ok(earlyRun.includes("earlyFixturePricedForGeneration("));
 assert.ok(publish.includes("earlyQuotedSelection(") &&
@@ -169,7 +169,8 @@ assert.equal(triage(68, 180, true, false, false), "review", "near confidence wit
 assert.equal(triage(57, 180, false, false, false), "hold", "weak far-ahead fixture stays held");
 assert.equal(triage(57, 70, false, false, false), "review", "weak hold reaches human review inside 72h");
 assert.equal(triage(80, 180, true, false, true), "review", "a quote never bypasses the evidence gate");
-assert.ok(earlyRun.includes("const chosen = [...priced, ...unpriced].slice(0, limit)") &&
+assert.ok(earlyRun.includes("const chosen = orderEarlyQueue(workable, pricedKeys, now).slice(0, limit)") &&
+  earlyRun.includes("Number(!pricedKeys.has(a.matchKey)) - Number(!pricedKeys.has(b.matchKey))") &&
   !earlyRun.includes('skipped: "opening bookmaker prices not yet sufficiently verified"'),
   "unpriced early fixtures also reach generation");
 assert.ok(publish.includes('status: "DRAFT"') && publish.includes('kind: desired === "DRAFT" ? "EARLY_HOLD"') &&

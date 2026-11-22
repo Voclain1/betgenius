@@ -25,12 +25,14 @@ const NOW = new Date("2026-10-14T19:00:00Z");
 const snap = (over: Partial<LiveSnapshot> = {}): LiveSnapshot => ({ version: 1, day: "2026-10-14", calls: 0, fetchedAt: null, rows: [], ...over });
 
 // Freshness: as fast as the plan allows, all day.
-check("the fastest refresh is every 15 seconds", LIVE_POLICY.MIN_REFRESH_SECONDS === 15);
-check("plenty of quota: refresh every 15 seconds", refreshIntervalSeconds(4_000, NOW) === 15, refreshIntervalSeconds(4_000, NOW));
+// 60 s since 22 Nov 2026 (owner decision): at most 1,440 provider calls a day.
+check("the fastest refresh is every 60 seconds", LIVE_POLICY.MIN_REFRESH_SECONDS === 60);
+check("live scores can never exceed 1,440 calls a day", 86_400 / LIVE_POLICY.MIN_REFRESH_SECONDS === 1_440);
+check("plenty of quota: refresh every 60 seconds", refreshIntervalSeconds(4_000, NOW) === 60, refreshIntervalSeconds(4_000, NOW));
 {
-  // 19:00 UTC, 5 hours left; 600 calls above the reserve: spread to one per 30 s, not frozen.
-  const i = refreshIntervalSeconds(LIVE_POLICY.GENERATION_RESERVE + 600, NOW);
-  check("low quota slows the refresh instead of freezing it", i === 30, i);
+  // 19:00 UTC, 5 hours left; 150 calls above the reserve: spread to one per 120 s, not frozen.
+  const i = refreshIntervalSeconds(LIVE_POLICY.GENERATION_RESERVE + 150, NOW);
+  check("low quota slows the refresh instead of freezing it", i === 120, i);
 }
 check("nothing left above the reserve: no refresh", refreshIntervalSeconds(LIVE_POLICY.GENERATION_RESERVE, NOW) === null);
 check("quota unknown: no refresh (fails closed)", refreshIntervalSeconds(null, NOW) === null);
@@ -89,7 +91,7 @@ check("a corrupt stored copy reads as empty, not as a licence to call", parseLiv
   const route = readFileSync(join(__dirname, "..", "src", "app", "api", "livescores", "route.ts"), "utf8");
   check("/api/livescores reads the shared snapshot, never the provider directly", route.includes("getLiveSnapshot()") && !route.includes("getLiveFixtures"));
   const lib = readFileSync(join(__dirname, "..", "src", "lib", "liveSnapshot.ts"), "utf8");
-  check("the provider call sits behind the quota-paced lease", lib.indexOf("refreshIntervalSeconds(usage") < lib.indexOf("claimRefresh(now, interval)") && lib.indexOf("claimRefresh(now, interval)") < lib.indexOf("await getLiveFixtures()"));
+  check("the provider call sits behind the quota-paced lease", lib.indexOf("refreshIntervalSeconds(usage") < lib.indexOf("claimRefresh(now, interval)") && lib.indexOf("claimRefresh(now, interval)") < lib.indexOf("() => getLiveFixtures()") && (lib.match(/getLiveFixtures\(\)/g) ?? []).length === 1);
 }
 
 if (failures) {

@@ -63,6 +63,98 @@ export function inPaidPriority(): boolean {
   return priorityScope.getStore() === true;
 }
 
+// ---------------------------------------------------------------------------
+// Request telemetry: hour × endpoint × job × outcome (added 22 Nov 2026).
+//
+// WHY. ApiUsage only ever held (UTC day, path) totals. That cannot answer
+// which job spent a request, at what hour, or whether it succeeded, failed,
+// was rate-limited or was refused by our own budget gate — so the seven-day
+// usage audit (docs/API_FOOTBALL_7_DAY_USAGE_REPORT.md) could not be
+// reconstructed from history. These counters make the next audit measurable.
+//
+// STORAGE. Rows live in the existing ApiUsage table under a `day` key that
+// starts with "#h" (e.g. "#h2026-11-22T13", the UTC hour). Budget reads match
+// `day` exactly against "YYYY-MM-DD", and "#" sorts below every digit, so
+// these rows can never be counted against the quota nor picked up by the
+// `day >= "YYYY-MM-DD"` range reads in existing audit scripts. No schema
+// change, so no production `db push` is required to deploy this.
+//
+// COST. One extra upsert per DISPATCHED provider request, fire-and-forget:
+// never awaited on the request path and never able to fail the call. Set
+// API_TELEMETRY=off to disable.
+// ---------------------------------------------------------------------------
+
+const jobScope = new AsyncLocalStorage<string>();
+
+/** Label every api-football request made inside `fn` with `job`. */
+export function withApiJob<T>(job: string, fn: () => Promise<T>): Promise<T> {
+  return jobScope.run(job, fn);
+}
+
+/** Wrap a route handler so its provider requests are attributed. The label may depend on the request. */
+export function attributeApiJob<A extends unknown[], R>(label: string | ((...args: A) => string), handler: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+  return (...args: A) => jobScope.run(typeof label === "function" ? label(...args) : label, () => handler(...args));
+}
+
+export function currentApiJob(): string {
+  return jobScope.getStore() ?? (inPaidPriority() ? "paid-priority" : "unattributed");
+}
+
+export const TELEMETRY_DAY_PREFIX = "#h";
+const SEP = "|";
+
+export type ApiOutcome =
+  | "ok" // 200 with a non-empty response
+  | "empty" // 200 with an empty response: a real answer, not automatically waste
+  | "http_error" // non-2xx other than 429
+  | "rate_limited" // 429, or a provider `errors` payload naming the request/rate limit
+  | "api_error" // provider `errors` payload of any other kind
+  | "timeout"
+  | "network_error"
+  | "quota_refused"; // stopped by our own daily budget gate; NOT sent to the provider
+
+/** UTC hour bucket for a telemetry row. */
+export function telemetryBucket(at: Date): string {
+  return TELEMETRY_DAY_PREFIX + at.toISOString().slice(0, 13);
+}
+
+export function telemetryPath(path: string, job: string, outcome: ApiOutcome): string {
+  return [path, job.replaceAll(SEP, "/"), outcome].join(SEP);
+}
+
+export type TelemetryRow = { hourUtc: string; path: string; job: string; outcome: ApiOutcome; count: number };
+
+/** Inverse of telemetryBucket/telemetryPath. Null for ordinary budget rows. */
+export function parseTelemetryRow(row: { day: string; path: string; count: number }): TelemetryRow | null {
+  if (!row.day.startsWith(TELEMETRY_DAY_PREFIX)) return null;
+  const parts = row.path.split(SEP);
+  if (parts.length !== 3) return null;
+  return { hourUtc: row.day.slice(TELEMETRY_DAY_PREFIX.length), path: parts[0], job: parts[1], outcome: parts[2] as ApiOutcome, count: row.count };
+}
+
+/** Classify a provider response body. Pure; unit-checked. */
+export function classifyProviderPayload(json: unknown): ApiOutcome {
+  const j = json as { errors?: unknown; response?: unknown } | null;
+  const errors = j?.errors;
+  const hasErrors = !!errors && typeof errors === "object" && Object.keys(errors as object).length > 0;
+  if (hasErrors) {
+    const text = JSON.stringify(errors).toLowerCase();
+    return /requests|ratelimit|rate limit|too many/.test(text) ? "rate_limited" : "api_error";
+  }
+  const r = j?.response;
+  if (r == null || (Array.isArray(r) && r.length === 0)) return "empty";
+  return "ok";
+}
+
+export function recordApiOutcome(path: string, outcome: ApiOutcome, at: Date = new Date()): void {
+  if (process.env.API_TELEMETRY === "off") return;
+  const day = telemetryBucket(at);
+  const key = telemetryPath(path, currentApiJob(), outcome);
+  void prisma.apiUsage
+    .upsert({ where: { day_path: { day, path: key } }, create: { day, path: key, count: 1 }, update: { count: { increment: 1 } } })
+    .catch((err) => console.error("[api-football/telemetry] failed to record", key, err?.message ?? err));
+}
+
 /** The day's ceiling for a caller: the paid pass may go to DAILY_LIMIT − RESERVE, everyone else stops PAID_PRIORITY_RESERVE short. */
 export function budgetCeiling(priority: boolean): number {
   return DAILY_LIMIT - RESERVE - (priority ? 0 : PAID_PRIORITY_RESERVE);
@@ -176,4 +268,38 @@ export async function reconcileWithAccount(accountCurrent: number, day: string =
     update: { count: { increment: drift } },
   });
   return { adjusted: drift };
+}
+
+/**
+ * Repeat detection: the same full request URL dispatched again within
+ * REPEAT_WINDOW_MS by this process. Recorded under a separate "#d" bucket so
+ * it is never summed with outcomes. A repeat is a waste CANDIDATE (two jobs
+ * independently fetching one record), not proof: a deliberate retry after a
+ * failure also repeats. In-process only — exact on the single-process VPS
+ * deployment, a lower bound on multi-instance hosting.
+ */
+export const REPEAT_WINDOW_MS = 10 * 60_000;
+export const REPEAT_DAY_PREFIX = "#d";
+const recentDispatch = new Map<string, number>();
+const RECENT_MAX = 5_000;
+
+/** Returns true when `url` was dispatched within the window. Pure apart from the bounded map. */
+export function noteDispatch(url: string, now: number = Date.now()): boolean {
+  const prev = recentDispatch.get(url);
+  recentDispatch.delete(url);
+  recentDispatch.set(url, now);
+  if (recentDispatch.size > RECENT_MAX) {
+    const oldest = recentDispatch.keys().next().value;
+    if (oldest !== undefined) recentDispatch.delete(oldest);
+  }
+  return prev !== undefined && now - prev < REPEAT_WINDOW_MS;
+}
+
+export function recordRepeat(path: string, at: Date = new Date()): void {
+  if (process.env.API_TELEMETRY === "off") return;
+  const day = REPEAT_DAY_PREFIX + at.toISOString().slice(0, 13);
+  const key = [path, currentApiJob().replaceAll(SEP, "/"), "repeat_within_10m"].join(SEP);
+  void prisma.apiUsage
+    .upsert({ where: { day_path: { day, path: key } }, create: { day, path: key, count: 1 }, update: { count: { increment: 1 } } })
+    .catch((err) => console.error("[api-football/telemetry] failed to record repeat", key, err?.message ?? err));
 }

@@ -23,6 +23,7 @@
  */
 
 import { buildMatchDigest, type MatchDigest } from "@/lib/ai/digest";
+import { parseEvidenceProvenance, type EvidenceProvenance } from "@/lib/ai/evidenceFreshness";
 import type { FixtureRow, StandingsEntry } from "@/lib/football/api-football";
 
 /** What v1 rows hold. Retained only so they can still be read and upgraded. */
@@ -38,10 +39,22 @@ type StoredContextV1 = {
   h2h: unknown;
 };
 
-export type StoredContextV2 = { v: 2; digest: MatchDigest };
+/**
+ * `provenance` (optional, added 22 Nov 2026) records when each evidence part
+ * was fetched, its age against the lead-time tolerance, and whether a match
+ * played since was missing from it. Older rows simply lack it; readers must
+ * treat absence as "not recorded", never as "fresh".
+ */
+export type StoredContextV2 = { v: 2; digest: MatchDigest; provenance?: EvidenceProvenance };
 
-export function buildStoredContext(digest: MatchDigest): StoredContextV2 {
-  return { v: 2, digest };
+export function buildStoredContext(digest: MatchDigest, provenance?: EvidenceProvenance): StoredContextV2 {
+  return provenance ? { v: 2, digest, provenance } : { v: 2, digest };
+}
+
+/** The saved per-part freshness record, or null for rows that predate it. */
+export function parseStoredProvenance(raw: unknown): EvidenceProvenance | null {
+  if (!raw || typeof raw !== "object") return null;
+  return parseEvidenceProvenance((raw as { provenance?: unknown }).provenance);
 }
 
 /**

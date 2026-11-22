@@ -42,6 +42,18 @@ import type { H2HMeeting } from "@/lib/h2h";
 import { h2hPairKey } from "@/lib/slug";
 import { cupSupports, isCupCompetition } from "@/lib/cupConfig";
 import { LEAGUE_CATALOGUE } from "@/lib/leagues";
+import {
+  classifyPart,
+  latestObservedMatch,
+  standingsToleranceMs,
+  staleParts,
+  assessSupersession,
+  confirmFromTeamCaches,
+  teamToleranceMs,
+  PLAYED_AFTER_KICKOFF_MS,
+  type EvidenceProvenance,
+  type KnownKickoff,
+} from "@/lib/ai/evidenceFreshness";
 
 /**
  * How old a cached team digest may be before generation refreshes it.
@@ -65,8 +77,15 @@ export type ContextSources = {
   h2h: "cache" | "fetched" | "missing";
   /** api-football calls this assembly actually spent. Zero on a fully warm path. */
   apiCalls: number;
-  /** cacheOnly: parts read from a cache older than its freshness floor. */
+  /**
+   * cacheOnly: parts that are older than the lead-time tolerance for this
+   * fixture, or that miss a match the team has since played. See
+   * src/lib/ai/evidenceFreshness.ts — this used to be a flat 12h/24h age floor
+   * that contradicted the enrichment cron's own 48h cadence for far fixtures.
+   */
   stale?: string[];
+  /** Per-part fetch time, age, tolerance and supersession. Saved on AIJob.context. */
+  provenance?: EvidenceProvenance;
 };
 
 const KEY_PLAYERS_PER_TEAM = 4;
@@ -126,6 +145,7 @@ async function loadTeamDigest(
   sources: ContextSources,
   side: "homeTeam" | "awayTeam",
   cacheOnly = false,
+  fetchedAtOut?: Map<string, Date | null>,
 ): Promise<TeamDigest | null> {
   if (teamApiId == null) {
     sources[side] = "missing";
@@ -137,15 +157,17 @@ async function loadTeamDigest(
     select: { teamDigestJson: true, fetchedAt: true },
   });
 
+  fetchedAtOut?.set(side, row?.fetchedAt ?? null);
   const fresh = !!row?.fetchedAt && Date.now() - row.fetchedAt.getTime() < TEAM_DIGEST_MAX_AGE_MS;
   if (fresh && row?.teamDigestJson) {
     sources[side] = "cache";
     return row.teamDigestJson as unknown as TeamDigest;
   }
   if (cacheOnly) {
+    // Read as it stands. Whether it is current enough is decided once all
+    // parts are loaded, by lead time and by matches played since (below).
     if (!row?.teamDigestJson) { sources[side] = "missing"; return null; }
     sources[side] = "cache";
-    (sources.stale ??= []).push(side);
     return row.teamDigestJson as unknown as TeamDigest;
   }
 
@@ -163,6 +185,7 @@ async function loadTeamDigest(
     select: { teamDigestJson: true },
   });
   sources[side] = refreshed?.teamDigestJson ? "fetched" : "missing";
+  if (refreshed?.teamDigestJson) fetchedAtOut?.set(side, new Date());
   return (refreshed?.teamDigestJson as unknown as TeamDigest) ?? null;
 }
 
@@ -251,10 +274,13 @@ export type GenerationContextInput = {
   leagueApiId: number | null;
   round?: string | null;
   /**
-   * Research only (scripts/run-alt-market-experiment.ts): read every cache as
-   * it stands, stale or not, and never refresh. No api-football call and no
-   * write. Production generation never sets it. Stale reads are listed in
-   * sources.stale.
+   * Read every cache as it stands and never refresh: no api-football call
+   * and no cache write. Set by research (scripts/run-alt-market-experiment.ts)
+   * and, in production, ONLY by the dedicated early FREE intent (generate.ts,
+   * enforced by scripts/check-alt-market-research.ts §9). Ordinary, paid,
+   * Goals, European and admin generation never set it. Parts outside the
+   * lead-time tolerance or superseded by a later match are listed in
+   * sources.stale (src/lib/ai/evidenceFreshness.ts).
    */
   cacheOnly?: boolean;
 };
@@ -281,9 +307,10 @@ export async function buildGenerationDigest(
   const kickoffDate = new Date(input.kickoff);
   const kickoff = isNaN(kickoffDate.getTime()) ? null : kickoffDate;
 
+  const fetchedAt = new Map<string, Date | null>();
   const [homeDigest, awayDigest] = await Promise.all([
-    loadTeamDigest(input.homeApiId, input.home, input.leagueApiId, kickoff, sources, "homeTeam", input.cacheOnly),
-    loadTeamDigest(input.awayApiId, input.away, input.leagueApiId, kickoff, sources, "awayTeam", input.cacheOnly),
+    loadTeamDigest(input.homeApiId, input.home, input.leagueApiId, kickoff, sources, "homeTeam", input.cacheOnly, fetchedAt),
+    loadTeamDigest(input.awayApiId, input.away, input.leagueApiId, kickoff, sources, "awayTeam", input.cacheOnly, fetchedAt),
   ]);
 
   // --- Standings -----------------------------------------------------------
@@ -298,13 +325,13 @@ export async function buildGenerationDigest(
     });
 
     const leagueFresh = !!leagueRow?.fetchedAt && Date.now() - leagueRow.fetchedAt.getTime() < STANDINGS_MAX_AGE_MS;
+    fetchedAt.set("standings", leagueRow?.standingsJson ? leagueRow.fetchedAt ?? null : null);
     if (leagueFresh && leagueRow?.standingsJson) {
       standingsRows = leagueRow.standingsJson as unknown as LeagueStandingRow[];
       sources.standings = "cache";
     } else if (input.cacheOnly) {
       standingsRows = (leagueRow?.standingsJson as unknown as LeagueStandingRow[] | null) ?? null;
       sources.standings = standingsRows ? "cache" : "missing";
-      if (standingsRows) (sources.stale ??= []).push("standings");
     } else {
       const result = await refreshLeagueCache({ leagueApiId: input.leagueApiId, kickoff });
       sources.apiCalls += 2;
@@ -315,6 +342,7 @@ export async function buildGenerationDigest(
         });
         standingsRows = (refreshed?.standingsJson as unknown as LeagueStandingRow[]) ?? null;
         sources.standings = standingsRows ? "fetched" : "missing";
+        if (standingsRows) fetchedAt.set("standings", new Date());
       }
     }
 
@@ -336,6 +364,7 @@ export async function buildGenerationDigest(
     if (cached?.fetchedAt) {
       meetings = (cached.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
       sources.h2h = "cache";
+      fetchedAt.set("h2h", cached.fetchedAt);
     } else if (!input.cacheOnly) {
       const result = await refreshH2HCache({
         pairKey,
@@ -348,6 +377,7 @@ export async function buildGenerationDigest(
         const refreshed = await prisma.h2HCache.findUnique({ where: { pairKey }, select: { meetingsJson: true } });
         meetings = (refreshed?.meetingsJson as unknown as H2HMeeting[] | null) ?? [];
         sources.h2h = "fetched";
+        fetchedAt.set("h2h", new Date());
       }
     }
   }
@@ -392,5 +422,101 @@ export async function buildGenerationDigest(
     standings,
   });
 
+  sources.provenance = await assessProvenance({
+    digest, sources, fetchedAt, kickoff, cacheOnly: input.cacheOnly === true,
+    homeApiId: input.homeApiId, awayApiId: input.awayApiId,
+  });
+  // Only the cache-only (early) lane derives contextComplete from this; the
+  // ordinary and paid lanes refresh on their own floors exactly as before.
+  if (input.cacheOnly) {
+    const stale = staleParts(sources.provenance);
+    if (stale.length) sources.stale = stale;
+  }
   return { digest, sources };
+}
+
+/**
+ * Known kickoffs for these teams in the window where a played match could be
+ * missing from cached evidence. UpcomingFixture is the early lane's own
+ * capture table, so this costs one indexed DB read and no provider request.
+ * Matches in competitions we never discover are invisible here; the age
+ * tolerance still bounds those.
+ */
+export async function knownRecentKickoffs(teamIds: Array<number | null>, since: Date, now: Date): Promise<KnownKickoff[]> {
+  const ids = [...new Set(teamIds.filter((id): id is number => id != null))];
+  if (!ids.length) return [];
+  const until = new Date(now.getTime() - PLAYED_AFTER_KICKOFF_MS);
+  if (until <= since) return [];
+  const rows = await prisma.upcomingFixture.findMany({
+    where: {
+      kickoff: { gt: since, lte: until },
+      OR: [{ homeTeamApiId: { in: ids } }, { awayTeamApiId: { in: ids } }],
+    },
+    select: { homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true },
+  });
+  const known: KnownKickoff[] = rows.flatMap(r => [
+    { teamApiId: r.homeTeamApiId, opponentApiId: r.awayTeamApiId, kickoff: r.kickoff, status: r.status },
+    { teamApiId: r.awayTeamApiId, opponentApiId: r.homeTeamApiId, kickoff: r.kickoff, status: r.status },
+  ]).filter(k => ids.includes(k.teamApiId));
+  if (!known.length) return known;
+  // Kickoff time is not proof of a result (a stored past status is usually
+  // the pre-kickoff "NS"). Confirm from the CURRENT team caches of either
+  // side: a result listed against that opponent on that date was played.
+  // One indexed read, no provider call.
+  const sides = [...new Set(known.flatMap(k => [k.teamApiId, k.opponentApiId!]))];
+  const caches = await prisma.teamEnrichmentCache.findMany({
+    where: { teamApiId: { in: sides } }, select: { teamApiId: true, teamDigestJson: true },
+  });
+  const byTeam = new Map(caches.map(c => [c.teamApiId,
+    ((c.teamDigestJson as unknown as TeamDigest | null)?.last5 ?? []).map(m => ({ date: m.date, opponentApiId: m.opponentApiId ?? null }))]));
+  return confirmFromTeamCaches(known, byTeam);
+}
+
+async function assessProvenance(input: {
+  digest: MatchDigest; sources: ContextSources; fetchedAt: Map<string, Date | null>;
+  kickoff: Date | null; cacheOnly: boolean; homeApiId: number | null; awayApiId: number | null;
+}): Promise<EvidenceProvenance> {
+  const now = new Date();
+  const leadHours = input.kickoff ? (input.kickoff.getTime() - now.getTime()) / 3_600_000 : null;
+  const lead = leadHours ?? 0;
+  const teamTol = teamToleranceMs(lead);
+  const home = input.digest.teams.home;
+  const away = input.digest.teams.away;
+  const homeAsOf = latestObservedMatch(home) ?? input.fetchedAt.get("homeTeam") ?? null;
+  const awayAsOf = latestObservedMatch(away) ?? input.fetchedAt.get("awayTeam") ?? null;
+  const since = [homeAsOf, awayAsOf].filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0];
+  let known: KnownKickoff[] = [];
+  if (since) {
+    try {
+      known = await knownRecentKickoffs([input.homeApiId, input.awayApiId], since, now);
+    } catch (error) {
+      // Unknown is recorded as unknown: no supersession claimed either way.
+      console.warn("[generation-context] supersession lookup failed", error);
+    }
+  }
+  const sup = (teamApiId: number | null, asOf: Date | null, team: TeamDigest) =>
+    assessSupersession({ teamApiId, evidenceAsOf: asOf, known, now, fixtureKickoff: input.kickoff, evidenceMatches: team.last5 ?? [] });
+  const homeSup = sup(input.homeApiId, homeAsOf, home);
+  const awaySup = sup(input.awayApiId, awayAsOf, away);
+  return {
+    v: 1,
+    assessedAt: now.toISOString(),
+    leadHours: leadHours === null ? null : Math.round(leadHours * 10) / 10,
+    cacheOnly: input.cacheOnly,
+    homeTeam: classifyPart({
+      present: input.sources.homeTeam !== "missing", fetchedAt: input.fetchedAt.get("homeTeam") ?? null,
+      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(home), supersededBy: homeSup.superseded, unverifiedMatch: homeSup.unverified,
+    }),
+    awayTeam: classifyPart({
+      present: input.sources.awayTeam !== "missing", fetchedAt: input.fetchedAt.get("awayTeam") ?? null,
+      toleranceMs: teamTol, now, latestObserved: latestObservedMatch(away), supersededBy: awaySup.superseded, unverifiedMatch: awaySup.unverified,
+    }),
+    standings: classifyPart({
+      present: input.sources.standings !== "missing", fetchedAt: input.fetchedAt.get("standings") ?? null,
+      toleranceMs: standingsToleranceMs(lead), now,
+    }),
+    // A head-to-head record only changes when the two sides meet again; the
+    // H2H workload already refetches a pair after a newer meeting. No age floor.
+    h2h: classifyPart({ present: input.sources.h2h !== "missing", fetchedAt: input.fetchedAt.get("h2h") ?? null, toleranceMs: null, now }),
+  };
 }

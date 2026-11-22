@@ -27,6 +27,13 @@ on:
       - "src/app/(public)/predictions/updates/**"
       - "scripts/check-reassessment.ts"
       - "scripts/check-early-readiness-db.ts"
+      - "scripts/check-early-remediation-postgres.ts"
+      - "scripts/check-early-evidence-freshness.ts"
+      - "src/lib/ai/evidenceFreshness.ts"
+      - "src/lib/ai/generationContext.ts"
+      - "src/lib/ai/evidenceClaims.ts"
+      - "src/lib/football/**"
+      - "deploy/ops/crontab"
       - "src/lib/generation/selector.ts"
       - "src/lib/periodPredictions.ts"
       - "src/app/api/admin/generate/early-discover/route.ts"
@@ -57,6 +64,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run check:early-fixtures
       - run: npx tsx scripts/check-early-odds.ts
+      - run: npx tsx scripts/check-early-evidence-freshness.ts
       - run: npm run check:reassessment
       - run: npm run check:period-predictions
 
@@ -92,3 +100,4 @@ jobs:
       - run: npm ci
       - run: npx prisma db push --skip-generate
       - run: npx tsx scripts/check-early-readiness-db.ts
+      - run: npx tsx scripts/check-early-remediation-postgres.ts
