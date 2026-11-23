@@ -9,7 +9,7 @@
 | Code and call graph | Yes | Every root cause below is confirmed in code. |
 | **Production database, read-only** | **Yes** | Read through `.github/workflows/market-quality-audit.yml`, built the same way as the existing `diagnose-generation` workflow: the session is `default_transaction_read_only=on` and the scripts refuse to start otherwise. The repository is public, so the logs contain aggregates only. |
 | Production audit | 30 days | 2,802 generated rows; 2,350 settled published singles. Separate 7- and 14-day views. |
-| Chronological backtest | 45 days | Blend weight fitted on the earlier 60% (1,752 picks, 9 Oct–5 Nov) and judged on the later 40% (1,168 picks, 5–22 Nov). |
+| Chronological backtest | 45 days | Blend weight fitted on the earlier 60% (1,748 picks, 9 Oct–5 Nov) and judged on the later 40% (1,166 picks, 5–22 Nov). |
 | Counterfactual selection | 880 fixtures | Jobs where the model wrote at least two markets, graded against final scores with the pure settlement function `resolveMarket`. |
 | Prior studies | Yes | `docs/PAID_VALUE_CALIBRATION_2026-11-13.md` (2,400 out-of-sample singles) and `docs/MARKET_ODDS_FLOOR_AND_COVERAGE_RESEARCH_2026-11-20.md`. |
 
@@ -92,12 +92,12 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 
 **The decisive finding, which reframes the brief.** Replacing Double Chance by price or expected value does **not** produce better decisions on this data. Old = the model's first draft; paired return is new minus old, at the median price:
 
-| Selection rule (880 real multi-market fixtures) | Double Chance share | Strike | Return | Paired return (90%) |
+| Selection rule (879 real multi-market fixtures, rerun 45136880218) | Double Chance share | Strike | Return | Paired return (90%) |
 |---|---|---|---|---|
-| Current: model's first draft | 68.6% | 74.5% | −6.9% | — |
-| Maximise blended EV | 37.5% | 65.2% | −8.5% | −0.8% (−2.9, +2.1) |
-| "Repair": replace short or unpriced primaries | 47.4% | 66.8% | −9.5% | −2.2% (−4.2, +1.7) |
-| "Guard": replace only failed primaries | 57.0% | 69.4% | −8.9% | −1.4% (−3.3, +0.7) |
+| Current: model's first draft | 68.7% | 74.6% | −6.8% | — |
+| Maximise blended EV | 37.5% | 65.3% | −8.4% | −0.8% (−3.1, +2.0) |
+| "Repair": replace short or unpriced primaries | 47.4% | 66.9% | −9.4% | −2.2% (−4.8, +0.3) |
+| "Guard": replace only failed primaries | 57.1% | 69.5% | −8.8% | −1.5% (−3.8, +0.2) |
 
 - **Returns are all near minus the bookmaker margin.** No rule beats the model's own primary on realised return.
 - **Fewer Double Chance labels do not mean better decisions.** All three rules reduce Double Chance while lowering strike rate.
@@ -133,6 +133,7 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 1. **One canonical row per fixture** for single-market generation.
    - Extra drafts stay in the job record (`src/lib/ai/generate.ts`).
    - This fixes duplicates such as Leipzig and Porto (21.6% of FEATURED fixtures). Paid impact: only 5 of 259 VIP/Premium rows in 45 days came from such extra rows.
+   - That slice covers **one job only**. Across jobs (an early draft and a later regular draft for the same match), the early lane now refuses to auto-publish a FEATURED single when the match already has a published FEATURED single (matched by fixture id, or team ids and kickoff); the draft stays in review. An admin publish of such a row still goes through (admin authority) and returns a `DUPLICATE_FIXTURE` warning. Already published rows are never changed. Tested on Postgres (`scripts/check-market-quality-postgres.ts`).
 2. **Draw No Bet floor.** A Draw No Bet whose fair price derived from de-vigged 1X2 is below 1.12 fails the existing automatic floor, because its executable price can only be lower (`src/lib/autoOddsFloor.ts`). Brighton's 1.07 would have been rejected; 37% of published Draw No Bet picks were in this state.
 3. **Goals outlook presentation:**
    - The table column reads **Goals outlook** in muted text.
@@ -145,7 +146,7 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 | Flag | Effect | Recommendation |
 |---|---|---|
 | `MARKET_SELECTION_MODE` (`off` / `shadow` / `on`) | **shadow:** the same model call also returns up to 3 independently reasoned alternatives (no extra request). `selectPrimary` records the decision (`AIJob.rawOutput.marketSelection`), and the row gets a fixed `analysisJson.selectionQuality` snapshot. **Publication is unchanged.** **on:** a primary that failed price verification is replaced by the model's likeliest verified alternative, with its own confidence and reasoning; an early pick with no verified selection is held for review. Admin-requested generation is never switched. | **shadow now**; review 2–4 weeks of decisions at generation-time prices before considering `on`. |
-| `MARKET_QUALITY_RANKING` (`off` / `on`) | Homepage Featured/Genius excerpts and Genius curation rank **verified-price picks first**, then the existing order. The tier comes from the generation-time record; legacy rows are inferred from the market type. Stable and outcome-blind. | **on** after review: the only change with a measured improvement (§5). |
+| `MARKET_QUALITY_RANKING` (`off` / `on`) | Homepage Featured/Genius excerpts and Genius curation rank **verified-price picks first**, then the existing order. The tier comes only from the record fixed at generation (`analysisJson.selectionQuality`). Rows without one (everything generated before this PR, or with selection off) are **not verified**, whatever their market, so the flag changes nothing until shadow records exist. Stable and outcome-blind. | Keep **off** until shadow records accumulate: on today's rows it changes nothing (§5). Turn on after `prospectiveRecorded` confirms the proxy result. |
 | `FREE_TIER_NEUTRAL_BANDS` (`off` / `on`) | Free-tier prompt without the cautious "more hedged band" rule. VIP and Premium keep their caution. | Trial it with the monitoring page. Its effect cannot be measured offline. |
 
 ### Selection policy (`src/lib/marketSelection.ts`)
@@ -153,7 +154,7 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 **Each candidate is evaluated on:**
 - the exact quote, its median, bookmaker count and quote age (provider timestamp; 96 hours maximum);
 - the de-vigged fair probability, with Double Chance and Draw No Bet derived from 1X2;
-- a blended probability: 0.3 × stated confidence + 0.7 × market. Held-out Brier: market alone 0.195, blend 0.196, stated confidence 0.207.
+- a blended probability: 0.3 × stated confidence + 0.7 × market. **0.3 is an unproven shadow parameter, not a fitted optimum:** the chronological fit chose a model weight of **0** (held-out Brier: market alone 0.195, blend at 0.3 0.196, stated confidence 0.207). It is recorded with every decision so it can be refitted on time-of-decision quotes before `on` is considered.
 
 **Tiers:**
 
@@ -169,6 +170,8 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 - It switches only from a failed primary, to the likeliest verified alternative.
 - Otherwise it holds, and it always holds when evidence is incomplete.
 - It never picks the highest confidence or the highest odds, and never raises a confidence.
+- **Alternatives are validated before they can compete** (`src/lib/ai/marketSelectionStep.ts`): the same structure, football-evidence (`stripUnsupportedClaims`, run in the draft's own preview and key-factor context), certainty and house-voice gates as the primary, plus two stricter checks the primary path does not have (a named player absent from the saved evidence; a scoreline in no saved meeting or recent result). Any unsupported sentence rejects the alternative; it is recorded under `rejectedAlternatives`, never edited.
+- **Early publication safety follows the persisted draft.** An unqualified alternative no longer blocks a safe primary; a switched pick is judged on its own price; a HOLD in `on` mode blocks automatic publication.
 
 ### Monitoring (`/admin/market-quality`, `src/lib/marketQualityReport.ts`)
 
@@ -177,7 +180,7 @@ The secondary column read "Over 2.5 Goals" for all four. **TEAM_TOTAL vs match t
 - verified-price share, unpriced share, median price and short share;
 - picks below the floor from automatic generation, and duplicate fixtures;
 - Double Chance concentration;
-- selection decisions and hold reasons;
+- selection decisions, hold reasons and held rows by status, counted over **every generated row** (pending review, rejected, archived, published), kept separate from the publication KPIs;
 - 30-day calibration by market;
 - API requests per day;
 - VIP/Premium availability.
@@ -200,19 +203,26 @@ The production audit and backtest remain runnable on demand through the read-onl
 
 ## 5. Before vs after
 
-**Homepage FEATURED, 45 days, 269 slots, same days and pools:**
+**Homepage FEATURED, 45 days, 269 slots, same days and pools** (read-only run 45136880218). Every arm runs the production `selectHomepageFeatured`. Prices are a **near-close proxy**: the last cached quote stamped no later than kickoff, not the quote available when the pick was generated.
 
-| Ranking | Strike | Return at median (90%) | Unpriced slots | Short slots | Median price | Double Chance |
-|---|---|---|---|---|---|---|
-| Current: confidence first | 79.1% | −6.6% (−12.9, −1.6) | 23.8% (20.1% unpriced + 3.7% Draw No Bet below the derived floor) | 21.6% | 1.17 | 57.6% |
-| **Verified first (`MARKET_QUALITY_RANKING=on`)** | **77.7%** | **−3.0% (−8.0, +2.7)** | **0.4%** | 39.8% | 1.22 | 72.9% |
-| Verified first, short also demoted (rejected) | 72.0% | −4.6% (−10.5, +0.3) | 0.4% | 2.2% | 1.30 | 69.5% |
+| Arm (production function) | Strike | Return at median (90%) | Paired per-day return vs current (90%) | Days changed | Unverified slots | Short slots | Median price | Double Chance |
+|---|---|---|---|---|---|---|---|---|
+| Current: flag off | 79.1% | −6.6% (−12.9, −1.6) | — | — | 52.8% | 21.6% | 1.17 | 57.6% |
+| Flag on, rows **as stored** | 79.1% | −6.6% | 0.0 (0.0, 0.0) | 0 of 45 | 52.8% | 21.6% | 1.17 | 57.6% |
+| Flag on, **proxy records** (near-close tier written into each row) | 78.0% | −2.3% (−6.1, +3.5) | **+7.2 points (+1.1, +13.6)** | 43 of 45 | 0.7% | 39.0% | 1.23 | 73.2% |
+| Proxy records, short also demoted (rejected) | 72.7% | −3.4% (−9.0, +2.8) | +6.6 points (−0.6, +14.4) | 44 of 45 | 0.7% | 2.2% | 1.30 | 69.9% |
 
-- **Verified-first is the chosen ranking.** Per-day return improved by +5.5 points (90% interval −1.1 to +12.9): directionally better, not conclusive at 90%.
-- **It raises the Double Chance share on the homepage.** That's because it removes unpriced Team Total and Draw No Bet picks, not because it prefers Double Chance. The brief's success criterion is defensible, verified, appropriately priced picks, not a label mix, and the data does not support forcing Double Chance down.
+- **Correction to the previous revision.** The earlier "+5.5 points (−1.1, +12.9) per day" belonged to the short-demoted arm, not to verified-first, and verified-first then presumed legacy Double Chance and Over/Under rows were verified from their market type. Both are fixed: each arm now has its own paired per-day figure, and a row is verified only by a stored record.
+- **On stored rows the flag is a no-op today.** No published row carries a generation record yet, so with the flag on the homepage is identical on all 45 days. That's the intended behaviour: nothing is presumed verified.
+- **The proxy arm is what the ranking would do once records exist**, judged on near-close prices. Its per-day gain clears zero at 90%. However, a near-close quote can hold information the generation-time quote did not have, and "unverified" here includes quotes only stamped after kickoff (the stricter time rule raised the current arm's unverified share from 23.8% to 52.8%). So this is supporting evidence, not proof. The decisive test is `prospectiveRecorded`, which grades the time-of-decision quotes shadow mode records. It has **0 records** today because the flag is off.
+- **It raises the Double Chance share on the homepage.** That's because it removes unpriced Team Total and Draw No Bet picks, not because it prefers Double Chance.
+
+**Generation-time switching (counterfactual, 879 fixtures, near-close proxy).** Every objective lowers the paired return: guard −1.5 points (−3.8, +0.2), repair −2.2 (−4.8, +0.3), EV −0.8 (−3.1, +2.0). It stays in shadow.
+
+**Blend weight.** The chronological fit gives model weight **0**. The policy's 0.3 costs about 0.002 Brier against the market alone on the later 40%: held-out Brier is market 0.194, blend at 0.3 0.196, stated confidence 0.207. 0.3 is an unproven shadow parameter.
 
 **Integrity:**
-- **Duplicate published singles per FEATURED fixture:** 21.6% before; after, prevented at generation by one row per fixture.
+- **Duplicate published singles per FEATURED fixture:** 21.6% before. After: within a job, one row per fixture; across jobs, the early lane cannot auto-publish a second FEATURED single, and an admin publish of one is warned. Admin publication of a duplicate remains possible by design.
 - **Draw No Bet picks with a derived fair price below 1.12:** 37% before; after, rejected by the floor.
 
 **Prompt and alternatives:** not measurable offline. Shadow mode and the monitoring page exist to measure them prospectively.
@@ -247,7 +257,7 @@ The production audit and backtest remain runnable on demand through the read-onl
 
 ## 7. Limitations
 
-1. **Near-close prices.** Return figures use near-close cached prices; shadow mode records generation-time prices for the real test.
+1. **Near-close prices.** Every return figure in §1 and §5 uses the last cached quote before kickoff: a **near-close proxy**, not the price available at the decision. Shadow mode records the time-of-decision quote (provider and cache timestamps, decision time) with each decision; the backtest grades those separately (`prospectiveRecorded`), and rollout metrics must be revalidated there. A quote with no timestamp, one stamped after the decision, or one older than 96 hours is never treated as verified.
 2. **Counterfactual coverage.** It covers only jobs where the model wrote two or more markets (combo, paid and some ordinary jobs). Single-market jobs had no alternatives to compare.
 3. **The prompt change is unmeasured** offline.
 4. **Team Total, Draw No Bet and Win Either Half** cannot be price-verified until the odds cache retains their exact quotes.
@@ -258,6 +268,6 @@ The production audit and backtest remain runnable on demand through the read-onl
 
 1. **Merge and deploy.** No schema change and no migration. The unconditional changes take effect: one row per fixture, the Draw No Bet floor, and the goals outlook.
 2. **Set `MARKET_SELECTION_MODE=shadow`.** Watch `/admin/market-quality` for 2–4 weeks: hold reasons, decisions, the cost line and the paid alert.
-3. **Set `MARKET_QUALITY_RANKING=on` when ready.** Then check that the homepage shows verified-price picks and stays stable through the day.
+3. **Set `MARKET_QUALITY_RANKING=on` only after shadow records exist** and the backtest's `prospectiveRecorded` section (time-of-decision quotes) confirms the near-close proxy result. Then check that the homepage shows verified-price picks and stays stable through the day.
 4. **Optionally trial `FREE_TIER_NEUTRAL_BANDS=on`.** Compare the market mix and calibration on the monitoring page.
 5. **Re-run the read-only audit monthly** with the workflow, and decide on `MARKET_SELECTION_MODE=on` only with prospective evidence.
