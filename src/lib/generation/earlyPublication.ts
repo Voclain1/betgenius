@@ -339,7 +339,11 @@ export async function runEarlyFreePublication(input: { now?: Date; limit?: numbe
         else report.blocked["concurrent-publication"] =
           (report.blocked["concurrent-publication"] ?? 0) + 1;
       } catch (error) {
-        report.failures.push(row.id + ": publish: " + (error instanceof Error ? error.message : String(error)));
+        const message = error instanceof Error ? error.message : String(error);
+        // Another FEATURED single for this fixture is already public: the row
+        // stays in review (the transaction rolled back), not a failure.
+        if (message === "EARLY_PUBLICATION_DUPLICATE_FIXTURE") report.blocked["duplicate-fixture"] = (report.blocked["duplicate-fixture"] ?? 0) + 1;
+        else report.failures.push(row.id + ": publish: " + message);
       }
     }
     if (rows.length < TRIAGE_PAGE_SIZE) break;

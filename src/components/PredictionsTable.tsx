@@ -103,7 +103,7 @@ export function PredictionsTable({
   const showOutcome = rows.some((r) => r.outcome && r.outcome !== "PENDING");
   // Counted, not hard-coded: an ad row spanning the wrong number of columns
   // would either leave a gap or stretch the table. Seven fixed columns —
-  // League, Match, Pick, Score, Over/Under, Confidence, Kickoff — plus Result
+  // League, Match, Pick, Score, Goals outlook, Confidence, Kickoff — plus Result
   // when it is showing and the open arrow when rows link.
   const columnCount = 7 + (showOutcome ? 1 : 0) + (linkRows ? 1 : 0);
   const adAfter = new Map(ads.map((a) => [a.after, a.node]));
@@ -129,7 +129,9 @@ export function PredictionsTable({
             <th className="px-3 py-3">Pick</th>
             <th className="px-3 py-3">Score</th>
             {showOutcome && <th className="px-3 py-3">Result</th>}
-            <th className="hidden px-3 py-3 sm:table-cell">Over/Under</th>
+            {/* The model's general goals view, not a second priced tip: a muted
+                "Goals outlook" rather than a column that reads like the Pick. */}
+            <th className="hidden px-3 py-3 sm:table-cell">Goals outlook</th>
             <th className="hidden px-3 py-3 text-right md:table-cell">Confidence</th>
             <th className="hidden px-3 py-3 md:table-cell">Kickoff</th>
             {linkRows && <th className="px-3 py-3"><span className="sr-only">Open</span></th>}
@@ -232,7 +234,7 @@ export function PredictionsTable({
                   {/* 640-767px only: the kickoff cell (which carries the save
                       control from md up) is hidden there, so it sits here. */}
                   <div className="flex items-center justify-between gap-1">
-                    <span>{p.locked ? "—" : p.overUnder ?? "—"}</span>
+                    <span className="text-xs text-gray-500">{p.locked || p.marketType === "OVER_UNDER" ? "—" : p.overUnder ?? "—"}</span>
                     {!p.locked && <SavePredictionButton predictionId={p.id} source="card" size="sm" className="-my-2 hidden shrink-0 sm:inline-flex md:hidden" />}
                   </div>
                 </td>

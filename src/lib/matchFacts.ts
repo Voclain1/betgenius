@@ -291,5 +291,8 @@ export const CONFIDENCE_BAND_STYLES: Record<ConfidenceBand, string> = {
 export function verdictLine(input: { market: string; pick: string; confidence: number; overUnder?: string | null }): string {
   const band = confidenceBand(input.confidence);
   const lead = `BetGenius backs ${input.pick} (${input.market}) at ${input.confidence}% confidence — a ${band.toLowerCase()} call.`;
-  return input.overUnder ? `${lead} Total goals: ${input.overUnder}.` : lead;
+  // The secondary goals line is an outlook, not a second backed selection: it
+  // has no price check of its own and strikes in line with the market
+  // (56.5% on 2,479 settled rows, Oct-Nov 2026), so it must not read as one.
+  return input.overUnder ? `${lead} Goals outlook: ${input.overUnder.replace(/\s+Goals$/i, "").toLowerCase()} goals.` : lead;
 }

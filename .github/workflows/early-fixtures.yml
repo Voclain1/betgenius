@@ -45,6 +45,10 @@ on:
       - "src/lib/ai/analysis.ts"
       - "scripts/check-editorial-voice.ts"
       - "scripts/check-editorial-voice-postgres.ts"
+      - "scripts/check-market-quality-postgres.ts"
+      - "src/lib/predictions.ts"
+      - "src/lib/marketQualityReport.ts"
+      - "src/app/api/admin/predictions/bulk/route.ts"
       - "src/lib/ai/evidenceReadiness.ts"
       - "src/app/api/admin/evidence-review/**"
       - "scripts/check-early-evidence-freshness.ts"
@@ -124,3 +128,4 @@ jobs:
       - run: npx tsx scripts/check-evidence-review-postgres.ts
       - run: npx tsx scripts/check-prediction-updates-postgres.ts
       - run: npx tsx scripts/check-editorial-voice-postgres.ts
+      - run: npx tsx scripts/check-market-quality-postgres.ts

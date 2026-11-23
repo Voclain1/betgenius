@@ -3,6 +3,7 @@ import { isValidSelection, type MarketType, type Selection } from "@/lib/markets
 import { checkLegCompatibility } from "@/lib/sameGameDouble";
 import type { FeedDay } from "@/lib/categoryPredictions";
 import { isFixtureTaken, takeFixture } from "@/lib/fixtureIdentity";
+import { verifiedRank, marketQualityRankingEnabled } from "@/lib/marketSelection";
 
 /**
  * Which six FEATURED picks the homepage excerpt shows for a Lagos day.
@@ -82,7 +83,30 @@ export type HomepageFeaturedCandidate = {
   fixtureApiId?: number | null;
   homeTeam?: string | null;
   awayTeam?: string | null;
+  /** Carries `selectionQuality`, fixed at generation (src/lib/ai/generate.ts). Optional: legacy rows have none. */
+  analysisJson?: unknown;
 };
+
+/**
+ * MARKET_QUALITY_RANKING=on: picks whose OWN generation-time record shows a
+ * verified price rank before the rest, then the existing outcome-blind order.
+ * Rows without a record (everything generated before this change, and
+ * anything generated with MARKET_SELECTION_MODE=off) are "not verified", so
+ * until records accumulate the order is exactly today's. The tier is read
+ * only from the record fixed at generation: the ranking is outcome-blind and
+ * does not move as live prices move. Evidence and its limits:
+ * docs/PREDICTION_MARKET_QUALITY_2026-11-23.md.
+ */
+export { marketQualityRankingEnabled };
+
+export function storedQualityRank(row: { analysisJson?: unknown; marketType: string }): number {
+  const q = (row.analysisJson as { selectionQuality?: { tier?: string } } | null | undefined)?.selectionQuality;
+  return verifiedRank(q?.tier);
+}
+
+export type HomepageRankingOptions = { qualityRanking?: boolean };
+const comparatorFor = (opts: HomepageRankingOptions) => (a: HomepageFeaturedCandidate, b: HomepageFeaturedCandidate) =>
+  (opts.qualityRanking ? storedQualityRank(a) - storedQualityRank(b) : 0) || compareForHomepageExcerpt(a, b);
 
 /** What the page loads for each leg a combo references. Pre-match fields only. */
 export type HomepageComboLeg = {
@@ -183,7 +207,9 @@ export function selectHomepageFeatured<T extends HomepageFeaturedCandidate>(
   legsById: ReadonlyMap<string, HomepageComboLeg>,
   limit: number = HOMEPAGE_FEATURED_LIMIT,
   taken: ReadonlySet<string> = new Set(),
+  opts: HomepageRankingOptions = {},
 ): T[] {
+  const compare = comparatorFor(opts);
   const used = new Set(taken);
   const picked: T[] = [];
   const walk = (candidates: T[]) => {
@@ -194,8 +220,8 @@ export function selectHomepageFeatured<T extends HomepageFeaturedCandidate>(
       picked.push(r);
     }
   };
-  walk(rows.filter((r) => !isComboRow(r)).sort(compareForHomepageExcerpt));
-  if (picked.length < limit) walk(rows.filter((r) => isComboRow(r) && isExceptionalHomepageCombo(r, legsById)).sort(compareForHomepageExcerpt));
+  walk(rows.filter((r) => !isComboRow(r)).sort(compare));
+  if (picked.length < limit) walk(rows.filter((r) => isComboRow(r) && isExceptionalHomepageCombo(r, legsById)).sort(compare));
   return picked;
 }
 
@@ -240,10 +266,11 @@ export function selectHomepageGenius<T extends HomepageFeaturedCandidate>(
   legsById: ReadonlyMap<string, Pick<HomepageComboLeg, "marketType" | "selection">>,
   limit: number = HOMEPAGE_GENIUS_LIMIT,
   taken: ReadonlySet<string> = new Set(),
+  opts: HomepageRankingOptions = {},
 ): T[] {
   const picked: T[] = [];
   const used = new Set(taken);
-  for (const row of [...rows].sort(compareForHomepageExcerpt)) {
+  for (const row of [...rows].sort(comparatorFor(opts))) {
     if (picked.length >= limit) break;
     if (!isHomepageGeniusEligible(row, legsById)) continue;
     if (isFixtureTaken(row, used)) continue;

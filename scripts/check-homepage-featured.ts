@@ -431,7 +431,7 @@ console.log("\n9. Short days are not padded; empty-state copy");
   check("page picks Genius with selectHomepageGenius and the combos' legs",
     /fetchCategoryDay\("GENIUS", day\)/.test(page) && /legs: await loadComboLegs\(rows\)/.test(page) && /selectHomepageGenius\(geniusDay\.candidates, geniusDay\.legs/.test(page));
   check("page takes Bet of the Day's match, then Genius's, before choosing Featured",
-    /takeFixture\(betOfTheDay\.row, shownMatches\)/.test(page) && /selectHomepageFeatured\(featuredDay\.candidates, featuredDay\.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches\)/.test(page));
+    /takeFixture\(betOfTheDay\.row, shownMatches\)/.test(page) && /selectHomepageFeatured\(featuredDay\.candidates, featuredDay\.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches(, ranking)?\)/.test(page));
   const feeds = readFileSync("src/lib/categoryPredictions.ts", "utf8");
   check("/predictions/genius untouched: the category feed never uses the homepage selector",
     !/homepageFeatured|selectHomepageGenius|isHomepageGeniusEligible/.test(feeds) && /const ordered = orderForDisplay\(rows\)/.test(feeds));

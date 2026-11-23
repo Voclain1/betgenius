@@ -36,6 +36,7 @@ import { lagosDayBounds } from "@/lib/lagosDate";
 import {
   selectHomepageFeatured,
   selectHomepageGenius,
+  marketQualityRankingEnabled,
   featuredBarMessage,
   comboLegIds,
   HOMEPAGE_FEATURED_LIMIT,
@@ -215,10 +216,11 @@ export default async function HomePage({ searchParams }: { searchParams?: { date
   // (src/lib/fixtureIdentity.ts).
   const shownMatches = new Set<string>();
   if (betOfTheDay) takeFixture(betOfTheDay.row, shownMatches);
-  const geniusPreview = selectHomepageGenius(geniusDay.candidates, geniusDay.legs, HOMEPAGE_GENIUS_LIMIT, shownMatches);
+  const ranking = { qualityRanking: marketQualityRankingEnabled() };
+  const geniusPreview = selectHomepageGenius(geniusDay.candidates, geniusDay.legs, HOMEPAGE_GENIUS_LIMIT, shownMatches, ranking);
   for (const r of geniusPreview) takeFixture(r, shownMatches);
   const featured = {
-    rows: selectHomepageFeatured(featuredDay.candidates, featuredDay.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches),
+    rows: selectHomepageFeatured(featuredDay.candidates, featuredDay.legs, HOMEPAGE_FEATURED_LIMIT, shownMatches, ranking),
     published: featuredDay.published,
   };
   const botdContext = betOfTheDay ? (await getFixtureEventContext([betOfTheDay.row])).get(matchKey(betOfTheDay.row) ?? "") : undefined;

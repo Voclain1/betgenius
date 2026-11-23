@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isAdmin } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
-import { applyCategoryChanges, applyReviewAction, setPredictionCategories } from "@/lib/predictions";
+import { applyCategoryChanges, applyReviewAction, publishedFeaturedSingleFor, setPredictionCategories } from "@/lib/predictions";
 import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { z } from "zod";
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     include: { categories: true },
   });
 
-  const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+  const results: Array<{ id: string; ok: boolean; error?: string; warning?: string }> = [];
   for (const row of rows) {
     try {
       if (action === "MANAGE_CATEGORIES") {
@@ -76,7 +76,12 @@ export async function POST(req: Request) {
       } else {
         // Same transaction and events as the single-row route: a bulk publish
         // is how most tips go live, so it must notify followers too.
+        // Admin authority: a second FEATURED single for a fixture that already
+        // shows one is published as asked, but the response says so.
+        const duplicateOf = action === "PUBLISH" && row.categories.some((c) => c.category === "FEATURED") && row.marketType !== "SAME_GAME_DOUBLE"
+          ? await publishedFeaturedSingleFor(prisma, row) : null;
         await applyReviewAction(row, action, session!.user.id);
+        if (duplicateOf) { results.push({ id: row.id, ok: true, warning: `DUPLICATE_FIXTURE: ${duplicateOf} is already published in FEATURED for this match` }); continue; }
       }
       results.push({ id: row.id, ok: true });
     } catch (err: any) {
@@ -96,6 +101,9 @@ export async function POST(req: Request) {
     action,
     updated: results.filter((r) => r.ok).length,
     failed: results.filter((r) => !r.ok),
+    // Published, but the match already shows another FEATURED single: the
+    // admin's decision stands; this is a notice, not a failure.
+    warnings: results.filter((r) => r.ok && r.warning).map((r) => ({ id: r.id, warning: r.warning! })),
     missing,
   });
 }
