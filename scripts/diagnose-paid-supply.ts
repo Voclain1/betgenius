@@ -78,6 +78,31 @@ async function main() {
         quota: v.quota, remainingBeforeRun: v.remainingBeforeRun, attemptsByKickoffDay: v.attemptsByKickoffDay, keys: Object.keys(v) } });
   }
 
+  // 4b. Every paid run in the last 4 days, compacted to what changed: when did
+  // candidates enter the 24h warm band, were they priced, and why not targeted?
+  const hist = await db.jobRun.findMany({ where: { job: "generate-vip-premium", ranAt: { gte: new Date(+now - 4 * D) } }, orderBy: { ranAt: "asc" }, select: { ranAt: true, detail: true } });
+  let prevKey = "";
+  for (const r of hist) {
+    const d = (r.detail ?? {}) as Record<string, any>;
+    const v = (d.vipPremium ?? {}) as Record<string, any>;
+    const warm = Array.isArray(v.warmBandSkips) ? (v.warmBandSkips as Array<{ reason: string; signal: number | null; leagueApiId: number; quoteAgeMinutes: number | null }>) : [];
+    const row = { reason: d.reason ?? d.skipped ?? null, inScope: v.inScope, oddsCalls: v.oddsCalls, warmed: v.warmed, fresh: v.freshlyPriced, qualified: v.qualified, claimed: d.claimed, created: d.predictionsCreated,
+      skipped: v.skipped, warmBand: warm.map((w) => `${w.reason}${w.signal != null ? "@" + w.signal : ""}${w.quoteAgeMinutes != null ? "/age" + w.quoteAgeMinutes : "/noquote"}`).join(","),
+      oddsBefore: v.readiness?.oddsBeforeWarming, rejected: v.rejectedReasons, published: v.published, evaluated: v.evaluated };
+    const key = JSON.stringify({ ...row, oddsBefore: undefined, warmBand: warm.map((w) => w.reason).join(",") }).replace(/age\d+/g, "");
+    if (key !== prevKey) out("vipRunHistory", { at: r.ranAt.toISOString(), ...row });
+    prevKey = key;
+  }
+  const shadow = await db.jobRun.findMany({ where: { job: "paid-selection-shadow", ranAt: { gte: new Date(+now - 6 * D) } }, orderBy: { ranAt: "asc" }, select: { ranAt: true, summary: true } });
+  out("paidCurationHistory", { lines: [...new Set(shadow.map((s) => s.summary ?? ""))] });
+  // Confidence and market of the rows paid curation can draw on (published, core leagues), by kickoff day.
+  const pool = await db.prediction.findMany({ where: { status: "PUBLISHED", kickoff: { gte: new Date(+now - 8 * D), lte: new Date(+now + 3 * D) }, marketType: { not: "SAME_GAME_DOUBLE" }, leagueApiId: { in: [...PAID_ANY_LEAGUE_IDS] } },
+    select: { kickoff: true, confidence: true, marketType: true, provenance: true, leagueApiId: true, odds: true } });
+  const poolDay: Record<string, Record<string, number>> = {};
+  for (const r of pool) { const d = (poolDay[lagosDateKey(r.kickoff!)] ??= { rows: 0, conf75: 0, conf80: 0, core: 0, core75: 0, dc: 0, odds118: 0 }); d.rows++; if (r.confidence >= 75) d.conf75++; if (r.confidence >= 80) d.conf80++;
+    if (r.leagueApiId != null && core.has(r.leagueApiId)) { d.core++; if (r.confidence >= 75) d.core75++; } if (r.marketType === "DOUBLE_CHANCE") d.dc++; if ((r.odds ?? 0) >= 1.18) d.odds118++; }
+  out("paidPoolByKickoffDay", { byDay: Object.fromEntries(Object.entries(poolDay).sort()) });
+
   // 5. Backoffs, reservations, settings that can stop the pass.
   const locks = await db.appLock.findMany({ where: { key: { startsWith: VIP_PREMIUM_BACKOFF_LOCK_PREFIX }, expiresAt: { gt: now } }, select: { key: true } });
   const otherLocks = await db.appLock.findMany({ where: { expiresAt: { gt: now } }, select: { key: true, expiresAt: true } });
