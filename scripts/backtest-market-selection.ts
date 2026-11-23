@@ -98,6 +98,7 @@ async function main() {
 
   // ------------------------------------------------------------------ 3. counterfactual selection on the model's real alternatives
   const jobs = await prisma.aIJob.findMany({ where: { createdAt: { gte: new Date(from.getTime() - 14 * D) }, status: "COMPLETED" }, select: { prompt: true, rawOutput: true, contextComplete: true } });
+  for (const objective of ["repair", "ev"] as const) {
   type Arm = { won: boolean; price: number | null; market: string };
   const old: Arm[] = [], neu: Arm[] = [], pairDiff: number[] = [];
   const decisions: Record<string, number> = {}; const oldMix: Record<string, number> = {}; const newMix: Record<string, number> = {}; const byIntent: Record<string, number> = {};
@@ -111,7 +112,7 @@ async function main() {
     if (!k || !s || !o) continue;
     const intent = intentOf(j.prompt); byIntent[intent] = (byIntent[intent] ?? 0) + 1;
     const cands: CandidateInput[] = drafts.map((d, i) => ({ marketType: d.marketType, selection: d.selection, confidence: Number(d.confidence), source: i === 0 ? "primary" : "alternative" }));
-    const res = selectPrimary(cands, o, { evidenceComplete: j.contextComplete });
+    const res = selectPrimary(cands, o, { evidenceComplete: j.contextComplete, policy: { ...SELECTION_POLICY, OBJECTIVE: objective } });
     decisions[res.decision] = (decisions[res.decision] ?? 0) + 1;
     if (res.decision === "HOLD" || !res.chosen) continue;
     const grade = (c: { marketType: string; selection: unknown }) => resolveMarket(c.marketType as MarketType, c.selection as Selection, s[0], s[1]);
@@ -126,14 +127,15 @@ async function main() {
   const arm = (a: Arm[]) => { const pr = a.filter((x) => x.price != null); const rs = pr.map((x) => ret(x.won, x.price!));
     return { n: a.length, strike: pct(a.filter((x) => x.won).length, a.length), pricedN: pr.length, medianPrice: median(pr.map((x) => x.price!)), roiAtMedian: r3(mean(rs)), roi90: ci(rs),
       dcShare: pct(a.filter((x) => x.market === "DOUBLE_CHANCE").length, a.length) }; };
-  console.log(JSON.stringify({ section: "counterfactualSelection", note: "jobs with >=2 model drafts on distinct markets; old = model's first draft, new = selectPrimary", byIntent, decisions,
+  console.log(JSON.stringify({ section: "counterfactualSelection", objective, note: "jobs with >=2 model drafts on distinct markets; old = model's first draft, new = selectPrimary", byIntent, decisions,
     old: arm(old), new: arm(neu), pairedRoiDiffNewMinusOld: r3(mean(pairDiff)), pairedRoiDiff90: ci(pairDiff), pairedN: pairDiff.length, oldMix, newMix }));
 
+  }
   // ------------------------------------------------------------------ 4. homepage FEATURED ranking, old vs tiered (settled days only)
   const featured = rows.filter((r) => r.status === "PUBLISHED" && r.categories.some((c) => c.category === "FEATURED") && r.kickoff && r.kickoff < new Date(now.getTime() - 3 * 3_600_000))
     .map((r) => ({ ...r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null) }));
   const tierRank = (t: string) => (t === "QUALIFIED" ? 0 : t === "SHORT" ? 1 : t === "UNPRICED" ? 2 : 3);
-  const agg = { old: [] as typeof featured, new: [] as typeof featured };
+  const agg = { old: [] as typeof featured, new: [] as typeof featured, blend: [] as typeof featured };
   const dayDiff: number[] = [];
   for (const day of [...new Set(featured.map((r) => lagosDateKey(r.kickoff!)))].sort()) {
     const pool = featured.filter((r) => lagosDateKey(r.kickoff!) === day);
@@ -141,6 +143,10 @@ async function main() {
     const n6 = selectHomepageFeatured([...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier)) as never[], new Map(), 6) as typeof pool;
     // selectHomepageFeatured sorts by confidence internally; apply the tier as the leading key explicitly:
     const tiered = [...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier) || b.confidence - a.confidence || a.id.localeCompare(b.id));
+    const tieredBlend = [...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier) || (b.ev.blended ?? b.confidence) - (a.ev.blended ?? a.confidence) || a.id.localeCompare(b.id));
+    const seen3 = new Set<string>(); const n6c: typeof pool = [];
+    for (const r of tieredBlend) { const k = matchKey(r) ?? r.id; if (seen3.has(k)) continue; seen3.add(k); n6c.push(r); if (n6c.length >= 6) break; }
+    agg.blend.push(...n6c);
     const seen = new Set<string>(); const n6b: typeof pool = [];
     for (const r of tiered) { const k = matchKey(r) ?? r.id; if (seen.has(k)) continue; seen.add(k); n6b.push(r); if (n6b.length >= 6) break; }
     void n6;
@@ -153,7 +159,7 @@ async function main() {
     return { n: xs.length, strike: pct(s.filter((x) => x.outcome === "WON").length, s.length), dcShare: pct(xs.filter((x) => x.marketType === "DOUBLE_CHANCE").length, xs.length),
       unpricedShare: pct(xs.filter((x) => x.ev.tier === "UNPRICED").length, xs.length), shortShare: pct(xs.filter((x) => x.ev.tier === "SHORT").length, xs.length),
       medianPrice: median(pr.map((x) => x.ev.median!)), roiAtMedian: r3(mean(rs)), roi90: ci(rs), meanConf: r3(mean(xs.map((x) => x.confidence))) }; };
-  console.log(JSON.stringify({ section: "homepageRanking", days: new Set(featured.map((r) => lagosDateKey(r.kickoff!))).size, old: summarise(agg.old), new: summarise(agg.new),
+  console.log(JSON.stringify({ section: "homepageRanking", days: new Set(featured.map((r) => lagosDateKey(r.kickoff!))).size, old: summarise(agg.old), new: summarise(agg.new), tierThenBlended: summarise(agg.blend),
     perDayRoiDiffNewMinusOld: r3(mean(dayDiff)), perDayRoiDiff90: ci(dayDiff) }));
 
   // ------------------------------------------------------------------ 5. secondary over/under column

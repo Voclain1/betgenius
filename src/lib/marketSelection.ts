@@ -37,7 +37,11 @@ export function marketSelectionMode(value: string | undefined = process.env.MARK
   return value === "on" || value === "shadow" ? value : "off";
 }
 
-export const SELECTION_POLICY = {
+export type SelectionPolicy = {
+  MODEL_WEIGHT: number; HARD_MIN_ODDS: number; USEFUL_MIN_ODDS: number; MIN_BOOKS: number; MIN_BLENDED_PROBABILITY: number;
+  MAX_MODEL_OVER_MARKET_PP: number; KEEP_PRIMARY_EV_TOLERANCE: number; OBJECTIVE: "repair" | "ev";
+};
+export const SELECTION_POLICY: SelectionPolicy = {
   /**
    * Weight on the model's stated confidence in the blended probability; the
    * rest is the de-vigged market. Fitted chronologically on settled priced
@@ -60,9 +64,19 @@ export const SELECTION_POLICY = {
   MIN_BLENDED_PROBABILITY: 50,
   /** A model view this far above the market (pp) is not trusted for automatic choice. */
   MAX_MODEL_OVER_MARKET_PP: 15,
-  /** Keep the model's own primary unless an alternative's EV is better by more than this. */
+  /** Keep the model's own primary unless an alternative's EV is better by more than this ("ev" objective only). */
   KEEP_PRIMARY_EV_TOLERANCE: 0.02,
-} as const;
+  /**
+   * "repair" (default): keep the model's primary whenever it is QUALIFIED;
+   * switch only to replace an unpriced, short, failing or ineligible primary
+   * with the model's most likely QUALIFIED alternative. "ev": maximise blended
+   * EV across candidates. Chronological backtest on 880 real multi-market
+   * fixtures: "ev" cut Double Chance from 69% to 38% but lowered the strike
+   * rate (74.5% to 65.2%) without improving the return (paired -0.8%, 90%
+   * interval -2.9 to +2.1), so it is NOT the default.
+   */
+  OBJECTIVE: "repair" as "repair" | "ev",
+};
 
 export type CandidateInput = {
   marketType: string;
@@ -98,7 +112,7 @@ function drawNoBetFair(odds: FixtureOdds | null, selection: unknown): number | n
   return side === "HOME" ? (100 * h) / (h + a) : side === "AWAY" ? (100 * a) / (h + a) : null;
 }
 
-export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy = SELECTION_POLICY): EvaluatedCandidate {
+export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy: SelectionPolicy = SELECTION_POLICY): EvaluatedCandidate {
   const mapped = toBookmakerSelection(c.marketType, c.selection);
   const sel = mapped && odds ? findSelection(odds, mapped.market, mapped.value) : null;
   const fairQuote = mapped && odds ? devigProbability(odds, mapped.market, mapped.value)?.probability ?? null : null;
@@ -157,7 +171,7 @@ const key = (c: { marketType: string; selection: unknown }) => c.marketType + JS
 export function selectPrimary(
   inputs: readonly CandidateInput[],
   odds: FixtureOdds | null,
-  opts: { evidenceComplete: boolean; policy?: typeof SELECTION_POLICY } = { evidenceComplete: true },
+  opts: { evidenceComplete: boolean; policy?: SelectionPolicy } = { evidenceComplete: true },
 ): SelectionResult {
   const policy = opts.policy ?? SELECTION_POLICY;
   const seen = new Set<string>();
@@ -173,6 +187,11 @@ export function selectPrimary(
   if (!pool.length) {
     const anyUnpriced = candidates.some((c) => c.tier === "UNPRICED");
     return result("HOLD", anyUnpriced ? "NO_VERIFIED_PRICE" : "NO_CREDIBLE_SELECTION", primary);
+  }
+  if (policy.OBJECTIVE === "repair") {
+    if (pool.includes(primary)) return result("KEEP_PRIMARY", null, primary);
+    const likeliest = [...pool].sort((a, b) => (b.blended! - a.blended!) || (b.ev! - a.ev!))[0];
+    return result("SWITCH", null, likeliest);
   }
   const best = [...pool].sort((a, b) => (b.ev! - a.ev!) || (b.blended! - a.blended!))[0];
   if (pool.includes(primary) && primary.ev! >= best.ev! - policy.KEEP_PRIMARY_EV_TOLERANCE) return result("KEEP_PRIMARY", null, primary);
