@@ -107,6 +107,20 @@ export type AIPredictionOutput = {
     reasoning: string; // plain text
   }>;
   keyFactors: string[];
+  /**
+   * Market selection (MARKET_SELECTION_MODE shadow/on only): other markets the
+   * model assessed for THIS fixture, each with its own confidence and
+   * reasoning. Never persisted as separate rows; compared privately against
+   * the primary by src/lib/marketSelection.ts.
+   */
+  alternatives?: Array<{
+    marketType: MarketType;
+    selection: Selection;
+    overUnderLine: number;
+    overUnderDirection: "OVER" | "UNDER";
+    confidence: number;
+    reasoning: string;
+  }>;
 };
 
 /**
@@ -340,8 +354,13 @@ function tieredCalibrationBlock(tiers: GenerationTier[]): string {
  * longer instruct hedging a fixture the evidence calls overwhelming, which is
  * what the tiered version did for VIP/PREMIUM.
  */
-function marginCalibrationBlock(tiers: GenerationTier[]): string {
-  const cautious = tiers.some((t) => t === "GENIUS" || t === "VIP" || t === "PREMIUM");
+function marginCalibrationBlock(tiers: GenerationTier[], opts: { freeTierNeutral?: boolean } = {}): string {
+  // Every routine fixture is prompted as GENIUS (free) or VIP (top leagues and
+  // European club competitions): resolveGenerationRisk never emits FEATURED.
+  // So "GENIUS counts as cautious" made the "choose the more hedged band on a
+  // boundary" rule apply to ALL free generation. With market selection on,
+  // the free tier gets the bands as written; VIP/PREMIUM keep their caution.
+  const cautious = tiers.some((t) => t === "VIP" || t === "PREMIUM" || (t === "GENIUS" && !opts.freeTierNeutral));
   return `
 
 8. MARKET RISK CALIBRATION BY MARGIN. The active tier context for this draft is:
@@ -502,10 +521,38 @@ to-score call at a line that does not already follow from it.
 Order the entries with your highest-conviction call FIRST.`;
 }
 
+/**
+ * Market selection: ask the SAME call for the other markets it considered, each
+ * independently assessed. Stored privately and compared against the primary by
+ * src/lib/marketSelection.ts using the exact quoted price; never published as
+ * extra rows. Kept short: it costs output tokens on every call that has it.
+ */
+export function alternativesBlock(): string {
+  return `
+
+ALTERNATIVE MARKETS (private, for comparison only)
+Also return "alternatives": up to 3 OTHER selections you genuinely considered for
+this fixture, each on a different marketType from your primary pick and from
+each other, in the same shape as a "predictions" entry (marketType, selection,
+overUnderLine, overUnderDirection, confidence, reasoning).
+- Estimate each confidence on its own, as the probability that THAT selection
+  wins. Do not copy the primary's number, and do not raise a number to make an
+  alternative look competitive.
+- Where the evidence supports it, include your best result view (MATCH_WINNER,
+  DRAW_NO_BET or DOUBLE_CHANCE, whichever you rate highest that is not already
+  your primary) and your best goals view (OVER_UNDER at the line you rate
+  highest, or BTTS).
+- Keep each reasoning to one or two sentences of football evidence.
+- Return an empty array rather than padding with selections the evidence does
+  not support. Never use CORRECT_SCORE, HT_FT or SAME_GAME_DOUBLE here.
+The primary pick in "predictions" is still your single best call.`;
+}
+
 export function buildSystemPrompt(
   tiers: GenerationTier[],
   calibration: RiskCalibrationMode | boolean = "margin",
   breadth: MarketBreadth = "single",
+  opts: { freeTierNeutral?: boolean } = {},
 ): string {
   // Back-compat with the original boolean: false meant "no calibration", true
   // meant the tiered block that was current at the time.
@@ -536,7 +583,7 @@ export function buildSystemPrompt(
   // carries no market-risk steering at all, and this rule is market-risk
   // steering.
   const consistencyBlock = confidenceConsistencyBlock();
-  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers)}${consistencyBlock}${breadthBlock}${certaintyBlock}${voiceBlock}`;
+  return `${BASE_SYSTEM_PROMPT}${mode === "tiered" ? tieredCalibrationBlock(tiers) : marginCalibrationBlock(tiers, opts)}${consistencyBlock}${breadthBlock}${certaintyBlock}${voiceBlock}`;
 }
 
 /** The closing market instruction when the market is fixed to Over 1.5 / Over 2.5 total goals. */
@@ -724,6 +771,20 @@ export type PredictionRequestInput = {
   shortPriceBlock?: string;
   /** Generated under the VIP calibration route or by the dedicated paid pass: uses paidRouteProviderChain. */
   paidRoute?: boolean;
+  /**
+   * Market selection (src/lib/marketSelection.ts). "shadow" and "on" ask the
+   * same call for independently reasoned alternatives (no extra request);
+   * absent or "off": the prompt is byte-identical to before.
+   */
+  marketSelection?: "shadow" | "on";
+  /**
+   * FREE_TIER_NEUTRAL_BANDS=on: the free (GENIUS) tier gets the margin bands
+   * as written, without the cautious tier's "choose the more hedged band on a
+   * boundary". Every routine free fixture is prompted as GENIUS, so that rule
+   * applied to all of them. VIP/PREMIUM keep their caution. Its effect cannot
+   * be measured offline; trial it with the monitoring page.
+   */
+  freeTierNeutral?: boolean;
 };
 
 /**
@@ -838,7 +899,8 @@ ${marketInstruction}`;
 
   const label = `${d.fixture.home} vs ${d.fixture.away}`;
   return {
-    system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin", input.marketBreadth ?? "single"),
+    system: buildSystemPrompt(input.tiers, input.riskCalibration ?? "margin", input.marketBreadth ?? "single",
+      { freeTierNeutral: !!input.freeTierNeutral }) + (input.marketSelection ? alternativesBlock() : ""),
     user: userPrompt,
     label,
     // Raised only for rewrites. First-pass generation stays on the model

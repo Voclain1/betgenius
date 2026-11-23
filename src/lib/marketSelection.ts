@@ -31,6 +31,11 @@ import { AUTO_MIN_MEDIAN_ODDS } from "@/lib/autoOddsFloor";
 import { devigProbability } from "@/lib/marketConfirmed";
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
 
+/** MARKET_QUALITY_RANKING=on: homepage and Genius rank verified-price picks first (see verifiedRank). */
+export function marketQualityRankingEnabled(value: string | undefined = process.env.MARKET_QUALITY_RANKING): boolean {
+  return value === "on";
+}
+
 export type MarketSelectionMode = "off" | "shadow" | "on";
 /** off: nothing recorded. shadow: recorded for measurement, publication unchanged. on: the chosen primary is the persisted pick. */
 export function marketSelectionMode(value: string | undefined = process.env.MARKET_SELECTION_MODE): MarketSelectionMode {
@@ -39,7 +44,7 @@ export function marketSelectionMode(value: string | undefined = process.env.MARK
 
 export type SelectionPolicy = {
   MODEL_WEIGHT: number; HARD_MIN_ODDS: number; USEFUL_MIN_ODDS: number; MIN_BOOKS: number; MIN_BLENDED_PROBABILITY: number;
-  MAX_MODEL_OVER_MARKET_PP: number; KEEP_PRIMARY_EV_TOLERANCE: number; OBJECTIVE: "guard" | "repair" | "ev";
+  MAX_MODEL_OVER_MARKET_PP: number; KEEP_PRIMARY_EV_TOLERANCE: number; OBJECTIVE: "guard" | "repair" | "ev"; MAX_QUOTE_AGE_HOURS: number;
 };
 export const SELECTION_POLICY: SelectionPolicy = {
   /**
@@ -79,6 +84,12 @@ export const SELECTION_POLICY: SelectionPolicy = {
    * and EV are NOT used to override a verified pick.
    */
   OBJECTIVE: "guard",
+  /**
+   * A quote whose provider timestamp is older than this at selection time is
+   * not a verified price. 96h keeps early-lane quotes (days ahead) usable
+   * while rejecting prices left over from a previous round.
+   */
+  MAX_QUOTE_AGE_HOURS: 96,
 };
 
 export type CandidateInput = {
@@ -115,7 +126,9 @@ function drawNoBetFair(odds: FixtureOdds | null, selection: unknown): number | n
   return side === "HOME" ? (100 * h) / (h + a) : side === "AWAY" ? (100 * a) / (h + a) : null;
 }
 
-export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy: SelectionPolicy = SELECTION_POLICY): EvaluatedCandidate {
+export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy: SelectionPolicy = SELECTION_POLICY, now: Date = new Date()): EvaluatedCandidate {
+  const stamp = odds?.update ? Date.parse(odds.update) : NaN;
+  const stale = Number.isFinite(stamp) && now.getTime() - stamp > policy.MAX_QUOTE_AGE_HOURS * 3_600_000;
   const mapped = toBookmakerSelection(c.marketType, c.selection);
   const sel = mapped && odds ? findSelection(odds, mapped.market, mapped.value) : null;
   const fairQuote = mapped && odds ? devigProbability(odds, mapped.market, mapped.value)?.probability ?? null : null;
@@ -127,7 +140,13 @@ export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, p
   const ev = blended != null && median != null ? (blended / 100) * median - 1 : null;
   const reasons: string[] = [];
   let tier: Tier;
-  if (median == null) {
+  if (stale && median != null) {
+    tier = "UNPRICED"; reasons.push(`quote is older than ${policy.MAX_QUOTE_AGE_HOURS}h`);
+  } else if (median == null && dnb != null && 100 / dnb < policy.HARD_MIN_ODDS) {
+    // The executable Draw No Bet price can only be at or below its fair price,
+    // so a derived fair price under the floor means the real price is too.
+    tier = "INELIGIBLE"; reasons.push(`derived fair Draw No Bet price ${(100 / dnb).toFixed(2)} is below the ${policy.HARD_MIN_ODDS.toFixed(2)} floor`);
+  } else if (median == null) {
     tier = "UNPRICED";
     reasons.push(c.marketType === "DRAW_NO_BET" ? "no executable Draw No Bet quote (fair price derived from 1X2 only)"
       : mapped ? "selection not quoted in the cached odds" : `no cached bookmaker market for ${c.marketType}`);
@@ -174,12 +193,12 @@ const key = (c: { marketType: string; selection: unknown }) => c.marketType + JS
 export function selectPrimary(
   inputs: readonly CandidateInput[],
   odds: FixtureOdds | null,
-  opts: { evidenceComplete: boolean; policy?: SelectionPolicy } = { evidenceComplete: true },
+  opts: { evidenceComplete: boolean; policy?: SelectionPolicy; now?: Date } = { evidenceComplete: true },
 ): SelectionResult {
   const policy = opts.policy ?? SELECTION_POLICY;
   const seen = new Set<string>();
   const candidates = inputs.filter((c) => { const k = key(c); if (seen.has(k)) return false; seen.add(k); return true; })
-    .map((c) => evaluateCandidate(c, odds, policy));
+    .map((c) => evaluateCandidate(c, odds, policy, opts.now ?? new Date()));
   const primary = candidates.find((c) => c.source === "primary") ?? candidates[0] ?? null;
   const result = (decision: SelectionDecision, holdReason: HoldReason | null, chosen: EvaluatedCandidate | null): SelectionResult =>
     ({ decision, holdReason, chosen, candidates, policyVersion: SELECTION_POLICY_VERSION });
@@ -229,4 +248,22 @@ export function displayTier(rec: { chosen?: { tier?: string } | null; decision?:
   const t = rec?.chosen?.tier;
   if (!t) return null;
   return t === "QUALIFIED" ? 0 : t === "SHORT" ? 1 : t === "UNPRICED" ? 2 : 3;
+}
+
+/** Markets with no executable price in the cached feed, by construction. */
+export const UNPRICED_MARKET_TYPES: ReadonlySet<string> = new Set(["DRAW_NO_BET", "TEAM_TOTAL", "WIN_EITHER_HALF", "HT_FT", "CORRECT_SCORE", "OTHER"]);
+
+/**
+ * Ranking key for already-published rows (homepage / Genius): 0 = verified
+ * price (QUALIFIED or SHORT), 1 = no executable price, 2 = failed a check.
+ * Short prices are NOT demoted: on 45 days of homepage slots, "verified first,
+ * then confidence" gave strike 77.7% and return -3.0% against the current
+ * 79.1% / -6.6%, while also demoting short prices fell to 72.0% / -4.6%.
+ * Rows from before generation recorded a tier are inferred from the market.
+ */
+export function verifiedRank(tier: string | null | undefined, marketType: string): number {
+  if (tier === "QUALIFIED" || tier === "SHORT") return 0;
+  if (tier === "UNPRICED") return 1;
+  if (tier === "INELIGIBLE") return 2;
+  return UNPRICED_MARKET_TYPES.has(marketType) ? 1 : 0;
 }

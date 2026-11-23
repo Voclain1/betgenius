@@ -1,3 +1,4 @@
+import { verifiedRank, marketQualityRankingEnabled } from "@/lib/marketSelection";
 import { earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
@@ -39,7 +40,7 @@ export const VIP_CONFIDENCE_FLOOR = 75;
  */
 export const PREMIUM_CONFIDENCE_FLOOR = 80;
 
-type Rankable = { id: string; leagueApiId: number | null; confidence: number };
+type Rankable = { id: string; leagueApiId: number | null; confidence: number; marketType?: string; analysisJson?: unknown };
 
 /**
  * A pick this ranking is not allowed to remove.
@@ -309,10 +310,18 @@ export function selectCuratedIds<T extends Rankable>(
   return ranked.filter((row) => chosenIds.has(row.id)).slice(0, max).map((row) => row.id);
 }
 
-/** Confidence first, then competition priority, then id: the GENIUS ranking. */
+/**
+ * Confidence first, then competition priority, then id: the GENIUS ranking.
+ * With MARKET_QUALITY_RANKING=on, picks with a verified price rank before
+ * picks with no executable price first (src/lib/marketSelection.ts
+ * verifiedRank); the confidence floor is unchanged.
+ */
 export function compareByConfidenceRank(a: Rankable, b: Rankable): number {
-  return b.confidence - a.confidence || compareByEditorialRank(a, b);
+  const quality = marketQualityRankingEnabled() && a.marketType && b.marketType
+    ? verifiedRank(storedTier(a), a.marketType) - verifiedRank(storedTier(b), b.marketType) : 0;
+  return quality || b.confidence - a.confidence || compareByEditorialRank(a, b);
 }
+const storedTier = (r: Rankable) => (r.analysisJson as { selectionQuality?: { tier?: string } } | null | undefined)?.selectionQuality?.tier;
 
 /** A published row curation may rank: today's kickoff, not a hidden combo leg. */
 export type CurationRow = {
@@ -613,7 +622,7 @@ export function planCuration(
 }
 
 const CURATION_ROW_SELECT = {
-  id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true,
+  id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true, analysisJson: true,
   kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, selection: true,
   categories: { select: { category: true, manual: true } }, aiJob: { select: { model: true } },
 } as const;

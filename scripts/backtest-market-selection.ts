@@ -69,7 +69,7 @@ async function main() {
 
   // ------------------------------------------------------------------ 1. blend weight, chronological
   const settled = rows.filter((r) => r.status === "PUBLISHED" && (r.outcome === "WON" || r.outcome === "LOST") && r.kickoff! < now)
-    .map((r) => ({ r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null) }))
+    .map((r) => ({ r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined) }))
     .filter((x) => x.ev.fair != null).sort((a, b) => a.r.kickoff!.getTime() - b.r.kickoff!.getTime());
   const cut = Math.floor(settled.length * 0.6);
   const train = settled.slice(0, cut), test = settled.slice(cut);
@@ -112,11 +112,12 @@ async function main() {
     if (!k || !s || !o) continue;
     const intent = intentOf(j.prompt); byIntent[intent] = (byIntent[intent] ?? 0) + 1;
     const cands: CandidateInput[] = drafts.map((d, i) => ({ marketType: d.marketType, selection: d.selection, confidence: Number(d.confidence), source: i === 0 ? "primary" : "alternative" }));
-    const res = selectPrimary(cands, o, { evidenceComplete: j.contextComplete, policy: { ...SELECTION_POLICY, OBJECTIVE: objective } });
+    const at = p.kickoff ? new Date(p.kickoff) : undefined;
+    const res = selectPrimary(cands, o, { evidenceComplete: j.contextComplete, policy: { ...SELECTION_POLICY, OBJECTIVE: objective }, now: at });
     decisions[res.decision] = (decisions[res.decision] ?? 0) + 1;
     if (res.decision === "HOLD" || !res.chosen) continue;
     const grade = (c: { marketType: string; selection: unknown }) => resolveMarket(c.marketType as MarketType, c.selection as Selection, s[0], s[1]);
-    const prim = evaluateCandidate(cands[0], o);
+    const prim = evaluateCandidate(cands[0], o, SELECTION_POLICY, at);
     const go = grade(cands[0]), gn = grade(res.chosen);
     if ((go !== "WON" && go !== "LOST") || (gn !== "WON" && gn !== "LOST")) continue;
     old.push({ won: go === "WON", price: prim.median, market: cands[0].marketType });
@@ -133,7 +134,7 @@ async function main() {
   }
   // ------------------------------------------------------------------ 4. homepage FEATURED ranking, old vs tiered (settled days only)
   const featured = rows.filter((r) => r.status === "PUBLISHED" && r.categories.some((c) => c.category === "FEATURED") && r.kickoff && r.kickoff < new Date(now.getTime() - 3 * 3_600_000))
-    .map((r) => ({ ...r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null) }));
+    .map((r) => ({ ...r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined) }));
   const tierRank = (t: string) => (t === "QUALIFIED" ? 0 : t === "SHORT" ? 1 : t === "UNPRICED" ? 2 : 3);
   const agg = { old: [] as typeof featured, new: [] as typeof featured, blend: [] as typeof featured, verified: [] as typeof featured };
   const dayDiff: number[] = [];
@@ -171,14 +172,14 @@ async function main() {
   const ouText: Record<string, number> = {}; for (const r of pub) ouText[r.overUnder ?? "(none)"] = (ouText[r.overUnder ?? "(none)"] ?? 0) + 1;
   const sec = pub.filter((r) => r.ouLine != null && r.ouDirection && r.finalHomeScore != null && r.finalAwayScore != null && r.marketType !== "OVER_UNDER");
   const secWon = sec.filter((r) => resolveMarket("OVER_UNDER", { line: r.ouLine!, direction: r.ouDirection as "OVER" | "UNDER" }, r.finalHomeScore!, r.finalAwayScore!) === "WON").length;
-  const secFair = sec.map((r) => evaluateCandidate({ marketType: "OVER_UNDER", selection: { line: r.ouLine, direction: r.ouDirection }, confidence: 50, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null).fair).filter((f): f is number => f != null);
+  const secFair = sec.map((r) => evaluateCandidate({ marketType: "OVER_UNDER", selection: { line: r.ouLine, direction: r.ouDirection }, confidence: 50, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined).fair).filter((f): f is number => f != null);
   console.log(JSON.stringify({ section: "secondaryOverUnder", publishedRows: pub.length, topValues: Object.entries(ouText).sort((a, b) => b[1] - a[1]).slice(0, 6),
     sameAsPrimaryMarketRows: pub.filter((r) => r.marketType === "OVER_UNDER").length, settledSecondaryN: sec.length, secondaryStrike: pct(secWon, sec.length), secondaryMeanMarketFair: r3(mean(secFair)) }));
 
   // ------------------------------------------------------------------ 6. integrity: duplicate fixtures, below-floor publications, incomplete evidence
   const featuredAll = rows.filter((r) => r.status === "PUBLISHED" && r.categories.some((c) => c.category === "FEATURED"));
   const perFixture = new Map<string, number>(); for (const r of featuredAll) { const k = matchKey(r); if (k) perFixture.set(k, (perFixture.get(k) ?? 0) + 1); }
-  const belowFloor = pub.map((r) => ({ r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null) }))
+  const belowFloor = pub.map((r) => ({ r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined) }))
     .filter((x) => x.ev.median != null && x.ev.median < SELECTION_POLICY.HARD_MIN_ODDS);
   const byIntentBelow: Record<string, number> = {}; for (const x of belowFloor) { const i = intentOf(x.r.aiJob?.prompt); byIntentBelow[i] = (byIntentBelow[i] ?? 0) + 1; }
   console.log(JSON.stringify({ section: "integrity", featuredFixtures: perFixture.size, featuredFixturesWithMultipleRows: [...perFixture.values()].filter((n) => n > 1).length,
@@ -200,7 +201,7 @@ async function main() {
     for (const r of g.slice(1)) { secondaryRows++; secondaryByIntent[intent] = (secondaryByIntent[intent] ?? 0) + 1; if (r.categories.some((c) => c.category === "VIP" || c.category === "PREMIUM")) secondaryPaid++; }
   }
   void byJob;
-  const dnb = pub.filter((r) => r.marketType === "DRAW_NO_BET").map((r) => evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null));
+  const dnb = pub.filter((r) => r.marketType === "DRAW_NO_BET").map((r) => evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined));
   console.log(JSON.stringify({ section: "singleRowImpact", publishedRowsBeyondFirstOfSingleMarketJob: secondaryRows, byIntent: secondaryByIntent, ofWhichVipPremium: secondaryPaid, vipPremiumPublishedTotal: paidTotal,
     drawNoBet: { published: dnb.length, withDerivedFair: dnb.filter((x) => x.derivedFairOdds != null).length, derivedFairBelow112: dnb.filter((x) => x.derivedFairOdds != null && x.derivedFairOdds < 1.12).length,
       derivedFairBelow120: dnb.filter((x) => x.derivedFairOdds != null && x.derivedFairOdds < 1.2).length, medianDerivedFair: median(dnb.filter((x) => x.derivedFairOdds != null).map((x) => x.derivedFairOdds!)) } }));

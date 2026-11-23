@@ -64,6 +64,8 @@ jobs:
 
       - name: Historical evidence classification and admin review guarantees
         run: npx tsx scripts/check-historical-evidence.ts
+      - name: Market selection, price verification, homepage ranking and goals outlook (prediction quality)
+        run: npx tsx scripts/check-market-selection.ts
       - name: Editorial voice (preview/reasoning briefs, reviewer direction, expanded house-voice scan, rewrite gates)
         run: npx tsx scripts/check-editorial-voice.ts
       - name: Prediction updates workspace (evidence diff, decision rules, quota order, admin-only guards)

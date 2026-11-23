@@ -1,4 +1,5 @@
 import { findSelection, toBookmakerSelection, type FixtureOdds } from "@/lib/odds";
+import { devigProbability } from "@/lib/marketConfirmed";
 
 /**
  * Publication-value floor for automatically generated, bookmaker-quoted picks.
@@ -34,6 +35,19 @@ export function automaticOddsFailure(
     return { reason: "TEAM_TOTAL_UNPRICED", marketType, selection, median: null };
   }
 
+  // Draw No Bet has no cached executable quote, so it used to pass this floor
+  // unchecked. Its fair price follows from the de-vigged 1X2 market, and the
+  // executable price can only be at or below it: a fair price under the floor
+  // means the real price is too (Brighton v Craiova DNB derived fair 1.07).
+  if (marketType === "DRAW_NO_BET" && odds) {
+    const side = (selection as { value?: string } | null)?.value;
+    const h = devigProbability(odds, "Match Winner", "Home")?.probability, a = devigProbability(odds, "Match Winner", "Away")?.probability;
+    if (h != null && a != null && h + a > 0 && (side === "HOME" || side === "AWAY")) {
+      const fairOdds = (h + a) / (side === "HOME" ? h : a);
+      if (fairOdds < AUTO_MIN_MEDIAN_ODDS) return { reason: "BELOW_MINIMUM_ODDS", marketType, selection, median: fairOdds };
+    }
+    return null;
+  }
   const mapped = toBookmakerSelection(marketType, selection);
   if (!odds || !mapped) return null;
   const price = findSelection(odds, mapped.market, mapped.value)?.median;

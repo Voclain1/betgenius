@@ -177,7 +177,9 @@ assert.ok(publish.includes('status: "DRAFT"') && publish.includes('kind: desired
   publish.includes('kind: "EARLY_HOLD"') && publish.includes('status: "PENDING_REVIEW"'),
   "low-credibility holds are durable and later rejoin ordinary admin review");
 assert.ok(generationContextSource.includes("input.earlyPriceUnsafe = true;") &&
-  generationContextSource.includes("const persistedDrafts = earlyFree ? modelDrafts : drafts;") &&
+  // Early still persists its unpayable draft for review (modelDrafts, not the
+  // price-filtered list); since Nov 2026 only ONE row per single-market job.
+  generationContextSource.includes('const persistedDrafts = (earlyFree ? modelDrafts : drafts).slice(0, marketBreadth === "single" ? 1 : undefined);') &&
   publish.includes("earlyPriceUnsafeFromPrompt(row.aiJob?.prompt)") &&
   publish.includes("generation-price-safety-review") &&
   publisher.includes("EARLY_PUBLICATION_PRICE_SAFETY_REVIEW_REQUIRED"),

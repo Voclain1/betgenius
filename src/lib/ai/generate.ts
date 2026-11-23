@@ -19,6 +19,7 @@ import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib
 import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
+import { marketSelectionMode, selectPrimary, selectionRecord, type CandidateInput, type SelectionRecord } from "@/lib/marketSelection";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
 import { scanDraftForInternalTerminology, type InternalTerminologyViolation } from "@/lib/houseVoice";
@@ -272,6 +273,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // bypass. Normal, paid, Goals and admin prompts remain unchanged.
   const pricedEarlyMarkets = input.intent === EARLY_FREE_GENERATION_INTENT && odds
     ? earlyMarketGuidance(odds, new Date(input.kickoff), new Date()) : [];
+  // Market selection (src/lib/marketSelection.ts): ordinary and early single-
+  // market generation only. The paid pass, European lane, Goals, handicap,
+  // combos and Banker keep their own dedicated gates and prompts unchanged.
+  const selectionMode = marketSelectionMode();
+  const selectionApplies = selectionMode !== "off" && !goalsOnly && !input.handicapLine && marketBreadth === "single"
+    && riskRoute.calibration !== "legacy" && !["VIP_PREMIUM", "EUROPEAN_CLUB", "MARKET_CONFIRMED", REGULAR_COMBO_INTENT].includes(String(input.intent ?? ""));
   const callModel = (block: string) =>
     generatePredictionForFixture({
       digest,
@@ -286,6 +293,8 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       ...(goalsOnly ? { goalsOnly: true } : {}),
       ...(input.intent === "VIP_PREMIUM" ? { lowerRisk: { avoidPicks: input.avoidPicks ?? [] } } : {}),
       ...(riskRoute.calibration === "vip" || input.intent === "VIP_PREMIUM" ? { paidRoute: true } : {}),
+      ...(selectionApplies ? { marketSelection: selectionMode as "shadow" | "on" } : {}),
+      ...(process.env.FREE_TIER_NEUTRAL_BANDS === "on" && riskRoute.calibration === "genius" && input.intent !== "VIP_PREMIUM" ? { freeTierNeutral: true } : {}),
     });
   const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
   // A call that was paid for and then rejected inside generatePredictionForFixture
@@ -372,12 +381,38 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const contextComplete = hasSubstantiveFootballEvidence(digest) &&
     (input.intent !== EARLY_FREE_GENERATION_INTENT || !sources.stale?.length);
 
+  // Market selection: the primary competes with the model's own independently
+  // reasoned alternatives on the exact quoted prices already loaded above (no
+  // extra provider or model call). Shadow records the decision only; "on"
+  // persists the chosen candidate with its own confidence and reasoning, and a
+  // HOLD keeps the early lane from publishing automatically. Admin-triggered
+  // generation is recorded but never switched.
+  let marketSelection: SelectionRecord | null = null;
+  if (selectionApplies && Array.isArray(output.predictions) && output.predictions.length > 0) {
+    const alts = (Array.isArray(output.alternatives) ? output.alternatives : [])
+      .filter((a) => a && typeof a.marketType === "string" && Number.isFinite(Number(a.confidence)) && typeof a.reasoning === "string"
+        && !["CORRECT_SCORE", "HT_FT", "SAME_GAME_DOUBLE", "OTHER"].includes(a.marketType) && isValidSelection(a.marketType, a.selection));
+    const candidates: CandidateInput[] = [
+      { marketType: output.predictions[0].marketType, selection: output.predictions[0].selection, confidence: Number(output.predictions[0].confidence), source: "primary" },
+      ...alts.map((a) => ({ marketType: a.marketType, selection: a.selection, confidence: Number(a.confidence), source: "alternative" as const })),
+    ];
+    const result = selectPrimary(candidates, odds, { evidenceComplete: contextComplete });
+    marketSelection = selectionRecord(result, selectionMode, null);
+    if (selectionMode === "on" && !input.manual) {
+      if (result.decision === "SWITCH" && result.chosen) {
+        const chosen = alts.find((a) => a.marketType === result.chosen!.marketType && JSON.stringify(a.selection) === JSON.stringify(result.chosen!.selection));
+        if (chosen) output = { ...output, predictions: [{ ...chosen, confidence: Number(chosen.confidence) }] };
+      }
+      if (result.decision === "HOLD" && earlyFree) input.earlyPriceUnsafe = true;
+    }
+  }
+
   const job = await prisma.aIJob.create({
     data: {
       userId: input.authorId,
       prompt: JSON.stringify(input),
       model,
-      rawOutput: JSON.stringify(output),
+      rawOutput: JSON.stringify(marketSelection ? { ...output, marketSelection } : output),
       status: "COMPLETED",
       contextComplete,
       promptTokens: usage.promptTokens,
@@ -406,7 +441,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // from the current trimmed feed. Market-sanity rejects remain independent.
   const payable = modelDrafts.filter((p) => !unpayable(p));
   const drafts = payable.filter((p) => !offMarket(p));
-  const persistedDrafts = earlyFree ? modelDrafts : drafts;
+  // One fixture, one canonical row, whenever a single market was asked for.
+  // The model sometimes returns extra drafts anyway (the early lane's guidance
+  // invited "a separately justified unpriced pick"), and every one was being
+  // persisted: Leipzig v Lens reached FEATURED twice from one job. Extra drafts
+  // stay in the job record; they are never a second public pick.
+  const persistedDrafts = (earlyFree ? modelDrafts : drafts).slice(0, marketBreadth === "single" ? 1 : undefined);
   // From here a rejection throws away a job that was paid for and already
   // recorded; it is marked REJECTED so the panel shows that spend apart from
   // the jobs that produced picks.
@@ -554,7 +594,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
           // keyFactors has been generated since the beginning and dropped here.
           // Shared across this job's rows exactly as matchPreview is — one
           // analysis, several market rows.
-          analysisJson: buildAnalysis(output) as unknown as Prisma.InputJsonValue,
+          analysisJson: { ...buildAnalysis(output), ...(marketSelection ? { selectionQuality: selectionQualityFor(marketSelection, p) } : {}) } as unknown as Prisma.InputJsonValue,
           contextComplete,
           provenance,
           authorId: input.authorId,
@@ -611,4 +651,16 @@ async function loadFixtureOdds(
     console.warn("[generate] odds lookup failed; odds checks skipped", err);
     return null;
   }
+}
+
+
+/**
+ * The persisted row's own price-quality snapshot, fixed at generation so later
+ * ranking is stable and outcome-blind (homepage / Genius read it; it never
+ * changes after this point and is never shown to readers).
+ */
+function selectionQualityFor(rec: SelectionRecord, draft: { marketType: string; selection: unknown }) {
+  const own = rec.candidates.find((c) => c.marketType === draft.marketType && JSON.stringify(c.selection) === JSON.stringify(draft.selection));
+  return { policyVersion: rec.policyVersion, mode: rec.mode, decision: rec.decision, holdReason: rec.holdReason,
+    tier: own?.tier ?? "UNPRICED", median: own?.median ?? null, books: own?.books ?? null, fair: own?.fair ?? null, blended: own?.blended ?? null };
 }
