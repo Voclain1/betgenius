@@ -204,6 +204,11 @@ export type OverlayFixtureRow = {
   status: string;
   provenance: string | null;
   contextComplete: boolean;
+  /**
+   * Written by the early lane (AIJob intent EARLY_FREE). Optional: callers that
+   * do not know leave it undefined, which keeps the previous behaviour.
+   */
+  earlyLane?: boolean;
 };
 
 /** A previous VIP_PREMIUM-intent AIJob, read from its stored prompt. `kickoff` is null on a prompt that did not record it. */
@@ -246,7 +251,34 @@ export type OverlayCandidate = {
   round: string | null;
   /** Admitted only because its kickoff day has quota its own core fixtures can never use (PAID_SPARE_QUOTA_WIDENING=on). */
   viaSpareQuota?: true;
+  /**
+   * Its only ordinary rows came from the early lane, which reads cached evidence
+   * only, and none has complete match context. The paid pass fetches fresh
+   * evidence when it generates, and its own draft must be contextComplete to be
+   * published (paidAutoPublishVerdict), so the bar is unchanged.
+   */
+  refreshesEarlyEvidence?: true;
 };
+
+/**
+ * PAID_EARLY_EVIDENCE_REFRESH: on (default) | off.
+ *
+ * THE GAP. The regular generator skips any fixture that already has a
+ * prediction (selector.ts), so a fixture the early lane covered days ahead is
+ * never regenerated with fresh evidence. When the early lane's cache-only
+ * evidence was incomplete, the fixture had no context-complete ordinary row and
+ * the paid pass skipped it as NO_MATCH_CONTEXT, permanently. Production, 30 days
+ * to 23 Nov 2026: 27 core-league fixtures in that state, 0 paid picks; core
+ * fixtures from regular generation with context: 120 paid picks from 367.
+ *
+ * THE FIX. Such a fixture stays a candidate. Nothing else changes: the same
+ * fresh quote, market bar, model floors, daily quota and publish gate apply,
+ * and the paid draft itself must have complete match context to publish.
+ * "off" restores the previous skip.
+ */
+export function earlyEvidenceRefreshEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.PAID_EARLY_EVIDENCE_REFRESH ?? "").trim().toLowerCase() !== "off";
+}
 
 export type OverlaySkipReason =
   | "OUTSIDE_WINDOW"
@@ -306,6 +338,8 @@ export function planVipPremiumCandidates(input: {
   anyLeague?: boolean;
   /** Spare kickoff-day quota (Sprint 09). Absent or "off": exactly the previous behaviour. */
   spareQuota?: { mode: SpareQuotaMode; slots: ReadonlyMap<string, number> };
+  /** Admit early-lane fixtures without context (PAID_EARLY_EVIDENCE_REFRESH). Absent: previous behaviour. */
+  earlyEvidenceRefresh?: boolean;
 }): OverlayPlan {
   const skipped: OverlayPlan["skipped"] = {};
   const skip = (r: OverlaySkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
@@ -357,7 +391,8 @@ export function planVipPremiumCandidates(input: {
       countSkip("NOT_YET_GENERATED");
       continue;
     }
-    if (!ordinary.some((r) => r.contextComplete)) { countSkip("NO_MATCH_CONTEXT"); continue; }
+    const refreshesEarlyEvidence = !ordinary.some((r) => r.contextComplete);
+    if (refreshesEarlyEvidence && !(input.earlyEvidenceRefresh && ordinary.every((r) => r.earlyLane === true))) { countSkip("NO_MATCH_CONTEXT"); continue; }
     if (rows.some((r) => isDedicatedPaid(r.provenance))) { countSkip("HAS_DEDICATED_PAID"); continue; }
     if (attempted.has(l.fixtureApiId)) { countSkip("ALREADY_ATTEMPTED"); continue; }
     if (input.backingOff?.has(l.fixtureApiId)) { countSkip("BACKING_OFF"); continue; }
@@ -366,6 +401,7 @@ export function planVipPremiumCandidates(input: {
       homeTeam: l.homeTeam, awayTeam: l.awayTeam, homeTeamApiId: homeId, awayTeamApiId: awayId,
       kickoff: l.kickoff, round: l.round,
       ...(viaSpare ? { viaSpareQuota: true as const } : {}),
+      ...(refreshesEarlyEvidence ? { refreshesEarlyEvidence: true as const } : {}),
     };
     if (viaSpare) spareEligible.push(candidate);
     if (!viaSpare || spareMode === "on") candidates.push(candidate);

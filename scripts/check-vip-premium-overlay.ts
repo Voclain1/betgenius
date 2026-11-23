@@ -197,6 +197,7 @@ async function main() {
         backingOff: extra.backingOff,
         now: NOW,
         anyLeague: extra.anyLeague,
+        earlyEvidenceRefresh: extra.earlyEvidenceRefresh,
       });
     const ok = fixture(1);
     eq("overlay: accepts a fixture ordinary generation already covered (ledger SUCCEEDED)", plan([ok]).candidates.map((c: Any) => c.matchKey), [ok.key]);
@@ -226,6 +227,22 @@ async function main() {
     eq("overlay: under 12h to kickoff is outside the window", plan([fixture(4, { kickoffIn: 6 })]).skipped, { OUTSIDE_WINDOW: 1 });
     eq("overlay: over 48h to kickoff is outside the window", plan([fixture(5, { kickoffIn: 50 })]).skipped, { OUTSIDE_WINDOW: 1 });
     eq("overlay: needs live match context on an ordinary row", plan([fixture(6, { context: false })]).skipped, { NO_MATCH_CONTEXT: 1 });
+    // PAID_EARLY_EVIDENCE_REFRESH: an early-lane fixture without context stays a candidate.
+    {
+      const early = fixture(61, { context: false, provenance: "STANDARD_CURATED" });
+      const earlyRow = { ...early.row, earlyLane: true };
+      const withEarly = (refresh: boolean | undefined, rows = [earlyRow]) => overlay.planVipPremiumCandidates({ ledger: [early.ledger], rows, attempts: [], now: NOW, earlyEvidenceRefresh: refresh });
+      eq("early evidence: off (or not passed) keeps the previous skip", withEarly(undefined).skipped, { NO_MATCH_CONTEXT: 1 });
+      eq("early evidence: explicitly disabled keeps the skip", withEarly(false).skipped, { NO_MATCH_CONTEXT: 1 });
+      const on = withEarly(true);
+      eq("early evidence: on admits the early-only fixture", on.candidates.map((c: Any) => [c.fixtureApiId, c.refreshesEarlyEvidence]), [[9061, true]]);
+      eq("early evidence: a regular-generation row without context is still skipped", withEarly(true, [{ ...early.row, earlyLane: false }]).skipped, { NO_MATCH_CONTEXT: 1 });
+      eq("early evidence: a mixed fixture (early + regular, none with context) is still skipped", withEarly(true, [earlyRow, { ...early.row, id: "o61b", earlyLane: false }]).skipped, { NO_MATCH_CONTEXT: 1 });
+      const ctxOk = fixture(62);
+      eq("early evidence: a fixture with context is not flagged", overlay.planVipPremiumCandidates({ ledger: [ctxOk.ledger], rows: [{ ...ctxOk.row, earlyLane: true }], attempts: [], now: NOW, earlyEvidenceRefresh: true }).candidates.map((c: Any) => c.refreshesEarlyEvidence), [undefined]);
+      eq("early evidence: every other rule still applies (already attempted)", overlay.planVipPremiumCandidates({ ledger: [early.ledger], rows: [earlyRow], attempts: [{ fixtureApiId: 9061, createdAt: NOW }], now: NOW, earlyEvidenceRefresh: true }).skipped, { ALREADY_ATTEMPTED: 1 });
+      eq("early evidence: default on, \"off\" disables", [overlay.earlyEvidenceRefreshEnabled({}), overlay.earlyEvidenceRefreshEnabled({ PAID_EARLY_EVIDENCE_REFRESH: " OFF " }), overlay.earlyEvidenceRefreshEnabled({ PAID_EARLY_EVIDENCE_REFRESH: "on" })], [true, false, true]);
+    }
     eq("overlay: a Goals row alone is not ordinary coverage", plan([fixture(7, { provenance: "GOALS_GENERATED" })]).skipped, { NOT_YET_GENERATED: 1 });
     const withDedicated = fixture(8);
     const dedicatedRow = { ...withDedicated.row, id: "d8", provenance: "VIP_GENERATED", status: "PENDING_REVIEW" };

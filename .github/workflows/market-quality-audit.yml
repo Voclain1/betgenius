@@ -54,13 +54,12 @@ jobs:
           API_FOOTBALL_KEY: ""
         run: npx tsx scripts/diagnose-paid-supply.ts
       - name: Market quality audit
-        if: github.event_name == 'workflow_dispatch'
         env:
           REQUIRE_READ_ONLY: "1"
           API_FOOTBALL_KEY: ""
         run: npx tsx scripts/audit-market-quality.ts "${{ github.event.inputs.days || '30' }}"
       - name: Market selection backtest
-        if: github.event_name == 'workflow_dispatch'
+        if: hashFiles('scripts/backtest-market-selection.ts') != ''
         env:
           REQUIRE_READ_ONLY: "1"
           API_FOOTBALL_KEY: ""

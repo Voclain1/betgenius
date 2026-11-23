@@ -19,6 +19,7 @@ import {
   type MarketConfirmedVerdict,
 } from "@/lib/marketConfirmed";
 import { matchKey } from "@/lib/slug";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { assessPaidCuration, pickPrice, usableCurationQuote } from "@/lib/paidSelection";
 import { applyCalibration, providerOf, type CalibrationArtifact } from "@/lib/calibration";
@@ -58,6 +59,7 @@ import {
   VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
   vipPremiumOddsDiagnostic,
+  earlyEvidenceRefreshEnabled,
   spareQuotaSlotsByDay,
   spareQuotaWideningMode,
   PAID_CORE_LEAGUE_IDS,
@@ -534,12 +536,20 @@ export async function selectVipPremiumTargets(
     }),
     prisma.prediction.findMany({
       where: { kickoff: { gte: from, lte: until }, status: { not: "ARCHIVED" } },
-      select: { id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true, provenance: true, contextComplete: true },
+      select: { id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, status: true, provenance: true, contextComplete: true, aiJobId: true },
     }),
     loadVipPremiumAttempts(now),
     prisma.appLock.findMany({ where: { key: { startsWith: VIP_PREMIUM_BACKOFF_LOCK_PREFIX }, expiresAt: { gt: now } }, select: { key: true } }),
   ]);
   const backingOff = new Set(backoffs.map((b) => Number(b.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))).filter(Number.isFinite));
+  // Which rows without match context came from the early lane (cache-only
+  // evidence). One read, limited to those rows; the rest stay unmarked.
+  const earlyRefresh = !options.anyLeague && earlyEvidenceRefreshEnabled();
+  const noContextJobs = earlyRefresh ? [...new Set(rows.filter((r) => !r.contextComplete && r.aiJobId).map((r) => r.aiJobId!))] : [];
+  const earlyJobs = new Set(noContextJobs.length
+    ? (await prisma.aIJob.findMany({ where: { id: { in: noContextJobs }, prompt: { contains: `"intent":"${EARLY_FREE_GENERATION_INTENT}"` } }, select: { id: true } })).map((j) => j.id)
+    : []);
+  const overlayRows = rows.map((r) => ({ ...r, earlyLane: !!r.aiJobId && earlyJobs.has(r.aiJobId) }));
   const used = attemptsByKickoffDay(attempts);
 
   // Spare kickoff-day quota: one database read, no provider call.
@@ -564,7 +574,8 @@ export async function selectVipPremiumTargets(
 
   const plan = planVipPremiumCandidates({
     ledger: ledger.filter((l) => l.kickoff).map((l) => ({ ...l, kickoff: l.kickoff! })),
-    rows,
+    rows: overlayRows,
+    earlyEvidenceRefresh: earlyRefresh,
     attempts,
     backingOff,
     now,
