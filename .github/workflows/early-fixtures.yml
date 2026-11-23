@@ -39,6 +39,12 @@ on:
       - "src/app/api/admin/prediction-updates/**"
       - "scripts/check-prediction-updates.ts"
       - "scripts/check-prediction-updates-postgres.ts"
+      - "src/lib/houseVoice.ts"
+      - "src/lib/ai/proseGate.ts"
+      - "src/lib/ai/rewrite.ts"
+      - "src/lib/ai/analysis.ts"
+      - "scripts/check-editorial-voice.ts"
+      - "scripts/check-editorial-voice-postgres.ts"
       - "src/lib/ai/evidenceReadiness.ts"
       - "src/app/api/admin/evidence-review/**"
       - "scripts/check-early-evidence-freshness.ts"
@@ -117,3 +123,4 @@ jobs:
       - run: npx tsx scripts/check-early-remediation-postgres.ts
       - run: npx tsx scripts/check-evidence-review-postgres.ts
       - run: npx tsx scripts/check-prediction-updates-postgres.ts
+      - run: npx tsx scripts/check-editorial-voice-postgres.ts

@@ -17,6 +17,7 @@ import { parseStoredContext } from "@/lib/ai/context";
 import { deriveMarketAndPick, isValidSelection, type MarketType, type Selection } from "@/lib/markets";
 import { isPaidOnlyProvenance } from "@/lib/paidOnly";
 import { assertPublicationFixture } from "@/lib/predictions";
+import { proseViolations } from "@/lib/ai/proseGate";
 
 export const dynamic = "force-dynamic";
 const Action = z.object({
@@ -117,6 +118,8 @@ export async function POST(req: NextRequest) {
           || typeof proposal.reasoning !== "string" || proposal.reasoning.length < 20) {
           throw new Error("REPLACEMENT_EVIDENCE_OR_SELECTION_NOT_QUALIFIED");
         }
+        // Published prose passes the same gate as every generated draft.
+        if (proseViolations({ reasoning: proposal.reasoning }).length) throw new Error("REPLACEMENT_PROSE_REJECTED");
         // Publication verifies fixture identity, status and selected market
         // against live stored state, not an earlier approval snapshot.
         await assertPublicationFixture({ kickoff: before.kickoff, fixtureApiId: before.fixtureApiId,
@@ -142,7 +145,9 @@ export async function POST(req: NextRequest) {
             status: "PUBLISHED", marketType: nextMarket, selection: nextSelection as Prisma.InputJsonValue,
             manualSettlementOnly: false, market, pick, odds: null,
             confidence: nextConfidence, reasoning: proposal.reasoning,
-            matchPreview: "Updated assessment based on newer match information.",
+            // No preview rather than an administrative line ("Updated
+            // assessment based on newer match information") in public copy.
+            matchPreview: null,
             contextComplete: true, provenance: "REASSESSED_FREE",
             authorId: session.user.id, approvedById: session.user.id,
             approvedAt: stamped, publishedAt: stamped, aiJobId: job.id,
@@ -179,7 +184,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (["PREDICTION_NOT_PUBLISHED_OR_STARTED", "KICKOFF_PASSED", "NO_OPEN_REASSESSMENT",
+    if (["PREDICTION_NOT_PUBLISHED_OR_STARTED", "KICKOFF_PASSED", "NO_OPEN_REASSESSMENT", "REPLACEMENT_PROSE_REJECTED",
       "PAID_REPLACEMENT_REQUIRES_PAID_GATE", "PROTECTED_CATEGORY_REPLACEMENT",
       "REPLACEMENT_EVIDENCE_OR_SELECTION_NOT_QUALIFIED", "FIXTURE_NOT_SCHEDULED",
       "REVIEW_STATE_CHANGED", "NOT_AUTO_WITHDRAWN"].includes(message)) {

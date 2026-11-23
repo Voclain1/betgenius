@@ -98,7 +98,11 @@ function cleanBlock(text: string, leaks: (t: string) => boolean): string {
 async function main() {
   const apply = process.argv.includes("--apply");
   const { prisma } = await import("../src/lib/prisma");
-  const { scanDraftForInternalTerminology } = await import("../src/lib/houseVoice");
+  const { scanDraftForInternalTerminology: scanAll, BACKFILL_TERM_LABELS } = await import("../src/lib/houseVoice");
+  // Pinned to the original term list: the 2026-11 editorial terms gate new
+  // drafts only and never trigger an automatic edit of published copy.
+  const scanDraftForInternalTerminology = (d: { reasoning?: string | null }) =>
+    scanAll(d).filter((v) => BACKFILL_TERM_LABELS.has(v.label));
 
   const rows = await prisma.prediction.findMany({
     where: { status: "PUBLISHED" },
