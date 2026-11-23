@@ -185,6 +185,26 @@ async function main() {
     publishedBelowHardFloor: belowFloor.length, belowFloorByIntent: byIntentBelow,
     publishedWithIncompleteEvidencePct: pct(pub.filter((r) => !r.contextComplete).length, pub.length) }));
 
+  // ------------------------------------------------------------------ 6b. one-row-per-fixture impact on paid supply; Draw No Bet derived-fair bypass
+  const byJob = new Map<string, typeof pub>();
+  const pubWithJob = await prisma.prediction.findMany({ where: { status: "PUBLISHED", kickoff: { gte: from }, marketType: { not: "SAME_GAME_DOUBLE" }, aiJobId: { not: null } },
+    select: { id: true, aiJobId: true, createdAt: true, categories: { select: { category: true } }, marketType: true, selection: true, confidence: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, aiJob: { select: { prompt: true } } } });
+  const groups = new Map<string, typeof pubWithJob>();
+  for (const r of pubWithJob) { const g = groups.get(r.aiJobId!) ?? []; g.push(r); groups.set(r.aiJobId!, g); }
+  let secondaryRows = 0, secondaryPaid = 0, paidTotal = 0; const secondaryByIntent: Record<string, number> = {};
+  for (const g of groups.values()) {
+    g.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
+    for (const r of g) if (r.categories.some((c) => c.category === "VIP" || c.category === "PREMIUM")) paidTotal++;
+    const intent = intentOf(g[0].aiJob?.prompt);
+    if (["REGULAR_COMBO", "VIP_PREMIUM", "EUROPEAN_CLUB", "MARKET_CONFIRMED"].includes(intent)) continue;
+    for (const r of g.slice(1)) { secondaryRows++; secondaryByIntent[intent] = (secondaryByIntent[intent] ?? 0) + 1; if (r.categories.some((c) => c.category === "VIP" || c.category === "PREMIUM")) secondaryPaid++; }
+  }
+  void byJob;
+  const dnb = pub.filter((r) => r.marketType === "DRAW_NO_BET").map((r) => evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null));
+  console.log(JSON.stringify({ section: "singleRowImpact", publishedRowsBeyondFirstOfSingleMarketJob: secondaryRows, byIntent: secondaryByIntent, ofWhichVipPremium: secondaryPaid, vipPremiumPublishedTotal: paidTotal,
+    drawNoBet: { published: dnb.length, withDerivedFair: dnb.filter((x) => x.derivedFairOdds != null).length, derivedFairBelow112: dnb.filter((x) => x.derivedFairOdds != null && x.derivedFairOdds < 1.12).length,
+      derivedFairBelow120: dnb.filter((x) => x.derivedFairOdds != null && x.derivedFairOdds < 1.2).length, medianDerivedFair: median(dnb.filter((x) => x.derivedFairOdds != null).map((x) => x.derivedFairOdds!)) } }));
+
   // ------------------------------------------------------------------ 7. token cost per generation intent (for the alternatives cost assessment)
   const recent = await prisma.aIJob.findMany({ where: { createdAt: { gte: new Date(now.getTime() - 14 * D) }, status: "COMPLETED" }, select: { prompt: true, promptTokens: true, outputTokens: true } });
   const tok: Record<string, { n: number; prompt: number[]; output: number[] }> = {};
