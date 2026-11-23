@@ -49,7 +49,7 @@ function jobMeta(prompt: string | null | undefined): { intent: Intent; categorie
 /** Generation route, so incompatible populations are never pooled. */
 function routeOf(p: { provenance: string; aiJobId: string | null }, intent: Intent): string {
   if (!p.aiJobId) return "MANUAL";
-  if (intent === "EARLY_FREE_GENERATION") return "EARLY";
+  if (intent === "EARLY_FREE" || intent === "EARLY_FREE_GENERATION") return "EARLY";
   if (p.provenance === "GOALS_GENERATED") return "GOALS";
   if (p.provenance === "VIP_GENERATED" || p.provenance === "PREMIUM_GENERATED") return "PAID_PASS";
   if (p.provenance === "VIP_ROUTE_CONFIRMED") return "VIP_ROUTE";
