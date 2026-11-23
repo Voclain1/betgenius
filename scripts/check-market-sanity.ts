@@ -90,7 +90,7 @@ check("no job / old unprefixed model: not flagged", !isBackupModel(null) && !isB
 
 console.log("\n6. Wiring");
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
-check("market-sanity checks include Goals and manual, skip handicap and dedicated paid", /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(gen) && /const odds = checksMarket \? await loadFixtureOdds\(/.test(gen));
+check("market-sanity checks include Goals and manual, skip handicap and dedicated paid", /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(gen) && /const quote = checksMarket \? await loadFixtureOdds\(/.test(gen) && /const odds = quote\?\.odds \?\? null;/.test(gen));
 check("every draft off the market: one more ask with the market's view", /marketSanityRetryBlock\(odds, off, input\.home, input\.away\)/.test(gen));
 check("off-market drafts are dropped; none left throws MarketSanityError", /payable\.filter\(\(p\) => !offMarket\(p\)\)/.test(gen) && /throw (await rejected\()?new MarketSanityError\(/.test(gen));
 check("bulk panel explains MarketSanityError", /bookmakers/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "MarketSanityError" }))));
