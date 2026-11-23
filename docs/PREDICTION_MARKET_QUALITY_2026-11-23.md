@@ -204,7 +204,7 @@ The production audit and backtest remain runnable on demand through the read-onl
 
 | Ranking | Strike | Return at median (90%) | Unpriced slots | Short slots | Median price | Double Chance |
 |---|---|---|---|---|---|---|
-| Current: confidence first | 79.1% | −6.6% (−12.9, −1.6) | 23.8% | 21.6% | 1.17 | 57.6% |
+| Current: confidence first | 79.1% | −6.6% (−12.9, −1.6) | 23.8% (20.1% unpriced + 3.7% Draw No Bet below the derived floor) | 21.6% | 1.17 | 57.6% |
 | **Verified first (`MARKET_QUALITY_RANKING=on`)** | **77.7%** | **−3.0% (−8.0, +2.7)** | **0.4%** | 39.8% | 1.22 | 72.9% |
 | Verified first, short also demoted (rejected) | 72.0% | −4.6% (−10.5, +0.3) | 0.4% | 2.2% | 1.30 | 69.5% |
 
