@@ -88,21 +88,20 @@ export type HomepageFeaturedCandidate = {
 };
 
 /**
- * MARKET_QUALITY_RANKING=on: picks with a verified price rank before picks
- * with no executable price, then the existing outcome-blind order. Stated
- * confidence is not comparable across markets, and the confidence-first
- * order gave 23.8% of homepage slots to unpriced Team Total / Draw No Bet
- * picks. Measured on 45 days of homepage slots (scripts/backtest-market-
- * selection.ts): strike 77.7% vs 79.1%, return at the median price -3.0%
- * vs -6.6%, unpriced slots 0.4% vs 23.8%. The tier is the one recorded at
- * generation (legacy rows: inferred from the market type), so the ranking
- * stays outcome-blind and does not move with live prices.
+ * MARKET_QUALITY_RANKING=on: picks whose OWN generation-time record shows a
+ * verified price rank before the rest, then the existing outcome-blind order.
+ * Rows without a record (everything generated before this change, and
+ * anything generated with MARKET_SELECTION_MODE=off) are "not verified", so
+ * until records accumulate the order is exactly today's. The tier is read
+ * only from the record fixed at generation: the ranking is outcome-blind and
+ * does not move as live prices move. Evidence and its limits:
+ * docs/PREDICTION_MARKET_QUALITY_2026-11-23.md.
  */
 export { marketQualityRankingEnabled };
 
 export function storedQualityRank(row: { analysisJson?: unknown; marketType: string }): number {
   const q = (row.analysisJson as { selectionQuality?: { tier?: string } } | null | undefined)?.selectionQuality;
-  return verifiedRank(q?.tier, row.marketType);
+  return verifiedRank(q?.tier);
 }
 
 export type HomepageRankingOptions = { qualityRanking?: boolean };

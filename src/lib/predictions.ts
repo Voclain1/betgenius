@@ -257,6 +257,32 @@ export async function publishPaidPredictionAtomically(
  * an append-only original-price receipt and seeds reassessment's baseline.
  * A failure rolls back publication and notification together.
  */
+/**
+ * The id of another PUBLISHED single (not a combo) already shown in FEATURED
+ * for the same fixture, or null. The fixture is matched by provider fixture id
+ * when known, else by the two team ids and kickoff. Reads only: it never
+ * changes or unpublishes the existing row.
+ *
+ * Generation keeps one row per single-market job; this catches duplicates
+ * that arrive from SEPARATE jobs (early, regular, admin-requested). Automatic
+ * publication refuses them; admin approval only warns (admin authority).
+ */
+export async function publishedFeaturedSingleFor(
+  db: Pick<typeof prisma, "prediction">,
+  row: { id: string; fixtureApiId?: number | null; homeTeamApiId?: number | null; awayTeamApiId?: number | null; kickoff?: Date | null },
+): Promise<string | null> {
+  const sameFixture = row.fixtureApiId != null
+    ? [{ fixtureApiId: row.fixtureApiId }, ...(row.homeTeamApiId != null && row.awayTeamApiId != null && row.kickoff ? [{ homeTeamApiId: row.homeTeamApiId, awayTeamApiId: row.awayTeamApiId, kickoff: row.kickoff }] : [])]
+    : row.homeTeamApiId != null && row.awayTeamApiId != null && row.kickoff ? [{ homeTeamApiId: row.homeTeamApiId, awayTeamApiId: row.awayTeamApiId, kickoff: row.kickoff }] : [];
+  if (!sameFixture.length) return null;
+  const other = await db.prediction.findFirst({
+    where: { id: { not: row.id }, status: "PUBLISHED", marketType: { not: "SAME_GAME_DOUBLE" },
+      categories: { some: { category: "FEATURED" } }, OR: sameFixture },
+    select: { id: true },
+  });
+  return other?.id ?? null;
+}
+
 export async function publishEarlyFreePredictionAtomically(
   row: Parameters<typeof recordPredictionEvents>[1] & {
     approvedById: string | null; updatedAt: Date; fixtureApiId: number | null;
@@ -286,6 +312,10 @@ export async function publishEarlyFreePredictionAtomically(
       locked.manualSettlementOnly || locked.marketType === "OTHER")
       throw new Error("EARLY_PUBLICATION_PROTECTED_CATEGORY");
     await assertPublicationFixture(locked, tx);
+    // One public FEATURED single per fixture across jobs: a fixture that
+    // already shows one stays in review for an administrator to decide.
+    if (locked.categories.some(c => c.category === "FEATURED") && await publishedFeaturedSingleFor(tx, locked))
+      throw new Error("EARLY_PUBLICATION_DUPLICATE_FIXTURE");
     const key = matchKey(locked);
     if (!key) throw new Error("EARLY_PUBLICATION_MISSING_FIXTURE_IDENTITY");
     const cache = await tx.fixtureOddsCache.findUnique({

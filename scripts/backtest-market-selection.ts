@@ -53,7 +53,7 @@ async function main() {
 
   const rows = await prisma.prediction.findMany({
     where: { kickoff: { gte: from }, marketType: { not: "SAME_GAME_DOUBLE" } },
-    select: { id: true, status: true, marketType: true, selection: true, confidence: true, outcome: true, kickoff: true, publishedAt: true, leagueApiId: true,
+    select: { id: true, status: true, marketType: true, selection: true, confidence: true, outcome: true, kickoff: true, publishedAt: true, leagueApiId: true, analysisJson: true,
       homeTeamApiId: true, awayTeamApiId: true, finalHomeScore: true, finalAwayScore: true, overUnder: true, ouLine: true, ouDirection: true, contextComplete: true,
       fixtureApiId: true, homeTeam: true, awayTeam: true, categories: { select: { category: true } }, aiJob: { select: { prompt: true } } },
   });
@@ -83,7 +83,7 @@ async function main() {
     const t = test.filter((x) => x.r.marketType === m);
     byMarket[m] = { n: t.length, model: r3(brier(t, 1)), market: r3(brier(t, 0)), blendFitted: r3(brier(t, bestW)), blendPolicy: r3(brier(t, SELECTION_POLICY.MODEL_WEIGHT)) };
   }
-  console.log(JSON.stringify({ section: "blendWeight", trainN: train.length, testN: test.length, trainPeriod: [train[0]?.r.kickoff, train.at(-1)?.r.kickoff], testPeriod: [test[0]?.r.kickoff, test.at(-1)?.r.kickoff],
+  console.log(JSON.stringify({ section: "blendWeight", note: "policy weight 0.3 is an unproven shadow parameter; the chronological fit is fittedModelWeight", trainN: train.length, testN: test.length, trainPeriod: [train[0]?.r.kickoff, train.at(-1)?.r.kickoff], testPeriod: [test[0]?.r.kickoff, test.at(-1)?.r.kickoff],
     fittedModelWeight: bestW, policyModelWeight: SELECTION_POLICY.MODEL_WEIGHT,
     testBrier: { model: r3(brier(test, 1)), market: r3(brier(test, 0)), blendFitted: r3(brier(test, bestW)), blendPolicy: r3(brier(test, SELECTION_POLICY.MODEL_WEIGHT)) },
     testBrierDiffPolicyMinusModel90: ci(paired(test, SELECTION_POLICY.MODEL_WEIGHT)), byMarketTest: byMarket }));
@@ -132,40 +132,81 @@ async function main() {
     old: arm(old), new: arm(neu), pairedRoiDiffNewMinusOld: r3(mean(pairDiff)), pairedRoiDiff90: ci(pairDiff), pairedN: pairDiff.length, oldMix, newMix }));
 
   }
-  // ------------------------------------------------------------------ 4. homepage FEATURED ranking, old vs tiered (settled days only)
+  // ------------------------------------------------------------------ 4. homepage FEATURED ranking, settled days only
+  // Every arm runs the EXACT production function, selectHomepageFeatured.
+  //  - current:        qualityRanking off (today's homepage).
+  //  - productionStored: qualityRanking on, rows exactly as stored. Rows
+  //    generated before this change carry no record, so they are "not
+  //    verified" and the order equals current until records accumulate.
+  //  - productionProxy: qualityRanking on, each row given the record shadow
+  //    mode WOULD have written, built from the near-close cached quote
+  //    (a proxy for the time-of-decision quote; see the price caveat above).
+  //  - shortDemotedProxy: the rejected variant that also demotes short prices.
+  // Paired per-day returns are computed separately for EACH arm against current.
   const featured = rows.filter((r) => r.status === "PUBLISHED" && r.categories.some((c) => c.category === "FEATURED") && r.kickoff && r.kickoff < new Date(now.getTime() - 3 * 3_600_000))
     .map((r) => ({ ...r, ev: evaluateCandidate({ marketType: r.marketType, selection: r.selection, confidence: r.confidence, source: "primary" }, odds.get(matchKey(r) ?? "") ?? null, SELECTION_POLICY, r.kickoff ?? undefined) }));
-  const tierRank = (t: string) => (t === "QUALIFIED" ? 0 : t === "SHORT" ? 1 : t === "UNPRICED" ? 2 : 3);
-  const agg = { old: [] as typeof featured, new: [] as typeof featured, blend: [] as typeof featured, verified: [] as typeof featured };
-  const dayDiff: number[] = [];
+  type FRow = (typeof featured)[number];
+  const withRecord = (r: FRow, tier: string) => ({ ...r, analysisJson: { ...((r.analysisJson as object | null) ?? {}), selectionQuality: { tier, proxy: "near-close cache" } } });
+  const arms: Record<string, (pool: FRow[]) => FRow[]> = {
+    current: (pool) => selectHomepageFeatured(pool as never[], new Map()) as FRow[],
+    productionStored: (pool) => selectHomepageFeatured(pool as never[], new Map(), 6, new Set(), { qualityRanking: true }) as FRow[],
+    productionProxy: (pool) => {
+      const byId = new Map(pool.map((r) => [r.id, r]));
+      const proxied = pool.map((r) => withRecord(r, r.ev.tier));
+      return (selectHomepageFeatured(proxied as never[], new Map(), 6, new Set(), { qualityRanking: true }) as FRow[]).map((r) => byId.get(r.id)!);
+    },
+    shortDemotedProxy: (pool) => {
+      const byId = new Map(pool.map((r) => [r.id, r]));
+      const proxied = pool.map((r) => withRecord(r, r.ev.tier === "SHORT" ? "UNPRICED" : r.ev.tier));
+      return (selectHomepageFeatured(proxied as never[], new Map(), 6, new Set(), { qualityRanking: true }) as FRow[]).map((r) => byId.get(r.id)!);
+    },
+  };
+  const picked: Record<string, FRow[]> = Object.fromEntries(Object.keys(arms).map((k) => [k, [] as FRow[]]));
+  const dayDiffs: Record<string, number[]> = Object.fromEntries(Object.keys(arms).map((k) => [k, [] as number[]]));
+  const dayRoi = (xs: FRow[]) => mean(xs.filter((x) => x.ev.median != null && (x.outcome === "WON" || x.outcome === "LOST")).map((x) => ret(x.outcome === "WON", x.ev.median!)));
+  let changedDays: Record<string, number> = {};
   for (const day of [...new Set(featured.map((r) => lagosDateKey(r.kickoff!)))].sort()) {
     const pool = featured.filter((r) => lagosDateKey(r.kickoff!) === day);
-    const o6 = selectHomepageFeatured(pool as never[], new Map()) as typeof pool;
-    const n6 = selectHomepageFeatured([...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier)) as never[], new Map(), 6) as typeof pool;
-    // selectHomepageFeatured sorts by confidence internally; apply the tier as the leading key explicitly:
-    const tiered = [...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier) || b.confidence - a.confidence || a.id.localeCompare(b.id));
-    const tieredBlend = [...pool].sort((a, b) => tierRank(a.ev.tier) - tierRank(b.ev.tier) || (b.ev.blended ?? b.confidence) - (a.ev.blended ?? a.confidence) || a.id.localeCompare(b.id));
-    const seen3 = new Set<string>(); const n6c: typeof pool = [];
-    for (const r of tieredBlend) { const k = matchKey(r) ?? r.id; if (seen3.has(k)) continue; seen3.add(k); n6c.push(r); if (n6c.length >= 6) break; }
-    agg.blend.push(...n6c);
-    const verifiedFirst = [...pool].sort((a, b) => Number(!["QUALIFIED", "SHORT"].includes(a.ev.tier)) - Number(!["QUALIFIED", "SHORT"].includes(b.ev.tier)) || b.confidence - a.confidence || a.id.localeCompare(b.id));
-    const seen4 = new Set<string>(); const n6d: typeof pool = [];
-    for (const r of verifiedFirst) { const k = matchKey(r) ?? r.id; if (seen4.has(k)) continue; seen4.add(k); n6d.push(r); if (n6d.length >= 6) break; }
-    agg.verified.push(...n6d);
-    const seen = new Set<string>(); const n6b: typeof pool = [];
-    for (const r of tiered) { const k = matchKey(r) ?? r.id; if (seen.has(k)) continue; seen.add(k); n6b.push(r); if (n6b.length >= 6) break; }
-    void n6;
-    agg.old.push(...o6); agg.new.push(...n6b);
-    const dayRoi = (xs: typeof pool) => mean(xs.filter((x) => x.ev.median != null && (x.outcome === "WON" || x.outcome === "LOST")).map((x) => ret(x.outcome === "WON", x.ev.median!)));
-    const a = dayRoi(o6), b = dayRoi(n6b); if (a != null && b != null) dayDiff.push(b - a);
+    const base = arms.current(pool);
+    const baseRoi = dayRoi(base);
+    for (const [k, f] of Object.entries(arms)) {
+      const six = k === "current" ? base : f(pool);
+      picked[k].push(...six);
+      if (six.map((x) => x.id).join() !== base.map((x) => x.id).join()) changedDays[k] = (changedDays[k] ?? 0) + 1;
+      const r = dayRoi(six); if (k !== "current" && r != null && baseRoi != null) dayDiffs[k].push(r - baseRoi);
+    }
   }
-  const summarise = (xs: typeof featured) => { const s = xs.filter((x) => x.outcome === "WON" || x.outcome === "LOST"); const pr = s.filter((x) => x.ev.median != null);
+  const summarise = (xs: FRow[]) => { const s = xs.filter((x) => x.outcome === "WON" || x.outcome === "LOST"); const pr = s.filter((x) => x.ev.median != null);
     const rs = pr.map((x) => ret(x.outcome === "WON", x.ev.median!));
     return { n: xs.length, strike: pct(s.filter((x) => x.outcome === "WON").length, s.length), dcShare: pct(xs.filter((x) => x.marketType === "DOUBLE_CHANCE").length, xs.length),
-      unpricedShare: pct(xs.filter((x) => x.ev.tier === "UNPRICED").length, xs.length), shortShare: pct(xs.filter((x) => x.ev.tier === "SHORT").length, xs.length),
+      unverifiedShare: pct(xs.filter((x) => !["QUALIFIED", "SHORT"].includes(x.ev.tier)).length, xs.length), shortShare: pct(xs.filter((x) => x.ev.tier === "SHORT").length, xs.length),
       medianPrice: median(pr.map((x) => x.ev.median!)), roiAtMedian: r3(mean(rs)), roi90: ci(rs), meanConf: r3(mean(xs.map((x) => x.confidence))) }; };
-  console.log(JSON.stringify({ section: "homepageRanking", days: new Set(featured.map((r) => lagosDateKey(r.kickoff!))).size, old: summarise(agg.old), new: summarise(agg.new), tierThenBlended: summarise(agg.blend), verifiedFirst: summarise(agg.verified),
-    perDayRoiDiffNewMinusOld: r3(mean(dayDiff)), perDayRoiDiff90: ci(dayDiff) }));
+  console.log(JSON.stringify({ section: "homepageRanking", priceSource: "near-close cached quote (proxy, not time-of-decision)", days: new Set(featured.map((r) => lagosDateKey(r.kickoff!))).size,
+    storedRecordsInPool: featured.filter((r) => (r.analysisJson as { selectionQuality?: unknown } | null)?.selectionQuality).length,
+    arms: Object.fromEntries(Object.keys(arms).map((k) => [k, { ...summarise(picked[k]), daysDifferentFromCurrent: changedDays[k] ?? 0,
+      ...(k === "current" ? {} : { pairedDayRoiDiffVsCurrent: r3(mean(dayDiffs[k])), pairedDayRoiDiff90: ci(dayDiffs[k]), pairedDays: dayDiffs[k].length }) }])) }));
+
+  // ------------------------------------------------------------------ 4b. prospective: decisions recorded at generation (shadow/on), time-of-decision quotes
+  const recordedJobs = await prisma.aIJob.findMany({ where: { createdAt: { gte: from }, rawOutput: { contains: "\"marketSelection\"" } }, select: { rawOutput: true, prompt: true } });
+  const prospective = { records: 0, graded: 0, decisions: {} as Record<string, number>, primary: [] as number[], chosen: [] as number[], primaryWon: 0, chosenWon: 0 };
+  for (const j of recordedJobs) {
+    let rec: { decision?: string; chosen?: { marketType: string; selection: unknown; median: number | null } | null; candidates?: Array<{ source: string; marketType: string; selection: unknown; median: number | null }> } | undefined;
+    let p: { homeTeamApiId?: number; awayTeamApiId?: number; kickoff?: string } = {};
+    try { rec = JSON.parse(j.rawOutput).marketSelection; p = JSON.parse(j.prompt); } catch { continue; }
+    if (!rec) continue;
+    prospective.records++; prospective.decisions[rec.decision ?? "?"] = (prospective.decisions[rec.decision ?? "?"] ?? 0) + 1;
+    const sc = score.get(matchKey({ homeTeamApiId: p.homeTeamApiId, awayTeamApiId: p.awayTeamApiId, kickoff: p.kickoff }) ?? "");
+    const prim = rec.candidates?.find((c) => c.source === "primary");
+    if (!sc || !prim || !rec.chosen || prim.median == null || rec.chosen.median == null) continue;
+    const g = (c: { marketType: string; selection: unknown }) => resolveMarket(c.marketType as MarketType, c.selection as Selection, sc[0], sc[1]);
+    const gp = g(prim), gc = g(rec.chosen);
+    if ((gp !== "WON" && gp !== "LOST") || (gc !== "WON" && gc !== "LOST")) continue;
+    prospective.graded++; if (gp === "WON") prospective.primaryWon++; if (gc === "WON") prospective.chosenWon++;
+    prospective.primary.push(ret(gp === "WON", prim.median)); prospective.chosen.push(ret(gc === "WON", rec.chosen.median));
+  }
+  console.log(JSON.stringify({ section: "prospectiveRecorded", priceSource: "time-of-decision quote recorded with each decision", records: prospective.records, decisions: prospective.decisions, graded: prospective.graded,
+    primaryRoi: r3(mean(prospective.primary)), chosenRoi: r3(mean(prospective.chosen)), pairedDiff90: ci(prospective.chosen.map((c, i) => c - prospective.primary[i])),
+    note: prospective.records ? undefined : "no shadow records yet: MARKET_SELECTION_MODE has not been enabled; rollout metrics must be revalidated here once it is" }));
 
   // ------------------------------------------------------------------ 5. secondary over/under column
   const pub = rows.filter((r) => r.status === "PUBLISHED");

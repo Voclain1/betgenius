@@ -160,6 +160,7 @@ export default function AdminPredictions() {
       // selections are split here rather than rejected wholesale; each reply
       // is checked before the next batch starts, so a partial failure is visible
       // and the page reload shows exactly what changed.
+      const warnings: string[] = [];
       for (let offset = 0; offset < selectedIds.length; offset += 100) {
         const batch = selectedIds.slice(offset, offset + 100);
         const res = await fetch("/api/admin/predictions/bulk", {
@@ -175,8 +176,11 @@ export default function AdminPredictions() {
             || `${action.toLowerCase()} failed`;
           throw new Error(message);
         }
+        if (Array.isArray(result.warnings)) warnings.push(...result.warnings.map((w: { warning: string }) => w.warning));
       }
       await load();
+      // Published as asked; flag a match that now shows more than one FEATURED pick.
+      if (warnings.length) alert(`${warnings.length} published pick(s) share a match with another published FEATURED pick:\n${warnings.slice(0, 5).join("\n")}`);
     } catch (error: any) {
       alert(error?.message ?? `${action.toLowerCase()} failed`);
       // Earlier batches may have completed before a later one failed. Reload

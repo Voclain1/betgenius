@@ -19,7 +19,8 @@ import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib
 import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { marketBreadthForCategories, REGULAR_COMBO_INTENT, SAME_GAME_DOUBLE } from "@/lib/doublesTargeting";
-import { marketSelectionMode, selectPrimary, selectionRecord, type CandidateInput, type SelectionRecord } from "@/lib/marketSelection";
+import { marketSelectionMode, type SelectionRecord } from "@/lib/marketSelection";
+import { applyMarketSelection } from "@/lib/ai/marketSelectionStep";
 import { assembleGeneratedSameGameDouble } from "@/lib/sameGameDoubleAssembly";
 import { scanDraftForCertainty, type CertaintyViolation } from "@/lib/certaintyLanguage";
 import { scanDraftForInternalTerminology, type InternalTerminologyViolation } from "@/lib/houseVoice";
@@ -265,8 +266,11 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // Admin/manual generation remains exempt from the automatic price floor.
   const checksMarket = !input.handicapLine && input.intent !== "VIP_PREMIUM";
   const guardsShortPrice = !input.manual && !input.handicapLine && input.intent !== "VIP_PREMIUM";
-  const odds = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId,
+  const quote = checksMarket ? await loadFixtureOdds(homeApiId, awayApiId, input.kickoff, input.fixtureApiId,
     input.intent === EARLY_FREE_GENERATION_INTENT) : null;
+  const odds = quote?.odds ?? null;
+  // Our cache fetch time for this quote, recorded with any selection decision.
+  const quoteFetchedAt = quote?.fetchedAt ?? null;
   const priceOdds = guardsShortPrice ? odds : null;
   // A priced-market shortlist is useful context for EARLY FREE alone.
   // It is never a recommendation, a probability estimate or a publication
@@ -368,8 +372,11 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // too short, anomalous, or in an unsupported market. Persist it for the
   // hold/review lane, with an immutable warning in the dedicated job prompt.
   // That warning independently prohibits automatic publication.
-  if (earlyFree && Array.isArray(output.predictions) &&
-      output.predictions.some((p) => unpayable(p) || offMarket(p))) {
+  // Decided on the draft that will be persisted (one per single-market job),
+  // not on any extra draft the model returned: an unsafe second draft must
+  // not block a first draft that passed, and is never persisted anyway.
+  if (earlyFree && Array.isArray(output.predictions) && output.predictions.length > 0 &&
+      (unpayable(output.predictions[0]) || offMarket(output.predictions[0]))) {
     input.earlyPriceUnsafe = true;
   }
   const durationMs = Date.now() - startedAt;
@@ -381,30 +388,20 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const contextComplete = hasSubstantiveFootballEvidence(digest) &&
     (input.intent !== EARLY_FREE_GENERATION_INTENT || !sources.stale?.length);
 
-  // Market selection: the primary competes with the model's own independently
-  // reasoned alternatives on the exact quoted prices already loaded above (no
-  // extra provider or model call). Shadow records the decision only; "on"
-  // persists the chosen candidate with its own confidence and reasoning, and a
-  // HOLD keeps the early lane from publishing automatically. Admin-triggered
-  // generation is recorded but never switched.
+  // Market selection (src/lib/ai/marketSelectionStep.ts): alternatives must
+  // pass the same evidence, structure, certainty and voice gates as the
+  // primary; the decision uses the quote loaded above with its timestamps;
+  // only "on" may switch (never admin-requested generation); and early
+  // publication safety is decided on the draft that will be persisted.
   let marketSelection: SelectionRecord | null = null;
   if (selectionApplies && Array.isArray(output.predictions) && output.predictions.length > 0) {
-    const alts = (Array.isArray(output.alternatives) ? output.alternatives : [])
-      .filter((a) => a && typeof a.marketType === "string" && Number.isFinite(Number(a.confidence)) && typeof a.reasoning === "string"
-        && !["CORRECT_SCORE", "HT_FT", "SAME_GAME_DOUBLE", "OTHER"].includes(a.marketType) && isValidSelection(a.marketType, a.selection));
-    const candidates: CandidateInput[] = [
-      { marketType: output.predictions[0].marketType, selection: output.predictions[0].selection, confidence: Number(output.predictions[0].confidence), source: "primary" },
-      ...alts.map((a) => ({ marketType: a.marketType, selection: a.selection, confidence: Number(a.confidence), source: "alternative" as const })),
-    ];
-    const result = selectPrimary(candidates, odds, { evidenceComplete: contextComplete });
-    marketSelection = selectionRecord(result, selectionMode, null);
-    if (selectionMode === "on" && !input.manual) {
-      if (result.decision === "SWITCH" && result.chosen) {
-        const chosen = alts.find((a) => a.marketType === result.chosen!.marketType && JSON.stringify(a.selection) === JSON.stringify(result.chosen!.selection));
-        if (chosen) output = { ...output, predictions: [{ ...chosen, confidence: Number(chosen.confidence) }] };
-      }
-      if (result.decision === "HOLD" && earlyFree) input.earlyPriceUnsafe = true;
-    }
+    const step = applyMarketSelection({
+      output, digest, odds, quoteFetchedAt, contextComplete, mode: selectionMode as "shadow" | "on",
+      manual: !!input.manual, earlyFree, failsPriceChecks: (d) => unpayable(d) || !!offMarket(d),
+    });
+    output = step.output;
+    marketSelection = step.record;
+    if (earlyFree) input.earlyPriceUnsafe = step.earlyPriceUnsafe || undefined;
   }
 
   const job = await prisma.aIJob.create({
@@ -632,12 +629,12 @@ async function loadFixtureOdds(
   kickoff: string,
   fixtureApiId: number | undefined,
   cacheOnly = false,
-): Promise<FixtureOdds | null> {
+): Promise<{ odds: FixtureOdds; fetchedAt: Date | null } | null> {
   const key = matchKey({ homeTeamApiId, awayTeamApiId, kickoff });
   if (!key) return null;
   try {
     const cached = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true, lastAttemptAt: true } });
-    if (cached?.fetchedAt && cached.oddsJson) return cached.oddsJson as unknown as FixtureOdds;
+    if (cached?.fetchedAt && cached.oddsJson) return { odds: cached.oddsJson as unknown as FixtureOdds, fetchedAt: cached.fetchedAt };
     const kickoffDate = new Date(kickoff);
     const triedRecently = cached?.lastAttemptAt && Date.now() - cached.lastAttemptAt.getTime() < 6 * 3_600_000;
     if (cacheOnly || fixtureApiId == null || triedRecently || isNaN(kickoffDate.getTime())) return null;
@@ -645,8 +642,8 @@ async function loadFixtureOdds(
     const { refreshOddsCache } = await import("@/lib/enrichment");
     const res = await refreshOddsCache({ matchKey: key, fixtureApiId, kickoff: kickoffDate, kind: "candidate" });
     if (res.result !== "ok") return null;
-    const fresh = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true } });
-    return (fresh?.oddsJson as unknown as FixtureOdds | null) ?? null;
+    const fresh = await prisma.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true } });
+    return fresh?.oddsJson ? { odds: fresh.oddsJson as unknown as FixtureOdds, fetchedAt: fresh.fetchedAt } : null;
   } catch (err) {
     console.warn("[generate] odds lookup failed; odds checks skipped", err);
     return null;

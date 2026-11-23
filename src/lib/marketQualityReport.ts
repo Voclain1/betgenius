@@ -84,9 +84,18 @@ export async function loadMarketQualityReport(opts: { days?: number; now?: Date 
   const dupFixtures = [...perFixture.values()].filter((n) => n > 1).length;
   const tiers = recent.reduce<Record<string, number>>((o, r) => { o[r.ev.tier] = (o[r.ev.tier] ?? 0) + 1; return o; }, {});
 
-  const recorded = recent.filter((r) => r.sq);
+  // Selection decisions are a GENERATION metric: every row generated in the
+  // window whatever its status (held drafts and pending review included), not
+  // only what was published. Publication KPIs above stay separate.
+  const generated = await prisma.prediction.findMany({
+    where: { createdAt: { gte: from }, aiJobId: { not: null }, marketType: { not: "SAME_GAME_DOUBLE" } },
+    select: { status: true, analysisJson: true },
+  });
+  const recorded = generated.map((g) => ({ status: g.status, sq: (g.analysisJson as { selectionQuality?: { decision?: string; holdReason?: string | null } } | null)?.selectionQuality ?? null }))
+    .filter((g) => g.sq);
   const decisions = recorded.reduce<Record<string, number>>((o, r) => { const k = r.sq!.decision ?? "?"; o[k] = (o[k] ?? 0) + 1; return o; }, {});
   const holdReasons = recorded.filter((r) => r.sq!.decision === "HOLD").reduce<Record<string, number>>((o, r) => { const k = r.sq!.holdReason ?? "?"; o[k] = (o[k] ?? 0) + 1; return o; }, {});
+  const holdStatuses = recorded.filter((r) => r.sq!.decision === "HOLD").reduce<Record<string, number>>((o, r) => { o[r.status] = (o[r.status] ?? 0) + 1; return o; }, {});
 
   // Calibration over the full 30 days (needs settled volume).
   const settled = enriched.filter((r) => r.outcome === "WON" || r.outcome === "LOST");
@@ -114,7 +123,7 @@ export async function loadMarketQualityReport(opts: { days?: number; now?: Date 
     duplicateFixturePct: pct(dupFixtures, perFixture.size),
     doubleChanceFeaturedPct: pct(featured.filter((r) => r.marketType === "DOUBLE_CHANCE").length, featured.length),
     marketsByCategory: byCategory, marketsByRoute: byRoute,
-    selection: { recordedRows: recorded.length, decisions, holdReasons, holdPct: pct(decisions.HOLD ?? 0, recorded.length) },
+    selection: { generatedRows: generated.length, recordedRows: recorded.length, decisions, holdReasons, holdStatuses, holdPct: pct(decisions.HOLD ?? 0, recorded.length) },
     calibration30d: calibration, apiPerDay,
     paid: { vipPremiumPublished: paidNow, expectedFrom30d: Math.round(paidExpected * 10) / 10, floors: { VIP: VIP_CONFIDENCE_FLOOR, PREMIUM: PREMIUM_CONFIDENCE_FLOOR } },
   };
@@ -135,7 +144,7 @@ export async function loadMarketQualityReport(opts: { days?: number; now?: Date 
     if (c.n >= 100 && Math.abs(c.gapPP) > B.calibrationGapPP.alertAbove)
       alerts.push({ key: `calibration-${m}`, level: "warn", message: `${m}: settled strike differs from stated confidence by ${c.gapPP}pp (n=${c.n}).` });
   if (recorded.length >= 20 && metrics.selection.holdPct != null && metrics.selection.holdPct > B.holdPct.alertAbove)
-    alerts.push({ key: "holds", level: "warn", message: `${metrics.selection.holdPct}% of recorded selections were held for review.` });
+    alerts.push({ key: "holds", level: "warn", message: `${metrics.selection.holdPct}% of generated selections (all statuses) were held for review.` });
   for (const [day, n] of Object.entries(apiPerDay)) if (n > B.apiPerDay.alertAbove)
     alerts.push({ key: `api-${day}`, level: "info", message: `API-Football ${n} requests on ${day} (ceiling for non-paid work is 7,100).` });
   if (paid30 >= 20 && paidNow < paidExpected * 0.6)

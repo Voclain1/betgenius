@@ -82,8 +82,9 @@ export default async function MarketQualityPage({ searchParams }: { searchParams
 
       <section className="grid gap-6 md:grid-cols-2">
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-300">Selection decisions (rows with a generation record)</h2>
-          <p className="text-sm text-gray-400">{m.selection.recordedRows} rows · hold {m.selection.holdPct ?? "—"}%</p>
+          <h2 className="text-sm font-semibold text-gray-300">Selection decisions (all generated rows, any status)</h2>
+          <p className="text-sm text-gray-400">{m.selection.recordedRows} of {m.selection.generatedRows} generated rows carry a record · hold {m.selection.holdPct ?? "—"}%</p>
+          <p className="text-xs text-gray-500">Held rows by status: {Object.entries(m.selection.holdStatuses).map(([k, v]) => `${k} ${v}`).join(" · ") || "—"}</p>
           <ul className="text-sm text-gray-300">{Object.entries(m.selection.decisions).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul>
           <ul className="text-sm text-gray-400">{Object.entries(m.selection.holdReasons).map(([k, v]) => <li key={k}>{k}: {v}</li>)}</ul>
           <p className="text-xs text-gray-500">Price tiers now: {Object.entries(m.tiers).map(([k, v]) => `${k} ${v}`).join(" · ")}</p>

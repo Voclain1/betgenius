@@ -12,6 +12,11 @@ import {
 } from "../src/lib/marketSelection";
 import { automaticOddsFailure } from "../src/lib/autoOddsFloor";
 import { storedQualityRank, selectHomepageFeatured, selectHomepageGenius } from "../src/lib/homepageFeatured";
+import { compareByConfidenceRank } from "../src/lib/geniusCuration";
+import { alternativeProblems, applyMarketSelection } from "../src/lib/ai/marketSelectionStep";
+import { assembleMatchDigest, buildTeamDigest } from "../src/lib/ai/digest";
+import { stripUnsupportedClaims } from "../src/lib/ai/evidenceClaims";
+import type { AIPredictionOutput } from "../src/lib/ai/analysis";
 import { buildSystemPrompt, buildPredictionRequest } from "../src/lib/ai/analysis";
 import { verdictLine } from "../src/lib/matchFacts";
 import type { FixtureOdds } from "../src/lib/odds";
@@ -106,17 +111,72 @@ const moderate = odds({ h: 1.75, d: 3.9, a: 4.6, dc1x: 1.2, dcx2: 2.05, dc12: 1.
   const rec = selectionRecord(sel([c("DOUBLE_CHANCE", { value: "HOME_OR_DRAW" }, 72, "primary"), c("MATCH_WINNER", { value: "HOME" }, 78)], ajaxThun), "shadow", null);
   ok(rec.decision === "SWITCH" && rec.candidates.length === 2 && JSON.parse(JSON.stringify(rec)).policyVersion === rec.policyVersion, "the record is compact JSON with every candidate and reason");
 }
-// ------------------------------------------------------------------ flags default off; shadow never changes publication
+// ------------------------------------------------------------------ flags default off
 {
   ok(marketSelectionMode(undefined) === "off" && marketSelectionMode("bogus") === "off" && marketSelectionMode("shadow") === "shadow", "MARKET_SELECTION_MODE defaults off");
   ok(!marketQualityRankingEnabled(undefined) && marketQualityRankingEnabled("on"), "MARKET_QUALITY_RANKING defaults off");
-  const gen = src("src/lib/ai/generate.ts");
-  ok(/if \(selectionMode === "on" && !input\.manual\) \{/.test(gen), "only \"on\" may change the persisted pick; admin-requested generation is never switched");
-  ok(/rawOutput: JSON\.stringify\(marketSelection \? \{ \.\.\.output, marketSelection \} : output\)/.test(gen), "the decision is recorded with the job");
-  ok(/if \(result\.decision === "HOLD" && earlyFree\) input\.earlyPriceUnsafe = true;/.test(gen), "early lane: a HOLD blocks automatic publication (review instead)");
-  ok(/\.slice\(0, marketBreadth === "single" \? 1 : undefined\)/.test(gen), "single-market generation persists exactly one row per fixture");
-  ok(/!\["VIP_PREMIUM", "EUROPEAN_CLUB", "MARKET_CONFIRMED", REGULAR_COMBO_INTENT\]\.includes/.test(gen) && /riskRoute\.calibration !== "legacy"/.test(gen), "paid pass, European lane, combos and Banker are untouched");
-  ok(!/from "@\/lib\/football\/api-football"/.test(src("src/lib/marketSelection.ts")), "selection makes no provider call (uses the odds already loaded)");
+  ok(!/from "@\/lib\/football\/api-football"/.test(src("src/lib/marketSelection.ts") + src("src/lib/ai/marketSelectionStep.ts")), "selection makes no provider call (uses the odds already loaded)");
+}
+// ------------------------------------------------------------------ alternatives pass the SAME evidence, structure, certainty and voice gates (behavioural)
+const realDigest = assembleMatchDigest({ fixture: { home: "Ajax", away: "Thun", league: "Europa League", kickoff: "2026-11-27T20:00:00Z", competitionType: "CUP", round: "League Stage - 5" },
+  homeTeam: buildTeamDigest({ name: "Ajax", apiId: 1, keyPlayers: [{ name: "Kasper Dolberg", goals: 7 }] } as never), awayTeam: buildTeamDigest({ name: "Thun", apiId: 2 }),
+  homeApiId: 1, awayApiId: 2, meetings: [], standings: null } as never);
+const goodWin = "Ajax have the stronger attack on the saved numbers and the home price is still fair.";
+const alt = (reasoning: string, marketType = "MATCH_WINNER", selection: unknown = { value: "HOME" }, confidence = 78) => ({ marketType, selection, confidence, reasoning }) as never as NonNullable<AIPredictionOutput["alternatives"]>[number];
+{
+  ok(alternativeProblems(realDigest, alt(goodWin)).length === 0, "control: a supported alternative passes");
+  const cases: Array<[string, string]> = [
+    ["unnamed manager", "Manager John Heitinga has drilled Ajax into a pressing side all season and they should win."],
+    ["player not in the evidence", "Ajax's striker Brian Brobbey should be the difference against a tired Thun defence."],
+    ["knockout talk in a league-phase match", "Ajax should take control of this knockout tie on home soil tonight."],
+    ["scoreline not in the evidence", "Ajax beat Thun 4-0 when the sides last met and should repeat the result."],
+    ["certainty language", "Ajax will definitely win this one, it is a guaranteed home victory for them."],
+  ];
+  for (const [label, text] of cases) ok(alternativeProblems(realDigest, alt(text)).length > 0, `alternative rejected: ${label}`);
+  ok(alternativeProblems(realDigest, alt("Ajax's striker Kasper Dolberg leads their scoring and the home price is fair.")).length === 0, "a player who IS in the saved evidence is allowed");
+  ok(alternativeProblems(realDigest, alt(goodWin, "MATCH_WINNER", { value: "BOTH" })).some((p) => /invalid selection/.test(p)), "alternative rejected: invalid selection structure");
+  ok(alternativeProblems(realDigest, alt(goodWin, "CORRECT_SCORE", { home: 2, away: 0 })).length > 0, "alternative rejected: excluded market");
+  ok(alternativeProblems(realDigest, alt(goodWin, "MATCH_WINNER", { value: "HOME" }, 140)).some((p) => /confidence/.test(p)), "alternative rejected: confidence out of range");
+  ok(alternativeProblems(realDigest, alt("Ajax win.")).some((p) => /reasoning/.test(p)), "alternative rejected: no real reasoning");
+  // The same unsupported manager sentence is stripped from the PRIMARY by the shared gate: the alternative gate is not weaker.
+  ok(stripUnsupportedClaims(realDigest, { predictions: [{ reasoning: cases[0][1] }] }).removed.length === 1, "the shared gate treats the primary the same way");
+}
+// ------------------------------------------------------------------ applyMarketSelection: switching, persisted draft, quote times (behavioural)
+{
+  const base = { matchPreview: "Ajax host Thun.", keyFactors: ["Ajax are stronger at home."], predictions: [
+    { marketType: "DOUBLE_CHANCE", selection: { value: "HOME_OR_DRAW" }, confidence: 72, reasoning: "Ajax are unlikely to lose at home against a weaker Thun side." },
+  ] } as never as AIPredictionOutput;
+  const withAlts = (alts: unknown[]) => ({ ...base, alternatives: alts }) as AIPredictionOutput;
+  const fetched = new Date("2026-11-23T10:05:00Z");
+  const run = (o: Partial<Parameters<typeof applyMarketSelection>[0]>) => applyMarketSelection({ output: withAlts([alt(goodWin)]), digest: realDigest, odds: ajaxThun,
+    quoteFetchedAt: fetched, contextComplete: true, mode: "on", manual: false, earlyFree: false, failsPriceChecks: (d) => d.marketType === "DOUBLE_CHANCE", now: NOW, ...o });
+
+  const on = run({});
+  ok(on.switched && on.output.predictions[0].marketType === "MATCH_WINNER" && on.output.predictions.length === 1, "on: the 1.04 hedge is replaced by the validated, verified win; exactly one pick persists");
+  ok(on.output.predictions[0].reasoning === goodWin, "the switched pick carries the alternative's own (validated) reasoning");
+  const shadow = run({ mode: "shadow" });
+  ok(!shadow.switched && shadow.output === shadow.output && shadow.output.predictions[0].marketType === "DOUBLE_CHANCE" && shadow.record.decision === "SWITCH", "shadow: records the decision, never changes the pick");
+  ok(!run({ manual: true }).switched, "admin-requested generation is never switched");
+  const bad = run({ output: withAlts([alt("Ajax's striker Brian Brobbey should be the difference against a tired Thun defence.")]) });
+  ok(!bad.switched && bad.record.rejectedAlternatives?.length === 1 && bad.record.candidates.length === 1, "an alternative with an unsupported claim never becomes a candidate (recorded as rejected)");
+
+  // Early publication safety is decided on the draft that is actually persisted.
+  ok(run({ earlyFree: true }).earlyPriceUnsafe === false, "early, switched to a verified pick: publication safety follows the CHOSEN draft");
+  ok(run({ earlyFree: true, mode: "shadow" }).earlyPriceUnsafe === true, "early, shadow keeps the unsafe 1.04 hedge: blocked from automatic publication");
+  const keepOk = run({ earlyFree: true, output: withAlts([]), failsPriceChecks: () => false, odds: moderate });
+  ok(keepOk.earlyPriceUnsafe === false, "early: an unqualified ALTERNATIVE no longer blocks a safe persisted primary");
+  ok(run({ earlyFree: true, output: withAlts([]), odds: null, failsPriceChecks: () => false }).earlyPriceUnsafe === true, "early, on: HOLD (no verified price) blocks automatic publication");
+
+  // Quote timestamps: recorded, and a quote not provably available at the decision is not verified.
+  ok(on.record.quoteFetchedAt === fetched.toISOString() && on.record.providerQuoteAt === ajaxThun.update && on.record.decidedAt === NOW.toISOString(), "provider and cache quote times and the decision time are recorded");
+  const future = run({ odds: { ...ajaxThun, update: "2026-11-23T13:00:00Z" } as FixtureOdds });
+  ok(future.record.decision === "HOLD" && future.record.candidates.every((x) => x.tier === "UNPRICED"), "a quote stamped after the decision is not treated as available");
+  const unknown = run({ odds: { ...ajaxThun, update: undefined } as never, quoteFetchedAt: null });
+  ok(unknown.record.candidates.every((x) => x.tier === "UNPRICED" && x.reasons.some((r) => /quote time unknown/.test(r))), "unknown quote time: unverified");
+  const fallback = run({ odds: { ...ajaxThun, update: undefined } as never });
+  ok(fallback.switched, "no provider stamp: the cache fetch time (before the decision) is used");
+  const stale = run({ odds: { ...ajaxThun, update: "2026-11-18T10:00:00Z" } as FixtureOdds });
+  ok(stale.record.candidates.every((x) => x.tier === "UNPRICED"), "a quote older than the age limit is not verified");
 }
 // ------------------------------------------------------------------ prompts: alternatives only with the flag; VIP keeps its caution
 {
@@ -129,22 +189,35 @@ const moderate = odds({ h: 1.75, d: 3.9, a: 4.6, dc1x: 1.2, dcx2: 2.05, dc12: 1.
   ok(/This draft is for a standard tier/.test(buildSystemPrompt(["GENIUS"], "margin", "single", { freeTierNeutral: true })), "free-tier neutral bands remove the hedging bias");
   ok(/This draft is for a cautious tier/.test(buildSystemPrompt(["VIP"], "margin", "single", { freeTierNeutral: true })), "VIP keeps its caution");
 }
-// ------------------------------------------------------------------ homepage ranking: verified first, stable, outcome-blind
+// ------------------------------------------------------------------ homepage ranking: exact production functions, legacy rows are NOT verified
 {
-  ok(verifiedRank("QUALIFIED", "DOUBLE_CHANCE") === 0 && verifiedRank("SHORT", "MATCH_WINNER") === 0, "short prices are not demoted (measured)");
-  ok(verifiedRank("UNPRICED", "OVER_UNDER") === 1 && verifiedRank("INELIGIBLE", "BTTS") === 2, "unpriced then failed");
-  ok(verifiedRank(null, "DRAW_NO_BET") === 1 && verifiedRank(null, "TEAM_TOTAL") === 1 && verifiedRank(null, "DOUBLE_CHANCE") === 0, "legacy rows inferred from the market");
+  ok(verifiedRank("QUALIFIED") === 0 && verifiedRank("SHORT") === 0, "short prices are not demoted (measured)");
+  ok(verifiedRank("UNPRICED") === 1 && verifiedRank("INELIGIBLE") === 2, "unpriced, then failed");
+  ok(verifiedRank(null) === 1 && verifiedRank(undefined) === 1, "a row with no stored record is unverified, whatever its market");
   const row = (id: string, marketType: string, confidence: number, tier?: string, h = 1) => ({ id, marketType, confidence, leagueApiId: 39, publishedAt: "2026-11-22T10:00:00Z",
     homeTeamApiId: h, awayTeamApiId: h + 100, analysisJson: tier ? { v: 1, keyFactors: [], selectionQuality: { tier } } : { v: 1, keyFactors: [] }, selection: {} });
+  // Realistic legacy rows: everything published before this change has analysisJson without selectionQuality.
+  const legacy = [row("dc", "DOUBLE_CHANCE", 74, undefined, 1), row("ou", "OVER_UNDER", 70, undefined, 2), row("tt", "TEAM_TOTAL", 80, undefined, 3), row("dnb", "DRAW_NO_BET", 77, undefined, 4)];
+  const off = selectHomepageFeatured(legacy, new Map()).map((r) => r.id).join();
+  ok(selectHomepageFeatured(legacy, new Map(), 6, new Set(), { qualityRanking: true }).map((r) => r.id).join() === off, "legacy rows with the flag on: the order is unchanged (no market is presumed verified)");
+  ok(selectHomepageFeatured(legacy, new Map(), 6, new Set(), { qualityRanking: true })[0].id === "tt", "a legacy Double Chance does not jump a legacy Team Total by market type alone");
+  ok(storedQualityRank({ analysisJson: { v: 1 }, marketType: "DOUBLE_CHANCE" }) === 1, "legacy Double Chance: rank 1 (not verified)");
   const pool = [row("tt", "TEAM_TOTAL", 82, undefined, 1), row("dnb", "DRAW_NO_BET", 80, "UNPRICED", 2), row("dc", "DOUBLE_CHANCE", 74, "QUALIFIED", 3), row("ou", "OVER_UNDER", 66, "SHORT", 4)];
   ok(selectHomepageFeatured(pool, new Map(), 2).map((r) => r.id).join() === "tt,dnb", "flag off: unchanged confidence-first order");
-  ok(selectHomepageFeatured(pool, new Map(), 2, new Set(), { qualityRanking: true }).map((r) => r.id).join() === "dc,ou", "flag on: verified prices first, then confidence");
+  ok(selectHomepageFeatured(pool, new Map(), 2, new Set(), { qualityRanking: true }).map((r) => r.id).join() === "dc,ou", "flag on: rows with a stored verified record first, then confidence");
   ok(selectHomepageFeatured([...pool].reverse(), new Map(), 4, new Set(), { qualityRanking: true }).map((r) => r.id).join() === "dc,ou,tt,dnb", "stable regardless of input order");
   ok(selectHomepageGenius(pool, new Map(), 3, new Set(), { qualityRanking: true })[0].id === "dc", "Genius excerpt uses the same rule");
-  ok(storedQualityRank({ analysisJson: null, marketType: "BTTS" }) === 0, "tier comes only from the stored generation record (no live prices: no movement)");
   const two = [row("a", "DOUBLE_CHANCE", 80, "QUALIFIED", 7), row("b", "OVER_UNDER", 78, "QUALIFIED", 7)];
   ok(selectHomepageFeatured(two, new Map(), 6, new Set(), { qualityRanking: true }).length === 1, "one pick per fixture on the homepage");
-  ok(/MARKET_QUALITY_RANKING|marketQualityRankingEnabled\(\)/.test(src("src/lib/geniusCuration.ts")), "Genius curation reads the same flag");
+  // Genius curation comparator (the production function), flag read from the environment.
+  const prev = process.env.MARKET_QUALITY_RANKING;
+  const cur = (id: string, marketType: string, confidence: number, tier?: string) => ({ ...row(id, marketType, confidence, tier), kickoff: new Date("2026-11-24T20:00:00Z") }) as never;
+  process.env.MARKET_QUALITY_RANKING = "on";
+  ok(compareByConfidenceRank(cur("x", "DOUBLE_CHANCE", 70), cur("y", "TEAM_TOTAL", 75)) > 0, "curation, flag on: legacy rows still compare by confidence");
+  ok(compareByConfidenceRank(cur("x", "OVER_UNDER", 66, "QUALIFIED"), cur("y", "DOUBLE_CHANCE", 80)) < 0, "curation, flag on: a stored verified record outranks a legacy row");
+  process.env.MARKET_QUALITY_RANKING = "off";
+  ok(compareByConfidenceRank(cur("x", "OVER_UNDER", 66, "QUALIFIED"), cur("y", "DOUBLE_CHANCE", 80)) > 0, "curation, flag off: unchanged");
+  if (prev === undefined) delete process.env.MARKET_QUALITY_RANKING; else process.env.MARKET_QUALITY_RANKING = prev;
 }
 // ------------------------------------------------------------------ secondary goals outlook is not a second tip
 {
@@ -162,7 +235,8 @@ const moderate = odds({ h: 1.75, d: 3.9, a: 4.6, dc1x: 1.2, dcx2: 2.05, dc12: 1.
   const audit = src("scripts/audit-market-quality.ts") + src("scripts/backtest-market-selection.ts");
   ok((audit.match(/transaction_read_only/g) ?? []).length >= 2, "both production scripts refuse a writable session");
   const bt = src("scripts/backtest-market-selection.ts");
-  ok(/const cut = Math\.floor\(settled\.length \* 0\.6\)/.test(bt) && /sort\(\(a, b\) => a\.r\.kickoff!\.getTime\(\) - b\.r\.kickoff!\.getTime\(\)\)/.test(bt), "blend weight fitted chronologically (earlier 60%), judged on the later 40%");
+  ok(/selectHomepageFeatured\(/.test(bt) && /pairedDayRoiDiff90/.test(bt), "backtest ranks with the production function and reports paired per-day returns per arm");
+  ok(SELECTION_POLICY.MODEL_WEIGHT === 0.3 && /unproven shadow parameter/i.test(src("src/lib/marketSelection.ts")), "0.3 is documented as an unproven shadow parameter, not a fitted optimum");
   ok(/!\/\\bAI\\b\//.test("") || !/\bAI\b/.test(src("src/app/admin/market-quality/page.tsx") + src("src/components/PredictionsTable.tsx")), "no AI wording added");
 }
 

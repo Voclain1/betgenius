@@ -19,8 +19,9 @@
  * WHAT. One fixture's candidate selections (the model's primary pick plus any
  * independently reasoned alternatives from the SAME model call) are each given:
  * the exact quoted price, bookmaker count, de-vigged market probability, a
- * blended probability (the model's view shrunk toward the market by a weight
- * fitted chronologically, see scripts/backtest-market-selection.ts), an expected
+ * blended probability (the model's view shrunk toward the market by
+ * MODEL_WEIGHT, an unproven shadow parameter: the chronological fit in
+ * scripts/backtest-market-selection.ts put it at 0), an expected
  * value at the quoted median, a quality tier and named reasons. One primary is
  * then chosen: never simply the highest confidence, never simply the highest
  * odds. The model's own primary is kept unless an alternative is materially
@@ -49,10 +50,13 @@ export type SelectionPolicy = {
 export const SELECTION_POLICY: SelectionPolicy = {
   /**
    * Weight on the model's stated confidence in the blended probability; the
-   * rest is the de-vigged market. Fitted chronologically on settled priced
-   * published singles (train on the earlier 60%, judged on the later 40%):
-   * see docs/PREDICTION_MARKET_QUALITY_2026-11-23.md. The market is the
-   * better forecaster for most markets, so the weight is well below 0.5.
+   * rest is the de-vigged market. AN UNPROVEN SHADOW PARAMETER, not a fitted
+   * optimum: the chronological fit (earlier 60% of kickoffs, judged on the
+   * later 40%) chose 0 (market alone, held-out Brier 0.195; 0.3 gives 0.196;
+   * stated confidence 0.207). 0.3 keeps the model's view as a minority input
+   * when choosing among its own alternatives; it is recorded with every
+   * decision so it can be refitted on time-of-decision quotes before any use
+   * beyond shadow.
    */
   MODEL_WEIGHT: 0.3,
   /** Existing hard floor for automatic selections (src/lib/autoOddsFloor.ts). Unchanged. */
@@ -126,9 +130,19 @@ function drawNoBetFair(odds: FixtureOdds | null, selection: unknown): number | n
   return side === "HOME" ? (100 * h) / (h + a) : side === "AWAY" ? (100 * a) / (h + a) : null;
 }
 
-export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy: SelectionPolicy = SELECTION_POLICY, now: Date = new Date()): EvaluatedCandidate {
-  const stamp = odds?.update ? Date.parse(odds.update) : NaN;
-  const stale = Number.isFinite(stamp) && now.getTime() - stamp > policy.MAX_QUOTE_AGE_HOURS * 3_600_000;
+export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, policy: SelectionPolicy = SELECTION_POLICY, now: Date = new Date(),
+  quoteFetchedAt: Date | string | null = null): EvaluatedCandidate {
+  // Only a quote demonstrably available before the decision counts: the
+  // provider's own timestamp, else our cache fetch time. No timestamp at all,
+  // or one after the decision, is not a verified price.
+  const providerMs = odds?.update ? Date.parse(odds.update) : NaN;
+  const fetchedMs = quoteFetchedAt ? new Date(quoteFetchedAt).getTime() : NaN;
+  const stamp = Number.isFinite(providerMs) ? providerMs : fetchedMs;
+  const quoteTimeProblem = !odds ? null
+    : !Number.isFinite(stamp) ? "quote time unknown"
+    : stamp > now.getTime() + 60_000 ? "quote timestamp is after the decision"
+    : now.getTime() - stamp > policy.MAX_QUOTE_AGE_HOURS * 3_600_000 ? `quote is older than ${policy.MAX_QUOTE_AGE_HOURS}h` : null;
+  const stale = quoteTimeProblem != null;
   const mapped = toBookmakerSelection(c.marketType, c.selection);
   const sel = mapped && odds ? findSelection(odds, mapped.market, mapped.value) : null;
   const fairQuote = mapped && odds ? devigProbability(odds, mapped.market, mapped.value)?.probability ?? null : null;
@@ -141,7 +155,7 @@ export function evaluateCandidate(c: CandidateInput, odds: FixtureOdds | null, p
   const reasons: string[] = [];
   let tier: Tier;
   if (stale && median != null) {
-    tier = "UNPRICED"; reasons.push(`quote is older than ${policy.MAX_QUOTE_AGE_HOURS}h`);
+    tier = "UNPRICED"; reasons.push(quoteTimeProblem!);
   } else if (median == null && dnb != null && 100 / dnb < policy.HARD_MIN_ODDS) {
     // The executable Draw No Bet price can only be at or below its fair price,
     // so a derived fair price under the floor means the real price is too.
@@ -193,12 +207,12 @@ const key = (c: { marketType: string; selection: unknown }) => c.marketType + JS
 export function selectPrimary(
   inputs: readonly CandidateInput[],
   odds: FixtureOdds | null,
-  opts: { evidenceComplete: boolean; policy?: SelectionPolicy; now?: Date } = { evidenceComplete: true },
+  opts: { evidenceComplete: boolean; policy?: SelectionPolicy; now?: Date; quoteFetchedAt?: Date | string | null } = { evidenceComplete: true },
 ): SelectionResult {
   const policy = opts.policy ?? SELECTION_POLICY;
   const seen = new Set<string>();
   const candidates = inputs.filter((c) => { const k = key(c); if (seen.has(k)) return false; seen.add(k); return true; })
-    .map((c) => evaluateCandidate(c, odds, policy, opts.now ?? new Date()));
+    .map((c) => evaluateCandidate(c, odds, policy, opts.now ?? new Date(), opts.quoteFetchedAt ?? null));
   const primary = candidates.find((c) => c.source === "primary") ?? candidates[0] ?? null;
   const result = (decision: SelectionDecision, holdReason: HoldReason | null, chosen: EvaluatedCandidate | null): SelectionResult =>
     ({ decision, holdReason, chosen, candidates, policyVersion: SELECTION_POLICY_VERSION });
@@ -230,12 +244,15 @@ export function selectPrimary(
 }
 
 /** Compact, JSON-safe record stored with the generation job (AIJob.rawOutput.marketSelection). */
-export function selectionRecord(r: SelectionResult, mode: MarketSelectionMode, quoteFetchedAt: Date | string | null) {
+export function selectionRecord(r: SelectionResult, mode: MarketSelectionMode, quoteFetchedAt: Date | string | null,
+  extra: { providerQuoteAt?: string | null; decidedAt?: Date; rejectedAlternatives?: Array<{ marketType: string; reasons: string[] }> } = {}) {
   const slim = (c: EvaluatedCandidate) => ({ marketType: c.marketType, selection: c.selection, confidence: c.confidence, source: c.source,
     median: c.median, books: c.books, fair: c.fair == null ? null : Math.round(c.fair * 10) / 10, blended: c.blended == null ? null : Math.round(c.blended * 10) / 10,
     ev: c.ev == null ? null : Math.round(c.ev * 1000) / 1000, tier: c.tier, reasons: c.reasons });
   return { mode, policyVersion: r.policyVersion, decision: r.decision, holdReason: r.holdReason, chosen: r.chosen ? slim(r.chosen) : null,
-    candidates: r.candidates.map(slim), quoteFetchedAt: quoteFetchedAt ? new Date(quoteFetchedAt).toISOString() : null };
+    candidates: r.candidates.map(slim), quoteFetchedAt: quoteFetchedAt ? new Date(quoteFetchedAt).toISOString() : null,
+    providerQuoteAt: extra.providerQuoteAt ?? null, decidedAt: (extra.decidedAt ?? new Date()).toISOString(),
+    modelWeight: SELECTION_POLICY.MODEL_WEIGHT, rejectedAlternatives: extra.rejectedAlternatives ?? [] };
 }
 export type SelectionRecord = ReturnType<typeof selectionRecord>;
 
@@ -250,20 +267,15 @@ export function displayTier(rec: { chosen?: { tier?: string } | null; decision?:
   return t === "QUALIFIED" ? 0 : t === "SHORT" ? 1 : t === "UNPRICED" ? 2 : 3;
 }
 
-/** Markets with no executable price in the cached feed, by construction. */
-export const UNPRICED_MARKET_TYPES: ReadonlySet<string> = new Set(["DRAW_NO_BET", "TEAM_TOTAL", "WIN_EITHER_HALF", "HT_FT", "CORRECT_SCORE", "OTHER"]);
-
 /**
- * Ranking key for already-published rows (homepage / Genius): 0 = verified
- * price (QUALIFIED or SHORT), 1 = no executable price, 2 = failed a check.
- * Short prices are NOT demoted: on 45 days of homepage slots, "verified first,
- * then confidence" gave strike 77.7% and return -3.0% against the current
- * 79.1% / -6.6%, while also demoting short prices fell to 72.0% / -4.6%.
- * Rows from before generation recorded a tier are inferred from the market.
+ * Ranking key for already-published rows (homepage / Genius): 0 = price
+ * verified at generation (QUALIFIED or SHORT in the row's own record),
+ * 1 = not verified (UNPRICED, or no record at all: a legacy row is never
+ * treated as verified just because its market can be priced), 2 = failed a
+ * check. With no records the order is exactly the existing one.
  */
-export function verifiedRank(tier: string | null | undefined, marketType: string): number {
+export function verifiedRank(tier: string | null | undefined): number {
   if (tier === "QUALIFIED" || tier === "SHORT") return 0;
-  if (tier === "UNPRICED") return 1;
   if (tier === "INELIGIBLE") return 2;
-  return UNPRICED_MARKET_TYPES.has(marketType) ? 1 : 0;
+  return 1;
 }

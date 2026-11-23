@@ -317,8 +317,7 @@ export function selectCuratedIds<T extends Rankable>(
  * verifiedRank); the confidence floor is unchanged.
  */
 export function compareByConfidenceRank(a: Rankable, b: Rankable): number {
-  const quality = marketQualityRankingEnabled() && a.marketType && b.marketType
-    ? verifiedRank(storedTier(a), a.marketType) - verifiedRank(storedTier(b), b.marketType) : 0;
+  const quality = marketQualityRankingEnabled() ? verifiedRank(storedTier(a)) - verifiedRank(storedTier(b)) : 0;
   return quality || b.confidence - a.confidence || compareByEditorialRank(a, b);
 }
 const storedTier = (r: Rankable) => (r.analysisJson as { selectionQuality?: { tier?: string } } | null | undefined)?.selectionQuality?.tier;
