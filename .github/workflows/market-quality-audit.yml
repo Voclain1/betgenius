@@ -18,6 +18,7 @@ on:
     paths:
       - scripts/audit-market-quality.ts
       - scripts/backtest-market-selection.ts
+      - scripts/diagnose-paid-supply.ts
       - .github/workflows/market-quality-audit.yml
 
 permissions:
@@ -47,13 +48,19 @@ jobs:
           echo "::add-mask::$RO"
           echo "DATABASE_URL=$RO" >> "$GITHUB_ENV"
           echo "DATABASE_URL_UNPOOLED=$RO" >> "$GITHUB_ENV"
+      - name: Paid supply diagnosis
+        env:
+          REQUIRE_READ_ONLY: "1"
+          API_FOOTBALL_KEY: ""
+        run: npx tsx scripts/diagnose-paid-supply.ts
       - name: Market quality audit
+        if: github.event_name == 'workflow_dispatch'
         env:
           REQUIRE_READ_ONLY: "1"
           API_FOOTBALL_KEY: ""
         run: npx tsx scripts/audit-market-quality.ts "${{ github.event.inputs.days || '30' }}"
       - name: Market selection backtest
-        if: hashFiles('scripts/backtest-market-selection.ts') != ''
+        if: github.event_name == 'workflow_dispatch'
         env:
           REQUIRE_READ_ONLY: "1"
           API_FOOTBALL_KEY: ""
