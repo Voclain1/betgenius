@@ -49,6 +49,7 @@ on:
       - "src/lib/predictions.ts"
       - "src/lib/marketQualityReport.ts"
       - "src/app/api/admin/predictions/bulk/route.ts"
+      - "src/lib/enrichment.ts"
       - "src/lib/ai/evidenceReadiness.ts"
       - "src/app/api/admin/evidence-review/**"
       - "scripts/check-early-evidence-freshness.ts"

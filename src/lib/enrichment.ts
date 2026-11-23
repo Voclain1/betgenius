@@ -33,6 +33,7 @@ import {
   type PlayerStatEntry,
   type CoachEntry,
 } from "@/lib/football/api-football";
+import { hasBudget } from "@/lib/football/usage";
 import { matchKey, kickoffDay, h2hPairKey } from "@/lib/slug";
 import { leaguePriorityRank, LEAGUE_PRIORITY_ORDER, LEAGUE_CATALOGUE } from "@/lib/leagues";
 import { trimH2H } from "@/lib/h2h";
@@ -1425,6 +1426,9 @@ export async function selectStaleOddsTargets(targets: OddsTarget[], now: Date = 
  * that will change before kickoff — so it should stay due for another attempt,
  * not be cached as settled.
  */
+/** refreshOddsCache detail when the daily budget gate refused the call (nothing written). */
+export const ODDS_BUDGET_REFUSED = "Daily api-football budget reached for this caller — not attempted";
+
 export async function refreshOddsCache(target: OddsTarget, fence?: { key: string; holder: string }): Promise<{ matchKey: string; result: "ok" | "failed" | "error"; detail?: string }> {
   const now = new Date();
   const base = { matchKey: target.matchKey, fixtureApiId: target.fixtureApiId };
@@ -1450,6 +1454,15 @@ export async function refreshOddsCache(target: OddsTarget, fence?: { key: string
   }
 
   const trimmed = trimOdds(raw?.[0]);
+  // Refused by OUR OWN daily budget gate: no request reached the provider, so
+  // nothing was learned about this fixture. Recording it as an attempt put the
+  // fixture into the paid pass's 60-minute fetch backoff, and the general odds
+  // job re-stamped it every 15 minutes once the day's budget was spent, so the
+  // paid pass never used its reserved requests (23 Nov 2026: 16 Champions
+  // League candidates, 0 odds calls). Leave the cache row exactly as it was.
+  if (raw === null && !(await hasBudget())) {
+    return { matchKey: target.matchKey, result: "failed", detail: ODDS_BUDGET_REFUSED };
+  }
   if (!trimmed) {
     const lastError = raw === null ? "No response from api-football — see server logs" : "No bookmaker prices quoted for this fixture yet";
     await persistOdds({ where: { matchKey: target.matchKey }, create: { ...base, lastAttemptAt: now, lastError }, update: { lastAttemptAt: now, lastError } })

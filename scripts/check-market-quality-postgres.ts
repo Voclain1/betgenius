@@ -20,7 +20,7 @@ if (process.env.BETGENIUS_DISPOSABLE_PG !== "yes"
     || !/^(postgresql|postgres):\/\/[^/]+@(?:127\.0\.0\.1|localhost):5432\//.test(dbUrl)) {
   throw new Error("Refusing to write outside an explicitly marked disposable local Postgres");
 }
-process.env.API_FOOTBALL_KEY = "";
+process.env.API_FOOTBALL_KEY = "dummy-test-key-not-real";
 
 const session: { current: null | { user: { id: string; role: string } } } = { current: null };
 const loader = Module as unknown as { _load: (req: string, parent: unknown, isMain: boolean) => unknown };
@@ -40,6 +40,9 @@ async function main() {
   const { matchKey } = await import("../src/lib/slug");
   const { loadMarketQualityReport } = await import("../src/lib/marketQualityReport");
   const bulk = await import("../src/app/api/admin/predictions/bulk/route");
+  const { refreshOddsCache, ODDS_BUDGET_REFUSED } = await import("../src/lib/enrichment");
+  const { utcDay, withPaidPriority } = await import("../src/lib/football/usage");
+  const { vipPremiumOddsWarmReason } = await import("../src/lib/vipPremiumOverlay");
 
   let n = 0;
   const ok = (c: unknown, m: string) => { assert.ok(c, m); n++; };
@@ -113,6 +116,29 @@ async function main() {
     ok((await prisma.prediction.findUniqueOrThrow({ where: { id: early.id } })).status === "PUBLISHED", "the admin decision is applied");
     ok(JSON.stringify(await prisma.prediction.findUnique({ where: { id: published.id } })) === publishedBefore, "still no change to the earlier published row");
 
+    // ------------------------------------------------ odds budget refusal never puts a fixture into the paid fetch backoff
+    {
+      const key = "budget-test-" + now;
+      const stale = new Date(now - 3 * H);
+      await prisma.fixtureOddsCache.create({ data: { matchKey: key, fixtureApiId: 990099, fetchedAt: stale, lastAttemptAt: stale, oddsJson: { bookmakerCount: 7, markets: [] } } as never });
+      made.keys.push(key);
+      const day = utcDay();
+      const before = await prisma.apiUsage.findUnique({ where: { day_path: { day, path: "/budget-test" } } });
+      await prisma.apiUsage.upsert({ where: { day_path: { day, path: "/budget-test" } }, create: { day, path: "/budget-test", count: 1_000_000 }, update: { count: 1_000_000 } });
+      try {
+        const general = await refreshOddsCache({ matchKey: key, fixtureApiId: 990099, kickoff: new Date(now + 20 * H), kind: "candidate" } as never);
+        const paid = await withPaidPriority(() => refreshOddsCache({ matchKey: key, fixtureApiId: 990099, kickoff: new Date(now + 20 * H), kind: "candidate" } as never));
+        const row = await prisma.fixtureOddsCache.findUniqueOrThrow({ where: { matchKey: key } });
+        ok(general.result === "failed" && general.detail === ODDS_BUDGET_REFUSED && paid.detail === ODDS_BUDGET_REFUSED, "a budget refusal is reported as such");
+        ok(+row.lastAttemptAt! === +stale && row.lastError === null, "a budget refusal leaves the cache row untouched (no attempt stamp, no error)");
+        ok(vipPremiumOddsWarmReason({ kickoff: new Date(now + 20 * H) }, { oddsJson: null, fetchedAt: row.fetchedAt, lastAttemptAt: row.lastAttemptAt }, new Date()) === "DUE",
+          "so the paid pass still sees the fixture as due for its own (reserved) odds call");
+      } finally {
+        if (before) await prisma.apiUsage.update({ where: { day_path: { day, path: "/budget-test" } }, data: { count: before.count } });
+        else await prisma.apiUsage.delete({ where: { day_path: { day, path: "/budget-test" } } });
+      }
+    }
+
     // ------------------------------------------------ monitor: holds from every generated row, not only PUBLISHED
     const hold = (reason: string) => ({ policyVersion: "t", mode: "shadow", decision: "HOLD", holdReason: reason });
     await seed({ status: "PENDING_REVIEW", fixtureApiId: 990010, home: 94000, sq: hold("NO_VERIFIED_PRICE") });
@@ -139,6 +165,6 @@ async function main() {
     await prisma.user.deleteMany({ where: { id: { in: made.users } } });
     await prisma.$disconnect();
   }
-  console.log(`PASS: market quality on Postgres — ${n} assertions (cross-job duplicate guard, admin authority, generation-wide hold monitor)`);
+  console.log(`PASS: market quality on Postgres — ${n} assertions (cross-job duplicate guard, admin authority, generation-wide hold monitor, odds budget refusal)`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
