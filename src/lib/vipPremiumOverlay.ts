@@ -204,6 +204,11 @@ export type OverlayFixtureRow = {
   status: string;
   provenance: string | null;
   contextComplete: boolean;
+  /**
+   * Written by the early lane (AIJob intent EARLY_FREE). Optional: callers that
+   * do not know leave it undefined, which keeps the previous behaviour.
+   */
+  earlyLane?: boolean;
 };
 
 /** A previous VIP_PREMIUM-intent AIJob, read from its stored prompt. `kickoff` is null on a prompt that did not record it. */
@@ -246,7 +251,34 @@ export type OverlayCandidate = {
   round: string | null;
   /** Admitted only because its kickoff day has quota its own core fixtures can never use (PAID_SPARE_QUOTA_WIDENING=on). */
   viaSpareQuota?: true;
+  /**
+   * Its only ordinary rows came from the early lane (cache-only evidence), so
+   * their context is not relied on: the paid pass fetches fresh evidence when it
+   * generates, and its own draft must be contextComplete to be published.
+   */
+  refreshesEarlyEvidence?: true;
 };
+
+/**
+ * THE EARLY LANE DOES NOT DECIDE PAID PICKS (owner decision, 23 Nov 2026).
+ *
+ * Early-lane rows are written days ahead from CACHED evidence only. They may
+ * still mark a fixture as covered (the regular generator never revisits a
+ * fixture that has any row, so without this the fixture could never get a paid
+ * pick), but nothing else about them reaches paid selection:
+ *  - their match context is ignored: the paid pass fetches its own evidence and
+ *    its own draft must be contextComplete to publish (paidAutoPublishVerdict);
+ *  - an unpublished early row is not an "existing pick" the paid draft must avoid
+ *    or may not repeat (paidRepeatRows); a PUBLISHED one is, like any free pick,
+ *    because a reader can already see it;
+ *  - paid curation never admits an early row (geniusCuration.ts, earlyLane).
+ * Production, 30 days to 23 Nov 2026: 27 core-league fixtures covered only by
+ * the early lane without context, 0 paid picks; regular-generation core
+ * fixtures with context, 120 paid picks from 367.
+ */
+export function paidRepeatRows<T extends { status: string; earlyLane?: boolean }>(rows: readonly T[]): T[] {
+  return rows.filter((r) => !(r.earlyLane && r.status !== "PUBLISHED"));
+}
 
 export type OverlaySkipReason =
   | "OUTSIDE_WINDOW"
@@ -357,7 +389,11 @@ export function planVipPremiumCandidates(input: {
       countSkip("NOT_YET_GENERATED");
       continue;
     }
-    if (!ordinary.some((r) => r.contextComplete)) { countSkip("NO_MATCH_CONTEXT"); continue; }
+    // Evidence is judged on rows that fetched their own (never the early lane's
+    // cache-only rows). Covered by the early lane alone: the paid pass fetches.
+    const regular = ordinary.filter((r) => !r.earlyLane);
+    const refreshesEarlyEvidence = regular.length === 0;
+    if (!refreshesEarlyEvidence && !regular.some((r) => r.contextComplete)) { countSkip("NO_MATCH_CONTEXT"); continue; }
     if (rows.some((r) => isDedicatedPaid(r.provenance))) { countSkip("HAS_DEDICATED_PAID"); continue; }
     if (attempted.has(l.fixtureApiId)) { countSkip("ALREADY_ATTEMPTED"); continue; }
     if (input.backingOff?.has(l.fixtureApiId)) { countSkip("BACKING_OFF"); continue; }
@@ -366,6 +402,7 @@ export function planVipPremiumCandidates(input: {
       homeTeam: l.homeTeam, awayTeam: l.awayTeam, homeTeamApiId: homeId, awayTeamApiId: awayId,
       kickoff: l.kickoff, round: l.round,
       ...(viaSpare ? { viaSpareQuota: true as const } : {}),
+      ...(refreshesEarlyEvidence ? { refreshesEarlyEvidence: true as const } : {}),
     };
     if (viaSpare) spareEligible.push(candidate);
     if (!viaSpare || spareMode === "on") candidates.push(candidate);
@@ -863,14 +900,14 @@ export function paidAutoPublishVerdict(
 export function paidPublishFixture(
   self: { id: string; marketType: string; selection: unknown },
   ledgerStatus: string | null,
-  rows: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown }>,
+  rows: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown; status?: string; earlyLane?: boolean }>,
   withinDailyQuota: boolean,
 ): PaidPublishFixture {
   const others = rows.filter((r) => r.id !== self.id);
   return {
     ordinaryCovered: ledgerStatus === "SUCCEEDED" && others.some((r) => r.provenance !== GOALS_GENERATED_PROVENANCE && !isDedicatedPaid(r.provenance)),
     conflictingDedicated: others.some((r) => isDedicatedPaid(r.provenance)),
-    repeatsExisting: repeatsExistingPick(self, others),
+    repeatsExisting: repeatsExistingPick(self, paidRepeatRows(others.map((r) => ({ ...r, status: r.status ?? "PUBLISHED" })))),
     withinDailyQuota,
   };
 }

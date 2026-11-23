@@ -192,8 +192,13 @@ check("7 2-4 incremental is inconclusive", researchDecision(30, 3, 0.2) === "INC
     return statSync(join(__dirname, "..", rel)).isDirectory() ? walk(rel) : /\.tsx?$/.test(n) ? [rel] : [];
   });
   const literalCacheOnly = walk("src").filter((f) => code(src(f)).some((l) => /cacheOnly:\s*true/.test(l)));
-  check("9 no production module hard-codes cacheOnly: true outside the early discovery lane",
-    literalCacheOnly.length === 1 && literalCacheOnly[0] === join("src", "lib", "generation", "earlyFixtureDiscovery.ts"));
+  // Allowed: early discovery, and the admin Prediction Updates comparison (#232),
+  // which reads caches only inside withNoFootballApiCalls and never generates
+  // (scripts/check-prediction-updates.ts pins that literal).
+  const allowedCacheOnly = [join("src", "lib", "generation", "earlyFixtureDiscovery.ts"), join("src", "app", "api", "admin", "prediction-updates", "route.ts")];
+  check("9 no production module hard-codes cacheOnly: true outside the early discovery lane and the read-only updates comparison",
+    literalCacheOnly.length > 0 && literalCacheOnly.every((f) => allowedCacheOnly.includes(f)) && literalCacheOnly.includes(allowedCacheOnly[0]));
+  check("9 the updates comparison stays provider-free", /withNoFootballApiCalls\(/.test(src("src/app/api/admin/prediction-updates/route.ts")));
   const ctx = src("src/lib/ai/generationContext.ts");
   check("9 cacheOnly is opt-in", /cacheOnly\?: boolean/.test(ctx) && /cacheOnly = false/.test(ctx));
   const cacheOnlyTeam = ctx.slice(ctx.indexOf("if (cacheOnly) {"), ctx.indexOf("// Miss or stale"));

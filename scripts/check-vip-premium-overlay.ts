@@ -226,7 +226,26 @@ async function main() {
     eq("overlay: under 12h to kickoff is outside the window", plan([fixture(4, { kickoffIn: 6 })]).skipped, { OUTSIDE_WINDOW: 1 });
     eq("overlay: over 48h to kickoff is outside the window", plan([fixture(5, { kickoffIn: 50 })]).skipped, { OUTSIDE_WINDOW: 1 });
     eq("overlay: needs live match context on an ordinary row", plan([fixture(6, { context: false })]).skipped, { NO_MATCH_CONTEXT: 1 });
-    eq("overlay: a Goals row alone is not ordinary coverage", plan([fixture(7, { provenance: "GOALS_GENERATED" })]).skipped, { NOT_YET_GENERATED: 1 });
+    // The early lane does not decide paid picks: coverage only, never evidence.
+    {
+      const early = fixture(61, { context: false, provenance: "STANDARD_CURATED" });
+      const earlyRow = { ...early.row, earlyLane: true };
+      const run = (rows: Any[], extra: Any = {}) => overlay.planVipPremiumCandidates({ ledger: [early.ledger], rows, attempts: extra.attempts ?? [], now: NOW });
+      eq("early lane: an early-only fixture without context is a candidate (the paid pass fetches its own)", run([earlyRow]).candidates.map((c: Any) => [c.fixtureApiId, c.refreshesEarlyEvidence]), [[9061, true]]);
+      eq("early lane: an early-only fixture WITH context is still refetched, its evidence not relied on", run([{ ...earlyRow, contextComplete: true }]).candidates.map((c: Any) => c.refreshesEarlyEvidence), [true]);
+      eq("early lane: a regular row without context still skips (the provider lacks data)", run([{ ...early.row, earlyLane: false }]).skipped, { NO_MATCH_CONTEXT: 1 });
+      eq("early lane: early context cannot rescue a regular row without it", run([{ ...earlyRow, contextComplete: true }, { ...early.row, id: "o61b", earlyLane: false }]).skipped, { NO_MATCH_CONTEXT: 1 });
+      eq("early lane: a regular row with context decides, as before", run([earlyRow, { ...early.row, id: "o61c", earlyLane: false, contextComplete: true }]).candidates.map((c: Any) => c.refreshesEarlyEvidence), [undefined]);
+      eq("early lane: callers that do not mark rows keep the previous behaviour", run([early.row]).skipped, { NO_MATCH_CONTEXT: 1 });
+      eq("early lane: every other rule still applies (already attempted)", run([earlyRow], { attempts: [{ fixtureApiId: 9061, createdAt: NOW }] }).skipped, { ALREADY_ATTEMPTED: 1 });
+      const pick = { marketType: "MATCH_WINNER", selection: { value: "HOME" } };
+      const me = { id: "p", provenance: "VIP_GENERATED", ...pick };
+      eq("early lane: an unpublished early draft with the same pick does not block the paid pick", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "e", provenance: "STANDARD_CURATED", status: "DRAFT", earlyLane: true, ...pick }], true).repeatsExisting, false);
+      eq("early lane: ...but still counts as coverage", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "e", provenance: "STANDARD_CURATED", status: "DRAFT", earlyLane: true, ...pick }], true).ordinaryCovered, true);
+      eq("early lane: a PUBLISHED early pick is public, so a paid repeat of it is refused", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "e", provenance: "STANDARD_CURATED", status: "PUBLISHED", earlyLane: true, ...pick }], true).repeatsExisting, true);
+      eq("early lane: a regular draft with the same pick still blocks, as before", overlay.paidPublishFixture(me, "SUCCEEDED", [me, { id: "r", provenance: "STANDARD_CURATED", status: "PENDING_REVIEW", ...pick }], true).repeatsExisting, true);
+      eq("early lane: paidRepeatRows drops only unpublished early rows", overlay.paidRepeatRows([{ id: 1, status: "DRAFT", earlyLane: true }, { id: 2, status: "PUBLISHED", earlyLane: true }, { id: 3, status: "DRAFT" }]).map((r: Any) => r.id), [2, 3]);
+    }
     const withDedicated = fixture(8);
     const dedicatedRow = { ...withDedicated.row, id: "d8", provenance: "VIP_GENERATED", status: "PENDING_REVIEW" };
     eq("overlay: a live dedicated paid row (even in review) takes the fixture", plan([withDedicated], { rows: [dedicatedRow] }).skipped, { HAS_DEDICATED_PAID: 1 });
