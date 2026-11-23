@@ -93,6 +93,21 @@ async function main() {
     if (key !== prevKey) out("vipRunHistory", { at: r.ranAt.toISOString(), ...row });
     prevKey = key;
   }
+  // Spare-quota (thin-day widening) shadow and odds readiness for the latest runs.
+  for (const r of hist.filter((_, i) => i % 8 === 0 || i === hist.length - 1).filter((r) => +r.ranAt > +now - 36 * H)) {
+    const v = ((r.detail ?? {}) as Record<string, any>).vipPremium ?? {};
+    const sq = v.spareQuota;
+    const samples = (v.readiness?.oddsBeforeWarming?.samples ?? []) as Array<Record<string, unknown>>;
+    out("spareAndReadiness", { at: r.ranAt.toISOString(), spare: sq ? { mode: sq.mode, slots: sq.slots, eligible: sq.eligible, qualifiedFromCache: sq.qualifiedFromCache, wouldTargetDays: count((sq.wouldTarget ?? []) as Array<{ kickoff: string; marketProbability: number }>, (w) => lagosDateKey(new Date(w.kickoff)) + "@" + Math.round(w.marketProbability)) } : null,
+      fixtureDays: v.readiness?.fixtureDays, oddsBefore: { cache: v.readiness?.oddsBeforeWarming?.cache, market: v.readiness?.oddsBeforeWarming?.market, warm: count(samples, (x) => `${x.kickoffDay}:${x.warmReason}:${x.cacheState}:${x.marketState}`) } });
+  }
+  // Fixtures in the paid window whose ordinary rows all lack complete match context (never paid-eligible).
+  const win = await db.prediction.findMany({ where: { kickoff: { gte: new Date(+now + 12 * H), lte: new Date(+now + 48 * H) }, status: { not: "ARCHIVED" }, leagueApiId: { in: [...PAID_CORE_LEAGUE_IDS] } }, select: { fixtureApiId: true, contextComplete: true, status: true, provenance: true, leagueApiId: true, kickoff: true, aiJobId: true } });
+  const byFx = new Map<number, typeof win>();
+  for (const w of win) if (w.fixtureApiId != null) byFx.set(w.fixtureApiId, [...(byFx.get(w.fixtureApiId) ?? []), w]);
+  out("coreWindowContext", { fixtures: byFx.size, noContext: [...byFx.values()].filter((rs) => !rs.some((r) => r.contextComplete)).map((rs) => ({ league: rs[0].leagueApiId, day: lagosDateKey(rs[0].kickoff!), rows: rs.map((r) => `${r.provenance}:${r.status}`).join(",") })) });
+  const drafts26 = await db.prediction.groupBy({ by: ["status", "provenance", "leagueApiId", "contextComplete"], where: { status: "DRAFT", kickoff: { gte: now } }, _count: true });
+  out("draftRowsAhead", { rows: drafts26.map((d) => `${d.provenance}:${d.leagueApiId}:ctx${d.contextComplete}=${d._count}`) });
   const shadow = await db.jobRun.findMany({ where: { job: "paid-selection-shadow", ranAt: { gte: new Date(+now - 6 * D) } }, orderBy: { ranAt: "asc" }, select: { ranAt: true, summary: true } });
   out("paidCurationHistory", { lines: [...new Set(shadow.map((s) => s.summary ?? ""))] });
   // Confidence and market of the rows paid curation can draw on (published, core leagues), by kickoff day.
