@@ -39,7 +39,7 @@ export function marketSelectionMode(value: string | undefined = process.env.MARK
 
 export type SelectionPolicy = {
   MODEL_WEIGHT: number; HARD_MIN_ODDS: number; USEFUL_MIN_ODDS: number; MIN_BOOKS: number; MIN_BLENDED_PROBABILITY: number;
-  MAX_MODEL_OVER_MARKET_PP: number; KEEP_PRIMARY_EV_TOLERANCE: number; OBJECTIVE: "repair" | "ev";
+  MAX_MODEL_OVER_MARKET_PP: number; KEEP_PRIMARY_EV_TOLERANCE: number; OBJECTIVE: "guard" | "repair" | "ev";
 };
 export const SELECTION_POLICY: SelectionPolicy = {
   /**
@@ -67,15 +67,18 @@ export const SELECTION_POLICY: SelectionPolicy = {
   /** Keep the model's own primary unless an alternative's EV is better by more than this ("ev" objective only). */
   KEEP_PRIMARY_EV_TOLERANCE: 0.02,
   /**
-   * "repair" (default): keep the model's primary whenever it is QUALIFIED;
-   * switch only to replace an unpriced, short, failing or ineligible primary
-   * with the model's most likely QUALIFIED alternative. "ev": maximise blended
-   * EV across candidates. Chronological backtest on 880 real multi-market
-   * fixtures: "ev" cut Double Chance from 69% to 38% but lowered the strike
-   * rate (74.5% to 65.2%) without improving the return (paired -0.8%, 90%
-   * interval -2.9 to +2.1), so it is NOT the default.
+   * "guard" (default): keep the model's primary whenever it passed price
+   * verification (QUALIFIED or SHORT); switch only to replace a primary that
+   * FAILED it (unpriced, below the floor, far above the market, under 50%)
+   * with the model's likeliest verified alternative; else HOLD.
+   * "repair": also replace SHORT primaries. "ev": maximise blended EV.
+   * Chronological backtest on 880 real multi-market fixtures (old = model's
+   * first draft): "ev" cut Double Chance 69% -> 38% but strike 74.5% -> 65.2%,
+   * paired return -0.8% (90% interval -2.9 to +2.1); "repair" strike 66.8%,
+   * paired return -2.2% (-4.2 to +1.7). Neither improved decisions, so price
+   * and EV are NOT used to override a verified pick.
    */
-  OBJECTIVE: "repair" as "repair" | "ev",
+  OBJECTIVE: "guard",
 };
 
 export type CandidateInput = {
@@ -187,6 +190,15 @@ export function selectPrimary(
   if (!pool.length) {
     const anyUnpriced = candidates.some((c) => c.tier === "UNPRICED");
     return result("HOLD", anyUnpriced ? "NO_VERIFIED_PRICE" : "NO_CREDIBLE_SELECTION", primary);
+  }
+  if (policy.OBJECTIVE === "guard") {
+    // Keep any primary that passed verification (QUALIFIED or SHORT); replace
+    // only one that failed it (no executable price, below the floor, far above
+    // the market, under 50%) with the model's likeliest verified alternative.
+    const verified = candidates.filter((c) => c.tier === "QUALIFIED" || c.tier === "SHORT");
+    if (verified.includes(primary)) return result("KEEP_PRIMARY", null, primary);
+    const likeliest = [...verified].sort((a, b) => (b.blended! - a.blended!) || (b.ev! - a.ev!))[0];
+    return result("SWITCH", null, likeliest);
   }
   if (policy.OBJECTIVE === "repair") {
     if (pool.includes(primary)) return result("KEEP_PRIMARY", null, primary);
