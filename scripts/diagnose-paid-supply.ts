@@ -106,6 +106,30 @@ async function main() {
   const byFx = new Map<number, typeof win>();
   for (const w of win) if (w.fixtureApiId != null) byFx.set(w.fixtureApiId, [...(byFx.get(w.fixtureApiId) ?? []), w]);
   out("coreWindowContext", { fixtures: byFx.size, noContext: [...byFx.values()].filter((rs) => !rs.some((r) => r.contextComplete)).map((rs) => ({ league: rs[0].leagueApiId, day: lagosDateKey(rs[0].kickoff!), rows: rs.map((r) => `${r.provenance}:${r.status}`).join(",") })) });
+  // Which generator wrote the rows with no match context, and how often did that
+  // leave a paid-league fixture with NO context-complete ordinary row (30 days)?
+  const span = await db.prediction.findMany({ where: { kickoff: { gte: new Date(+now - 30 * D), lte: new Date(+now + 4 * D) }, leagueApiId: { in: [...PAID_ANY_LEAGUE_IDS] }, fixtureApiId: { not: null }, status: { not: "ARCHIVED" } },
+    select: { fixtureApiId: true, contextComplete: true, provenance: true, status: true, kickoff: true, leagueApiId: true, aiJobId: true, categories: { select: { category: true } } } });
+  const jobIds = [...new Set(span.map((r) => r.aiJobId).filter((x): x is string => !!x))];
+  const early = new Set<string>();
+  for (let i = 0; i < jobIds.length; i += 400) for (const j of await db.aIJob.findMany({ where: { id: { in: jobIds.slice(i, i + 400) }, prompt: { contains: '"intent":"EARLY_FREE"' } }, select: { id: true } })) early.add(j.id);
+  const fx2 = new Map<number, typeof span>();
+  for (const r of span) fx2.set(r.fixtureApiId!, [...(fx2.get(r.fixtureApiId!) ?? []), r]);
+  const dedicated = new Set<string>(DEDICATED_PAID_PROVENANCES as readonly string[]);
+  const tally: Record<string, { fixtures: number; withPaid: number }> = {};
+  const noCtxSources: Record<string, number> = {};
+  for (const rs of fx2.values()) {
+    const ord = rs.filter((r) => r.provenance !== "GOALS_GENERATED" && !dedicated.has(r.provenance));
+    if (!ord.length) continue;
+    const ctx = ord.some((r) => r.contextComplete);
+    const allEarly = ord.every((r) => r.aiJobId && early.has(r.aiJobId));
+    const anyEarly = ord.some((r) => r.aiJobId && early.has(r.aiJobId));
+    const k = `${ctx ? "ctx" : "noCtx"}:${allEarly ? "earlyOnly" : anyEarly ? "mixed" : "regularOnly"}:${core.has(rs[0].leagueApiId ?? -1) ? "core" : "widened"}`;
+    const t = (tally[k] ??= { fixtures: 0, withPaid: 0 }); t.fixtures++;
+    if (rs.some((r) => r.status === "PUBLISHED" && r.categories.some((c) => c.category === "VIP" || c.category === "PREMIUM"))) t.withPaid++;
+    if (!ctx && +rs[0].kickoff! > +now) noCtxSources[`${lagosDateKey(rs[0].kickoff!)}:${allEarly ? "earlyOnly" : anyEarly ? "mixed" : "regularOnly"}:${ord.map((r) => r.status).join("/")}`] = (noCtxSources[`${lagosDateKey(rs[0].kickoff!)}:${allEarly ? "earlyOnly" : anyEarly ? "mixed" : "regularOnly"}:${ord.map((r) => r.status).join("/")}`] ?? 0) + 1;
+  }
+  out("contextBySource30d", { tally, upcomingNoContext: noCtxSources });
   const drafts26 = await db.prediction.groupBy({ by: ["status", "provenance", "leagueApiId", "contextComplete"], where: { status: "DRAFT", kickoff: { gte: now } }, _count: true });
   out("draftRowsAhead", { rows: drafts26.map((d) => `${d.provenance}:${d.leagueApiId}:ctx${d.contextComplete}=${d._count}`) });
   const shadow = await db.jobRun.findMany({ where: { job: "paid-selection-shadow", ranAt: { gte: new Date(+now - 6 * D) } }, orderBy: { ranAt: "asc" }, select: { ranAt: true, summary: true } });
