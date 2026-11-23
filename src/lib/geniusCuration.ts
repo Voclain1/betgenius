@@ -1,5 +1,6 @@
 import { verifiedRank, marketQualityRankingEnabled } from "@/lib/marketSelection";
 import { earlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
+import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey, lagosDayBounds } from "@/lib/lagosDate";
 import { compareByEditorialRank } from "@/lib/predictionOrdering";
@@ -341,6 +342,12 @@ export type CurationRow = {
   categories: string[];
   /** Categories an admin tagged by hand (PredictionCategoryLink.manual). Curation never removes these. Optional: pure callers may omit it. */
   manualCategories?: string[];
+  /**
+   * Written by the early lane (AIJob intent EARLY_FREE, cache-only evidence).
+   * Never ADMITTED to a paid feed: paid picks come from passes that fetch their
+   * own evidence. A row already in a paid feed is left where it is.
+   */
+  earlyLane?: boolean;
 };
 
 export type CurationPlan = {
@@ -365,6 +372,8 @@ export type CurationPlan = {
   widenedAdmitted: number;
   /** Paid tiers: rows at the floor not admitted because kickoff was under the minimum lead (or past). */
   kickoffExcluded: number;
+  /** Paid tiers: untagged early-lane rows not admitted (CurationRow.earlyLane). */
+  earlyLaneExcluded: number;
 };
 
 /**
@@ -522,7 +531,11 @@ export function planCuration(
     // The free list: no tip that sits in a paid feed, and no same-game double.
     (!rule.freeOnly ||
       (!r.categories.some((c) => (PAID_TIER_CATEGORIES as readonly string[]).includes(c)) && r.marketType !== "SAME_GAME_DOUBLE"));
-  const open = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r));
+  // Paid tiers never admit an early-lane row (see CurationRow.earlyLane); one
+  // already in the feed is not removed by this rule.
+  const earlyBlocked = (r: CurationRow) => !!rule.paid && !!r.earlyLane && !tagged.has(r.id);
+  const earlyLaneExcluded = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r) && earlyBlocked(r)).length;
+  const open = rows.filter((r) => !protectedIds.has(r.id) && belongsHere(r) && !earlyBlocked(r));
   const doublesExcluded = open.filter((r) => !isPaidEligible(r)).length;
   const routeExcluded = open.filter((r) => isPaidEligible(r) && !hasRequiredRoute(r)).length;
   let curatable = open.filter((r) => hasRequiredRoute(r) && isPaidEligible(r)).filter((r) => {
@@ -617,13 +630,14 @@ export function planCuration(
     marketDisagreeExcluded,
     widenedAdmitted,
     kickoffExcluded,
+    earlyLaneExcluded,
   };
 }
 
 const CURATION_ROW_SELECT = {
   id: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true, analysisJson: true,
   kickoff: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, selection: true,
-  categories: { select: { category: true, manual: true } }, aiJob: { select: { model: true } },
+  categories: { select: { category: true, manual: true } }, aiJob: { select: { model: true } }, aiJobId: true,
 } as const;
 
 /**
@@ -674,8 +688,14 @@ async function loadCurationRows(start: Date, end: Date): Promise<CurationRow[]> 
     },
     select: CURATION_ROW_SELECT,
   });
-  return raw.map(({ aiJob, ...r }) => ({
+  // Early-lane rows, by their job's intent: one indexed read of the jobs only.
+  const jobIds = [...new Set(raw.map((r) => r.aiJobId).filter((id): id is string => !!id))];
+  const early = new Set(jobIds.length
+    ? (await prisma.aIJob.findMany({ where: { id: { in: jobIds }, prompt: { contains: `"intent":"${EARLY_FREE_GENERATION_INTENT}"` } }, select: { id: true } })).map((j) => j.id)
+    : []);
+  return raw.map(({ aiJob, aiJobId, ...r }) => ({
     ...r,
+    earlyLane: !!aiJobId && early.has(aiJobId),
     model: aiJob?.model ?? null,
     categories: r.categories.map((c) => c.category),
     manualCategories: r.categories.filter((c) => c.manual).map((c) => c.category),

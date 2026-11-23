@@ -178,6 +178,16 @@ async function main() {
     eq("curate: a dedicated pick keeps its fixture; the ordinary pick does not join it", withDed.selectedIds, ["z"]);
     const prem = curation.planCuration("PREMIUM", [r("p", { confidence: 79 })], new Set(), new Set(), new Map([["p", true]]));
     eq("curate: PREMIUM's 80 floor is not bypassed by a verdict", prem.selectedIds, []);
+
+    // The early lane never feeds a paid feed through curation.
+    const earlyRows = [r("ea", { earlyLane: true }), r("eb", { earlyLane: true, categories: ["FEATURED", "VIP"] }), r("ec")];
+    const earlyPlan = curation.planCuration("VIP", earlyRows, new Set(), new Set(), new Map([["ea", true], ["eb", true], ["ec", true]]));
+    check("curate: an early-lane row is never admitted to VIP, whatever its confidence or market", !earlyPlan.selectedIds.includes("ea") && !earlyPlan.added.includes("ea"), earlyPlan);
+    check("curate: an early-lane row already in VIP is left where it is (nothing published changes)", earlyPlan.selectedIds.includes("eb") && !earlyPlan.removed.includes("eb"), earlyPlan);
+    check("curate: regular rows are admitted as before", earlyPlan.added.includes("ec"), earlyPlan);
+    eq("curate: the exclusion is counted", earlyPlan.earlyLaneExcluded, 1);
+    const genius = curation.planCuration("GENIUS", [r("eg", { earlyLane: true, confidence: 80 })], new Set(), new Set());
+    eq("curate: free tiers are unaffected by the early-lane rule", genius.earlyLaneExcluded, 0);
     const dbl = curation.planCuration("VIP", [r("s", { marketType: "SAME_GAME_DOUBLE" })], new Set(), new Set(), new Map([["s", true]]));
     eq("curate: a double is never a paid pick", dbl.selectedIds, []);
   }

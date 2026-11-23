@@ -59,7 +59,7 @@ import {
   VIP_MARKET_FLOOR,
   vipPremiumOddsToWarm,
   vipPremiumOddsDiagnostic,
-  earlyEvidenceRefreshEnabled,
+  paidRepeatRows,
   spareQuotaSlotsByDay,
   spareQuotaWideningMode,
   PAID_CORE_LEAGUE_IDS,
@@ -544,11 +544,7 @@ export async function selectVipPremiumTargets(
   const backingOff = new Set(backoffs.map((b) => Number(b.key.slice(VIP_PREMIUM_BACKOFF_LOCK_PREFIX.length))).filter(Number.isFinite));
   // Which rows without match context came from the early lane (cache-only
   // evidence). One read, limited to those rows; the rest stay unmarked.
-  const earlyRefresh = !options.anyLeague && earlyEvidenceRefreshEnabled();
-  const noContextJobs = earlyRefresh ? [...new Set(rows.filter((r) => !r.contextComplete && r.aiJobId).map((r) => r.aiJobId!))] : [];
-  const earlyJobs = new Set(noContextJobs.length
-    ? (await prisma.aIJob.findMany({ where: { id: { in: noContextJobs }, prompt: { contains: `"intent":"${EARLY_FREE_GENERATION_INTENT}"` } }, select: { id: true } })).map((j) => j.id)
-    : []);
+  const earlyJobs = await earlyLaneJobIds(rows.map((r) => r.aiJobId));
   const overlayRows = rows.map((r) => ({ ...r, earlyLane: !!r.aiJobId && earlyJobs.has(r.aiJobId) }));
   const used = attemptsByKickoffDay(attempts);
 
@@ -575,7 +571,6 @@ export async function selectVipPremiumTargets(
   const plan = planVipPremiumCandidates({
     ledger: ledger.filter((l) => l.kickoff).map((l) => ({ ...l, kickoff: l.kickoff! })),
     rows: overlayRows,
-    earlyEvidenceRefresh: earlyRefresh,
     attempts,
     backingOff,
     now,
@@ -749,6 +744,14 @@ export function provenanceForTier(tier: PaidTier): string {
   return tier === "PREMIUM" ? PREMIUM_GENERATED_PROVENANCE : VIP_GENERATED_PROVENANCE;
 }
 
+/** Which of these AIJobs were early-lane jobs (intent EARLY_FREE). One read of the jobs only. */
+export async function earlyLaneJobIds(ids: ReadonlyArray<string | null | undefined>): Promise<Set<string>> {
+  const unique = [...new Set(ids.filter((id): id is string => !!id))];
+  if (!unique.length) return new Set();
+  const rows = await prisma.aIJob.findMany({ where: { id: { in: unique }, prompt: { contains: `"intent":"${EARLY_FREE_GENERATION_INTENT}"` } }, select: { id: true } });
+  return new Set(rows.map((r) => r.id));
+}
+
 type FixtureRef = { id: string; fixtureApiId: number | null; homeTeamApiId: number | null; awayTeamApiId: number | null; kickoff: Date | null };
 
 /** Every non-archived row on the same fixture as `ref`, with its paid tags. */
@@ -770,11 +773,13 @@ export async function liveRowsOnFixture(ref: FixtureRef) {
     },
     select: {
       id: true, fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, kickoff: true, provenance: true, status: true,
-      marketType: true, selection: true, market: true, pick: true,
+      marketType: true, selection: true, market: true, pick: true, aiJobId: true,
       categories: { select: { category: true } },
     },
   });
-  return candidates.filter((r) => paidFixtureKey(r) === key || (ref.fixtureApiId != null && r.fixtureApiId === ref.fixtureApiId));
+  const onFixture = candidates.filter((r) => paidFixtureKey(r) === key || (ref.fixtureApiId != null && r.fixtureApiId === ref.fixtureApiId));
+  const early = await earlyLaneJobIds(onFixture.map((r) => r.aiJobId));
+  return onFixture.map((r) => ({ ...r, earlyLane: !!r.aiJobId && early.has(r.aiJobId) }));
 }
 
 /**
@@ -789,7 +794,8 @@ export async function existingPicksOnFixture(target: {
   awayTeamApiId: number;
   kickoff: Date;
 }): Promise<string[]> {
-  const rows = await liveRowsOnFixture({ id: "", ...target });
+  // An unpublished early-lane draft does not steer the paid pick (paidRepeatRows).
+  const rows = paidRepeatRows(await liveRowsOnFixture({ id: "", ...target }));
   return [...new Set(rows.filter((r) => r.marketType !== "SAME_GAME_DOUBLE").map((r) => `${r.market}: ${r.pick}`))];
 }
 
@@ -1021,7 +1027,7 @@ export async function applyVipPremiumGate(options: { now?: Date; dryRun?: boolea
     // reader can already see is not a paid pick.
     const onFixture = await liveRowsOnFixture(group[0]);
     const groupIds = new Set(group.map((d) => d.id));
-    const others = onFixture.filter((r) => !groupIds.has(r.id));
+    const others = paidRepeatRows(onFixture.filter((r) => !groupIds.has(r.id)));
     const repeats = new Set(scored.filter((s) => repeatsExistingPick(s.row, others)).map((s) => s.id));
     for (const s of scored) if (repeats.has(s.id)) result.repeatsExisting.push(describe(s));
 

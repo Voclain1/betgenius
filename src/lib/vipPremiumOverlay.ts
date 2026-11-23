@@ -252,32 +252,32 @@ export type OverlayCandidate = {
   /** Admitted only because its kickoff day has quota its own core fixtures can never use (PAID_SPARE_QUOTA_WIDENING=on). */
   viaSpareQuota?: true;
   /**
-   * Its only ordinary rows came from the early lane, which reads cached evidence
-   * only, and none has complete match context. The paid pass fetches fresh
-   * evidence when it generates, and its own draft must be contextComplete to be
-   * published (paidAutoPublishVerdict), so the bar is unchanged.
+   * Its only ordinary rows came from the early lane (cache-only evidence), so
+   * their context is not relied on: the paid pass fetches fresh evidence when it
+   * generates, and its own draft must be contextComplete to be published.
    */
   refreshesEarlyEvidence?: true;
 };
 
 /**
- * PAID_EARLY_EVIDENCE_REFRESH: on (default) | off.
+ * THE EARLY LANE DOES NOT DECIDE PAID PICKS (owner decision, 23 Nov 2026).
  *
- * THE GAP. The regular generator skips any fixture that already has a
- * prediction (selector.ts), so a fixture the early lane covered days ahead is
- * never regenerated with fresh evidence. When the early lane's cache-only
- * evidence was incomplete, the fixture had no context-complete ordinary row and
- * the paid pass skipped it as NO_MATCH_CONTEXT, permanently. Production, 30 days
- * to 23 Nov 2026: 27 core-league fixtures in that state, 0 paid picks; core
- * fixtures from regular generation with context: 120 paid picks from 367.
- *
- * THE FIX. Such a fixture stays a candidate. Nothing else changes: the same
- * fresh quote, market bar, model floors, daily quota and publish gate apply,
- * and the paid draft itself must have complete match context to publish.
- * "off" restores the previous skip.
+ * Early-lane rows are written days ahead from CACHED evidence only. They may
+ * still mark a fixture as covered (the regular generator never revisits a
+ * fixture that has any row, so without this the fixture could never get a paid
+ * pick), but nothing else about them reaches paid selection:
+ *  - their match context is ignored: the paid pass fetches its own evidence and
+ *    its own draft must be contextComplete to publish (paidAutoPublishVerdict);
+ *  - an unpublished early row is not an "existing pick" the paid draft must avoid
+ *    or may not repeat (paidRepeatRows); a PUBLISHED one is, like any free pick,
+ *    because a reader can already see it;
+ *  - paid curation never admits an early row (geniusCuration.ts, earlyLane).
+ * Production, 30 days to 23 Nov 2026: 27 core-league fixtures covered only by
+ * the early lane without context, 0 paid picks; regular-generation core
+ * fixtures with context, 120 paid picks from 367.
  */
-export function earlyEvidenceRefreshEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return (env.PAID_EARLY_EVIDENCE_REFRESH ?? "").trim().toLowerCase() !== "off";
+export function paidRepeatRows<T extends { status: string; earlyLane?: boolean }>(rows: readonly T[]): T[] {
+  return rows.filter((r) => !(r.earlyLane && r.status !== "PUBLISHED"));
 }
 
 export type OverlaySkipReason =
@@ -338,8 +338,6 @@ export function planVipPremiumCandidates(input: {
   anyLeague?: boolean;
   /** Spare kickoff-day quota (Sprint 09). Absent or "off": exactly the previous behaviour. */
   spareQuota?: { mode: SpareQuotaMode; slots: ReadonlyMap<string, number> };
-  /** Admit early-lane fixtures without context (PAID_EARLY_EVIDENCE_REFRESH). Absent: previous behaviour. */
-  earlyEvidenceRefresh?: boolean;
 }): OverlayPlan {
   const skipped: OverlayPlan["skipped"] = {};
   const skip = (r: OverlaySkipReason) => (skipped[r] = (skipped[r] ?? 0) + 1);
@@ -391,8 +389,11 @@ export function planVipPremiumCandidates(input: {
       countSkip("NOT_YET_GENERATED");
       continue;
     }
-    const refreshesEarlyEvidence = !ordinary.some((r) => r.contextComplete);
-    if (refreshesEarlyEvidence && !(input.earlyEvidenceRefresh && ordinary.every((r) => r.earlyLane === true))) { countSkip("NO_MATCH_CONTEXT"); continue; }
+    // Evidence is judged on rows that fetched their own (never the early lane's
+    // cache-only rows). Covered by the early lane alone: the paid pass fetches.
+    const regular = ordinary.filter((r) => !r.earlyLane);
+    const refreshesEarlyEvidence = regular.length === 0;
+    if (!refreshesEarlyEvidence && !regular.some((r) => r.contextComplete)) { countSkip("NO_MATCH_CONTEXT"); continue; }
     if (rows.some((r) => isDedicatedPaid(r.provenance))) { countSkip("HAS_DEDICATED_PAID"); continue; }
     if (attempted.has(l.fixtureApiId)) { countSkip("ALREADY_ATTEMPTED"); continue; }
     if (input.backingOff?.has(l.fixtureApiId)) { countSkip("BACKING_OFF"); continue; }
@@ -899,14 +900,14 @@ export function paidAutoPublishVerdict(
 export function paidPublishFixture(
   self: { id: string; marketType: string; selection: unknown },
   ledgerStatus: string | null,
-  rows: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown }>,
+  rows: ReadonlyArray<{ id: string; provenance: string | null; marketType: string; selection: unknown; status?: string; earlyLane?: boolean }>,
   withinDailyQuota: boolean,
 ): PaidPublishFixture {
   const others = rows.filter((r) => r.id !== self.id);
   return {
     ordinaryCovered: ledgerStatus === "SUCCEEDED" && others.some((r) => r.provenance !== GOALS_GENERATED_PROVENANCE && !isDedicatedPaid(r.provenance)),
     conflictingDedicated: others.some((r) => isDedicatedPaid(r.provenance)),
-    repeatsExisting: repeatsExistingPick(self, others),
+    repeatsExisting: repeatsExistingPick(self, paidRepeatRows(others.map((r) => ({ ...r, status: r.status ?? "PUBLISHED" })))),
     withinDailyQuota,
   };
 }
