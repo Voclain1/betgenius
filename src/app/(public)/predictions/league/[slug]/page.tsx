@@ -26,6 +26,7 @@ import {
   getPublishedMatchIndexFor,
   getFixtureEventContext,
 } from "@/lib/predictionScope";
+import { UpcomingPreviews } from "@/components/UpcomingPreviews";
 import type { LeagueStandingRow, LeagueUpcomingFixture, LeaguePlayerStat } from "@/lib/enrichment";
 import { matchKey, matchSlug } from "@/lib/slug";
 import { FollowButton } from "@/components/FollowButton";
@@ -236,6 +237,8 @@ export default async function LeaguePage({ params }: { params: { slug: string } 
           </div>
         </section>
       )}
+
+      <UpcomingPreviews leagueApiId={leagueApiId} leagueName={name} />
 
       {/* Directly under the table: the upcoming picks, six at a time, then
           the played ones collapsed behind "Show past". Short reasoning

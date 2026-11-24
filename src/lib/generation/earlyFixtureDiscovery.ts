@@ -164,7 +164,7 @@ export async function runEarlyFixtureDiscovery(opts: { batchSize?: number; now?:
         now,
         limit: rows.length,
         fromHours: EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS,
-        untilHours: Math.min(EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS, days * 24),
+        untilHours: Math.min(EARLY_FIXTURE_POLICY.EARLY_DISCOVERY_UNTIL_HOURS, days * 24),
         cacheOnly: true, // Only existing standings; never refresh league data for early qualification.
       });
       if (!selected.candidates.length) continue;

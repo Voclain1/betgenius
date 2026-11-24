@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Safely transfer only approved VPS activation flags across a deploy.
 
-New app secrets/config still originate from PROD_ENV_FILE; only the three
+New app secrets/config still originate from PROD_ENV_FILE; only the
 explicitly allowlisted runtime rollout flags come from the previous on-host
 app.env. This prevents a future deployment from silently resetting a
 controlled SHADOW test. No automatic promotion: missing previous flags
@@ -20,6 +20,15 @@ MODES = {
     "EARLY_FIXTURE_MODE": {"off", "shadow", "on"},
     "EARLY_FREE_PUBLICATION_MODE": {"off", "shadow", "on"},
     "PREDICTION_REASSESSMENT_MODE": {"off", "shadow", "on"},
+    # PR #235 market-quality flags. "on" for MARKET_SELECTION_MODE switches
+    # published markets, so it is only ever preserved from the VPS, never
+    # promoted from the incoming secret; missing values default to off.
+    "MARKET_SELECTION_MODE": {"off", "shadow", "on"},
+    "MARKET_QUALITY_RANKING": {"off", "on"},
+    "FREE_TIER_NEUTRAL_BANDS": {"off", "on"},
+    # Pre-prediction match pages (issue #237): off | noindex | on. Defaults off
+    # and is never promoted by the incoming secret.
+    "MATCH_PREVIEW_MODE": {"off", "noindex", "on"},
 }
 
 

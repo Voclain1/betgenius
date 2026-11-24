@@ -47,6 +47,7 @@ export function MatchMasthead({
   localKickoff,
   season,
   children,
+  headingSuffix = "prediction",
 }: {
   homeTeam: string;
   awayTeam: string;
@@ -65,6 +66,8 @@ export function MatchMasthead({
   follow?: React.ReactNode;
   /** Follow buttons and attribution, under the facts. */
   children?: React.ReactNode;
+  /** Word after the fixture in the h1. A page with no published pick says "match preview", never "prediction". */
+  headingSuffix?: string;
   /** Provider status from the cached result record (see MatchScoreClock). */
   statusCode?: string | null;
   halftime?: { home: number; away: number } | null;
@@ -135,7 +138,7 @@ export function MatchMasthead({
           <Link href={`/predictions/team/${teamSlug(awayTeam)}`} className="hover:text-brand">
             {awayTeam}
           </Link>{" "}
-          <span className="block text-base font-bold tracking-normal text-gray-400 sm:inline sm:text-4xl sm:tracking-tight">prediction</span>
+          <span className="block text-base font-bold tracking-normal text-gray-400 sm:inline sm:text-4xl sm:tracking-tight">{headingSuffix}</span>
         </h1>
         {follow && <div className="mt-4 flex flex-wrap justify-center gap-2">{follow}</div>}
       </div>

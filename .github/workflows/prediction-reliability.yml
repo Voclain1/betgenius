@@ -43,5 +43,6 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx prisma db push --skip-generate
       - run: npx tsx scripts/check-paid-publication-postgres.ts
+      - run: npx tsx scripts/check-duplicate-publication-postgres.ts
       - run: npx tsx scripts/check-reliability-postgres.ts
       - run: npx tsx scripts/check-current-reliability-postgres.ts

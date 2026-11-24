@@ -1,5 +1,6 @@
 import { publicationStatusProblem } from "./predictionOperations";
 import { Prisma } from "@prisma/client";
+import { lockFixtureForPublication } from "@/lib/duplicatePublication";
 import { matchKey } from "@/lib/slug";
 import { earlyQuotedSelection } from "@/lib/generation/earlyOddsPolicy";
 import { inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
@@ -177,6 +178,12 @@ export async function applyReviewAction(
   row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null; updatedAt?: Date },
   action: ReviewAction,
   actorId: string,
+  /**
+   * Runs inside the publish transaction, after the row is claimed and
+   * re-read, so checks such as the duplicate-fixture review see the state at
+   * the actual transition. Throwing aborts the publish with nothing written.
+   */
+  guard?: (tx: Pick<typeof prisma, "prediction" | "jobRun" | "$executeRaw">, locked: any) => Promise<void>,
 ) {
   // Every review path goes through here or the single-row route, which makes
   // the same check. The kickoff is re-read, never trusted from the caller.
@@ -189,6 +196,7 @@ export async function applyReviewAction(
       const locked = await tx.prediction.findUniqueOrThrow({where:{id:row.id},include:{categories:true}});
       if (action === "PUBLISH" && locked.status === "PUBLISHED") return locked;
       await assertPublicationFixture(locked, tx);
+      if (action === "PUBLISH" && guard) await guard(tx, locked);
       if (action === "APPROVE" && locked.status === "PUBLISHED") throw new Error("CANNOT_UNPUBLISH_BY_APPROVAL");
       row = locked;
     }
@@ -314,6 +322,10 @@ export async function publishEarlyFreePredictionAtomically(
     await assertPublicationFixture(locked, tx);
     // One public FEATURED single per fixture across jobs: a fixture that
     // already shows one stays in review for an administrator to decide.
+    // Same per-fixture lock as the admin publish path (duplicatePublishGuard),
+    // so an early automatic publish and a human publish of the same match
+    // cannot both pass the duplicate check.
+    if (locked.categories.some(c => c.category === "FEATURED")) await lockFixtureForPublication(tx, locked);
     if (locked.categories.some(c => c.category === "FEATURED") && await publishedFeaturedSingleFor(tx, locked))
       throw new Error("EARLY_PUBLICATION_DUPLICATE_FIXTURE");
     const key = matchKey(locked);

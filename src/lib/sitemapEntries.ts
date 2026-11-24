@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/seo";
 import { leagueSlug, teamSlug, matchSlug, h2hSlug } from "@/lib/slug";
 import { getSettledTotals, MIN_SETTLED_SAMPLE_SIZE } from "@/lib/trackRecord";
+import { getPreviewSitemapEntries } from "@/lib/matchPreview";
 import { getSubstantiveH2HSlugs, getSubstantiveMatchSlugs } from "@/lib/predictionScope";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { CATEGORY_TO_SLUG } from "@/lib/categoryPredictions";
@@ -316,6 +317,14 @@ async function matchEntries(): Promise<MetadataRoute.Sitemap> {
     },
     (f) => f._max.publishedAt,
   );
+  // Preview-only fixtures (issue #237), judged by the same matchPageIndexable
+  // as the page. One canonical URL per fixture: a slug that already has a
+  // published page is never listed twice, and the preview entry disappears the
+  // moment a pick is published (the same URL then appears via the published
+  // branch above, with its own publication-linked lastmod).
+  for (const preview of await getPreviewSitemapEntries()) {
+    if (!bySlug.has(preview.slug)) bySlug.set(preview.slug, preview.lastModified);
+  }
   return slugEntries(bySlug, (slug) => `/predictions/match/${slug}`, "weekly", 0.7);
 }
 

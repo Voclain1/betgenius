@@ -8,6 +8,10 @@ import { MatchOddsPanel } from "@/components/MatchOddsPanel";
 import type { FixtureOdds } from "@/lib/odds";
 import { cupSupports } from "@/lib/cupConfig";
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
+import { resolvePreviewBySlug, previewEvidenceFor } from "@/lib/matchPreview";
+import { matchPageIndexable, matchPreviewMode } from "@/lib/matchIndexability";
+import { MatchPreviewPage } from "@/components/MatchPreviewPage";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -41,7 +45,7 @@ import { MatchTrackRecord } from "@/components/MatchTrackRecord";
 import { marketPathways } from "@/lib/contextualLinks";
 import { getPublishedByMatchSlug, getMatchTeamDigests, getH2HMeetings, getFixtureDetail, getFixtureEventContext, getMatchEditorialEvidence, getTeamMatchEnrichment, getLeagueEnrichment, getMatchOdds, getTeamFixtureHistories } from "@/lib/predictionScope";
 import { h2hSlug } from "@/lib/slug";
-import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription } from "@/lib/seo";
+import { JsonLd, breadcrumbJsonLd, sportsEventJsonLd, matchTitle, matchDescription, matchPreviewTitle, matchPreviewDescription } from "@/lib/seo";
 import { assessMatchEvidence } from "@/lib/matchEvidence";
 import type { PredictionCategory } from "@/lib/enums";
 import { AdHalfBanner, AdLeaderboard, AdNativeBand, AdRectangle, WithAdRail } from "@/components/ads/AdPlacements";
@@ -97,10 +101,37 @@ async function loadMatch(slug: string) {
   };
 }
 
+/**
+ * Pre-prediction state (issue #237). Only consulted when no published row owns
+ * the slug. Evidence comes from previewEvidenceFor — the same function the
+ * sitemap uses — and the robots decision from matchPageIndexable.
+ */
+async function loadPreview(slug: string) {
+  const resolution = await resolvePreviewBySlug(slug);
+  if (resolution.kind === "redirect") permanentRedirect(`/predictions/match/${resolution.to}`);
+  if (resolution.kind !== "preview") return null;
+  const evidence = (await previewEvidenceFor([resolution.fixture])).get(resolution.fixture.fixtureApiId)!;
+  const decision = matchPageIndexable({
+    state: "preview", evidenceSubstantive: evidence.evidence.substantive, mode: matchPreviewMode(),
+    kickoff: resolution.fixture.kickoff, now: new Date(), leagueApiId: resolution.fixture.leagueApiId,
+  });
+  return { fixture: resolution.fixture, evidence, indexable: decision.indexable };
+}
+
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
   const { rows, match } = await loadMatch(params.slug);
 
   if (!match) {
+    const preview = await loadPreview(params.slug);
+    if (preview) {
+      const f = preview.fixture;
+      return {
+        title: matchPreviewTitle(f),
+        description: matchPreviewDescription({ homeTeam: f.homeTeam, awayTeam: f.awayTeam, leagueName: f.leagueName, kickoff: f.kickoff }),
+        alternates: { canonical: `/predictions/match/${params.slug}` },
+        ...(preview.indexable ? {} : { robots: { index: false, follow: true } }),
+      };
+    }
     return {
       title: "Match predictions",
       description: "No predictions published for this match — check back soon for our latest football predictions.",
@@ -128,7 +159,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     // still passes link equity (follow) — it just doesn't ask to rank until it
     // carries enough verified content to be worth ranking. See
     // src/lib/matchEvidence.ts for the signals and the threshold.
-    ...(evidence && !evidence.substantive ? { robots: { index: false, follow: true } } : {}),
+    // Same decision the sitemap makes (src/lib/matchIndexability.ts).
+    ...(evidence && !matchPageIndexable({ state: "published", evidenceSubstantive: evidence.substantive, mode: matchPreviewMode(), kickoff: match.kickoff, now: new Date(), leagueApiId: match.leagueApiId }).indexable
+      ? { robots: { index: false, follow: true } } : {}),
   };
 }
 
@@ -136,6 +169,8 @@ export default async function MatchPage({ params }: { params: { slug: string } }
   const { rows, match, digests, h2hMeetings, publicTopPick } = await loadMatch(params.slug);
 
   if (!match) {
+    const preview = await loadPreview(params.slug);
+    if (preview) return <MatchPreviewPage fixture={preview.fixture} slug={params.slug} evidenceUpdatedAt={preview.evidence.lastModified} />;
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Match predictions</h1>
