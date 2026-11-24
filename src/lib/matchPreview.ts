@@ -76,18 +76,27 @@ export const resolvePreviewBySlug = cache(async (slug: string, now: Date = new D
     return { kind: "preview", fixture: f, slug };
   }
 
-  // Rescheduled fixture: the old slug redirects to the current canonical page.
-  try {
-    const alias = await prisma.fixtureSlugAlias.findUnique({ where: { slug }, select: { fixtureApiId: true } });
-    if (alias) {
-      const published = await publishedSlugForFixture(alias.fixtureApiId);
-      if (published && published !== slug) return { kind: "redirect", to: published };
-      const current = await prisma.upcomingFixture.findUnique({ where: { fixtureApiId: alias.fixtureApiId }, select: { ...FIXTURE_SELECT, status: true } });
-      const next = current && current.status === "NS" && current.kickoff.getTime() > now.getTime() ? matchSlug(current) : null;
-      if (next && next !== slug) return { kind: "redirect", to: next };
+  // Rescheduled fixture (stateless, no schema): the same home/away pairing
+  // under a different date. Redirect only when exactly ONE current page exists
+  // for that pairing; two (double-legs, rematches) is ambiguous, so no page.
+  // Bounded: only for plausible dates, one small query each.
+  const prefix = slug.slice(0, slug.length - day.length);
+  const daysAway = (start.getTime() - now.getTime()) / 86_400_000;
+  if (daysAway >= -2 && daysAway <= 21) {
+    const published = await prisma.prediction.findMany({
+      where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: { startsWith: prefix }, kickoff: { gt: new Date(now.getTime() - 86_400_000) } },
+      select: { matchSlugKey: true }, take: 20,
+    });
+    const publishedSlugs = [...new Set(published.map((r) => r.matchSlugKey).filter((x): x is string => !!x && x !== slug))];
+    if (publishedSlugs.length === 1) return { kind: "redirect", to: publishedSlugs[0] };
+    if (publishedSlugs.length === 0) {
+      const upcoming = await prisma.upcomingFixture.findMany({
+        where: { status: "NS", kickoff: { gt: now, lte: new Date(now.getTime() + 30 * 86_400_000) } },
+        select: FIXTURE_SELECT, take: PREVIEW_SITEMAP_MAX_FIXTURES,
+      });
+      const same = upcoming.filter((f) => (matchSlug(f) ?? "").startsWith(prefix) && matchSlug(f) !== slug);
+      if (same.length === 1) return { kind: "redirect", to: matchSlug(same[0])! };
     }
-  } catch {
-    // Alias table not migrated yet: treated as unknown, never an error page.
   }
   return { kind: "none", reason: "unknown" };
 });

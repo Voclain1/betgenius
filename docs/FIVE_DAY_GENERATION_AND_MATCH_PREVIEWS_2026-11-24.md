@@ -24,7 +24,7 @@ One sprint, one PR. Everything new is **default off or behaviour-preserving** ex
 - Checkpoint policy: 72–48h remains the ordinary review point; a verified publishable pick earlier than 72h is not blocked once it is inside 120h. Published picks are untouched.
 
 **B/C. Match previews** (`MATCH_PREVIEW_MODE` = `off` | `noindex` | `on`, default **off**)
-- `src/lib/matchPreview.ts`: resolves an upcoming `UpcomingFixture` (status NS, future) by slug with a day‑bounded query; re-derives the slug per candidate; **collision → no page**; fixture with any published pick is a published page, never a preview (one canonical URL); old slug of a rescheduled fixture 301s via new `FixtureSlugAlias` (written by discovery when a fixture's slug changes; lookup tolerates the table not existing yet).
+- `src/lib/matchPreview.ts`: resolves an upcoming `UpcomingFixture` (status NS, future) by slug with a day‑bounded query; re-derives the slug per candidate; **collision → no page**; fixture with any published pick is a published page, never a preview (one canonical URL); an unknown slug 301s to the fixture's current page when exactly one current page exists for the same home/away pairing (stateless, **no schema change**; ambiguous → no page).
 - `MatchPreviewPage`: kickoff, competition, venue/round when cached, recent form, venue splits, table, H2H, "Prediction not published yet". No pick, confidence, market, odds, lineup, injury or editorial text; no draft/paid row is read. h1 says "match preview".
 - `src/lib/matchIndexability.ts`: the **one** decision. Page `robots` (published and preview) and `matches.xml` both call it. Preview indexable only if mode `on`, CORE/SECONDARY, kickoff within 14 days, and `assessMatchEvidence` substantive on the evidence shown (analysis signal never claimed).
 - Sitemap: preview + published merged, deduped by slug; preview `lastmod` = newest fetchedAt of the evidence caches that fixture uses (not rediscovery time); 3 evidence reads per 250 fixtures, query count independent of fixture count.
@@ -63,7 +63,7 @@ One sprint, one PR. Everything new is **default off or behaviour-preserving** ex
 League slug = `slugify(storedLeagueName)-id`; the page 200-s with `noindex` when no published row matches. If production stores the Spanish name the real slug differs from `la-liga-140`. Unverifiable without production data, so **no code change**. Check: `select distinct "leagueName" from "Prediction" where "leagueApiId"=140`, compare to the sitemap's `leagues.xml`, and inspect the sitemap URL (not the guessed one) in Search Console.
 
 ## 7. Rollout (nothing is changed by merging)
-1. Run `db-push` workflow first (adds `FixtureSlugAlias`; code tolerates its absence).
+1. No database migration is required.
 2. Deploy. All flags stay as preserved on the VPS; `MATCH_PREVIEW_MODE` defaults off. Verify via deploy step output (names/values of the 7 flags only).
 3. Owner-authorised VPS ops: `MARKET_SELECTION_MODE=shadow`, `MARKET_QUALITY_RANKING=off`, `FREE_TIER_NEUTRAL_BANDS=off`.
 4. Preview soft launch: `MATCH_PREVIEW_MODE=noindex` → inspect pages and `/api/admin/early-metrics` → `on` for indexing.

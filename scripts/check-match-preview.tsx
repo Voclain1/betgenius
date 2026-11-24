@@ -13,7 +13,7 @@ import { createSitemapFixtures } from "./lib/sitemapFixtures";
 const react = require("react");
 react.cache = (fn: unknown) => fn;
 (globalThis as any).AsyncLocalStorage ??= require("node:async_hooks").AsyncLocalStorage;
-const tables: Record<string, any[]> = { prediction: [], upcomingFixture: [], fixtureSlugAlias: [], teamEnrichmentCache: [], leagueEnrichmentCache: [], h2HCache: [] };
+const tables: Record<string, any[]> = { prediction: [], upcomingFixture: [], teamEnrichmentCache: [], leagueEnrichmentCache: [], h2HCache: [] };
 const fake = createFakePrisma(tables, { seed: 237 });
 (globalThis as any).prisma = fake.client;
 
@@ -73,7 +73,7 @@ async function main() {
     ];
     tables.prediction = [fx.prediction({ fixtureApiId: 4, homeTeam: "Eta FC", awayTeam: "Theta FC", homeTeamApiId: 17, awayTeamApiId: 18, kickoff: new Date(NOW.getTime() + 6 * DAY), leagueApiId: CORE })];
     tables.teamEnrichmentCache = [warmTeam(11, t1), warmTeam(12, t2), warmTeam(15, t1), warmTeam(16, t1), warmTeam(17, t1), warmTeam(18, t1), warmTeam(21, t1), warmTeam(22, t1), warmTeam(23, t1), warmTeam(24, t1), warmTeam(25, t1), warmTeam(26, t1)];
-    tables.leagueEnrichmentCache = []; tables.h2HCache = []; tables.fixtureSlugAlias = [];
+    tables.leagueEnrichmentCache = []; tables.h2HCache = [];
     fake.reset();
   };
 
@@ -127,21 +127,26 @@ async function main() {
   const res = await preview.resolvePreviewBySlug(slugOf(rows[0]), NOW);
   check("published slug is owned by the prediction page", res.kind === "none" && (res as any).reason === "published");
 
-  console.log("5. rescheduling and aliases");
+  console.log("5. rescheduling (stateless redirect)");
   load();
   let cur = tables.upcomingFixture;
-  const oldSlug = slugOf(cur[0]);
+  const oldSlug = slugOf(cur[0]); // alpha-fc-vs-beta-fc-<day+6>
   cur[0].kickoff = new Date(cur[0].kickoff.getTime() + 2 * DAY);
-  tables.fixtureSlugAlias = [{ slug: oldSlug, fixtureApiId: 1, createdAt: NOW }];
   const redirect = await preview.resolvePreviewBySlug(oldSlug, NOW);
   check("old slug of a rescheduled fixture redirects to the new canonical", redirect.kind === "redirect" && (redirect as any).to === slugOf(cur[0]), redirect);
-  tables.fixtureSlugAlias = [{ slug: oldSlug, fixtureApiId: 5, createdAt: NOW }]; // postponed target
-  check("alias to a postponed fixture does not redirect", (await preview.resolvePreviewBySlug(oldSlug, NOW)).kind === "none");
+  cur[0].status = "PST";
+  check("postponed fixture: old slug does not redirect", (await preview.resolvePreviewBySlug(oldSlug, NOW)).kind === "none");
   load(); cur = tables.upcomingFixture;
-  const publishedRow = tables.prediction[0]; // fixture 4 is published under its own slug
-  tables.fixtureSlugAlias = [{ slug: "eta-fc-vs-theta-fc-2026-11-29", fixtureApiId: 4, createdAt: NOW }];
-  const toPublished = await preview.resolvePreviewBySlug("eta-fc-vs-theta-fc-2026-11-29", NOW);
-  check("alias whose fixture is published redirects to the published slug ", toPublished.kind === "redirect" && (toPublished as any).to === publishedRow.matchSlugKey, toPublished);
+  cur[5].kickoff = new Date(cur[5].kickoff.getTime() + 2 * DAY); // Lambda/Mu twins end up on different days
+  const twinOld = "lambda-fc-vs-mu-fc-" + new Date(NOW.getTime() + 3 * DAY).toISOString().slice(0, 10);
+  check("two current pages for one pairing are ambiguous: no redirect", (await preview.resolvePreviewBySlug(twinOld, NOW)).kind === "none");
+  load();
+  const pubRow = tables.prediction[0]; // fixture 4 published
+  const movedSlug = "eta-fc-vs-theta-fc-" + new Date(NOW.getTime() + 4 * DAY).toISOString().slice(0, 10);
+  const toPublished = await preview.resolvePreviewBySlug(movedSlug, NOW);
+  check("old slug of a fixture that is now published redirects to the published slug", toPublished.kind === "redirect" && (toPublished as any).to === pubRow.matchSlugKey, toPublished);
+  check("implausible far-future slug date does no redirect work", (await (async () => { fake.reset(); const r = await preview.resolvePreviewBySlug("alpha-fc-vs-beta-fc-2027-06-01", NOW); return r.kind === "none" && fake.calls.length <= 1; })()));
+  check("no schema dependency for redirects", !read("prisma/schema.prisma").includes("FixtureSlugAlias"));
 
   console.log("6. sitemap query bounds are constant in fixture count");
   const bigLoad = (n: number) => {

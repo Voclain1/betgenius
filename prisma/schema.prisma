@@ -782,17 +782,6 @@ model UpcomingFixture {
   @@index([earlyQueuedAt])
 }
 
-/// Previous match-page slugs of a rescheduled fixture (issue #237). Written by
-/// early discovery when a fixture's slug changes; read only to 301 an old
-/// preview URL to the fixture's current canonical page. Never deleted.
-model FixtureSlugAlias {
-  slug         String   @id
-  fixtureApiId Int
-  createdAt    DateTime @default(now())
-
-  @@index([fixtureApiId])
-}
-
 model GenerationAttempt {
   id            String    @id @default(cuid())
   matchKey      String    @unique

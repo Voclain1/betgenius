@@ -12,7 +12,6 @@ import { leaguesInTiers } from "@/lib/leagues";
 import { getFixturesByLeague, resolveSeason, type FixtureRow } from "@/lib/football/api-football";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { candidatesFromFixtures } from "@/lib/generation/selector";
-import { matchSlug } from "@/lib/slug";
 import { EARLY_BOOST, EARLY_FIXTURE_POLICY, discoveryHorizonDays, earlyBoostGranted, earlyDateRange, earlyFixtureMode, earlySpotlightLeague, type EarlyFixtureMode } from "@/lib/generation/earlyFixturePolicy";
 
 const CURSOR_KEY = "early-fixture-discovery-cursor";
@@ -85,19 +84,6 @@ async function persistFixture(row: FixtureRow, now: Date): Promise<void> {
     round: row.league.round ?? null,
     lastSeenAt: now,
   };
-  // A rescheduled fixture changes its (date-suffixed) match slug. Remember the
-  // old one so a crawled preview URL can 301 to the current page instead of
-  // 404ing. Best effort: never blocks discovery (table may predate db push).
-  try {
-    const previous = await prisma.upcomingFixture.findUnique({ where: { fixtureApiId }, select: { homeTeam: true, awayTeam: true, kickoff: true } });
-    const before = previous ? matchSlug(previous) : null;
-    const after = matchSlug({ homeTeam: fields.homeTeam, awayTeam: fields.awayTeam, kickoff: fields.kickoff });
-    if (before && after && before !== after) {
-      await prisma.fixtureSlugAlias.upsert({ where: { slug: before }, create: { slug: before, fixtureApiId }, update: { fixtureApiId } });
-    }
-  } catch (error) {
-    console.warn("[early-discovery] slug alias skipped", error instanceof Error ? error.message.slice(0, 120) : "unknown");
-  }
   await prisma.upcomingFixture.upsert({
     where: { fixtureApiId },
     create: { fixtureApiId, ...fields },
