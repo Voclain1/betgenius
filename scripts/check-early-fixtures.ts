@@ -15,6 +15,8 @@ import {
   earlyDateRange,
   earlyFixtureMode,
   inEarlyGenerationWindow,
+  inEarlyDiscoveryWindow,
+  generationHorizonHours,
   EARLY_SPOTLIGHT_LEAGUES,
   earlySpotlightLeague,
 } from "../src/lib/generation/earlyFixturePolicy";
@@ -58,16 +60,48 @@ assert.equal(discoveryHorizonDays(-999), 0);
 const now = new Date("2026-11-19T09:00:00Z");
 assert.deepEqual(earlyDateRange(now, 14), { from: "2026-11-19", to: "2026-12-03" });
 const hoursLater = (hours: number) => new Date(now.getTime() + hours * 3_600_000);
-assert.equal(inEarlyGenerationWindow(hoursLater(48), now), false);
-assert.equal(inEarlyGenerationWindow(hoursLater(49), now), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(168), now), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(240), now), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(336), now), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(337), now), false);
-assert.equal(inEarlyGenerationWindow(hoursLater(260), now, secondary[0]), false);
-assert.equal(inEarlyGenerationWindow(hoursLater(240), now, secondary[0]), true);
-assert.equal(inEarlyGenerationWindow(hoursLater(300), now, core[0]), true);
+// Generation eligibility (issue #237): 5 days (120h) for CORE/SECONDARY/FALLBACK, 3 days for DEEP_FALLBACK.
+const day = (d: number) => hoursLater(d * 24);
+for (const [league, name] of [[core[0], "CORE"], [secondary[0], "SECONDARY"], [fallback[0], "FALLBACK"]] as const) {
+  assert.equal(inEarlyGenerationWindow(day(14), now, league), false, name + " 14d not generated");
+  assert.equal(inEarlyGenerationWindow(day(10), now, league), false, name + " 10d not generated");
+  assert.equal(inEarlyGenerationWindow(day(7), now, league), false, name + " 7d not generated");
+  assert.equal(inEarlyGenerationWindow(hoursLater(121), now, league), false, name + " 121h not generated");
+  assert.equal(inEarlyGenerationWindow(day(5), now, league), true, name + " 5d (120h) generated");
+  assert.equal(inEarlyGenerationWindow(day(3), now, league), true, name + " 3d generated");
+  assert.equal(inEarlyGenerationWindow(hoursLater(49), now, league), true);
+  assert.equal(inEarlyGenerationWindow(day(2), now, league), false, name + " 48h belongs to the final lane");
+  assert.equal(inEarlyGenerationWindow(day(1), now, league), false);
+}
+assert.equal(inEarlyGenerationWindow(day(5), now, deepFallback[0]), false, "DEEP_FALLBACK not at 5d");
+assert.equal(inEarlyGenerationWindow(hoursLater(73), now, deepFallback[0]), false);
+assert.equal(inEarlyGenerationWindow(day(3), now, deepFallback[0]), true, "DEEP_FALLBACK target is 3d");
+assert.equal(generationHorizonHours(deepFallback[0]), 72);
+assert.equal(generationHorizonHours(core[0]), 120);
+assert.equal(inEarlyGenerationWindow(day(10), now), false, "unknown league never generated at 10d");
+assert.equal(inEarlyGenerationWindow(day(4), now), true);
 assert.equal(inEarlyGenerationWindow(hoursLater(-1), now), false);
+// Discovery / odds warming keep the old 14/10/7/5-day horizons.
+assert.equal(inEarlyDiscoveryWindow(day(14), now, core[0]), true);
+assert.equal(inEarlyDiscoveryWindow(hoursLater(337), now, core[0]), false);
+assert.equal(inEarlyDiscoveryWindow(day(10), now, secondary[0]), true);
+assert.equal(inEarlyDiscoveryWindow(hoursLater(241), now, secondary[0]), false);
+assert.equal(inEarlyDiscoveryWindow(day(7), now, fallback[0]), true);
+assert.equal(inEarlyDiscoveryWindow(day(5), now, deepFallback[0]), true);
+assert.equal(inEarlyDiscoveryWindow(hoursLater(48), now, core[0]), false);
+// Rescheduling moves a fixture across the boundary in either direction.
+assert.equal(inEarlyGenerationWindow(day(8), now, core[0]), false);
+assert.equal(inEarlyGenerationWindow(new Date(day(8).getTime() - 4 * 86_400_000), now, core[0]), true, "moved 4 days earlier becomes eligible");
+// Every early entrypoint uses the shared generation window; only odds warming uses discovery.
+for (const f of ["earlyGeneration", "earlyPublication"]) {
+  const src = readFileSync(`src/lib/generation/${f}.ts`, "utf8");
+  assert.ok(src.includes("inEarlyGenerationWindow"), f + " gates on the generation window");
+}
+assert.ok(readFileSync("src/lib/generation/earlyOdds.ts", "utf8").includes("inEarlyDiscoveryWindow"), "odds warming keeps the discovery horizon");
+const earlyRunRoute = readFileSync("src/app/api/admin/generate/early-run/route.ts", "utf8");
+assert.ok(earlyRunRoute.includes("export const POST") && earlyRunRoute.includes("isAdmin(session?.user.role)") &&
+  !/postOverride[\s\S]*CRON_SECRET/.test(earlyRunRoute), "early override is admin-session only, never the scheduler secret");
+assert.ok(readFileSync("src/lib/generation/earlyGeneration.ts", "utf8").includes("pricedKeys.has(a.matchKey)) : workable"), "override requires an actual fresh quote");
 assert.equal(EARLY_FIXTURE_POLICY.MAX_RUN_MS, 22_000, "existing discovery runtime cutoff is preserved");
 assert.ok(!("MAX_QUEUE_PER_DAY" in EARLY_FIXTURE_POLICY) && !("MAX_QUEUE_PER_LEAGUE" in EARLY_FIXTURE_POLICY),
   "no artificial daily/league limit on early queueing");

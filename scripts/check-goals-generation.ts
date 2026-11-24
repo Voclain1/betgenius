@@ -359,7 +359,7 @@ async function publicationAndProbe() {
   const predictionsSrc = code("src/lib/predictions.ts");
   const shared = predictionsSrc.slice(predictionsSrc.indexOf("export async function applyReviewAction"));
   check("applyReviewAction = reviewTransition + recordPredictionEvents in one transaction", /prisma\.\$transaction\(async \(tx\) =>/.test(shared) && /data: reviewTransition\(action, actorId, row\)/.test(shared) && /await recordPredictionEvents\(tx, row, updated, action\)/.test(shared));
-  check("the bulk publish uses the same helper", /await applyReviewAction\(row, action, session!\.user\.id\)/.test(code("src/app/api/admin/predictions/bulk/route.ts")));
+  check("the bulk publish uses the same helper", /await applyReviewAction\(row, action, session!\.user\.id[,)]/.test(code("src/app/api/admin/predictions/bulk/route.ts")));
   const pipeline = code("src/lib/goalsPipeline.ts");
   const auto = pipeline.slice(pipeline.indexOf("export async function autoPublishGoalsPrediction"), pipeline.indexOf("export type GoalsProbeResult"));
   check("auto-publish goes through applyReviewAction, after the verdict", /if \(!verdict\.publish\) return/.test(auto) && /await applyReviewAction\(row, "PUBLISH", actorId\)/.test(auto) && auto.indexOf("goalsAutoPublishVerdict(") < auto.indexOf("applyReviewAction("));

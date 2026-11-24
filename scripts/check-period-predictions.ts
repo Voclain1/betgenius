@@ -77,7 +77,8 @@ for (const [date, want] of Object.entries(MIDWEEK)) {
   check("early mode opens weekend on Monday", monday.state === "upcoming" && monday.days[0].key === "2026-10-16");
   const friday = periodWindow("midweek", at("2026-10-16"));
   check("early mode opens next midweek on Friday", friday.state === "upcoming" && friday.days[0].key === "2026-10-20");
-  check("early-mode arrival spans the internal 14-day window", lagosDateKey(picksArriveFrom(monday.days[0])) === "2026-10-02");
+  // Picks arrive from the five-day generation horizon (issue #237), no longer the 14-day discovery window.
+  check("early-mode arrival follows the five-day generation horizon", lagosDateKey(picksArriveFrom(monday.days[0])) === "2026-10-11");
   if (oldMode === undefined) delete process.env.EARLY_FIXTURE_MODE;
   else process.env.EARLY_FIXTURE_MODE = oldMode;
 }

@@ -177,6 +177,12 @@ export async function applyReviewAction(
   row: Parameters<typeof recordPredictionEvents>[1] & { approvedById: string | null; updatedAt?: Date },
   action: ReviewAction,
   actorId: string,
+  /**
+   * Runs inside the publish transaction, after the row is claimed and
+   * re-read, so checks such as the duplicate-fixture review see the state at
+   * the actual transition. Throwing aborts the publish with nothing written.
+   */
+  guard?: (tx: Pick<typeof prisma, "prediction" | "jobRun" | "$executeRaw">, locked: any) => Promise<void>,
 ) {
   // Every review path goes through here or the single-row route, which makes
   // the same check. The kickoff is re-read, never trusted from the caller.
@@ -189,6 +195,7 @@ export async function applyReviewAction(
       const locked = await tx.prediction.findUniqueOrThrow({where:{id:row.id},include:{categories:true}});
       if (action === "PUBLISH" && locked.status === "PUBLISHED") return locked;
       await assertPublicationFixture(locked, tx);
+      if (action === "PUBLISH" && guard) await guard(tx, locked);
       if (action === "APPROVE" && locked.status === "PUBLISHED") throw new Error("CANNOT_UNPUBLISH_BY_APPROVAL");
       row = locked;
     }

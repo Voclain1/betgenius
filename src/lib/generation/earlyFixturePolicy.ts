@@ -10,7 +10,17 @@ export const EARLY_FIXTURE_POLICY = {
   FALLBACK_DAYS: 7,
   DEEP_FALLBACK_DAYS: 5,
   EARLY_GENERATION_FROM_HOURS: 48,
-  EARLY_GENERATION_UNTIL_HOURS: 336,
+  /**
+   * Generation eligibility is deliberately NOT the discovery horizon (issue
+   * #237). Fixtures are still discovered, cached and price-warmed 5–14 days
+   * out, but a normal analysis is generated only inside this window so that
+   * form, injuries and prices are fresh at publication. 120h = five days.
+   */
+  EARLY_GENERATION_UNTIL_HOURS: 120,
+  /** DEEP_FALLBACK competitions: thin data, so the target is three days. */
+  DEEP_FALLBACK_GENERATION_UNTIL_HOURS: 72,
+  /** Widest discovery/odds-warming horizon (CORE). Not a generation limit. */
+  EARLY_DISCOVERY_UNTIL_HOURS: 336,
   // No daily or league fixture quota. Cron calls are finite for runtime/API
   // safety, but the backlog continues every cycle without an exhaustion cap.
   // See EARLY_LANE_MIN_QUOTA_REMAINING below.
@@ -119,10 +129,39 @@ export function earlyDateRange(now: Date, days: number): { from: string; to: str
   };
 }
 
-/** No early queueing at or inside the existing 48-hour final-validation band. */
+/**
+ * Hours before kickoff at which ordinary early generation may begin. CORE,
+ * SECONDARY and FALLBACK: 120h (FALLBACK is discovered at 7 days but never
+ * generated earlier than five). DEEP_FALLBACK: 72h. Unknown league: 120h.
+ */
+export function generationHorizonHours(leagueApiId?: number | null): number {
+  return leagueApiId != null && generationTierOf(leagueApiId) === "DEEP_FALLBACK"
+    ? EARLY_FIXTURE_POLICY.DEEP_FALLBACK_GENERATION_UNTIL_HOURS
+    : EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS;
+}
+
+/**
+ * Discovery / odds-warming window (the old 14/10/7/5-day behaviour). Used only
+ * by provider-facing preparation and the deliberate admin exception — never to
+ * decide that an analysis may be generated automatically.
+ */
+export function inEarlyDiscoveryWindow(kickoff: Date, now: Date, leagueApiId?: number | null): boolean {
+  const hours = (kickoff.getTime() - now.getTime()) / 3_600_000;
+  return Number.isFinite(hours)
+    && hours > EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS
+    && hours <= (leagueApiId != null ? discoveryHorizonDays(leagueApiId) * 24 : EARLY_FIXTURE_POLICY.EARLY_DISCOVERY_UNTIL_HOURS);
+}
+
+/**
+ * Automatic early generation/publication eligibility: after the 48-hour final
+ * lane boundary and inside the tier's generation horizon (<=120h; DEEP 72h).
+ * Every early entrypoint (queue, odds-triggered, publication, reassessment
+ * transitions) must use this one function.
+ */
 export function inEarlyGenerationWindow(kickoff: Date, now: Date, leagueApiId?: number | null): boolean {
   const hours = (kickoff.getTime() - now.getTime()) / 3_600_000;
   return Number.isFinite(hours)
     && hours > EARLY_FIXTURE_POLICY.EARLY_GENERATION_FROM_HOURS
-    && hours <= (leagueApiId != null ? discoveryHorizonDays(leagueApiId) * 24 : EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS);
+    && hours <= generationHorizonHours(leagueApiId)
+    && inEarlyDiscoveryWindow(kickoff, now, leagueApiId);
 }

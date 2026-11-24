@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getUsageSnapshot } from "@/lib/football/usage";
 import { refreshOddsCache } from "@/lib/enrichment";
 import { matchKey } from "@/lib/slug";
-import { earlyFixtureMode, inEarlyGenerationWindow, EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_BOOST, earlyBoostGranted } from "@/lib/generation/earlyFixturePolicy";
+import { earlyFixtureMode, inEarlyDiscoveryWindow, EARLY_LANE_MIN_QUOTA_REMAINING, EARLY_BOOST, earlyBoostGranted } from "@/lib/generation/earlyFixturePolicy";
 import { earlyFixturePricedForGeneration, earlyOddsRefreshDue } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
 
@@ -89,7 +89,7 @@ export async function runEarlyOddsWarming(input: { now?: Date; limit?: number } 
     orderBy: [{ kickoff: "asc" }, { fixtureApiId: "asc" }],
   });
   const captured = fixtures
-    .filter(f => inEarlyGenerationWindow(f.kickoff, now, f.leagueApiId))
+    .filter(f => inEarlyDiscoveryWindow(f.kickoff, now, f.leagueApiId))
     .map(f => ({ ...f, matchKey: matchKey(f) }))
     .filter((f): f is typeof f & { matchKey: string } => f.matchKey !== null);
   report.considered = captured.length;

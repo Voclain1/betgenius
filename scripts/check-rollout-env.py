@@ -7,6 +7,7 @@ import tempfile
 
 MERGER = Path("deploy/ops/merge-rollout-env.py")
 FLAGS = ("EARLY_FIXTURE_MODE", "EARLY_FREE_PUBLICATION_MODE", "PREDICTION_REASSESSMENT_MODE")
+MARKET_FLAGS = ("MARKET_SELECTION_MODE", "MARKET_QUALITY_RANKING", "FREE_TIER_NEUTRAL_BANDS", "MATCH_PREVIEW_MODE")
 
 
 def run(previous: str | None, incoming: str):
@@ -100,6 +101,28 @@ def verify():
     assert safe.returncode == 0
     assert "# EARLY_FIXTURE_MODE=on (comment)" in contents
     assert "BANNER=EARLY_FIXTURE_MODE=on" in contents
+    # PR #235 market flags: shadow persists, missing defaults off, never promoted
+    # from the incoming secret, invalid values and duplicates rejected.
+    shadow_prev = "DATABASE_URL=x\nMARKET_SELECTION_MODE=shadow\nMARKET_QUALITY_RANKING=off\nFREE_TIER_NEUTRAL_BANDS=off\nMATCH_PREVIEW_MODE=noindex\n"
+    promote = "TOKEN=t\nMARKET_SELECTION_MODE=on\nMARKET_QUALITY_RANKING=on\nFREE_TIER_NEUTRAL_BANDS=on\nMATCH_PREVIEW_MODE=on\n"
+    kept, kept_contents, _, _ = run(shadow_prev, promote)
+    assert kept.returncode == 0
+    for key, value in (("MARKET_SELECTION_MODE", "shadow"), ("MARKET_QUALITY_RANKING", "off"), ("FREE_TIER_NEUTRAL_BANDS", "off"), ("MATCH_PREVIEW_MODE", "noindex")):
+        assert kept_contents.count(f"{key}=") == 1 and f"{key}={value}" in kept_contents
+    fresh, fresh_contents, _, _ = run(None, promote)
+    assert fresh.returncode == 0 and all(f"{key}=off" in fresh_contents for key in MARKET_FLAGS)
+    legacy, legacy_contents, _, _ = run(existing, incoming)  # previous file predates the market flags
+    assert legacy.returncode == 0 and all(f"{key}=off" in legacy_contents for key in MARKET_FLAGS)
+    again, again_contents, _, _ = run(kept_contents, promote)
+    assert again.returncode == 0 and again_contents == kept_contents
+    for corrupt in ("MARKET_SELECTION_MODE=enabled\n", "MARKET_QUALITY_RANKING=shadow\n", "MATCH_PREVIEW_MODE=true\n",
+                    "FREE_TIER_NEUTRAL_BANDS=on\nFREE_TIER_NEUTRAL_BANDS=off\n"):
+        bad, same, _, _ = run("DATABASE_URL=secret-value\n" + corrupt, incoming)
+        assert bad.returncode != 0 and same == "DATABASE_URL=secret-value\n" + corrupt
+        assert "secret-value" not in bad.stdout + bad.stderr
+        bad_new, same_new, _, _ = run(existing, "TOKEN=secret-value\n" + corrupt)
+        assert bad_new.returncode != 0 and same_new == existing
+        assert "secret-value" not in bad_new.stdout + bad_new.stderr
     print("PASS: rollout persistence, secrecy, idempotence and unsafe values")
 
 
