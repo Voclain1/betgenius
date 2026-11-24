@@ -5,7 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { prisma } from "../src/lib/prisma";
-import { applyReviewAction } from "../src/lib/predictions";
+import { applyReviewAction, publishEarlyFreePredictionAtomically } from "../src/lib/predictions";
+import { matchKey } from "../src/lib/slug";
 import { DuplicateReviewRequired, DUPLICATE_OVERRIDE_JOB, duplicatePublishGuard, reviewFeaturedDuplicate } from "../src/lib/duplicatePublication";
 
 async function main() {
@@ -65,6 +66,42 @@ async function main() {
     assert.equal(settled.filter((r) => r.status === "rejected" && (r as PromiseRejectedResult).reason instanceof DuplicateReviewRequired).length, 1, "the loser is held for review");
     assert.equal(await prisma.prediction.count({ where: { fixtureApiId, status: "PUBLISHED" } }), 1);
 
+    // 5b. Mixed identity: same teams + exact kickoff, but one row has NO provider fixture id and the other a different one.
+    fixtureApiId += 1;
+    const mixedHome = fixtureApiId * 2;
+    const mixedA = await make({ pick: "Home", fixtureApiId: null, homeTeamApiId: mixedHome, awayTeamApiId: mixedHome + 1 });
+    const mixedB = await make({ pick: "Away", selection: { value: "AWAY" }, fixtureApiId: fixtureApiId + 500_000, homeTeamApiId: mixedHome, awayTeamApiId: mixedHome + 1 });
+    const slowMixed = (row: any) => applyReviewAction(row, "PUBLISH", user.id, async (tx, locked) => {
+      await duplicatePublishGuard({ actorId: user.id, predictionId: row.id })(tx, locked);
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    const mixed = await Promise.allSettled([slowMixed(mixedA), new Promise((r) => setTimeout(r, 100)).then(() => publish(mixedB))]);
+    assert.equal(mixed.filter((r) => r.status === "fulfilled").length, 1, "mixed provider-id identity: exactly one publish wins");
+    assert.ok(mixed.some((r) => r.status === "rejected" && (r as PromiseRejectedResult).reason instanceof DuplicateReviewRequired), "the loser is held for review");
+
+    // 5c. Early automatic publisher vs admin publish of the same fixture, deliberately overlapped.
+    fixtureApiId += 1;
+    const earlyKey = matchKey({ homeTeamApiId: fixtureApiId * 2, awayTeamApiId: fixtureApiId * 2 + 1, kickoff })!;
+    await prisma.fixtureOddsCache.upsert({ where: { matchKey: earlyKey }, update: {}, create: { matchKey: earlyKey, fixtureApiId, fetchedAt: new Date(Date.now() - 10 * 60_000),
+      oddsJson: { bookmakerCount: 9, update: new Date(Date.now() - 20 * 60_000).toISOString(), markets: [{ market: "Both Teams Score", selections: [{ value: "Yes", median: 1.8, best: 1.85, bookmakers: 9, bestBookmaker: "X" }, { value: "No", median: 2.0, best: 2.05, bookmakers: 9, bestBookmaker: "X" }] }] } } as never });
+    const job = await prisma.aIJob.create({ data: { userId: user.id, model: "test", prompt: "{}", rawOutput: "{}", contextComplete: true } });
+    const earlyRow = await make({ market: "Both Teams Score", marketType: "BTTS", selection: { value: "YES" }, pick: "Yes", odds: 1.8, provenance: "STANDARD_CURATED", aiJobId: job.id,
+      matchPreview: "Preview.", contextComplete: true, analysisJson: { v: 1, keyFactors: [] }, manualSettlementOnly: false });
+    const adminRow = await make({ pick: "Home" });
+    // Admin transaction holds its lock after the duplicate check; the early publisher starts while it is still open.
+    const adminSlow = applyReviewAction(adminRow, "PUBLISH", user.id, async (tx, locked) => {
+      await duplicatePublishGuard({ actorId: user.id, predictionId: adminRow.id })(tx, locked);
+      await new Promise((r) => setTimeout(r, 500));
+    });
+    const earlySettled = new Promise((r) => setTimeout(r, 150)).then(async () => publishEarlyFreePredictionAtomically(
+      await prisma.prediction.findUniqueOrThrow({ where: { id: earlyRow.id } }) as never, user.id)).then((v) => ({ ok: v }), (e) => ({ error: String(e?.message ?? e) }));
+    const [adminOutcome, earlyOutcome] = await Promise.all([adminSlow.then(() => "published", (e) => String(e?.message ?? e)), earlySettled]);
+    assert.equal(adminOutcome, "published");
+    assert.ok("error" in (earlyOutcome as object) && /EARLY_PUBLICATION_DUPLICATE_FIXTURE/.test((earlyOutcome as any).error), "early publisher waits for the admin commit, then refuses the duplicate: " + JSON.stringify(earlyOutcome));
+    assert.equal(await prisma.prediction.count({ where: { fixtureApiId, status: "PUBLISHED" } }), 1, "exactly one FEATURED single published across early + admin paths");
+    assert.equal((await prisma.prediction.findUniqueOrThrow({ where: { id: earlyRow.id } })).status, "PENDING_REVIEW", "early row stays in review");
+    await prisma.fixtureOddsCache.deleteMany({ where: { matchKey: earlyKey } });
+
     // 6. Paid categories and combos are out of scope for the FEATURED duplicate rule.
     fixtureApiId += 1;
     await publish(await make({}));
@@ -76,6 +113,7 @@ async function main() {
   } finally {
     await prisma.prediction.deleteMany({ where: { authorId: user.id } });
     await prisma.jobRun.deleteMany({ where: { job: DUPLICATE_OVERRIDE_JOB } });
+    await prisma.aIJob.deleteMany({ where: { userId: user.id } });
     await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
     await prisma.$disconnect();
   }

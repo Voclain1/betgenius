@@ -76,28 +76,11 @@ export const resolvePreviewBySlug = cache(async (slug: string, now: Date = new D
     return { kind: "preview", fixture: f, slug };
   }
 
-  // Rescheduled fixture (stateless, no schema): the same home/away pairing
-  // under a different date. Redirect only when exactly ONE current page exists
-  // for that pairing; two (double-legs, rematches) is ambiguous, so no page.
-  // Bounded: only for plausible dates, one small query each.
-  const prefix = slug.slice(0, slug.length - day.length);
-  const daysAway = (start.getTime() - now.getTime()) / 86_400_000;
-  if (daysAway >= -2 && daysAway <= 21) {
-    const published = await prisma.prediction.findMany({
-      where: { ...MIXED_REASSESSMENT_VISIBLE, status: "PUBLISHED", matchSlugKey: { startsWith: prefix }, kickoff: { gt: new Date(now.getTime() - 86_400_000) } },
-      select: { matchSlugKey: true }, take: 20,
-    });
-    const publishedSlugs = [...new Set(published.map((r) => r.matchSlugKey).filter((x): x is string => !!x && x !== slug))];
-    if (publishedSlugs.length === 1) return { kind: "redirect", to: publishedSlugs[0] };
-    if (publishedSlugs.length === 0) {
-      const upcoming = await prisma.upcomingFixture.findMany({
-        where: { status: "NS", kickoff: { gt: now, lte: new Date(now.getTime() + 30 * 86_400_000) } },
-        select: FIXTURE_SELECT, take: PREVIEW_SITEMAP_MAX_FIXTURES,
-      });
-      const same = upcoming.filter((f) => (matchSlug(f) ?? "").startsWith(prefix) && matchSlug(f) !== slug);
-      if (same.length === 1) return { kind: "redirect", to: matchSlug(same[0])! };
-    }
-  }
+  // Deliberately NO redirect for an unknown slug. Without a stored record that
+  // this exact URL once belonged to a fixture, a permanent redirect for a
+  // guessed or stale date would assert a canonical we cannot verify. A
+  // rescheduled fixture's new URL is reached through the sitemap and league
+  // links; the old URL fails closed (noindex, not listed).
   return { kind: "none", reason: "unknown" };
 });
 

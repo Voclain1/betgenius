@@ -1,5 +1,6 @@
 import { publicationStatusProblem } from "./predictionOperations";
 import { Prisma } from "@prisma/client";
+import { lockFixtureForPublication } from "@/lib/duplicatePublication";
 import { matchKey } from "@/lib/slug";
 import { earlyQuotedSelection } from "@/lib/generation/earlyOddsPolicy";
 import { inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
@@ -321,6 +322,10 @@ export async function publishEarlyFreePredictionAtomically(
     await assertPublicationFixture(locked, tx);
     // One public FEATURED single per fixture across jobs: a fixture that
     // already shows one stays in review for an administrator to decide.
+    // Same per-fixture lock as the admin publish path (duplicatePublishGuard),
+    // so an early automatic publish and a human publish of the same match
+    // cannot both pass the duplicate check.
+    if (locked.categories.some(c => c.category === "FEATURED")) await lockFixtureForPublication(tx, locked);
     if (locked.categories.some(c => c.category === "FEATURED") && await publishedFeaturedSingleFor(tx, locked))
       throw new Error("EARLY_PUBLICATION_DUPLICATE_FIXTURE");
     const key = matchKey(locked);

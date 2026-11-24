@@ -96,16 +96,28 @@ export const DUPLICATE_OVERRIDE_JOB = "duplicate-publication-override";
 export const MIN_OVERRIDE_REASON = 8;
 
 /**
- * Serialises concurrent publishes for ONE fixture. A transaction-scoped
- * advisory lock is taken before the duplicate check, so two selections for the
- * same match published at the same moment cannot both pass it: the second
- * waits for the first to commit, then sees it. Released automatically at
- * commit/rollback. No-op key when the row has no usable fixture identity.
+ * Every identity key under which another row could count as "the same fixture"
+ * for sameFixtureClauses: the provider fixture id, and the team ids + EXACT
+ * kickoff. Two rows the detector would match always share at least one key.
+ */
+export function fixtureLockKeys(row: RowIdentity): string[] {
+  const keys: string[] = [];
+  if (row.fixtureApiId != null) keys.push(`fixture:${row.fixtureApiId}`);
+  if (row.homeTeamApiId != null && row.awayTeamApiId != null && row.kickoff)
+    keys.push(`teams:${row.homeTeamApiId}-${row.awayTeamApiId}-${row.kickoff.toISOString()}`);
+  return keys.sort(); // one global acquisition order: concurrent publishers cannot deadlock
+}
+
+/**
+ * Serialises concurrent publishes for ONE fixture, whoever publishes (admin
+ * single/bulk route or the early automatic publisher). A transaction-scoped
+ * advisory lock is taken on every identity key (in sorted order) BEFORE the
+ * duplicate check, so two selections for the same match cannot both pass it:
+ * the second waits for the first to commit, then sees it. Released
+ * automatically at commit/rollback.
  */
 export async function lockFixtureForPublication(tx: { $executeRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<unknown> }, row: RowIdentity): Promise<void> {
-  const key = row.fixtureApiId != null ? `fixture:${row.fixtureApiId}`
-    : row.homeTeamApiId != null && row.awayTeamApiId != null && row.kickoff ? `teams:${row.homeTeamApiId}-${row.awayTeamApiId}-${row.kickoff.toISOString().slice(0, 10)}` : null;
-  if (key) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+  for (const key of fixtureLockKeys(row)) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
 }
 
 /**

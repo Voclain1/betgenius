@@ -127,25 +127,19 @@ async function main() {
   const res = await preview.resolvePreviewBySlug(slugOf(rows[0]), NOW);
   check("published slug is owned by the prediction page", res.kind === "none" && (res as any).reason === "published");
 
-  console.log("5. rescheduling (stateless redirect)");
+  console.log("5. rescheduling fails closed (no unverifiable permanent redirects)");
   load();
   let cur = tables.upcomingFixture;
-  const oldSlug = slugOf(cur[0]); // alpha-fc-vs-beta-fc-<day+6>
+  const oldSlug = slugOf(cur[0]);
   cur[0].kickoff = new Date(cur[0].kickoff.getTime() + 2 * DAY);
-  const redirect = await preview.resolvePreviewBySlug(oldSlug, NOW);
-  check("old slug of a rescheduled fixture redirects to the new canonical", redirect.kind === "redirect" && (redirect as any).to === slugOf(cur[0]), redirect);
-  cur[0].status = "PST";
-  check("postponed fixture: old slug does not redirect", (await preview.resolvePreviewBySlug(oldSlug, NOW)).kind === "none");
+  check("old slug of a rescheduled fixture: no page, no redirect (identity cannot be verified)", (await preview.resolvePreviewBySlug(oldSlug, NOW)).kind === "none");
+  check("the new slug is a normal preview", (await preview.resolvePreviewBySlug(slugOf(cur[0]), NOW)).kind === "preview");
   load(); cur = tables.upcomingFixture;
-  cur[5].kickoff = new Date(cur[5].kickoff.getTime() + 2 * DAY); // Lambda/Mu twins end up on different days
-  const twinOld = "lambda-fc-vs-mu-fc-" + new Date(NOW.getTime() + 3 * DAY).toISOString().slice(0, 10);
-  check("two current pages for one pairing are ambiguous: no redirect", (await preview.resolvePreviewBySlug(twinOld, NOW)).kind === "none");
-  load();
-  const pubRow = tables.prediction[0]; // fixture 4 published
-  const movedSlug = "eta-fc-vs-theta-fc-" + new Date(NOW.getTime() + 4 * DAY).toISOString().slice(0, 10);
-  const toPublished = await preview.resolvePreviewBySlug(movedSlug, NOW);
-  check("old slug of a fixture that is now published redirects to the published slug", toPublished.kind === "redirect" && (toPublished as any).to === pubRow.matchSlugKey, toPublished);
-  check("implausible far-future slug date does no redirect work", (await (async () => { fake.reset(); const r = await preview.resolvePreviewBySlug("alpha-fc-vs-beta-fc-2027-06-01", NOW); return r.kind === "none" && fake.calls.length <= 1; })()));
+  const bogus = "alpha-fc-vs-beta-fc-" + new Date(NOW.getTime() + 9 * DAY).toISOString().slice(0, 10);
+  check("bogus date for a pairing with exactly one current fixture does NOT redirect", (await preview.resolvePreviewBySlug(bogus, NOW)).kind === "none");
+  const bogusPub = "eta-fc-vs-theta-fc-" + new Date(NOW.getTime() + 4 * DAY).toISOString().slice(0, 10);
+  check("bogus date for a pairing with one published page does NOT redirect", (await preview.resolvePreviewBySlug(bogusPub, NOW)).kind === "none");
+  check("matchPreview contains no prefix-based redirect logic", !/startsWith\(prefix\)|startsWith: prefix/.test(read("src/lib/matchPreview.ts")));
   check("no schema dependency for redirects", !read("prisma/schema.prisma").includes("FixtureSlugAlias"));
 
   console.log("6. sitemap query bounds are constant in fixture count");
@@ -176,13 +170,21 @@ async function main() {
   console.log("8. page wiring");
   const page = read("src/app/(public)/predictions/match/[slug]/page.tsx");
   check("page decides robots through matchPageIndexable (published and preview)", (page.match(/matchPageIndexable\(/g) ?? []).length >= 2);
-  check("page redirects rescheduled previews permanently", page.includes("permanentRedirect"));
+  check("page redirects only identity-confirmed previews (fixture now published under another slug)", page.includes("permanentRedirect"));
   check("sitemap builder uses the same preview source", read("src/lib/sitemapEntries.ts").includes("getPreviewSitemapEntries"));
   check("league page links only indexable previews", read("src/components/UpcomingPreviews.tsx").includes("listIndexablePreviews") );
   const evNoAnalysis = assessMatchEvidence({ homeDigest: null, awayDigest: null, standings: null, homeTeamApiId: 1, awayTeamApiId: 2, h2hMeetings: [], matchPreview: null, analysisJson: null });
   check("empty preview evidence is thin (noindex)", !evNoAnalysis.substantive);
 
-  console.log("9. duplicate classification");
+  console.log("9. duplicate classification and lock equivalence");
+  const { fixtureLockKeys } = await import("../src/lib/duplicatePublication");
+  const K = new Date("2026-12-01T15:00:00Z");
+  const share = (a: any, b: any) => fixtureLockKeys(a).some((k) => fixtureLockKeys(b).includes(k));
+  check("same provider id -> shared lock key", share({ id: "a", fixtureApiId: 5 }, { id: "b", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }));
+  check("different/missing provider ids but same teams + kickoff -> shared lock key (mixed identity)", share({ id: "a", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }, { id: "b", fixtureApiId: 6, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }) && share({ id: "a", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }, { id: "b", homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }));
+  check("unrelated fixtures share no key", !share({ id: "a", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K }, { id: "b", fixtureApiId: 6, homeTeamApiId: 3, awayTeamApiId: 4, kickoff: K }));
+  check("lock keys are sorted (deadlock-free order)", JSON.stringify(fixtureLockKeys({ id: "a", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K })) === JSON.stringify([...fixtureLockKeys({ id: "a", fixtureApiId: 5, homeTeamApiId: 1, awayTeamApiId: 2, kickoff: K })].sort()));
+  check("early automatic publisher takes the same lock", /lockFixtureForPublication\(tx, locked\)/.test(read("src/lib/predictions.ts")));
   const sel = (marketType: string, selection: unknown) => ({ marketType, selection });
   check("same market + same selection (key order ignored) = SAME_SELECTION", classifyDuplicate(sel("OVER_UNDER", { side: "OVER", line: 2.5 }), sel("OVER_UNDER", { line: 2.5, side: "OVER" })) === "SAME_SELECTION");
   check("same market, other outcome = CONFLICTING_SELECTION", classifyDuplicate(sel("MATCH_WINNER", { outcome: "HOME" }), sel("MATCH_WINNER", { outcome: "AWAY" })) === "CONFLICTING_SELECTION");
