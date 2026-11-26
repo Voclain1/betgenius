@@ -35,10 +35,18 @@ Full-stack football tips & predictions site built with **Next.js 14 (App Router)
 cd betgenius
 cp .env.example .env      # fill in the values you need
 npm install
-npm run db:push           # creates SQLite dev.db
+npm run db:push           # creates the tables in your Postgres database
 npm run db:seed           # creates the super admin
 npm run dev
 ```
+
+You need a Postgres database first, for example a throwaway local one:
+
+```bash
+docker run -d --name betgenius-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=betgenius -p 5432:5432 postgres:17
+```
+
+then set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in `.env` to `postgresql://postgres:postgres@localhost:5432/betgenius`. Never point a local `db:push` at the production database.
 
 Open `http://localhost:3000` and log in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env`.
 
@@ -46,7 +54,7 @@ Open `http://localhost:3000` and log in with the `SEED_ADMIN_EMAIL` / `SEED_ADMI
 
 | Var | Where to get it |
 | --- | --- |
-| `DATABASE_URL` | SQLite by default. Swap `datasource db` in `prisma/schema.prisma` to `postgresql` for prod. |
+| `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Postgres connection strings (the schema uses `postgresql` with a direct URL). Locally both can be the same value; in production they come from the `PROD_ENV_FILE` secret. |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `API_FOOTBALL_KEY` / `API_FOOTBALL_HOST` | https://www.api-football.com/documentation-v3 |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | https://console.anthropic.com |
@@ -91,7 +99,12 @@ If you want higher accuracy, wire in more signals (xG providers, weather, ref st
 
 ## Deploy
 
-- Vercel (recommended). Set env vars, provision a Postgres DB (Neon/Supabase), switch `datasource db` provider to `postgresql`, run `prisma migrate deploy`.
+Production runs on a VPS in Docker (Next.js `standalone` build, Postgres on the same server, HTTPS through Caddy). It is not hosted on Vercel.
+
+- Every push to `master` runs the `deploy-vps` GitHub Actions workflow (`.github/workflows/deploy-vps.yml`). It builds the image, checks the database schema, switches the server to the new build and waits for `/api/health` to answer. If it does not, it rolls back to the previous image automatically. It can also be run by hand from the Actions tab.
+- Manual rollback: run `deploy/deploy.sh <old image tag>` on the server (`docker image ls` lists the tags still there).
+- Scheduled jobs: the daily settle (06:00 UTC) and accumulator curation (10:30 UTC) run from `deploy/ops/crontab` in the `ops` container. The other schedules (generation and so on) are external pokes that call the site with `Authorization: Bearer $CRON_SECRET`.
+- Server setup, secrets, backups and the migration notes are in [`docs/VPS_MIGRATION.md`](docs/VPS_MIGRATION.md); the server files are in [`deploy/`](deploy/).
 - Set the Paystack webhook to the deployed URL.
 - Optional: add rate limiting to `/api/admin/ai` since Claude calls are billable.
 
