@@ -63,9 +63,9 @@ How the scheduled generation passes are ordered.
 >   check is applied at admission only: a pick already in a paid feed is never taken
 >   out because its price moved.
 
-Scheduling for this app lives in **cron-job.org**, not in the repository —
-`vercel.json` carries only `/api/admin/settle` and `/api/admin/curate-accumulators`,
-because this plan's own crons are capped at once per day. Everything else is
+Scheduling for this app mostly lives in **cron-job.org**, not in the repository.
+The repository schedules only `/api/admin/settle` and `/api/admin/curate-accumulators`
+(once a day each, in `deploy/ops/crontab`, run on the VPS). Everything else is
 external, which means **nothing in this repository can enforce what follows.** That
 is exactly why it is written down.
 
