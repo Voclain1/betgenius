@@ -87,6 +87,25 @@ async function main() {
     const g = (grp[k] ??= { n: 0, sum: 0, at75: 0, ctx: 0 }); g.n++; g.sum += r.confidence; if (r.confidence >= 75) g.at75++;
   }
   out("confidenceByLaneLeagueEvidence14d", { groups: Object.fromEntries(Object.entries(grp).sort().map(([k, g]) => [k, { n: g.n, mean: Math.round((g.sum / g.n) * 10) / 10, pct75: Math.round((1000 * g.at75) / g.n) / 10 }])) });
+  // Evidence richness behind early vs regular rows (last 14 days, outside top leagues and top leagues).
+  const recent = rows.filter((r) => r.aiJobId && +r.createdAt >= +now - 14 * 24 * H && r.marketType !== "SAME_GAME_DOUBLE" && (lane(r) === "early" || lane(r) === "regular"));
+  const rich: Record<string, { n: number; standings: number; h2h: number; stats: number; avail: number; last5: number; seasonPlayed: number; at75: number }> = {};
+  for (let i = 0; i < recent.length; i += 200) {
+    const ctxs = await db.aIJob.findMany({ where: { id: { in: recent.slice(i, i + 200).map((r) => r.aiJobId!) } }, select: { id: true, context: true } });
+    const byJob = new Map(ctxs.map((c) => [c.id, c.context as any]));
+    for (const r of recent.slice(i, i + 200)) {
+      const d = byJob.get(r.aiJobId!)?.digest ?? byJob.get(r.aiJobId!);
+      if (!d?.teams) continue;
+      const k = `${lane(r)}:${VIP_ROUTE_LEAGUE_IDS.includes(r.leagueApiId ?? -1) ? "topLeague" : "other"}`;
+      const g = (rich[k] ??= { n: 0, standings: 0, h2h: 0, stats: 0, avail: 0, last5: 0, seasonPlayed: 0, at75: 0 });
+      g.n++; if (d.coverage?.standings) g.standings++; if (d.coverage?.h2h) g.h2h++; if (d.coverage?.stats) g.stats++; if (d.coverage?.availability) g.avail++;
+      g.last5 += ((d.teams.home?.last5?.length ?? 0) + (d.teams.away?.last5?.length ?? 0)) / 2;
+      g.seasonPlayed += ((d.teams.home?.overall?.played ?? 0) + (d.teams.away?.overall?.played ?? 0)) / 2;
+      if (r.confidence >= 75) g.at75++;
+    }
+  }
+  out("evidenceRichness14d", { groups: Object.fromEntries(Object.entries(rich).map(([k, g]) => [k, { n: g.n, pctStandings: Math.round((100 * g.standings) / g.n), pctH2h: Math.round((100 * g.h2h) / g.n), pctStats: Math.round((100 * g.stats) / g.n),
+    pctAvailability: Math.round((100 * g.avail) / g.n), meanLast5: Math.round((10 * g.last5) / g.n) / 10, meanSeasonPlayed: Math.round((10 * g.seasonPlayed) / g.n) / 10, pct75: Math.round((1000 * g.at75) / g.n) / 10 }])) });
   // Manually tagged Banker rows per kickoff day (an admin choice curation never removes).
   const manual: Record<string, number> = {};
   for (const r of rows) if (r.categories.some((c) => c.category === "BANKER" && c.manual)) inc(manual, lagosDateKey(r.kickoff!));
