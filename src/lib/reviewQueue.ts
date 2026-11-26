@@ -20,6 +20,7 @@ export type QueueRow = {
   id: string; marketType: string; selection: unknown; market: string; pick: string; confidence: number;
   homeTeam: string | null; awayTeam: string | null; leagueName: string | null; kickoff: Date | null;
   contextComplete: boolean; aiJobId: string | null; createdAt: Date;
+  matchPreview?: string | null; reasoning?: string;
 };
 
 export type QueueItem = {
@@ -30,6 +31,9 @@ export type QueueItem = {
   /** Real quoted alternatives at or above the useful floor (names only, highest price first). */
   betterOptions: string[];
   kickedOff: boolean;
+  /** What the reviewer reads before clearing it. */
+  matchPreview: string | null;
+  reasoning: string;
 };
 
 export function classifyQueueRow(row: QueueRow, odds: FixtureOdds | null, now: Date = new Date()): QueueItem {
@@ -50,7 +54,7 @@ export function classifyQueueRow(row: QueueRow, odds: FixtureOdds | null, now: D
     id: row.id, fixture: `${home} v ${away}`, league: row.leagueName, kickoff: row.kickoff?.toISOString() ?? null,
     market: row.market, pick: row.pick, confidence: row.confidence,
     price: { status: verdict.status, label: verdict.label, median: verdict.median },
-    problems, betterOptions, kickedOff,
+    problems, betterOptions, kickedOff, matchPreview: row.matchPreview ?? null, reasoning: row.reasoning ?? "",
   };
 }
 
@@ -79,7 +83,7 @@ export async function loadReviewQueue(now: Date = new Date()) {
     take: 300,
     select: {
       id: true, marketType: true, selection: true, market: true, pick: true, confidence: true, homeTeam: true, awayTeam: true,
-      leagueName: true, kickoff: true, contextComplete: true, aiJobId: true, createdAt: true, homeTeamApiId: true, awayTeamApiId: true,
+      leagueName: true, kickoff: true, contextComplete: true, aiJobId: true, createdAt: true, matchPreview: true, reasoning: true, homeTeamApiId: true, awayTeamApiId: true,
     },
   });
   const odds = await oddsForRows(rows);

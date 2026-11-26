@@ -26,7 +26,11 @@ async function bulk(action: "PUBLISH" | "ARCHIVE", ids: string[], extra: Record<
   return merged;
 }
 
-function Row({ item, ready, busy, onPublish, onArchive }: { item: QueueItem; ready: boolean; busy: boolean; onPublish: () => void; onArchive: () => void }) {
+function Row({ item, ready, busy, working, onPublish, onArchive, onRewrite, onRepick }: {
+  item: QueueItem; ready: boolean; busy: boolean; working: string | null;
+  onPublish: () => void; onArchive: () => void; onRewrite: () => void; onRepick: () => void;
+}) {
+  const mine = working?.startsWith(item.id) ? working.slice(item.id.length + 1) : null;
   return (
     <li className="card space-y-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -44,9 +48,16 @@ function Row({ item, ready, busy, onPublish, onArchive }: { item: QueueItem; rea
       {item.betterOptions.length > 0 && (
         <p className="text-sm text-gray-300"><span className="text-gray-400">Better priced markets on file:</span> {item.betterOptions.join(" · ")}</p>
       )}
+      <details className="text-sm">
+        <summary className="cursor-pointer text-gray-400">Read the preview and reasoning</summary>
+        {item.matchPreview && <p className="mt-2 whitespace-pre-line text-gray-400">{item.matchPreview}</p>}
+        <p className="mt-2 whitespace-pre-line text-gray-200">{item.reasoning}</p>
+      </details>
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        {ready && <button className="btn btn-primary text-sm" disabled={busy} onClick={onPublish}>Publish</button>}
-        <Link href={`/admin/predictions/${item.id}`} className="btn btn-ghost text-sm">{ready ? "Edit" : "Change market"}</Link>
+        {ready && <button className="btn btn-primary text-sm" disabled={busy} onClick={onPublish}>Approve &amp; publish</button>}
+        <button className={`btn text-sm ${ready ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onRepick}>{mine === "repick" ? "Finding a better pick…" : "Find better pick"}</button>
+        <button className="btn btn-ghost text-sm" disabled={busy} onClick={onRewrite}>{mine === "rewrite" ? "Rewriting…" : "Rewrite text"}</button>
+        <Link href={`/admin/predictions/${item.id}`} className="btn btn-ghost text-sm">Edit by hand</Link>
         <button className="btn btn-ghost text-sm" disabled={busy} onClick={onArchive}>Archive</button>
       </div>
     </li>
@@ -58,6 +69,7 @@ export default function ReviewQueuePage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [working, setWorking] = useState<string | null>(null);
   const [dup, setDup] = useState<{ reviews: DuplicateReview[]; clean: string[] } | null>(null);
 
   const load = useCallback(async () => {
@@ -103,6 +115,20 @@ export default function ReviewQueuePage() {
     finally { setBusy(false); await load(); }
   }
 
+  /** One click: a fresh preview and reasoning ("rewrite") or a different, better-priced market ("repick"). */
+  async function redo(id: string, mode: "rewrite" | "repick") {
+    setBusy(true); setWorking(`${id}:${mode}`); setNotice("");
+    try {
+      const res = await fetch(`/api/admin/predictions/${id}/rewrite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof r.error === "string" ? r.error : "That did not work. Try again shortly.");
+      setNotice(mode === "rewrite" ? "Rewritten. Read it, then approve." : r.priceCleared === false
+        ? "No better-priced market was supported by the evidence, so the strongest option is shown and still needs attention. Edit it by hand or archive it."
+        : `New pick: ${r.prediction?.pick ?? ""}. Read it, then approve.`);
+    } catch (e) { setNotice(e instanceof Error ? e.message : "That did not work."); }
+    finally { setBusy(false); setWorking(null); await load(); }
+  }
+
   async function archive(id: string) {
     setBusy(true); setNotice("");
     try {
@@ -120,8 +146,7 @@ export default function ReviewQueuePage() {
       <header className="space-y-1">
         <h1 className="text-2xl font-bold">Review queue</h1>
         <p className="max-w-2xl text-sm text-gray-400">
-          Every pick waiting for a decision, in kickoff order. Picks priced fairly with complete evidence are ready to publish in one tap.
-          Anything with a price that is too short to be worth tipping, no verifiable price, or thin evidence is held under Needs attention until its market is changed.
+          Every pick waiting for a decision, in kickoff order. Read a pick, then approve it in one tap. If you do not like it, or its price is too short, tap Find better pick for a new market with fresh preview and reasoning, or Rewrite text to keep the pick and reword it.
         </p>
         {q && <p className="text-sm text-gray-300">{ready.length} ready · {attention.length} need attention</p>}
       </header>
@@ -143,10 +168,10 @@ export default function ReviewQueuePage() {
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold">Ready to publish</h2>
-            {ready.length > 0 && <button className="btn btn-primary text-sm" disabled={busy} onClick={() => publish(ready.map((i) => i.id))}>Publish all {ready.length}</button>}
+            {ready.length > 0 && <button className="btn btn-primary text-sm" disabled={busy} onClick={() => publish(ready.map((i) => i.id))}>Approve &amp; publish all {ready.length}</button>}
           </div>
           <ul className="space-y-3">
-            {ready.map((i) => <Row key={i.id} item={i} ready busy={busy} onPublish={() => publish([i.id])} onArchive={() => archive(i.id)} />)}
+            {ready.map((i) => <Row key={i.id} item={i} ready busy={busy} working={working} onPublish={() => publish([i.id])} onArchive={() => archive(i.id)} onRewrite={() => redo(i.id, "rewrite")} onRepick={() => redo(i.id, "repick")} />)}
           </ul>
           {ready.length === 0 && <p className="text-sm text-gray-400">Nothing is ready right now.</p>}
         </section>
@@ -156,7 +181,7 @@ export default function ReviewQueuePage() {
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">Needs attention</h2>
           <ul className="space-y-3">
-            {attention.map((i) => <Row key={i.id} item={i} ready={false} busy={busy} onPublish={() => undefined} onArchive={() => archive(i.id)} />)}
+            {attention.map((i) => <Row key={i.id} item={i} ready={false} busy={busy} working={working} onPublish={() => undefined} onArchive={() => archive(i.id)} onRewrite={() => redo(i.id, "rewrite")} onRepick={() => redo(i.id, "repick")} />)}
           </ul>
         </section>
       )}
