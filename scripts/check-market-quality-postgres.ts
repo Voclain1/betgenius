@@ -107,13 +107,19 @@ async function main() {
     const afterVip = await seed({ status: "PENDING_REVIEW", fixtureApiId: 990003, home: 93000 });
     ok(await publishedFeaturedSingleFor(prisma, afterVip) === null && !!otherCat, "a VIP row does not block the free FEATURED single");
 
-    // ------------------------------------------------ admin authority: bulk publish of the duplicate succeeds with a warning
-    const res = await bulk.POST(new Request("http://localhost/api/admin/predictions/bulk", { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids: [early.id], action: "PUBLISH" }) }));
-    const body = await res.json() as { updated: number; failed: unknown[]; warnings: Array<{ id: string; warning: string }> };
-    const w = body.warnings.find((x) => x.id === early.id);
-    ok(body.updated === 1 && body.failed.length === 0 && /DUPLICATE_FIXTURE/.test(w?.warning ?? ""), "admin bulk publish: published, with a DUPLICATE_FIXTURE warning in the response");
+    // ------------------------------------------------ admin authority (issue #237): a duplicate FEATURED single is reviewed BEFORE it is published
+    const post = (payload: unknown) => bulk.POST(new Request("http://localhost/api/admin/predictions/bulk", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }));
+    const dry = await (await post({ ids: [early.id], action: "PUBLISH", dryRun: true })).json() as { reviews: Array<{ predictionId: string; relation: string; existing: unknown[] }> };
+    ok(dry.reviews.length === 1 && dry.reviews[0].predictionId === early.id && dry.reviews[0].existing.length === 1, "dry run describes the clash and writes nothing");
+    ok((await prisma.prediction.findUniqueOrThrow({ where: { id: early.id } })).status !== "PUBLISHED", "dry run did not publish");
+    const held = await (await post({ ids: [early.id], action: "PUBLISH" })).json() as { updated: number; needsReview: unknown[] };
+    ok(held.updated === 0 && held.needsReview.length === 1 && (await prisma.prediction.findUniqueOrThrow({ where: { id: early.id } })).status !== "PUBLISHED", "without a decision the duplicate fails closed (not published)");
+    const tooShort = await post({ ids: [early.id], action: "PUBLISH", duplicateDecisions: { [early.id]: { choice: "PUBLISH_ADDITIONAL", reason: "ok" } } });
+    ok(tooShort.status === 400, "an override needs a written reason");
+    const decided = await (await post({ ids: [early.id], action: "PUBLISH", duplicateDecisions: { [early.id]: { choice: "PUBLISH_ADDITIONAL", reason: "Distinct market, independently supported" } } })).json() as { updated: number; failed: unknown[]; overridden: number };
+    ok(decided.updated === 1 && decided.failed.length === 0 && decided.overridden === 1, "admin bulk publish with a recorded decision publishes the additional selection");
     ok((await prisma.prediction.findUniqueOrThrow({ where: { id: early.id } })).status === "PUBLISHED", "the admin decision is applied");
+    ok(await prisma.jobRun.count({ where: { job: "duplicate-publication-override" } }) >= 1, "the override is recorded for audit");
     ok(JSON.stringify(await prisma.prediction.findUnique({ where: { id: published.id } })) === publishedBefore, "still no change to the earlier published row");
 
     // ------------------------------------------------ odds budget refusal never puts a fixture into the paid fetch backoff

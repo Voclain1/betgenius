@@ -169,7 +169,8 @@ assert.equal(triage(68, 180, true, false, false), "review", "near confidence wit
 assert.equal(triage(57, 180, false, false, false), "hold", "weak far-ahead fixture stays held");
 assert.equal(triage(57, 70, false, false, false), "review", "weak hold reaches human review inside 72h");
 assert.equal(triage(80, 180, true, false, true), "review", "a quote never bypasses the evidence gate");
-assert.ok(earlyRun.includes("const chosen = orderEarlyQueue(workable, pricedKeys, now).slice(0, limit)") &&
+assert.ok(earlyRun.includes("const chosen = orderEarlyQueue(overridable, pricedKeys, now).slice(0, limit)") &&
+  earlyRun.includes("const overridable = override ? workable.filter(a => pricedKeys.has(a.matchKey)) : workable") &&
   earlyRun.includes("Number(!pricedKeys.has(a.matchKey)) - Number(!pricedKeys.has(b.matchKey))") &&
   !earlyRun.includes('skipped: "opening bookmaker prices not yet sufficiently verified"'),
   "unpriced early fixtures also reach generation");

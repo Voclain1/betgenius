@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { runGeneration } from "@/lib/generation/worker";
 import { withNoFootballApiCalls } from "@/lib/football/api-football";
-import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
+import { EARLY_FIXTURE_POLICY, earlyFixtureMode, inEarlyDiscoveryWindow, inEarlyGenerationWindow } from "@/lib/generation/earlyFixturePolicy";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { earlyFixturePricedForGeneration } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
@@ -47,24 +47,37 @@ export type EarlyGenerationResult = {
   worker?: Awaited<ReturnType<typeof runGeneration>>;
 };
 
-export async function runEarlyFreeGeneration(input: { actorId: string; now?: Date; limit?: number }): Promise<EarlyGenerationResult> {
+/**
+ * Documented exception to the five-day horizon (issue #237): an administrator
+ * may deliberately request early analysis of specific fixtures. It never runs
+ * from the scheduler. Each fixture must still be inside its discovery window,
+ * be a captured early fixture, and hold an actual fresh bookmaker quote.
+ * Drafts it creates stay in the normal review queue: automatic early
+ * publication still requires inEarlyGenerationWindow, so they are never
+ * auto-published outside the five-day horizon.
+ */
+export type EarlyOverrideInput = { matchKeys: readonly string[]; requestedBy: string };
+
+export async function runEarlyFreeGeneration(input: { actorId: string; now?: Date; limit?: number; override?: EarlyOverrideInput }): Promise<EarlyGenerationResult> {
   const now = input.now ?? new Date();
   if (earlyFixtureMode() !== "on") return { ok: true, skipped: "early fixture mode is not on", selected: 0, generated: 0, summary: "Early generation disabled" };
   // Operational batch size, not a daily/league generation quota. The queue
   // resumes on every cron pass, protecting the regular and paid workflows.
   const limit = Math.max(1, Math.min(4, Math.trunc(input.limit ?? 3)));
   const from = new Date(now.getTime() + 48 * 3_600_000);
-  const until = new Date(now.getTime() + EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS * 3_600_000);
+  const override = input.override ? new Set(input.override.matchKeys) : null;
+  const until = new Date(now.getTime() + (override ? EARLY_FIXTURE_POLICY.EARLY_DISCOVERY_UNTIL_HOURS : EARLY_FIXTURE_POLICY.EARLY_GENERATION_UNTIL_HOURS) * 3_600_000);
   const queued = await prisma.generationAttempt.findMany({
     where: {
       kickoff: { gt: from, lte: until }, status: { in: ["PENDING", "FAILED"] },
       fixtureApiId: { not: null },
+      ...(override ? { matchKey: { in: [...override] } } : {}),
     },
     select: { matchKey: true, fixtureApiId: true, leagueApiId: true, kickoff: true, status: true, nextAttemptAt: true },
     orderBy: [{ kickoff: "asc" }, { id: "asc" }],
     // No top-400 ledger ceiling: every captured fixture eventually gets a turn.
   });
-  const pending = queued.filter(a => inEarlyGenerationWindow(a.kickoff, now, a.leagueApiId)
+  const pending = queued.filter(a => (override ? inEarlyDiscoveryWindow(a.kickoff, now, a.leagueApiId) : inEarlyGenerationWindow(a.kickoff, now, a.leagueApiId))
     && (a.status === "PENDING" || (a.nextAttemptAt && a.nextAttemptAt <= now)));
   const cached = pending.length ? await prisma.upcomingFixture.findMany({
     where: { fixtureApiId: { in: pending.map(a => a.fixtureApiId!) },
@@ -122,7 +135,9 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
     band.eligible++;
     if (hasPrice) { pricedKeys.add(a.matchKey); band.priced++; }
   }
-  const chosen = orderEarlyQueue(workable, pricedKeys, now).slice(0, limit);
+  // The override requires actual, fresh odds support: never an unpriced early draft.
+  const overridable = override ? workable.filter(a => pricedKeys.has(a.matchKey)) : workable;
+  const chosen = orderEarlyQueue(overridable, pricedKeys, now).slice(0, limit);
   const keys = chosen.map(a => a.matchKey);
   const pricedSelected = chosen.filter(a => pricedKeys.has(a.matchKey)).length;
   if (!keys.length) return { ok: true, skipped: "no available early fixtures",

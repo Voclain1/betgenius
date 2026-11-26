@@ -117,6 +117,19 @@ export function matchTitle(input: { homeTeam: string; awayTeam: string; kickoff:
   return fitMetadataTitleWithSuffix(fixture, date ? `prediction, ${date}` : "prediction");
 }
 
+/** Title for a fixture whose prediction is not published yet: same shape as matchTitle. */
+export function matchPreviewTitle(input: { homeTeam: string; awayTeam: string; kickoff: Date | string | null }): string {
+  const fixture = `${input.homeTeam} vs ${input.awayTeam}`;
+  const date = titleDate(input.kickoff);
+  return fitMetadataTitleWithSuffix(fixture, date ? `match preview, ${date}` : "match preview");
+}
+
+/** Description for a preview-only page: facts only, no pick, odds or confidence. */
+export function matchPreviewDescription(input: { homeTeam: string; awayTeam: string; leagueName?: string | null; kickoff: Date | string | null }): string {
+  const when = titleDate(input.kickoff);
+  return `${input.homeTeam} vs ${input.awayTeam}${input.leagueName ? ` in the ${input.leagueName}` : ""}${when ? ` on ${when}` : ""}: recent form, table position and head-to-head record. Our prediction for this match is not published yet.`;
+}
+
 /**
  * Meta description led by the actual call.
  *
@@ -435,7 +448,11 @@ export function sportsEventJsonLd(input: {
     // finished match is still, correctly, EventScheduled.
     eventStatus: schemaEventStatus(input.statusShort),
     image,
-    ...(input.league ? { superEvent: { "@type": "SportsEvent", name: input.league } } : {}),
+    // No `superEvent`: a competition is not itself an event with a start date
+    // and venue, and Google validates a nested SportsEvent as one (Search
+    // Console reported missing startDate/location). The competition is named in
+    // the visible page and in the description instead; `sport` is grounded.
+    sport: "Soccer",
     homeTeam: home,
     awayTeam: away,
     // The same two nodes again. Both clubs perform in the fixture, and reusing

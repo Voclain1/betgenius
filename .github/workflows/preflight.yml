@@ -75,6 +75,12 @@ jobs:
       - name: Generation missing-evidence safety
         run: npx tsx scripts/check-generation-evidence.ts
 
+      - name: Early generation horizon, discovery and admin override
+        run: npx tsx scripts/check-early-fixtures.ts
+
+      - name: Pre-prediction match pages, shared indexability, preview sitemap, structured data and duplicate review
+        run: TSX_TSCONFIG_PATH=scripts/tsconfig.render.json node --import tsx scripts/check-match-preview.tsx
+
       - name: Non-branded Search Console measurement regression
         run: npx tsx scripts/check-nonbrand-seo.ts
 

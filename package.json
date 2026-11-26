@@ -61,6 +61,8 @@
     "check:banker-curation": "tsx scripts/check-banker-curation.ts",
     "check:period-predictions": "tsx scripts/check-period-predictions.ts",
     "check:early-fixtures": "tsx scripts/check-early-fixtures.ts",
+    "check:match-preview": "tsx --tsconfig scripts/tsconfig.render.json scripts/check-match-preview.tsx",
+    "check:duplicate-publication": "tsx scripts/check-duplicate-publication-postgres.ts",
     "check:early-odds": "tsx scripts/check-early-odds.ts",
     "check:early-evidence-freshness": "tsx scripts/check-early-evidence-freshness.ts",
     "check:historical-evidence": "tsx scripts/check-historical-evidence.ts",

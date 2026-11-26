@@ -17,6 +17,7 @@ import { historicalEvidenceFor } from "@/lib/evidenceReview";
 import { withNoFootballApiCalls } from "@/lib/football/api-football";
 import { normalizeLeagueName } from "@/lib/leagues";
 import { recordPredictionEvents } from "@/lib/notifications";
+import { DuplicateReviewRequired, lockFixtureForPublication, reviewFeaturedDuplicate } from "@/lib/duplicatePublication";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
 import { curateBankerTips, curateGeniusTips } from "@/lib/geniusCuration";
 import { leagueTeamMismatch, LEAGUE_TEAM_MISMATCH } from "@/lib/leagueTeamCheck";
@@ -282,6 +283,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const claim = await tx.prediction.updateMany({where:{id:params.id,updatedAt:before.updatedAt},data:{updatedAt:new Date()}});
     if (claim.count !== 1) return null;
     if (action === "PUBLISH" || action === "APPROVE") await assertPublicationFixture({...before,...data},tx);
+    // A second FEATURED single on a fixture needs the side-by-side review in the
+    // admin queue (bulk endpoint); this endpoint fails closed rather than publish it.
+    if (action === "PUBLISH" && before.status !== "PUBLISHED") {
+      const full = await tx.prediction.findUnique({ where: { id: params.id }, include: { categories: true } });
+      if (full) await lockFixtureForPublication(tx, full);
+      const review = full ? await reviewFeaturedDuplicate(tx, full) : null;
+      if (review) throw new DuplicateReviewRequired(review);
+    }
   if (categoriesToWrite) {
     // The editor cannot see or send BET_OF_THE_DAY or SAME_GAME_DOUBLE (they
     // are not among its checkboxes), so a plain replace would silently strip
@@ -295,7 +304,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (correction) await tx.jobRun.create({data:{job:"settlement-correction",summary:`Authorized correction ${params.id}`,detail:{actorId:session!.user.id,reason:correctionReason,before:{outcome:before.outcome,home:before.finalHomeScore,away:before.finalAwayScore,settledAt:before.settledAt?.toISOString()??null,evidence:before.marketConfirmation},after:{outcome:row.outcome,home:row.finalHomeScore,away:row.finalAwayScore}}}});
     await recordPredictionEvents(tx, before, row, action);
     return row;
-  }).catch((error) => { if (error?.code === "P2025") return null; throw error; });
+  }).catch((error) => {
+    if (error instanceof DuplicateReviewRequired) return error;
+    if (error?.code === "P2025") return null; throw error;
+  });
+  if (updated instanceof DuplicateReviewRequired) return NextResponse.json({ error: "This match already shows a published FEATURED selection. Review the duplicate from the admin queue before publishing.", needsReview: [updated.review] }, { status: 409 });
   if (!updated) return NextResponse.json({error:"Prediction state changed; reload before retrying"},{status:409});
   // A newly published pick may belong in Genius or Banker: fill them now rather
   // than at the next three-hourly settlement run. Never fails the publish.

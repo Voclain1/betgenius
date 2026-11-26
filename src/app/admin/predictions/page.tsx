@@ -4,6 +4,8 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { LeagueBadge } from "@/components/LeagueBadge";
 import { ADMIN_COMBO_FILTER, COMBO_MARKET_TYPE, matchesAdminCategoryFilter } from "@/lib/comboAdmin";
+import { DuplicatePublishReview, type DuplicateChoice } from "@/components/admin/DuplicatePublishReview";
+import type { DuplicateReview } from "@/lib/duplicatePublication";
 import { BACKUP_MODEL_WARNING, isBackupModel } from "@/lib/ai/backupModel";
 
 const CATEGORY_VALUES = ["FEATURED", "GENIUS", "BANKER", "VIP", "PREMIUM"] as const;
@@ -73,6 +75,9 @@ export default function AdminPredictions() {
   const [sort, setSort] = useState<SortKey>("KICKOFF");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // Pre-publication duplicate review (replaces the old after-the-fact alert).
+  const [duplicateReview, setDuplicateReview] = useState<{ reviews: DuplicateReview[]; clean: string[] } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [categoriesToAdd, setCategoriesToAdd] = useState<Set<string>>(new Set());
   const [categoriesToRemove, setCategoriesToRemove] = useState<Set<string>>(new Set());
@@ -115,6 +120,7 @@ export default function AdminPredictions() {
   useEffect(() => { void load(); }, [comboView, filter]);
 
   const act = async (id: string, action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
+    if (action === "PUBLISH") { await publishWithReview([id]); return; }
     const res = await fetch(`/api/admin/predictions/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -150,41 +156,81 @@ export default function AdminPredictions() {
       return next;
     });
 
-  const bulk = async (action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
-    if (selected.size === 0) return;
-    if (!confirm(`${action.toLowerCase()} ${selected.size} prediction(s)?`)) return;
+  /** POST one action over ids in batches of 100, returning merged structured results. */
+  const postBulk = async (action: "APPROVE" | "PUBLISH" | "ARCHIVE", allIds: string[], extra: Record<string, unknown> = {}) => {
+    const merged = { failed: [] as { id: string; error?: string }[], needsReview: [] as DuplicateReview[], reviews: [] as DuplicateReview[], clean: [] as string[], missing: [] as string[], updated: 0, overridden: 0 };
+    for (let offset = 0; offset < allIds.length; offset += 100) {
+      const res = await fetch("/api/admin/predictions/bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: allIds.slice(offset, offset + 100), action, ...extra }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error?.formErrors?.join(" ") || result.error || `${action.toLowerCase()} failed`);
+      merged.failed.push(...(result.failed ?? [])); merged.needsReview.push(...(result.needsReview ?? []));
+      merged.reviews.push(...(result.reviews ?? [])); merged.clean.push(...(result.clean ?? []));
+      merged.missing.push(...(result.missing ?? [])); merged.updated += result.updated ?? 0; merged.overridden += result.overridden ?? 0;
+    }
+    return merged;
+  };
+
+  const summarize = (r: Awaited<ReturnType<typeof postBulk>>, skipped: number) => {
+    const parts = [`${r.updated} published`];
+    if (r.overridden) parts.push(`${r.overridden} as additional selections`);
+    if (skipped) parts.push(`${skipped} skipped after duplicate review`);
+    if (r.needsReview.length) parts.push(`${r.needsReview.length} held because a duplicate appeared while publishing`);
+    if (r.failed.length) parts.push(`${r.failed.length} could not be published (${r.failed[0].error ?? "see queue"})`);
+    if (r.missing.length) parts.push(`${r.missing.length} not found`);
+    return parts.join(" · ");
+  };
+
+  /** Dry-run first: duplicates are shown BEFORE anything is published. */
+  const publishWithReview = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBusy(true); setNotice(null);
+    try {
+      const preview = await postBulk("PUBLISH", ids, { dryRun: true });
+      if (preview.missing.length) throw new Error(`${preview.missing.length} prediction(s) were not found`);
+      if (preview.reviews.length) { setDuplicateReview({ reviews: preview.reviews, clean: preview.clean }); return; }
+      const done = await postBulk("PUBLISH", ids);
+      setNotice(summarize(done, 0));
+      await load();
+    } catch (error: any) {
+      setNotice(error?.message ?? "publish failed");
+      await load();
+    } finally { setBusy(false); }
+  };
+
+  const confirmDuplicateReview = async (choices: Record<string, DuplicateChoice>) => {
+    if (!duplicateReview) return;
     setBusy(true);
     try {
-      const selectedIds = [...selected];
-      // The API deliberately caps one database batch at 100 rows. Large review
-      // selections are split here rather than rejected wholesale; each reply
-      // is checked before the next batch starts, so a partial failure is visible
-      // and the page reload shows exactly what changed.
-      const warnings: string[] = [];
-      for (let offset = 0; offset < selectedIds.length; offset += 100) {
-        const batch = selectedIds.slice(offset, offset + 100);
-        const res = await fetch("/api/admin/predictions/bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: batch, action }),
-        });
-        const result = await res.json();
-        if (!res.ok || result.failed?.length || result.missing?.length) {
-          const message = result.error?.formErrors?.join(" ")
-            || result.failed?.[0]?.error
-            || (result.missing?.length ? `${result.missing.length} prediction(s) were not found` : null)
-            || `${action.toLowerCase()} failed`;
-          throw new Error(message);
-        }
-        if (Array.isArray(result.warnings)) warnings.push(...result.warnings.map((w: { warning: string }) => w.warning));
-      }
+      const additional = Object.fromEntries(duplicateReview.reviews
+        .filter((r) => choices[r.predictionId]?.publish)
+        .map((r) => [r.predictionId, { choice: "PUBLISH_ADDITIONAL" as const, reason: choices[r.predictionId].reason.trim() }]));
+      const toPublish = [...duplicateReview.clean, ...Object.keys(additional)];
+      const skipped = duplicateReview.reviews.length - Object.keys(additional).length;
+      const done = toPublish.length ? await postBulk("PUBLISH", toPublish, { duplicateDecisions: additional }) : null;
+      setNotice(done ? summarize(done, skipped) : `Nothing published; ${skipped} skipped after duplicate review`);
+      setDuplicateReview(null);
       await load();
-      // Published as asked; flag a match that now shows more than one FEATURED pick.
-      if (warnings.length) alert(`${warnings.length} published pick(s) share a match with another published FEATURED pick:\n${warnings.slice(0, 5).join("\n")}`);
     } catch (error: any) {
-      alert(error?.message ?? `${action.toLowerCase()} failed`);
-      // Earlier batches may have completed before a later one failed. Reload
-      // rather than leaving stale statuses on screen.
+      setNotice(error?.message ?? "publish failed");
+      await load();
+    } finally { setBusy(false); }
+  };
+
+  const bulk = async (action: "APPROVE" | "PUBLISH" | "ARCHIVE") => {
+    if (selected.size === 0) return;
+    if (action === "PUBLISH") { await publishWithReview([...selected]); return; }
+    if (!confirm(`${action.toLowerCase()} ${selected.size} prediction(s)?`)) return;
+    setBusy(true); setNotice(null);
+    try {
+      const done = await postBulk(action, [...selected]);
+      if (done.failed.length || done.missing.length) throw new Error(done.failed[0]?.error || `${done.missing.length} prediction(s) were not found`);
+      await load();
+    } catch (error: any) {
+      setNotice(error?.message ?? `${action.toLowerCase()} failed`);
+      // Earlier batches may have completed before a later one failed; reload.
       await load();
     } finally {
       setBusy(false);
@@ -290,6 +336,16 @@ export default function AdminPredictions() {
             className="w-16 rounded-md border border-brand-border bg-brand-card px-2 py-2 text-sm" />
         </label>
       </div>
+
+      {notice && (
+        <p role="status" className="rounded-xl border border-brand-border bg-brand-card px-3 py-2 text-sm text-gray-200">
+          {notice} <button className="ml-2 text-xs text-gray-500 underline" onClick={() => setNotice(null)}>Dismiss</button>
+        </p>
+      )}
+      {duplicateReview && (
+        <DuplicatePublishReview reviews={duplicateReview.reviews} unaffected={duplicateReview.clean.length} busy={busy}
+          onConfirm={confirmDuplicateReview} onCancel={() => { setDuplicateReview(null); setNotice("Nothing was published."); }} />
+      )}
 
       {/* Bulk bar appears only once rows are selected, so the reviewer opts into
           acting on many at once rather than having the option sit there. */}

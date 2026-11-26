@@ -62,6 +62,8 @@ on:
       - "src/lib/periodPredictions.ts"
       - "src/app/api/admin/generate/early-discover/route.ts"
       - "scripts/check-early-fixtures.ts"
+      - "src/lib/generation/**"
+      - "src/app/api/admin/generate/early-run/route.ts"
       - "scripts/check-early-odds.ts"
       - "scripts/check-period-predictions.ts"
       - "prisma/schema.prisma"

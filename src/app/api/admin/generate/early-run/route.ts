@@ -39,5 +39,29 @@ async function getUnattributed(req: Request) {
   return response;
 }
 
+const OverrideBody = z.object({ matchKeys: z.array(z.string().min(3).max(64)).min(1).max(3) });
+
+/**
+ * Deliberate administrator request for early analysis of specific fixtures
+ * beyond the five-day horizon. Session-authenticated admins only: the cron
+ * secret cannot use it, so there is no automatic 10–14 day loophole.
+ */
+async function postOverride(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!isAdmin(session?.user.role)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const body = OverrideBody.safeParse(await req.json().catch(() => null));
+  if (!body.success) return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
+  try {
+    const result = await runEarlyFreeGeneration({ actorId: session!.user.id, limit: body.data.matchKeys.length,
+      override: { matchKeys: body.data.matchKeys, requestedBy: session!.user.id } });
+    console.info("[early-free-generation] admin early override", { matchKeys: body.data.matchKeys, selected: result.selected, generated: result.generated });
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("[early-free-generation override]", error);
+    return NextResponse.json({ error: "Early generation failed" }, { status: 500 });
+  }
+}
+
 // API-Football telemetry: requests made by this handler are attributed to this job (src/lib/football/usage.ts).
+export const POST = attributeApiJob("early-free-generation", postOverride);
 export const GET = attributeApiJob("early-free-generation", getUnattributed);
