@@ -27,7 +27,7 @@ async function main() {
   const rows = await db.prediction.findMany({
     where: { kickoff: { gte: from, lt: until }, status: { in: ["PUBLISHED", "PENDING_REVIEW", "DRAFT", "APPROVED", "ARCHIVED"] } },
     select: { id: true, status: true, leagueApiId: true, confidence: true, provenance: true, marketType: true, createdAt: true, publishedAt: true, kickoff: true,
-      fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, aiJobId: true, outcome: true, approvedById: true,
+      fixtureApiId: true, homeTeamApiId: true, awayTeamApiId: true, aiJobId: true, outcome: true, approvedById: true, contextComplete: true,
       categories: { select: { category: true, manual: true } } },
   });
   const jobIds = [...new Set(rows.map((r) => r.aiJobId).filter((x): x is string => !!x))];
@@ -77,11 +77,20 @@ async function main() {
   }
   out("confidenceByGenerationDay", { byDay: Object.fromEntries(Object.entries(gen).sort().map(([d, m]) => [d, Object.fromEntries(Object.entries(m).map(([l, g]) => [l, { n: g.n, mean: Math.round((g.sum / g.n) * 10) / 10, at75: g.at75, pct75: Math.round((1000 * g.at75) / g.n) / 10 }]))])) });
 
-  // Curation job evidence: when were BANKER links last written, per kickoff day.
-  const links = await db.predictionCategoryLink.findMany({ where: { category: "BANKER", prediction: { kickoff: { gte: from, lt: until } } }, select: { createdAt: true, manual: true, prediction: { select: { kickoff: true } } } });
-  const lastLink: Record<string, string> = {}; const manual: Record<string, number> = {};
-  for (const l of links) { const d = lagosDateKey(l.prediction.kickoff!); if (!lastLink[d] || l.createdAt.toISOString() > lastLink[d]) lastLink[d] = l.createdAt.toISOString(); if (l.manual) inc(manual, d); }
-  out("bankerLinks", { lastLinkByDay: lastLink, manualByDay: manual });
+  // Lane x league group x evidence, last 14 generation days: the 75+ share.
+  const { VIP_ROUTE_LEAGUE_IDS } = await import("../src/lib/ai/generationRisk");
+  const grp: Record<string, { n: number; sum: number; at75: number; ctx: number }> = {};
+  for (const r of rows) {
+    if (r.marketType === "SAME_GAME_DOUBLE" || !r.aiJobId || +r.createdAt < +now - 14 * 24 * H) continue;
+    const l = lane(r); if (l !== "early" && l !== "regular") continue;
+    const k = `${l}:${VIP_ROUTE_LEAGUE_IDS.includes(r.leagueApiId ?? -1) ? "topLeague" : "other"}:${(r as any).contextComplete ? "ctx" : "noCtx"}`;
+    const g = (grp[k] ??= { n: 0, sum: 0, at75: 0, ctx: 0 }); g.n++; g.sum += r.confidence; if (r.confidence >= 75) g.at75++;
+  }
+  out("confidenceByLaneLeagueEvidence14d", { groups: Object.fromEntries(Object.entries(grp).sort().map(([k, g]) => [k, { n: g.n, mean: Math.round((g.sum / g.n) * 10) / 10, pct75: Math.round((1000 * g.at75) / g.n) / 10 }])) });
+  // Manually tagged Banker rows per kickoff day (an admin choice curation never removes).
+  const manual: Record<string, number> = {};
+  for (const r of rows) if (r.categories.some((c) => c.category === "BANKER" && c.manual)) inc(manual, lagosDateKey(r.kickoff!));
+  out("bankerManualByDay", { manual });
   // Recent publication activity: who publishes and when (bulk admin vs automatic), by kickoff day.
   const pubBy: Record<string, Record<string, number>> = {};
   for (const r of rows) if (r.status === "PUBLISHED" && r.publishedAt) { const d = lagosDateKey(r.kickoff!); inc((pubBy[d] ??= {}), `${lane(r)}:${r.approvedById ? "approved" : "auto"}`); }
