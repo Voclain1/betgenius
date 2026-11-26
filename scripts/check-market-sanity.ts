@@ -92,7 +92,7 @@ console.log("\n6. Wiring");
 const gen = readFileSync(join(__dirname, "../src/lib/ai/generate.ts"), "utf8");
 check("market-sanity checks include Goals and manual, skip handicap and dedicated paid", /const checksMarket = !input\.handicapLine && input\.intent !== "VIP_PREMIUM";/.test(gen) && /const quote = checksMarket \? await loadFixtureOdds\(/.test(gen) && /const odds = quote\?\.odds \?\? null;/.test(gen));
 check("every draft off the market: one more ask with the market's view", /marketSanityRetryBlock\(odds, off, input\.home, input\.away\)/.test(gen));
-check("off-market drafts are dropped; none left throws MarketSanityError", /payable\.filter\(\(p\) => !offMarket\(p\)\)/.test(gen) && /throw (await rejected\()?new MarketSanityError\(/.test(gen));
+check("off-market drafts are dropped; none left throws MarketSanityError", /\(heldForReview \? modelDrafts : payable\)\.filter\(\(p\) => !offMarket\(p\)\)/.test(gen) && /throw (await rejected\()?new MarketSanityError\(/.test(gen));
 check("bulk panel explains MarketSanityError", /bookmakers/.test(bulkFailureReason(Object.assign(new Error("x"), { name: "MarketSanityError" }))));
 const ctx = readFileSync(join(__dirname, "../src/lib/ai/generationContext.ts"), "utf8");
 check("cup fixtures carry each side's domestic standing", /if \(cupFixture\) \{\s*\[home\.domestic, away\.domestic\] = await Promise\.all/.test(ctx));

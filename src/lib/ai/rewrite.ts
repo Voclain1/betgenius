@@ -16,6 +16,11 @@ import { isValidSelection, deriveMarketAndPick, deriveOverUnderText, type Market
 import { buildAnalysis } from "@/lib/predictionAnalysis";
 import { resolveGenerationRisk } from "@/lib/ai/generationRisk";
 import { proseViolations, describeProseViolations } from "@/lib/ai/proseGate";
+import { oddsForRows } from "@/lib/reviewQueue";
+import { betterMarketBlock, priceVerdict } from "@/lib/marketPricePolicy";
+import { automaticOddsFailure } from "@/lib/autoOddsFloor";
+import { isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
+import { farAboveMarket } from "@/lib/marketSanity";
 
 /** A superseded draft, appended to Prediction.previousDrafts. */
 export type ArchivedDraft = {
@@ -40,8 +45,18 @@ export class RewriteError extends Error {
   }
 }
 
-export async function rewritePrediction(opts: { predictionId: string; reviewerNote?: string | null; requestedById: string }) {
+/**
+ * "rewrite": same task as ever, new wording (the market may still move if the
+ * model's evidence says so). "repick": the current pick is not good enough (too
+ * short a price, weak evidence, or the admin simply does not like it), so ask for
+ * 2-3 independently reasoned markets, tell the model what was ruled out and the
+ * real prices on file, and keep the first one that clears the price rules.
+ */
+export type RewriteMode = "rewrite" | "repick";
+
+export async function rewritePrediction(opts: { predictionId: string; reviewerNote?: string | null; requestedById: string; mode?: RewriteMode }) {
   const { predictionId, requestedById } = opts;
+  const mode: RewriteMode = opts.mode ?? "rewrite";
   const reviewerNote = opts.reviewerNote?.trim() || null;
 
   const prediction = await prisma.prediction.findUnique({
@@ -76,10 +91,21 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
   // same post-parse enforcement. Otherwise a rewrite could turn a row filed
   // under GOALS alone into, say, BTTS — losing its only category.
   const goalsOnly = prediction.provenance === GOALS_GENERATED_PROVENANCE;
+  // Prices on file, for a re-pick of an ordinary pick. A Goals row is one fixed
+  // market and a plain rewrite keeps the task as it was.
+  const repick = mode === "repick" && !goalsOnly;
+  const odds = repick ? (await oddsForRows([prediction])).get(prediction.id) ?? null : null;
+  const home = prediction.homeTeam ?? "Home";
+  const away = prediction.awayTeam ?? "Away";
+  const ruledOut = repick
+    ? `\nTHE CURRENT PICK WAS RULED OUT BY THE REVIEWER: ${prediction.market}: ${prediction.pick} (${priceVerdict(odds, prediction.marketType, prediction.selection).label}). ` +
+      `Do not return it again. Return 2 or 3 different markets, each supported by the evidence, strongest first.\n`
+    : "";
   const { output, usage, model } = await generatePredictionForFixture({
     digest,
     tiers: riskRoute.promptTiers,
     riskCalibration: riskRoute.calibration !== "legacy",
+    ...(repick ? { marketBreadth: "multi" as const, shortPriceBlock: ruledOut + betterMarketBlock(odds, home, away) } : {}),
     ...(goalsOnly ? { goalsOnly: true } : {}),
     reviewerNote,
     previousDraft: {
@@ -90,7 +116,15 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
     },
   });
 
-  const draft = goalsOnly ? pickGoalsDraft(Array.isArray(output.predictions) ? output.predictions : []).pick : output.predictions[0];
+  const drafts = Array.isArray(output.predictions) ? output.predictions : [];
+  // The same price rules generation applies. A re-pick takes the first draft that
+  // clears them; if none does, the strongest draft is kept and flagged so the
+  // reviewer sees it still needs attention rather than being told it is fixed.
+  const clears = (p: (typeof drafts)[number]) =>
+    !isUnpayableDoubleChance(odds, p.marketType, p.selection) && automaticOddsFailure(odds, p.marketType, p.selection) === null
+    && !priceVerdict(odds, p.marketType, p.selection).blocksPublication && !farAboveMarket(odds, p);
+  const draft = goalsOnly ? pickGoalsDraft(drafts).pick : repick ? (drafts.find(clears) ?? drafts[0]) : drafts[0];
+  const priceCleared = !repick || (draft ? clears(draft) : false);
   if (!draft) {
     throw new RewriteError(
       goalsOnly
@@ -196,5 +230,5 @@ export async function rewritePrediction(opts: { predictionId: string; reviewerNo
   // change the market, so this is also what adds or removes GOALS.
   await setPredictionCategories(predictionId, updated.categories.map((c) => c.category), updated);
 
-  return { prediction: updated, job, archivedCount: history.length + 1 };
+  return { prediction: updated, job, archivedCount: history.length + 1, priceCleared };
 }

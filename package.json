@@ -21,6 +21,7 @@
     "check:payment-observability": "tsx scripts/check-payment-observability.ts",
     "check:payment-reliability": "tsx scripts/check-payment-reliability.ts",
     "reconcile:payments": "tsx --env-file=.env scripts/reconcile-payments.ts",
+    "check:market-price-policy": "tsx scripts/check-market-price-policy.ts",
     "check:combo-bet": "tsx scripts/check-combo-bet-copy.ts",
     "check:homepage-featured": "tsx scripts/check-homepage-featured.ts",
     "check:top-matches": "tsx scripts/check-top-matches.ts",

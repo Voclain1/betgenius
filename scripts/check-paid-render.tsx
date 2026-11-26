@@ -53,9 +53,7 @@ const rows = [...Array(25)].map((_, i) => ({ id: `w${i}`, kickoff: new Date(NOW.
 const perf = computePaidPerformance(rows, "2026-10-03", NOW);
 const panel = text(renderToStaticMarkup(<PaidPerformancePanel tier="VIP" perf={perf} />));
 check("panel: headline record", panel.includes("VIP record since 3 October 2026") && panel.includes("Win rate") && panel.includes("73.5%"), panel.slice(0, 400));
-check("panel: entry return not yet shown, with the reason", panel.includes("Shown once 30 settled picks carry a recorded price (0 so far)"));
-check("panel: closing return shown, negative as negative", /Return at closing prices\s+−\d/.test(panel), panel);
-check("panel: closing prices labelled as not the price you got", panel.includes("not necessarily the price you got"));
+check("panel: no return-on-stake tiles and no 'shown once' placeholders", !/Return at|Shown once|so far\)/.test(panel), panel);
 check("panel: market table appears at 30+ settled", panel.includes("Double chance"));
 check("panel: latest settled list", panel.includes("Latest settled") && panel.includes("Arsenal v Chelsea"));
 check("panel: no AI wording", !/\bAI\b/.test(panel));

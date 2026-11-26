@@ -11,27 +11,43 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const items = [
-  { href: "/admin", label: "Overview" },
-  { href: "/admin/ai", label: "Generation panel" },
-  { href: "/admin/predictions", label: "Predictions" },
-  { href: "/admin/updates", label: "Prediction updates" },
-  { href: "/admin/market-quality", label: "Market quality" },
-  { href: "/admin/evidence-review", label: "Evidence review" },
-  { href: "/admin/generation", label: "Generation" },
-  { href: "/admin/failed-generations", label: "Failed generations" },
-  { href: "/admin/combos", label: "Combos" },
-  { href: "/admin/bookmakers", label: "Bookmakers" },
-  { href: "/admin/banners", label: "Banners" },
-  { href: "/admin/subscribers", label: "Subscribers" },
-  { href: "/admin/payments", label: "Payments" },
-  { href: "/admin/manual-payments", label: "Bank & USDT" },
-  { href: "/admin/emails", label: "Email" },
-  { href: "/admin/admins", label: "Admins" },
-  { href: "/admin/jobs", label: "Scheduled jobs" },
-  { href: "/admin/paid-ops", label: "Paid operations" },
-  { href: "/admin/prediction-ops", label: "Prediction operations" },
-  { href: "/admin/tasks", label: "Tasks" },
+/**
+ * Grouped by how often they are used. Day to day is two links (Review queue,
+ * then Overview for the numbers); everything else is a tool you go looking for.
+ */
+const groups: Array<{ title: string; items: Array<{ href: string; label: string }> }> = [
+  { title: "Every day", items: [
+    { href: "/admin", label: "Overview" },
+    { href: "/admin/review", label: "Review queue" },
+    { href: "/admin/updates", label: "Published picks to re-check" },
+    { href: "/admin/predictions", label: "All predictions" },
+  ] },
+  { title: "Generation", items: [
+    { href: "/admin/ai", label: "Generation panel" },
+    { href: "/admin/generation", label: "Generation status" },
+    { href: "/admin/failed-generations", label: "Failed generations" },
+    { href: "/admin/combos", label: "Combos" },
+    { href: "/admin/market-quality", label: "Market quality" },
+  ] },
+  { title: "Money & people", items: [
+    { href: "/admin/subscribers", label: "Subscribers" },
+    { href: "/admin/payments", label: "Payments" },
+    { href: "/admin/manual-payments", label: "Bank & USDT" },
+    { href: "/admin/emails", label: "Email" },
+    { href: "/admin/admins", label: "Admins" },
+  ] },
+  { title: "Site", items: [
+    { href: "/admin/bookmakers", label: "Bookmakers" },
+    { href: "/admin/banners", label: "Banners" },
+  ] },
+  { title: "Diagnostics", items: [
+    { href: "/admin/evidence-review", label: "Evidence review" },
+    { href: "/admin/reassessment", label: "Reassessment" },
+    { href: "/admin/jobs", label: "Scheduled jobs" },
+    { href: "/admin/paid-ops", label: "Paid operations" },
+    { href: "/admin/prediction-ops", label: "Prediction operations" },
+    { href: "/admin/tasks", label: "Tasks" },
+  ] },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -54,11 +70,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Menu{failed > 0 ? <span className="ml-1.5 font-bold tabular-nums text-red-400" aria-label={`${failed} failed generations open`}>{failed}</span> : null}
           </summary>
           <nav className="absolute inset-x-0 top-full max-h-[75vh] overflow-y-auto border-b border-brand-border bg-brand-card px-4 pb-4">
-            {items.map((i) => (
-              <Link key={i.href} href={i.href} className="flex items-center justify-between rounded-md px-3 py-2.5 text-gray-300 hover:bg-brand-bg">
-                {i.label}
-                {i.href === "/admin/failed-generations" && failed > 0 && <span className="text-xs font-bold tabular-nums text-red-400">{failed}</span>}
-              </Link>
+            {groups.map((g) => (
+              <div key={g.title} className="pt-2">
+                <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-gray-500">{g.title}</p>
+                {g.items.map((i) => (
+                  <Link key={i.href} href={i.href} className="flex items-center justify-between rounded-md px-3 py-2.5 text-gray-300 hover:bg-brand-bg">
+                    {i.label}
+                    {i.href === "/admin/failed-generations" && failed > 0 && <span className="text-xs font-bold tabular-nums text-red-400">{failed}</span>}
+                  </Link>
+                ))}
+              </div>
             ))}
             <p className="mt-3 px-3 text-xs text-gray-500">Signed in as {session.user.email}</p>
           </nav>
@@ -68,15 +89,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <Link href="/" className="mb-6 block text-xl font-bold">
           <span className="text-brand">Bet</span>Genius <span className="text-xs text-gray-400">admin</span>
         </Link>
-        <nav className="space-y-1">
-          {items.map((i) => (
-            <Link key={i.href} href={i.href}
-              className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-bg">
-              {i.label}
-              {i.href === "/admin/failed-generations" && failed > 0 && (
-                <span className="text-xs font-bold tabular-nums text-red-400" aria-label={`${failed} open`}>{failed}</span>
-              )}
-            </Link>
+        <nav className="space-y-4">
+          {groups.map((g) => (
+            <div key={g.title} className="space-y-1">
+              <p className="px-3 text-[11px] font-bold uppercase tracking-[0.14em] text-gray-500">{g.title}</p>
+              {g.items.map((i) => (
+                <Link key={i.href} href={i.href}
+                  className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-gray-300 hover:bg-brand-bg">
+                  {i.label}
+                  {i.href === "/admin/failed-generations" && failed > 0 && (
+                    <span className="text-xs font-bold tabular-nums text-red-400" aria-label={`${failed} open`}>{failed}</span>
+                  )}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="mt-8 text-xs text-gray-500">

@@ -14,6 +14,7 @@ import type { FixtureOdds } from "@/lib/odds";
 import { earlyMarketGuidance } from "@/lib/generation/earlyMarketGuidance";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
+import { betterMarketBlock } from "@/lib/marketPricePolicy";
 import { automaticOddsFailure, automaticOddsRetryBlock, AutoOddsFloorError, type AutoOddsFailure } from "@/lib/autoOddsFloor";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
 import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
@@ -283,12 +284,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   const selectionMode = marketSelectionMode();
   const selectionApplies = selectionMode !== "off" && !goalsOnly && !input.handicapLine && marketBreadth === "single"
     && riskRoute.calibration !== "legacy" && !["VIP_PREMIUM", "EUROPEAN_CLUB", "MARKET_CONFIRMED", REGULAR_COMBO_INTENT].includes(String(input.intent ?? ""));
-  const callModel = (block: string) =>
+  const callModel = (block: string, breadth: typeof marketBreadth = marketBreadth) =>
     generatePredictionForFixture({
       digest,
       tiers: riskRoute.promptTiers,
       riskCalibration: riskRoute.calibration !== "legacy",
-      marketBreadth,
+      marketBreadth: breadth,
       handicapLine: input.handicapLine,
       shortPriceBlock: block + (pricedEarlyMarkets.length ?
         "\nEarly bookmaker market availability (context, NOT confidence):\n" +
@@ -300,7 +301,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       ...(selectionApplies ? { marketSelection: selectionMode as "shadow" | "on" } : {}),
       ...(process.env.FREE_TIER_NEUTRAL_BANDS === "on" && riskRoute.calibration === "genius" && input.intent !== "VIP_PREMIUM" ? { freeTierNeutral: true } : {}),
     });
-  const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
+  // The real priced menu and the "choose a market that pays" rule. The early
+  // lane already lists its priced markets (pricedEarlyMarkets) and the Goals
+  // pass is fixed to one market, so neither gets a second list.
+  const priceMenu = !goalsOnly && pricedEarlyMarkets.length === 0 ? betterMarketBlock(priceOdds, input.home, input.away) : "";
+  const shortBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
+  const firstBlock = shortBlock + priceMenu;
   // A call that was paid for and then rejected inside generatePredictionForFixture
   // carries its usage on the error; it is recorded as a REJECTED job so the
   // generation panel's spend includes it.
@@ -342,24 +348,36 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // intentionally ignores general short-price retry blocks: do not pay for a
   // second identical call there. Reject the priced-out Goals pick instead.
   const first = Array.isArray(output.predictions) ? output.predictions : [];
-  if (!goalsOnly && !earlyFree && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+  // The early lane retries too: it used to save a too-short or unpriced pick for
+  // review without ever looking for a better market, and reviewers then
+  // published them (a team Under 2.5 at ~1.03, Double Chances at 1.03-1.05).
+  if (!goalsOnly && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
     const dc = first.filter(tooShortDc);
     const floor: AutoOddsFailure[] = first.filter((p) => !tooShortDc(p))
       .map((p) => autoPriceIssue(p))
       .filter((issue): issue is AutoOddsFailure => issue !== null);
     const off = first.filter((p) => !unpayable(p));
     const retryBlock =
-      (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : firstBlock) +
+      (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : shortBlock) +
       automaticOddsRetryBlock(floor) +
-      (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "");
+      (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "") +
+      betterMarketBlock(priceOdds, input.home, input.away);
     let retry: Awaited<ReturnType<typeof callModel>>;
     try {
-      retry = await callModel(retryBlock);
+      // The second ask requests 2-3 independently reasoned markets, not one:
+      // a fixture whose first pick was ruled out should come back with real
+      // alternatives to choose from, not a single replacement that may fail the
+      // same price check again. Only one is persisted for a single-market job.
+      retry = await callModel(retryBlock, marketBreadth === "single" ? "multi" : marketBreadth);
     } catch (err) {
       await recordRejectedCall(err);
       throw err;
     }
-    output = retry.output;
+    // Payable, on-market picks first: the first draft is what the rest of the
+    // pipeline treats as the primary.
+    const ranked = Array.isArray(retry.output.predictions) ? retry.output.predictions : [];
+    const usable = (p: Draft) => !unpayable(p) && !offMarket(p);
+    output = { ...retry.output, predictions: [...ranked.filter(usable), ...ranked.filter((p) => !usable(p))] };
     model = retry.model;
     const add = (x: number | null, y: number | null) => (x == null && y == null ? null : (x ?? 0) + (y ?? 0));
     usage = {
@@ -437,7 +455,13 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // exact prices can be cached; it cannot evade the price check by being absent
   // from the current trimmed feed. Market-sanity rejects remain independent.
   const payable = modelDrafts.filter((p) => !unpayable(p));
-  const drafts = payable.filter((p) => !offMarket(p));
+  // Nothing priced well enough even after the second ask: keep the strongest
+  // draft for the review queue instead of losing the fixture. It lands under
+  // "Needs attention" with the better-priced markets listed, and the admin
+  // publish guard refuses it until its market is changed. The Goals pass is one
+  // fixed market and still rejects.
+  const heldForReview = !earlyFree && !goalsOnly && modelDrafts.length > 0 && payable.length === 0;
+  const drafts = (heldForReview ? modelDrafts : payable).filter((p) => !offMarket(p));
   // One fixture, one canonical row, whenever a single market was asked for.
   // The model sometimes returns extra drafts anyway (the early lane's guidance
   // invited "a separately justified unpriced pick"), and every one was being
@@ -451,7 +475,7 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
     await prisma.aIJob.update({ where: { id: job.id }, data: { status: "REJECTED" } }).catch(() => {});
     return err;
   };
-  if (!earlyFree && modelDrafts.length > 0 && payable.length === 0) {
+  if (!earlyFree && modelDrafts.length > 0 && payable.length === 0 && (goalsOnly || drafts.length === 0)) {
     throw await rejected(new AutoOddsFloorError(`${input.home} v ${input.away}`));
   }
   if (!earlyFree && payable.length > 0 && drafts.length === 0) {

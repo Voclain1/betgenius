@@ -14,6 +14,8 @@ const Body = z.object({
   // Empty/absent means a plain re-roll. Capped so a pasted essay can't crowd
   // out the actual football context in the prompt.
   reviewerNote: z.string().max(1000).optional(),
+  // "repick" also looks for a better-priced market. See RewriteMode.
+  mode: z.enum(["rewrite", "repick"]).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -24,12 +26,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 
   try {
-    const { prediction, archivedCount } = await rewritePrediction({
+    const { prediction, archivedCount, priceCleared } = await rewritePrediction({
+      mode: parsed.data.mode,
       predictionId: params.id,
       reviewerNote: parsed.data.reviewerNote,
       requestedById: session!.user.id,
     });
-    return NextResponse.json({ prediction, archivedCount });
+    return NextResponse.json({ prediction, archivedCount, priceCleared });
   } catch (err: any) {
     if (err instanceof RewriteError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("[rewrite]", err);

@@ -217,7 +217,7 @@ async function main() {
   }
   const panel = read("src/components/PaidPerformancePanel.tsx");
   check("copy: the panel says pending picks are not counted", /Picks still awaiting a result are not counted/.test(panel));
-  check("copy: the panel says closing prices are not the price you got", /not necessarily the price you got/.test(panel));
+  check("copy: the panel carries no return tiles or placeholders", !/Return at|Shown once/.test(panel));
   check("copy: the panel says confidence is not a guarantee", /not a guarantee/.test(panel));
 
   console.log(`\n  ${passed} passed, ${failures.length} failed`);

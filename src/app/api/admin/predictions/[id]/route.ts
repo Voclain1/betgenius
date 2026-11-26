@@ -16,6 +16,7 @@ import { assessSavedGenerationEvidence } from "@/lib/ai/evidenceReadiness";
 import { historicalEvidenceFor } from "@/lib/evidenceReview";
 import { withNoFootballApiCalls } from "@/lib/football/api-football";
 import { normalizeLeagueName } from "@/lib/leagues";
+import { oddsForRows, publishPriceProblem } from "@/lib/reviewQueue";
 import { recordPredictionEvents } from "@/lib/notifications";
 import { DuplicateReviewRequired, lockFixtureForPublication, reviewFeaturedDuplicate } from "@/lib/duplicatePublication";
 import { broadcastTopPrediction } from "@/lib/topPredictions";
@@ -262,6 +263,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     try { await assertPublicationFixture({...before,...data}); }
     catch(error) { return NextResponse.json({error:error instanceof Error?error.message:"PUBLICATION_BLOCKED"},{status:409}); }
     if (action === "PUBLISH" && before.status === "PUBLISHED") return NextResponse.json({prediction:before,replayed:true});
+    // A generated pick priced too short to be worth tipping (or an unpriceable
+    // team total) is held until its market is edited: judged on the market this
+    // save leaves it with, so changing the market and publishing in one go works.
+    if (before.status !== "PUBLISHED") {
+      const odds = (await oddsForRows([before])).get(before.id) ?? null;
+      const priceProblem = publishPriceProblem({ marketType: effectiveMarket.marketType, selection: effectiveMarket.selection, aiJobId: before.aiJobId }, odds);
+      if (priceProblem) return NextResponse.json({ error: `Not published: ${priceProblem}. Edit the pick to a market that pays, or archive it.` }, { status: 409 });
+    }
   }
 
   if (action === "APPROVE" || action === "PUBLISH" || action === "ARCHIVE") {
