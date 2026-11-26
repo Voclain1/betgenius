@@ -13,7 +13,7 @@ import { evaluateMarketConfirmed, MC_MIN_MODEL_CONFIDENCE, MC_MAX_GAP_PP } from 
 import { toBookmakerSelection, type FixtureOdds } from "../src/lib/odds";
 import { matchKey } from "../src/lib/slug";
 import { tooShortForPaid, PAID_MAX_MARKET_PROBABILITY } from "../src/lib/vipPremiumOverlay";
-import type { MarketType, Selection } from "../src/lib/markets";
+import { resolveMarket, type MarketType, type Selection } from "../src/lib/markets";
 
 const db = new PrismaClient();
 const days = Number(process.argv[2] ?? 30);
@@ -45,6 +45,10 @@ async function main() {
   let modelLowMarketOk = 0, marketOkModelOk = 0;
   const confBands: Record<string, number> = {};
   const byAvoid: Record<string, { jobs: number; confirmed: number }> = {};
+  // Outcomes, graded from any settled row on the same fixture (final score).
+  type G = { n: number; won: number; ret: number; priced: number };
+  const graded: Record<string, G> = {};
+  const grade = (k: string, won: boolean, price: number | null) => { const g = (graded[k] ??= { n: 0, won: 0, ret: 0, priced: 0 }); g.n++; if (won) g.won++; if (price) { g.priced++; g.ret += won ? price - 1 : -1; } };
   for (const j of jobs) {
     let p: any, o: any;
     try { p = JSON.parse(j.prompt); o = JSON.parse(j.rawOutput); } catch { continue; }
@@ -55,6 +59,7 @@ async function main() {
     const cache = key ? await db.fixtureOddsCache.findUnique({ where: { matchKey: key }, select: { oddsJson: true, fetchedAt: true } }) : null;
     const odds = (cache?.oddsJson as unknown as FixtureOdds | null) ?? null;
     const avoid: string[] = Array.isArray(p.avoidPicks) ? p.avoidPicks : [];
+    const settled = p.fixtureApiId != null ? await db.prediction.findFirst({ where: { fixtureApiId: p.fixtureApiId, finalHomeScore: { not: null }, finalAwayScore: { not: null } }, select: { finalHomeScore: true, finalAwayScore: true } }) : null;
     const avoidKey = avoid.length === 0 ? "none" : avoid.length <= 2 ? "1-2" : "3+";
     const ab = (byAvoid[avoidKey] ??= { jobs: 0, confirmed: 0 }); ab.jobs++;
     const target = targetOf.get(`${p.home} vs ${p.away}|${new Date(p.kickoff).toISOString()}`);
@@ -78,6 +83,16 @@ async function main() {
       inc(reasons, reason); if (first) inc(firstReasons, reason);
       if (reason === "CONFIRMED") { anyConfirmed = true; inc(confirmedMarkets, d.marketType); }
       if (conf >= MC_MIN_MODEL_CONFIDENCE) allModelLow = false;
+      if (mp != null && settled && mp >= 75 && mp <= PAID_MAX_MARKET_PROBABILITY) {
+        const res = resolveMarket(d.marketType as MarketType, d.selection as Selection, settled.finalHomeScore!, settled.finalAwayScore!);
+        if (res === "WON" || res === "LOST") {
+          const price = mp ? 100 / mp : null; // fair price; bookmaker price is lower by the margin
+          const band = conf >= 80 ? "model80+" : conf >= 75 ? "model75-79" : conf >= 70 ? "model70-74" : conf >= 65 ? "model65-69" : "model<65";
+          grade(band, res === "WON", price);
+          grade(Math.abs(conf - mp) <= MC_MAX_GAP_PP ? "gapWithin10" : "gapOver10", res === "WON", price);
+          grade(reason === "CONFIRMED" ? "gate:confirmed" : `gate:${reason}`, res === "WON", price);
+        }
+      }
       if (mp != null) {
         gapsAll.push(conf - mp);
         if (mp >= 75 && mp <= PAID_MAX_MARKET_PROBABILITY) { gapsEligible.push(conf - mp); if (conf < MC_MIN_MODEL_CONFIDENCE) modelLowMarketOk++; else marketOkModelOk++; }
@@ -104,5 +119,7 @@ async function main() {
   out("targetSelection", { jobsWithRecordedTarget: withTarget, targetAlreadyInAvoidList: avoidHasTarget, draftsOnTargetSelection: draftIsTarget, ofWhichConfirmed: targetDraftConfirmed,
     targetDraftModelMean: mean(targetDraftConf), targetMarketMean: mean(targetMarketProb) });
   out("byAvoidList", { byAvoid });
+  out("outcomesWhereMarketInPaidRange", { note: "drafts with market 75-87% on a settled fixture; return at FAIR price (no margin), so real returns are a few points lower",
+    bands: Object.fromEntries(Object.entries(graded).map(([k, g]) => [k, { n: g.n, strike: Math.round((1000 * g.won) / g.n) / 10, fairReturn: g.priced ? Math.round((1000 * g.ret) / g.priced) / 10 : null }])) });
 }
 main().catch((e) => { console.error(String(e?.message ?? e).slice(0, 500)); process.exit(1); }).finally(() => db.$disconnect());
