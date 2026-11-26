@@ -19,6 +19,8 @@ on:
       - scripts/audit-market-quality.ts
       - scripts/backtest-market-selection.ts
       - scripts/diagnose-paid-supply.ts
+      - scripts/diagnose-paid-drafts.ts
+      - scripts/diagnose-banker.ts
       - .github/workflows/market-quality-audit.yml
 
 permissions:
@@ -53,6 +55,16 @@ jobs:
           REQUIRE_READ_ONLY: "1"
           API_FOOTBALL_KEY: ""
         run: npx tsx scripts/diagnose-paid-supply.ts
+      - name: Paid draft diagnosis
+        env:
+          REQUIRE_READ_ONLY: "1"
+          API_FOOTBALL_KEY: ""
+        run: npx tsx scripts/diagnose-paid-drafts.ts 30
+      - name: Banker diagnosis
+        env:
+          REQUIRE_READ_ONLY: "1"
+          API_FOOTBALL_KEY: ""
+        run: npx tsx scripts/diagnose-banker.ts 21
       - name: Market quality audit
         env:
           REQUIRE_READ_ONLY: "1"

@@ -1,4 +1,4 @@
-import { quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
+import { quotaExperimentConfig, PAID_BASE_DAILY_ATTEMPTS as VIP_PREMIUM_DAILY_QUOTA } from "@/lib/vipQuotaExperiment";
 import { reserveExtraAttempt, runExtraAttempt } from "@/lib/vipQuotaExperimentStore";
 import { loadVipPremiumAttempts, vipPremiumQuotaRemaining } from "@/lib/vipPremiumPipeline";
 import { attemptsByKickoffDay } from "@/lib/vipPremiumOverlay";
@@ -782,7 +782,7 @@ async function runVipPremiumGenerationInner(opts: { authorId: string; limit?: nu
         if (attempts.some(a => a.fixtureApiId === t.fixtureApiId)) continue;
         const used = attemptsByKickoffDay(attempts).get(lagosDateKey(t.kickoff)) ?? 0;
         const config = quotaExperimentConfig();
-        const extra = used >= 8;
+        const extra = used >= VIP_PREMIUM_DAILY_QUOTA;
         if (extra && (!config || !selection.experiment?.quotas[lagosDateKey(t.kickoff)])) continue;
         if (extra && !await reserveExtraAttempt(t, config!, selection.experiment?.eligibleFixtures ?? [])) continue;
         const avoidPicks = await existingPicksOnFixture(t);

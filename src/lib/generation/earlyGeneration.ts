@@ -11,6 +11,7 @@ import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { earlyFixturePricedForGeneration } from "@/lib/generation/earlyOddsPolicy";
 import type { FixtureOdds } from "@/lib/odds";
 import { filterSelectiveQueuedCandidates } from "@/lib/generation/selectiveLeagues";
+import { prefetchEarlyH2H, type EarlyH2HReport } from "@/lib/generation/earlyH2H";
 
 /**
  * Kickoff-distance bands, in the order the early lane serves unpriced work.
@@ -45,6 +46,8 @@ export type EarlyGenerationResult = {
   /** Fixtures deferred (not counted as attempts) because the selective-league gate could not be evaluated from cache. */
   deferredSelective?: number;
   worker?: Awaited<ReturnType<typeof runGeneration>>;
+  /** Head-to-head requests made for this run's fixtures before generation (earlyH2H.ts). */
+  h2h?: EarlyH2HReport;
 };
 
 /**
@@ -143,6 +146,13 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
   if (!keys.length) return { ok: true, skipped: "no available early fixtures",
     selected: 0, generated: 0, pricedSelected: 0, unpricedSelected: 0, queueByBand, deferredSelective: gated.length,
     summary: "Early generation found no pending captured fixtures" + (gated.length ? " (" + gated.length + " selective-league fixtures deferred)" : "") };
+  // Head-to-head is the evidence the cache-only lane most often lacks; fetch it
+  // for this run's fixtures only, within a budget margin, BEFORE the
+  // provider-free generation below (src/lib/generation/earlyH2H.ts).
+  const h2h = await prefetchEarlyH2H(chosen.flatMap(a => {
+    const [homeTeamApiId, awayTeamApiId] = a.matchKey.split("-").map(Number);
+    return Number.isFinite(homeTeamApiId) && Number.isFinite(awayTeamApiId) ? [{ homeTeamApiId, awayTeamApiId, kickoff: a.kickoff }] : [];
+  }), now).catch(() => undefined);
   const worker = await withNoFootballApiCalls(() => runGeneration({
     authorId: input.actorId, categories: ["FEATURED"], matchKeys: keys,
     intent: EARLY_FREE_GENERATION_INTENT,
@@ -152,6 +162,7 @@ export async function runEarlyFreeGeneration(input: { actorId: string; now?: Dat
   return { ok: worker.ok, selected: keys.length, generated: worker.predictionsCreated,
     pricedSelected, unpricedSelected: keys.length - pricedSelected, queueByBand, deferredSelective: gated.length,
     summary: "Early free generation selected " + keys.length + " (" + pricedSelected +
-      " priced, " + (keys.length - pricedSelected) + " awaiting quotes), created " + worker.predictionsCreated,
-    worker };
+      " priced, " + (keys.length - pricedSelected) + " awaiting quotes), created " + worker.predictionsCreated +
+      (h2h ? ", h2h fetched " + h2h.fetched + (h2h.skippedBudget ? " (" + h2h.skippedBudget + " skipped for budget)" : "") : ""),
+    worker, h2h };
 }
