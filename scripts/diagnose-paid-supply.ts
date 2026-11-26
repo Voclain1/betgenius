@@ -59,7 +59,7 @@ async function main() {
   out("vipPremiumModelJobs", { byDayStatus: count(jobs, (j) => `${lagosDateKey(j.createdAt)}:${j.status}`) });
 
   // 4. Scheduled job runs: did the paid pass fire, and what did it say?
-  for (const job of ["generate-vip-premium", "paid-selection-shadow", "generate-ordinary", "refresh-odds", "curate-accumulators"]) {
+  for (const job of ["generate-vip-premium", "paid-selection-shadow", "generate-ordinary", "refresh-odds", "curate-accumulators", "early-free-generation"]) {
     const runs = await db.jobRun.findMany({ where: { job, ranAt: { gte: new Date(+now - 4 * D) } }, orderBy: { ranAt: "desc" }, select: { ranAt: true, ok: true, summary: true, ms: true } });
     out("jobRuns", { job, runs: runs.length, failed: runs.filter((r) => !r.ok).length, perDay: count(runs, (r) => lagosDateKey(r.ranAt)),
       summaries: count(runs, (r) => (r.summary ?? "").replace(/\d+/g, "#").slice(0, 220)),
