@@ -46,6 +46,8 @@ on:
       - "scripts/check-editorial-voice.ts"
       - "scripts/check-editorial-voice-postgres.ts"
       - "scripts/check-market-quality-postgres.ts"
+      - "scripts/check-early-h2h.ts"
+      - "src/lib/generation/earlyH2H.ts"
       - "src/lib/predictions.ts"
       - "src/lib/marketQualityReport.ts"
       - "src/app/api/admin/predictions/bulk/route.ts"
@@ -91,6 +93,7 @@ jobs:
       - run: npm run check:early-fixtures
       - run: npx tsx scripts/check-early-odds.ts
       - run: npx tsx scripts/check-early-evidence-freshness.ts
+      - run: npx tsx scripts/check-early-h2h.ts
       - run: npm run check:reassessment
       - run: npm run check:prediction-updates
       - run: npm run check:period-predictions

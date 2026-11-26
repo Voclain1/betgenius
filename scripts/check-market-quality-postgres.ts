@@ -40,7 +40,7 @@ async function main() {
   const { matchKey } = await import("../src/lib/slug");
   const { loadMarketQualityReport } = await import("../src/lib/marketQualityReport");
   const bulk = await import("../src/app/api/admin/predictions/bulk/route");
-  const { refreshOddsCache, ODDS_BUDGET_REFUSED } = await import("../src/lib/enrichment");
+  const { refreshOddsCache, refreshH2HCache, ODDS_BUDGET_REFUSED } = await import("../src/lib/enrichment");
   const { utcDay, withPaidPriority } = await import("../src/lib/football/usage");
   const { vipPremiumOddsWarmReason } = await import("../src/lib/vipPremiumOverlay");
 
@@ -137,6 +137,10 @@ async function main() {
         const row = await prisma.fixtureOddsCache.findUniqueOrThrow({ where: { matchKey: key } });
         ok(general.result === "failed" && general.detail === ODDS_BUDGET_REFUSED && paid.detail === ODDS_BUDGET_REFUSED, "a budget refusal is reported as such");
         ok(+row.lastAttemptAt! === +stale && row.lastError === null, "a budget refusal leaves the cache row untouched (no attempt stamp, no error)");
+        const h2hKey = "990097-990098";
+        const h2h = await refreshH2HCache({ pairKey: h2hKey, teamAApiId: 990097, teamBApiId: 990098, latestKickoff: new Date(now + 20 * H) } as never);
+        ok(h2h.detail === ODDS_BUDGET_REFUSED && (await prisma.h2HCache.findUnique({ where: { pairKey: h2hKey } })) === null,
+          "an H2H budget refusal writes nothing, so the early pre-fetch can retry once budget returns");
         ok(vipPremiumOddsWarmReason({ kickoff: new Date(now + 20 * H) }, { oddsJson: null, fetchedAt: row.fetchedAt, lastAttemptAt: row.lastAttemptAt }, new Date()) === "DUE",
           "so the paid pass still sees the fixture as due for its own (reserved) odds call");
       } finally {

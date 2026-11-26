@@ -718,6 +718,9 @@ export async function refreshH2HCache(target: H2HTarget): Promise<{ pairKey: str
   try {
     const raw = await getHeadToHead(target.teamAApiId, target.teamBApiId, H2H_FETCH_LAST);
 
+    // Refused by our own daily budget gate: nothing was learned, so nothing is
+    // recorded (same rule as refreshOddsCache, ODDS_BUDGET_REFUSED).
+    if (raw == null && !(await hasBudget())) return { pairKey: target.pairKey, result: "failed", detail: ODDS_BUDGET_REFUSED };
     if (raw == null) {
       const lastError = "No response — see server logs for the underlying api-football error";
       await prisma.h2HCache.upsert({
