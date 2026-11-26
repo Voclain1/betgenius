@@ -97,6 +97,9 @@ async function main() {
       const d = byJob.get(r.aiJobId!)?.digest ?? byJob.get(r.aiJobId!);
       if (!d?.teams) continue;
       const k = `${lane(r)}:${VIP_ROUTE_LEAGUE_IDS.includes(r.leagueApiId ?? -1) ? "topLeague" : "other"}`;
+      for (const kk of [`${k}:h2h${d.coverage?.h2h ? "Yes" : "No"}`, `${k}:standings${d.coverage?.standings ? "Yes" : "No"}`]) {
+        const gg = (rich[kk] ??= { n: 0, standings: 0, h2h: 0, stats: 0, avail: 0, last5: 0, seasonPlayed: 0, at75: 0 }); gg.n++; if (r.confidence >= 75) gg.at75++;
+      }
       const g = (rich[k] ??= { n: 0, standings: 0, h2h: 0, stats: 0, avail: 0, last5: 0, seasonPlayed: 0, at75: 0 });
       g.n++; if (d.coverage?.standings) g.standings++; if (d.coverage?.h2h) g.h2h++; if (d.coverage?.stats) g.stats++; if (d.coverage?.availability) g.avail++;
       g.last5 += ((d.teams.home?.last5?.length ?? 0) + (d.teams.away?.last5?.length ?? 0)) / 2;
