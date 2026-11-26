@@ -89,7 +89,15 @@ jobs:
           SITE_ALIASES: ${{ vars.SITE_ALIASES }}
           SITE_REDIRECT_FROM: ${{ vars.SITE_REDIRECT_FROM }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Repository Variable (Settings > Secrets and variables > Actions >
+          # Variables), editable on its own without re-entering PROD_ENV_FILE.
+          # Unset: whatever PROD_ENV_FILE says (default shadow) is left alone.
+          PAID_SPARE_QUOTA_WIDENING_VAR: ${{ vars.PAID_SPARE_QUOTA_WIDENING }}
         run: |
+          case "${PAID_SPARE_QUOTA_WIDENING_VAR}" in
+            ""|off|shadow|on) ;;
+            *) echo "::error::Variable PAID_SPARE_QUOTA_WIDENING must be off, shadow or on"; exit 1 ;;
+          esac
           for v in OPS_ENV_FILE POSTGRES_PASSWORD SITE_DOMAIN; do
             [ -n "${!v}" ] || { echo "::error::$v is not set"; exit 1; }
           done
@@ -109,6 +117,11 @@ jobs:
           if [ -n "$ANTHROPIC_API_KEY" ]; then
             grep -v '^ANTHROPIC_API_KEY=' out/app.env > out/app.env.tmp && mv out/app.env.tmp out/app.env
             echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> out/app.env
+          fi
+          # When the Variable is set it wins over any line in PROD_ENV_FILE.
+          if [ -n "$PAID_SPARE_QUOTA_WIDENING_VAR" ]; then
+            grep -v '^PAID_SPARE_QUOTA_WIDENING=' out/app.env > out/app.env.tmp && mv out/app.env.tmp out/app.env
+            echo "PAID_SPARE_QUOTA_WIDENING=$PAID_SPARE_QUOTA_WIDENING_VAR" >> out/app.env
           fi
           printf '%s\n' "$OPS_ENV_FILE" > out/ops.env
           ssh vps "test -f /opt/betgenius/deploy.env && grep '^APP_TAG=' /opt/betgenius/deploy.env || true" > out/deploy.env
@@ -133,5 +146,5 @@ jobs:
           ssh vps "/opt/betgenius/deploy.sh ${GITHUB_SHA}"
           # Confirm the running container received the final approved flags
           # rather than treating a successful image switch as config proof.
-          ssh vps 'set -eu; cd /opt/betgenius; C=$(docker compose --env-file deploy.env ps -q app); test -n "$C"; for key in EARLY_FIXTURE_MODE EARLY_FREE_PUBLICATION_MODE PREDICTION_REASSESSMENT_MODE MARKET_SELECTION_MODE MARKET_QUALITY_RANKING FREE_TIER_NEUTRAL_BANDS MATCH_PREVIEW_MODE; do expected=$(sed -n "s/^$key=//p" app.env); actual=$(docker inspect --format "{{range .Config.Env}}{{println .}}{{end}}" "$C" | sed -n "s/^$key=//p"); test "$actual" = "$expected" || { echo "Rollout mode mismatch for $key"; exit 1; }; echo "Verified $key=$actual"; done'
+          ssh vps 'set -eu; cd /opt/betgenius; C=$(docker compose --env-file deploy.env ps -q app); test -n "$C"; for key in EARLY_FIXTURE_MODE EARLY_FREE_PUBLICATION_MODE PREDICTION_REASSESSMENT_MODE MARKET_SELECTION_MODE MARKET_QUALITY_RANKING FREE_TIER_NEUTRAL_BANDS MATCH_PREVIEW_MODE PAID_SPARE_QUOTA_WIDENING; do expected=$(sed -n "s/^$key=//p" app.env); actual=$(docker inspect --format "{{range .Config.Env}}{{println .}}{{end}}" "$C" | sed -n "s/^$key=//p"); test "$actual" = "$expected" || { echo "Rollout mode mismatch for $key"; exit 1; }; echo "Verified $key=$actual"; done'
           ssh vps 'docker logout ghcr.io'
