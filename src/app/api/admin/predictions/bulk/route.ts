@@ -8,6 +8,7 @@ import { HIDDEN_LEG_MESSAGE, isHiddenComboLeg } from "@/lib/comboLegs";
 import { PREDICTION_CATEGORIES } from "@/lib/enums";
 import { z } from "zod";
 import { DuplicateReviewRequired, MIN_OVERRIDE_REASON, duplicatePublishGuard, reviewFeaturedDuplicate, type DuplicateReview } from "@/lib/duplicatePublication";
+import { oddsForRows, publishPriceProblem } from "@/lib/reviewQueue";
 import { curateBankerTips, curateGeniusTips } from "@/lib/geniusCuration";
 
 /**
@@ -85,8 +86,15 @@ export async function POST(req: Request) {
   }
 
   const results: Array<{ id: string; ok: boolean; error?: string; review?: DuplicateReview; overridden?: boolean }> = [];
+  // A generated pick whose price is too short to be worth tipping (or a team
+  // total with no verifiable price) cannot be approved or published in bulk:
+  // fix the market first. Hand-written picks are the admin's own call.
+  const gated = action === "APPROVE" || action === "PUBLISH";
+  const priceOdds = gated ? await oddsForRows(rows) : null;
   for (const row of rows) {
     try {
+      const priceProblem = priceOdds ? publishPriceProblem(row, priceOdds.get(row.id) ?? null) : null;
+      if (priceProblem) { results.push({ id: row.id, ok: false, error: `Not published: ${priceProblem}. Edit the pick to a market that pays, or archive it.` }); continue; }
       if (action === "MANAGE_CATEGORIES") {
         const current = row.categories.length ? row.categories.map((c) => c.category) : [row.category];
         // A hidden combo leg is refused outright, and said so, rather than

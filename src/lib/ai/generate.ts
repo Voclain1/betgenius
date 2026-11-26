@@ -14,6 +14,7 @@ import type { FixtureOdds } from "@/lib/odds";
 import { earlyMarketGuidance } from "@/lib/generation/earlyMarketGuidance";
 import { EARLY_FREE_GENERATION_INTENT } from "@/lib/ai/generationRisk";
 import { shortPriceSides, shortPriceBlock, shortPriceRetryBlock, isUnpayableDoubleChance } from "@/lib/shortPriceGuard";
+import { betterMarketBlock } from "@/lib/marketPricePolicy";
 import { automaticOddsFailure, automaticOddsRetryBlock, AutoOddsFloorError, type AutoOddsFailure } from "@/lib/autoOddsFloor";
 import { farAboveMarket, marketSanityRetryBlock, MarketSanityError } from "@/lib/marketSanity";
 import { recordGenerationFailure, resolveGenerationFailures } from "@/lib/generationFailures";
@@ -300,7 +301,12 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
       ...(selectionApplies ? { marketSelection: selectionMode as "shadow" | "on" } : {}),
       ...(process.env.FREE_TIER_NEUTRAL_BANDS === "on" && riskRoute.calibration === "genius" && input.intent !== "VIP_PREMIUM" ? { freeTierNeutral: true } : {}),
     });
-  const firstBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
+  // The real priced menu and the "choose a market that pays" rule. The early
+  // lane already lists its priced markets (pricedEarlyMarkets) and the Goals
+  // pass is fixed to one market, so neither gets a second list.
+  const priceMenu = !goalsOnly && pricedEarlyMarkets.length === 0 ? betterMarketBlock(priceOdds, input.home, input.away) : "";
+  const shortBlock = shortPriceBlock(shortPriceSides(priceOdds, input.home, input.away));
+  const firstBlock = shortBlock + priceMenu;
   // A call that was paid for and then rejected inside generatePredictionForFixture
   // carries its usage on the error; it is recorded as a REJECTED job so the
   // generation panel's spend includes it.
@@ -342,16 +348,20 @@ async function generateUnlogged(rawInput: GenerateFixtureInput) {
   // intentionally ignores general short-price retry blocks: do not pay for a
   // second identical call there. Reject the priced-out Goals pick instead.
   const first = Array.isArray(output.predictions) ? output.predictions : [];
-  if (!goalsOnly && !earlyFree && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
+  // The early lane retries too: it used to save a too-short or unpriced pick for
+  // review without ever looking for a better market, and reviewers then
+  // published them (a team Under 2.5 at ~1.03, Double Chances at 1.03-1.05).
+  if (!goalsOnly && first.length > 0 && first.every((p) => unpayable(p) || offMarket(p))) {
     const dc = first.filter(tooShortDc);
     const floor: AutoOddsFailure[] = first.filter((p) => !tooShortDc(p))
       .map((p) => autoPriceIssue(p))
       .filter((issue): issue is AutoOddsFailure => issue !== null);
     const off = first.filter((p) => !unpayable(p));
     const retryBlock =
-      (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : firstBlock) +
+      (dc.length > 0 ? shortPriceRetryBlock(priceOdds, dc, input.home, input.away) : shortBlock) +
       automaticOddsRetryBlock(floor) +
-      (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "");
+      (off.length > 0 ? marketSanityRetryBlock(odds, off, input.home, input.away) : "") +
+      betterMarketBlock(priceOdds, input.home, input.away);
     let retry: Awaited<ReturnType<typeof callModel>>;
     try {
       retry = await callModel(retryBlock);
