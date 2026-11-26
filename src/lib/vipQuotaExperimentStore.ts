@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { lagosDateKey } from "@/lib/lagosDate";
-import { QUOTA_EXPERIMENT, quotaExperimentConfig, reliableUsageCost, experimentalDays, type RichnessFixture, type QuotaExperimentConfig, withQuotaExperiment } from "@/lib/vipQuotaExperiment";
+import { QUOTA_EXPERIMENT, quotaExperimentConfig, reliableUsageCost, experimentalDays, type RichnessFixture, type QuotaExperimentConfig, withQuotaExperiment, PAID_BASE_DAILY_ATTEMPTS, PAID_DAILY_SPEND_CAP } from "@/lib/vipQuotaExperiment";
 import { attemptKickoffDay, readVipPremiumAttempt, type VipPremiumTarget } from "@/lib/vipPremiumOverlay";
 import { lagosTodayBounds } from "@/lib/lagosDate";
 
@@ -40,7 +40,7 @@ export async function reserveExtraAttempt(target: VipPremiumTarget, config: Quot
     const kickoffCount = attempts.filter(a => attemptKickoffDay(a) === kickoffDay).length + missing.filter(a => a.kickoffDay === kickoffDay).length;
     const spendCount = attempts.filter(a => a.createdAt >= start && a.createdAt < end).length + missing.filter(a => a.spendDay === spendDay).length;
     const today = all.filter(a => a.spendDay === spendDay);
-    if (kickoffCount < 8 || kickoffCount >= 8 + config.extra || spendCount >= 12 || today.some(a => a.modelRequests > 0 && !a.usageReliable) || today.reduce((s,a) => s+a.reservedMicroUsd,0)+config.reservationMicroUsd > config.dailyMicroUsd) return null;
+    if (kickoffCount < PAID_BASE_DAILY_ATTEMPTS || kickoffCount >= PAID_BASE_DAILY_ATTEMPTS + config.extra || spendCount >= PAID_DAILY_SPEND_CAP || today.some(a => a.modelRequests > 0 && !a.usageReliable) || today.reduce((s,a) => s+a.reservedMicroUsd,0)+config.reservationMicroUsd > config.dailyMicroUsd) return null;
     if (target.kickoff.getTime() <= now.getTime()) return null;
     return tx.paidQuotaAttempt.create({ data: { fixtureApiId: target.fixtureApiId, experiment: QUOTA_EXPERIMENT, kickoffDay, spendDay, reservedMicroUsd: config.reservationMicroUsd, configJson: JSON.stringify(config) } });
   });

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 const react=require("react"); if(typeof react.cache!=="function")react.cache=(f:unknown)=>f;
 import { prisma } from "../src/lib/prisma";
 import { reserveExtraAttempt, runExtraAttempt } from "../src/lib/vipQuotaExperimentStore";
-import { quotaExperimentConfig, experimentScope, beforeExperimentalModel } from "../src/lib/vipQuotaExperiment";
+import { quotaExperimentConfig, experimentScope, beforeExperimentalModel, PAID_BASE_DAILY_ATTEMPTS as B, PAID_DAILY_SPEND_CAP as S } from "../src/lib/vipQuotaExperiment";
 import { recordCall, withPaidPriority, hasBudget } from "../src/lib/football/usage";
 import { autoPublishVipPremiumPrediction, selectVipPremiumTargets, loadVipPremiumAttempts } from "../src/lib/vipPremiumPipeline";
 import { lagosDateKey } from "../src/lib/lagosDate";
@@ -30,20 +30,20 @@ async function main(){
  await prisma.fixtureOddsCache.deleteMany(); await prisma.generationAttempt.deleteMany();
  await prisma.paidQuotaAttempt.deleteMany(); await prisma.aIJob.deleteMany(); await prisma.apiUsage.deleteMany();
  const user=await prisma.user.upsert({where:{email:"quota-test@example.invalid"},create:{email:"quota-test@example.invalid"},update:{}});
- await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
+ await prisma.aIJob.createMany({data:Array.from({length:B},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
  const target=(id:number)=>({fixtureApiId:id,kickoff} as VipPremiumTarget);
  const pool=Array.from({length:310},(_,i)=>({day,fixtureApiId:i+100}));
  // Duplicated paid records consume spend, but cannot manufacture a rich day.
- await prisma.aIJob.deleteMany({where:{prompt:{contains:'"fixtureApiId":8,'}}});
+ await prisma.aIJob.deleteMany({where:{prompt:{contains:`"fixtureApiId":${B},`}}});
  const duplicate=await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:1,kickoff:kickoff.toISOString()}),model:"manual-retry-test",rawOutput:"{}"}});
  const thinProof=[{day,fixtureApiId:100},{day,fixtureApiId:101}];
  const thin=await Promise.all(Array.from({length:10},(_,i)=>reserveExtraAttempt(target(100+i%2),cfg,thinProof)));
- assert.equal(thin.filter(Boolean).length,0,"7 unique used plus 2 candidates cannot reserve concurrently");
+ assert.equal(thin.filter(Boolean).length,0,"B-1 unique used plus 2 candidates cannot reserve concurrently");
  assert.equal(await prisma.paidQuotaAttempt.count(),0);
- assert.equal(await prisma.aIJob.count(),8,"paid duplicate records must remain counted");
+ assert.equal(await prisma.aIJob.count(),B,"paid duplicate records must remain counted");
  await prisma.aIJob.delete({where:{id:duplicate.id}});
- await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:8,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}});
- assert.equal(await reserveExtraAttempt(target(100),cfg,[...Array.from({length:8},(_,i)=>({day,fixtureApiId:i+1})),{day,fixtureApiId:100}]),null,"used/candidate overlap must not inflate richness");
+ await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:B,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}});
+ assert.equal(await reserveExtraAttempt(target(100),cfg,[...Array.from({length:B},(_,i)=>({day,fixtureApiId:i+1})),{day,fixtureApiId:100}]),null,"used/candidate overlap must not inflate richness");
  // An old baseline attempt still blocks an extra after a distant reschedule.
  await prisma.aIJob.create({data:{userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:777,kickoff:new Date(Date.now()-10*86400_000).toISOString()}),createdAt:new Date(Date.now()-10*86400_000),model:"test",rawOutput:"{}"}});
  assert.equal(await reserveExtraAttempt(target(777),cfg,[...pool,{day,fixtureApiId:777}]),null);
@@ -76,8 +76,8 @@ async function main(){
  // Daily model-call cap includes reservations with no AIJob (crashed request).
  await prisma.paidQuotaAttempt.deleteMany();
  Object.assign(process.env,{VIP_QUOTA_INCREMENTAL_DAILY_USD:"1"}); const larger=quotaExperimentConfig()!;
- const cap=await Promise.all(Array.from({length:8},(_,i)=>reserveExtraAttempt(target(300+i),larger,pool)));
- assert.equal(cap.filter(Boolean).length,4);
+ const cap=await Promise.all(Array.from({length:S-B+4},(_,i)=>reserveExtraAttempt(target(300+i),larger,pool)));
+ assert.equal(cap.filter(Boolean).length,S-B,"the calendar-day spend cap (S) bounds extras after B base attempts");
  assert.ok((await prisma.paidQuotaAttempt.findMany()).every(r=>r.kickoffDay===day));
  // Real publish-time gate: an attributable extra can publish, but rollback,
  // missing usage, duplicates and kickoff checks still block it.
@@ -124,22 +124,25 @@ async function main(){
    await prisma.prediction.create({data:{...common,fixtureApiId:id,homeTeamApiId:id*10,awayTeamApiId:id*10+1,category:"FEATURED",status:"PUBLISHED",marketType:"BTTS",selection:{value:"YES"},market:"BTTS",pick:"Yes",provenance:"STANDARD_CURATED"}});
    await prisma.fixtureOddsCache.create({data:{matchKey:k,bookmakerCount:6,fetchedAt:new Date(),oddsJson:{bookmakerCount:6,markets:[{market:"Match Winner",selections:[{value:"Home",...quotes(probability)},{value:"Draw",...quotes((1-probability)*.6)},{value:"Away",...quotes((1-probability)*.4)}]}]}}});
  }
+ // Free the extras the spend-cap check reserved (only the published one stays),
+ // so the kickoff day still has room for the selector to target.
+ await prisma.paidQuotaAttempt.deleteMany({where:{fixtureApiId:{not:fx}}});
  const selected=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
- assert.equal(selected.experiment?.quotas[day],16);
+ assert.equal(selected.experiment?.quotas[day],B+8);
  assert.equal(selected.targets[0]?.fixtureApiId,600);
  assert.equal(selected.oddsCalls,0);
  // Exercise the complete selector with the production failure shape, not only
- // the pure counting helper: 8 calls / 7 identities plus 2 fresh candidates.
+ // the pure counting helper: B calls / B-1 identities plus 2 fresh candidates.
  await prisma.prediction.updateMany({where:{aiJobId:job.id},data:{aiJobId:null}});
  await prisma.generationAttempt.delete({where:{matchKey:key}});
  await prisma.paidQuotaAttempt.deleteMany(); await prisma.aIJob.deleteMany();
- await prisma.aIJob.createMany({data:Array.from({length:8},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i===7?1:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
+ await prisma.aIJob.createMany({data:Array.from({length:B},(_,i)=>({userId:user.id,prompt:JSON.stringify({intent:"VIP_PREMIUM",fixtureApiId:i===B-1?1:i+1,kickoff:kickoff.toISOString()}),model:"test",rawOutput:"{}"}))});
  const thinSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
  assert.equal(thinSelection.experiment?.quotas[day],undefined);
- assert.equal(thinSelection.targets.length,0,"duplicate attempt records must not unlock a ninth attempt");
+ assert.equal(thinSelection.targets.length,0,"duplicate attempt records must not unlock an attempt beyond the base quota");
  const identity=thinSelection.readiness?.fixtureDays.find(d=>d.day===day);
- assert.equal(identity?.attemptRecords,8); assert.equal(identity?.uniqueUsedFixtureIds.length,7);
- assert.equal(identity?.uniqueUsedPlusEligible,9); assert.equal(identity?.fixtureRich,false);
+ assert.equal(identity?.attemptRecords,B); assert.equal(identity?.uniqueUsedFixtureIds.length,B-1);
+ assert.equal(identity?.uniqueUsedPlusEligible,B+1); assert.equal(identity?.fixtureRich,false);
  process.env.VIP_QUOTA_EXPERIMENT="off";
  const offSelection=await selectVipPremiumTargets(new Date(),1,{warmOdds:false});
  assert.equal(offSelection.experiment,undefined); assert.equal(offSelection.targets.length,0);

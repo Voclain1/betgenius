@@ -2,6 +2,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AIUsage } from "@/lib/ai/providers/types";
 
 export const QUOTA_EXPERIMENT = "vip-quota-v1";
+/**
+ * Paid-pass model attempts per KICKOFF day, and model calls per Lagos calendar
+ * day (the burst bound when two days' fixtures are attempted on one day).
+ * Defined here, the module with no pipeline imports, so the pipeline, the
+ * worker and the quota experiment share one value. Raised from 8 / 12 on
+ * 26 Nov 2026 (owner decision, maximum paid availability): about half the
+ * drafts fail the model's own floor, so 8 attempts yielded 2-4 picks and the
+ * cap was reached with qualifying fixtures still waiting (13 on 25 Nov).
+ */
+export const PAID_BASE_DAILY_ATTEMPTS = 16;
+export const PAID_DAILY_SPEND_CAP = 24;
 export const EXTRA_ATTEMPT_MAX = 8;
 export const EXPERIMENT_MAX_OUTPUT_TOKENS = 16_000;
 // Full supported input context, rather than average historical prompt size.
@@ -58,7 +69,7 @@ export function experimentalDays(used: readonly RichnessFixture[], eligibleDays:
   const usedIds = new Set(used.filter(c => Number.isSafeInteger(c.fixtureApiId) && c.fixtureApiId! > 0).map(c => c.fixtureApiId));
   const eligibleDaysWithIds = new Set(eligibleDays.filter(c => Number.isSafeInteger(c.fixtureApiId) && c.fixtureApiId! > 0 && !usedIds.has(c.fixtureApiId)).map(c => c.day));
   for (const [day, ids] of fixtureRichnessByDay(used, eligibleDays)) {
-    if (eligibleDaysWithIds.has(day) && ids.size >= 10) quotas.set(day, 8 + extra);
+    if (eligibleDaysWithIds.has(day) && ids.size >= PAID_BASE_DAILY_ATTEMPTS + 2) quotas.set(day, PAID_BASE_DAILY_ATTEMPTS + extra);
   }
   return quotas;
 }

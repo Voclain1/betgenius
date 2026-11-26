@@ -1,4 +1,4 @@
-import { experimentalDays, quotaExperimentConfig } from "@/lib/vipQuotaExperiment";
+import { experimentalDays, quotaExperimentConfig, PAID_BASE_DAILY_ATTEMPTS, PAID_DAILY_SPEND_CAP } from "@/lib/vipQuotaExperiment";
 import { paidFixtureReadiness, summarisePaidOdds } from "@/lib/vipPremiumReadiness";
 import { reliabilityControls } from "@/lib/reliabilitySnapshot";
 import { recordReliability } from "@/lib/reliabilityStore";
@@ -126,7 +126,7 @@ export {
  * still spent api-football budget, a model call and real money, and counting
  * only successes would let a bad day retry without limit.
  *
- * Raised from 6 to 8 (Oct 2026). 6 was sized against the measured candidate
+ * Raised to 16 on 26 Nov 2026 (PAID_BASE_DAILY_ATTEMPTS). Raised from 6 to 8 (Oct 2026). 6 was sized against the measured candidate
  * supply (~6.4 paid-tier-eligible fixtures a day over 31 days; modelled yield
  * 1.65 VIP and 1.00 PREMIUM picks a day). The recorded attempt-to-promotion
  * ratio then showed the cap was what bound: over 4-6 Oct the pass used 5 of
@@ -136,7 +136,7 @@ export {
  * unchanged. scripts/measure-vip-premium.ts reports whether the extra attempts
  * convert.
  */
-export const VIP_PREMIUM_DAILY_QUOTA = 8;
+export const VIP_PREMIUM_DAILY_QUOTA = PAID_BASE_DAILY_ATTEMPTS;
 
 /**
  * Model calls the pass may make in one Lagos calendar day, whatever days their
@@ -148,7 +148,7 @@ export const VIP_PREMIUM_DAILY_QUOTA = 8;
  * kickoff day still costs at most eight calls, so the daily spend averages what
  * it did; 12 only lets a day catch up after a quiet one.
  */
-export const VIP_PREMIUM_DAILY_SPEND_CAP = 12;
+export const VIP_PREMIUM_DAILY_SPEND_CAP = PAID_DAILY_SPEND_CAP;
 
 /**
  * NOT tightened, on purpose. Agreement is non-monotonic against outcome in the

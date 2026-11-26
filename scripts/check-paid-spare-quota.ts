@@ -167,7 +167,8 @@ check("1 anything else is shadow, never on", ["yes", "true", "1", "enabled", ""]
   check("6 gate unchanged", VIP_MARKET_FLOOR === 75 && PREMIUM_MARKET_FLOOR === 80 && MC_MAX_GAP_PP === 10 && MC_MIN_BOOKMAKERS === 5 && Math.abs(PAID_MAX_MARKET_PROBABILITY - 100 / 1.15) < 1e-9);
   check("6 every admitted competition can already be auto-published (PAID_ANY scope)", PAID_WIDENED_LEAGUE_IDS.every((id) => PAID_ANY_LEAGUE_IDS.includes(id)));
   check("6 no env or workflow file turns the rule on", !/PAID_SPARE_QUOTA_WIDENING\s*[:=]\s*"?on/i.test(src(".github/workflows/deploy-vps.yml") + (() => { try { return src(".env.example"); } catch { return ""; } })()));
-  check("6 the daily spend cap is untouched", /export const VIP_PREMIUM_DAILY_SPEND_CAP = 12;/.test(pipe) && /export const VIP_PREMIUM_DAILY_QUOTA = 8;/.test(pipe));
+  // Owner raised the shared limits on 26 Nov 2026 (16 / 24); spare quota itself never changes them.
+  check("6 the daily caps are the shared constants", /export const VIP_PREMIUM_DAILY_SPEND_CAP = PAID_DAILY_SPEND_CAP;/.test(pipe) && /export const VIP_PREMIUM_DAILY_QUOTA = PAID_BASE_DAILY_ATTEMPTS;/.test(pipe));
   const overlaySrc = src("src/lib/vipPremiumOverlay.ts");
   check("6 auto-publish scope check unchanged (PAID_ANY)", /if \(!PAID_ANY_LEAGUE_IDS\.includes\(row\.leagueApiId \?\? -1\)\) blocks\.push\("OUT_OF_SCOPE"\);/.test(overlaySrc));
 }

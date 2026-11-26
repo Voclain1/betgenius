@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {vipPremiumOddsDiagnostic,vipPremiumOddsToWarm,vipPremiumOddsWarmReason,VIP_PREMIUM_WARM_WITHIN_MS,VIP_PREMIUM_WARM_RETRY_MS,type OverlayCandidate,type OverlayQuote} from '../src/lib/vipPremiumOverlay';
 import {paidFixtureReadiness,summarisePaidOdds,paidPublicationOutcome,PAID_ODDS_SAMPLE_LIMIT} from '../src/lib/vipPremiumReadiness';
+import {PAID_BASE_DAILY_ATTEMPTS} from '../src/lib/vipQuotaExperiment';
 import type {FixtureOdds} from '../src/lib/odds';
 const H=3600000,now=new Date('2026-11-16T10:00:00Z'),day='2026-11-17';
 // Production probe must return presence only, and withhold malformed values.
@@ -47,10 +48,12 @@ const candidates=Array.from({length:20},(_,i)=>c(i+1));
 assert.equal(vipPremiumOddsToWarm(candidates,new Map(),now).length,12,'warming ceiling unchanged');
 const d=summarisePaidOdds(candidates.concat(candidates[0]).map(x=>vipPremiumOddsDiagnostic(x,undefined,now)));
 assert.equal(d.candidateObservations,21);assert.equal(d.uniqueFixtures,20);assert.equal(d.samples.length,PAID_ODDS_SAMPLE_LIMIT);assert.equal(d.cache.MISSING_CACHE,21);
-const used=Array.from({length:7},(_,i)=>({day,fixtureApiId:i+1}));
-const readiness=paidFixtureReadiness([...used,used[0]],[{day,fixtureApiId:8},{day,fixtureApiId:9},{day,fixtureApiId:1}])[0];
-assert.equal(readiness.attemptRecords,8);assert.equal(readiness.repeatedIdentityRecords,1);assert.equal(readiness.uniqueUsedPlusEligible,9);assert.equal(readiness.fixtureRich,false);
-assert.equal(paidFixtureReadiness([...used,used[0]],[{day,fixtureApiId:8},{day,fixtureApiId:9},{day,fixtureApiId:10}])[0].fixtureRich,true);
+// Richness = at least two fixtures beyond the base attempts (B = PAID_BASE_DAILY_ATTEMPTS).
+const B=PAID_BASE_DAILY_ATTEMPTS;
+const used=Array.from({length:B-1},(_,i)=>({day,fixtureApiId:i+1}));
+const readiness=paidFixtureReadiness([...used,used[0]],[{day,fixtureApiId:B},{day,fixtureApiId:B+1},{day,fixtureApiId:1}])[0];
+assert.equal(readiness.attemptRecords,B);assert.equal(readiness.repeatedIdentityRecords,1);assert.equal(readiness.uniqueUsedPlusEligible,B+1);assert.equal(readiness.fixtureRich,false);
+assert.equal(paidFixtureReadiness([...used,used[0]],[{day,fixtureApiId:B},{day,fixtureApiId:B+1},{day,fixtureApiId:B+2}])[0].fixtureRich,true);
 const noOutput={evaluated:0,promoted:0,published:0,publishHeld:0,heldForRequote:0,generationFailed:0};
 assert.equal(paidPublicationOutcome(noOutput),'NO_GENERATION_OUTPUT');
 assert.equal(paidPublicationOutcome({...noOutput,evaluated:2}),'NO_QUALIFYING_DRAFT');
