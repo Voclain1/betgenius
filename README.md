@@ -35,10 +35,18 @@ Full-stack football tips & predictions site built with **Next.js 14 (App Router)
 cd betgenius
 cp .env.example .env      # fill in the values you need
 npm install
-npm run db:push           # creates SQLite dev.db
+npm run db:push           # creates the tables in your Postgres database
 npm run db:seed           # creates the super admin
 npm run dev
 ```
+
+You need a Postgres database first, for example a throwaway local one:
+
+```bash
+docker run -d --name betgenius-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=betgenius -p 5432:5432 postgres:17
+```
+
+then set `DATABASE_URL` and `DATABASE_URL_UNPOOLED` in `.env` to `postgresql://postgres:postgres@localhost:5432/betgenius`. Never point a local `db:push` at the production database.
 
 Open `http://localhost:3000` and log in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env`.
 
@@ -46,7 +54,7 @@ Open `http://localhost:3000` and log in with the `SEED_ADMIN_EMAIL` / `SEED_ADMI
 
 | Var | Where to get it |
 | --- | --- |
-| `DATABASE_URL` | SQLite by default. Swap `datasource db` in `prisma/schema.prisma` to `postgresql` for prod. |
+| `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Postgres connection strings (the schema uses `postgresql` with a direct URL). Locally both can be the same value; in production they come from the `PROD_ENV_FILE` secret. |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `API_FOOTBALL_KEY` / `API_FOOTBALL_HOST` | https://www.api-football.com/documentation-v3 |
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | https://console.anthropic.com |
